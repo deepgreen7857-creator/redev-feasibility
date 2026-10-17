@@ -468,20 +468,7 @@ const MapView = {
     }
     const ptIn = (f, poly) => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), poly); } catch (e) { return false; } };
 
-    // 1) 구역 안에 둘러싸인 필지(구멍) 자동 포함 (10㎡ 미만 틈은 그냥 메움)
-    if (opts.fillHoles) {
-      const holes = polysOf(merged.geometry).flatMap(p => p.slice(1)).map(h => turf.polygon([h])).filter(h => turf.area(h) >= 10);
-      const inHole = around.filter(f => holes.some(h => ptIn(f, h)));
-      inHole.forEach(f => {
-        const sp = splitJibun(f.properties.jibun);
-        found.set(f.properties.pnu, f);
-        report.push({ input: '', result: '갇힌 필지', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: '목록에 없지만 구역 안에 갇혀 자동 포함' });
-        enclosed.add(f.properties.pnu);
-      });
-      if (inHole.length) merged = unionAll([merged, ...inHole]);
-    }
-
-    // 2) 떨어진 덩어리 사이를 도로·구거·하천 필지로 잇기 (구역 외곽선 안쪽 부분만)
+    // 1) 떨어진 덩어리 사이를 도로·구거·하천 필지로 잇기 (구역 외곽선 안쪽 부분만)
     let partial = [];
     if (opts.bridge && merged.geometry.type === 'MultiPolygon' && merged.geometry.coordinates.length > 1) {
       const hull = turf.convex(merged);
@@ -497,9 +484,23 @@ const MapView = {
         const whole = area1(f), part = area1(piece);
         const isPart = part < whole * 0.98;
         partial.push({ f, piece, isPart, part });
+        found.set(f.properties.pnu, f);
         report.push({ input: '', result: '도로 잇기', jibun: sp.no, jimok: sp.jimok, area: part, note: `떨어진 블록 사이 도로${isPart ? ` – 일부 편입 (전체 ${fmt(whole, 1)}㎡)` : ''}` });
       });
       if (partial.length) merged = unionAll([merged, ...partial.map(p => p.piece)]);
+    }
+
+    // 2) 구역 안에 둘러싸인 필지(구멍) 자동 포함 – 도로를 이은 뒤에 갇히는 필지도 잡도록 나중에 (10㎡ 미만 틈은 그냥 메움)
+    if (opts.fillHoles) {
+      const holes = polysOf(merged.geometry).flatMap(p => p.slice(1)).map(h => turf.polygon([h])).filter(h => turf.area(h) >= 10);
+      const inHole = around.filter(f => !found.has(f.properties.pnu) && holes.some(h => ptIn(f, h)));
+      inHole.forEach(f => {
+        const sp = splitJibun(f.properties.jibun);
+        found.set(f.properties.pnu, f);
+        report.push({ input: '', result: '갇힌 필지', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: '목록에 없지만 구역 안에 갇혀 자동 포함' });
+        enclosed.add(f.properties.pnu);
+      });
+      if (inHole.length) merged = unionAll([merged, ...inHole]);
     }
 
     // 붙어 있는 필지 사이에 생기는 아주 작은 틈(10㎡ 미만 구멍)은 메움
