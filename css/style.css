@@ -279,7 +279,9 @@ td.heat.base { outline: 2px solid var(--ink); outline-offset: -2px; font-weight:
   .map { height: 420px; }
 }
 @media (max-width: 600px) {
-  .topbar { padding: 10px 16px; }
+  .topbar { padding: 8px 16px; position: static; gap: 6px; }
+  .top-actions { flex-wrap: nowrap; overflow-x: auto; width: 100%; margin: 0 -4px; scrollbar-width: none; }
+  .top-actions .btn { padding: 5px 9px; font-size: .82rem; }
   .kpis > div { padding: 8px 16px; }
   .kpis strong { font-size: 1rem; }
   .tabs { padding: 10px 16px 0; }

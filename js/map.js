@@ -170,7 +170,8 @@ const MapView = {
       L.control.layers(
         { '브이월드 지도': base, '위성사진': sat, 'OpenStreetMap': osm },
         { '지적도 (16레벨 이상 확대 시)': cadastral },
-        { collapsed: false, position: 'topright' },
+        // 휴대폰에서는 접어 둬야 지도를 가리지 않음
+        { collapsed: window.innerWidth < 700, position: 'topright' },
       ).addTo(this.map);
     } else {
       osm.addTo(this.map);
