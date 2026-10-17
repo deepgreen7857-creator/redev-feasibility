@@ -40,11 +40,14 @@ const Export = {
     const [minX, minY, maxX, maxY] = turf.bbox(zone);
     const mx = (maxX - minX) * 0.15, my = (maxY - minY) * 0.15;
     const box = `BOX(${[minX - mx, minY - my, maxX + mx, maxY + my].join(',')})`;
+    // 필지는 건물보다 약 40m 넓게 받아야 가장자리 건물도 밑의 필지에 맞출 수 있음
+    const ex = 40 / 88000, ey = 40 / 111000;
+    const pbox = `BOX(${[minX - mx - ex, minY - my - ey, maxX + mx + ex, maxY + my + ey].join(',')})`;
     const inZone = f => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), zone); } catch (e) { return false; } };
 
     let parcels = [], bldgs = [];
     if (VWorld.enabled) {
-      [parcels, bldgs] = await Promise.all([VWorld.dataAll('LP_PA_CBND_BUBUN', box, 5), VWorld.dataAll('LT_C_BLDGINFO', box, 5)]);
+      [parcels, bldgs] = await Promise.all([VWorld.dataAll('LP_PA_CBND_BUBUN', pbox, 5), VWorld.dataAll('LT_C_BLDGINFO', box, 5)]);
     } else {
       parcels = S.lands.filter(l => l.geom).map(l => ({ type: 'Feature', geometry: l.geom, properties: { jibun: l.jibun + (l.jimok || '') } }));
     }
@@ -187,9 +190,10 @@ const Export = {
         const b = search(nb, G, [[6, 2], [1, 0.5], [0.25, 0.25]], pen);
         cellShift.set(key, [b.dx, b.dy]);
       }
-      // 3) 건물 하나씩: 블록 보정값에서 2.5m 안에서 자기 필지에 가장 잘 들어가는 위치로 미세 조정
+      // 3) 건물 하나씩: 블록 보정값에서 5m 안에서 자기 필지에 가장 잘 들어가는 위치로 미세 조정
+      //    (같은 줄에서도 건물마다 어긋난 정도가 달라서). 가까운 위치를 우선
       const C0 = cellShift.get(key);
-      const own = search([i], C0, [[2.5, 0.5], [0.5, 0.25]], (dx, dy) => 0.04 * Math.hypot(dx - C0[0], dy - C0[1]));
+      const own = search([i], C0, [[5, 0.5], [0.5, 0.25]], (dx, dy) => 0.03 * Math.hypot(dx - C0[0], dy - C0[1]));
       return [own.dx, own.dy];
     });
   },
