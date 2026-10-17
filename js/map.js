@@ -392,6 +392,61 @@ const MapView = {
     this.save();
   },
 
+  // 지번 목록 → 필지를 찾아 합쳐서 구역계를 그리고, 조서까지 불러옴
+  // base: "인천광역시 남동구 간석동" 처럼 지번 앞에 붙일 동 주소
+  async zoneFromJibuns(items, base) {
+    const msg = $('#jibunMsg');
+    if (!VWorld.enabled) { msg.textContent = '브이월드 인증키가 있어야 지번으로 필지를 찾을 수 있습니다.'; return; }
+    items = [...new Set(items.map(s => String(s).trim()).filter(s => /\d/.test(s)))];
+    if (!items.length) { msg.textContent = '지번이 없습니다. 한 줄에 하나씩 넣어 주세요. 예: 387, 388-1, 산12'; return; }
+    if (S.area.geojson && !confirm('지금 그려진 구역계를 지번 목록의 필지로 바꿀까요?')) return;
+
+    const found = new Map(), fails = [];
+    // 동·리 이름이 들어 있으면 그대로, 숫자만 있으면 기준 동을 앞에 붙임
+    const query = it => (/[가-힣]+(동|리|가)\s*(산\s*)?\d/.test(it) || /[가-힣]+(시|군|구)\s/.test(it) ? it : `${base} ${it}`.trim());
+    const norm = s => String(s).replace(/번지/g, '').replace(/.*[가-힣](동|리|가)\s*/, '').replace(/\s/g, '');
+    let done = 0;
+    const work = async it => {
+      try {
+        const list = await VWorld.search(query(it), 'address', 'parcel');
+        const f = list.length ? await VWorld.parcelAt(list[0].lat, list[0].lon) : null;
+        const no = f ? splitJibun(f.properties.jibun).no : '';
+        if (!f || no !== norm(it)) fails.push(it + (f ? ` (→ ${no})` : ''));
+        if (f) found.set(f.properties.pnu, f);
+      } catch (e) { fails.push(it); }
+      done++;
+      msg.textContent = `필지를 찾는 중… ${done}/${items.length}`;
+    };
+    // 브이월드에 무리가 가지 않게 4개씩 동시에
+    const queue = items.slice();
+    await Promise.all([1, 2, 3, 4].map(async () => { while (queue.length) await work(queue.shift()); }));
+
+    const feats = [...found.values()];
+    if (!feats.length) { msg.textContent = '필지를 하나도 찾지 못했습니다. 기준 동 주소를 확인해 주세요.'; return; }
+    let merged = feats[0];
+    try { for (let i = 1; i < feats.length; i++) merged = turf.union(merged, feats[i]) || merged; }
+    catch (e) { msg.textContent = '필지 경계를 합치는 중 오류가 났습니다.'; return; }
+    // 붙어 있는 필지 사이에 생기는 아주 작은 틈(10㎡ 미만 구멍)은 메움
+    const g = merged.geometry;
+    const fill = poly => [poly[0], ...poly.slice(1).filter(h => turf.area(turf.polygon([h])) >= 10)];
+    if (g.type === 'Polygon') g.coordinates = fill(g.coordinates);
+    else if (g.type === 'MultiPolygon') g.coordinates = g.coordinates.map(fill);
+
+    this.items.clearLayers();
+    L.geoJSON(merged, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => this.items.addLayer(l));
+    this.map.fitBounds(this.items.getBounds(), { padding: [30, 30] });
+    S.area.mode = 'drawn';
+    this.save();
+    // 조서: 구역 안 필지·건축물 불러오기 (확인 창 없이)
+    S.lands = S.lands.filter(l => !l.pnu);
+    S.buildings = S.buildings.filter(b => !b.auto);
+    await this.importArea();
+    const parts = g.type === 'MultiPolygon' ? g.coordinates.length : 1;
+    msg.innerHTML = `지번 ${items.length}개 중 <b>${feats.length}필지</b>로 구역계를 그리고 조서를 불러왔습니다.`
+      + (parts > 1 ? ` 구역이 ${parts}덩어리로 떨어져 있습니다.` : '')
+      + (fails.length ? `<br><b class="warn">확인 필요 ${fails.length}건:</b> ${fails.map(esc).join(', ')}` : '');
+  },
+
   // 검색 결과 위치로 이동하고 표시. r: { lat, lon, label, precise }
   goTo(r) {
     this.map.setView([r.lat, r.lon], r.precise ? 18 : 16);

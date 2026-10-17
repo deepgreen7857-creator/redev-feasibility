@@ -628,6 +628,50 @@ function boot() {
   $('#btnParcelsToArea').onclick = () => MapView.parcelsToArea();
   $$('[data-csv]').forEach(b => { b.onclick = () => csvAction(b.dataset.csv, b.dataset.act); });
   $('#btnSortJibun').onclick = sortByJibun;
+
+  // 지번 목록으로 구역 만들기
+  const guessBase = () => {
+    const m = String(S.meta.location || '').match(/^(.*?[가-힣]+(동|리|가))(\s|\d|$)/);
+    return m ? m[1].trim() : '';
+  };
+  $('#btnJibunZone').onclick = () => {
+    const base = $('#jibunBase').value.trim() || guessBase();
+    const items = $('#jibunList').value.split(/[\n,;\t]+/);
+    MapView.zoneFromJibuns(items, base);
+  };
+  $('#btnJibunFile').onclick = () => {
+    const i = document.createElement('input');
+    i.type = 'file';
+    i.accept = '.xlsx,.xls,.csv,.txt';
+    i.onchange = async () => {
+      const f = i.files[0];
+      if (!f) return;
+      let rows;
+      if (/\.xlsx?$/i.test(f.name)) {
+        const wb = XLSX.read(await f.arrayBuffer());
+        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false });
+      } else {
+        const buf = await f.arrayBuffer();
+        let text;
+        try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { text = new TextDecoder('euc-kr').decode(buf); }
+        rows = parseCSV(text);
+      }
+      // '지번' 제목이 있는 열을 찾고, '소재지·주소' 열이 있으면 앞에 붙임
+      const hi = rows.findIndex(r => r.some(c => /지번/.test(String(c))));
+      let list;
+      if (hi >= 0) {
+        const jc = rows[hi].findIndex(c => /지번/.test(String(c)));
+        const ac = rows[hi].findIndex(c => /소재지|주소/.test(String(c)));
+        list = rows.slice(hi + 1).map(r => {
+          const j = String(r[jc] ?? '').trim(), a = ac >= 0 ? String(r[ac] ?? '').trim() : '';
+          return a && !/\d+(-\d+)?$/.test(a) ? `${a} ${j}` : j;
+        });
+      } else list = rows.flat().map(c => String(c ?? '').trim());
+      $('#jibunList').value = list.filter(s => /\d/.test(s)).join('\n');
+      $('#jibunMsg').textContent = `${f.name}에서 지번 ${$('#jibunList').value.split('\n').filter(Boolean).length}개를 읽었습니다. 기준 동을 확인하고 "지번으로 구역 만들기"를 누르세요.`;
+    };
+    i.click();
+  };
   $('#btnBaseToday').onclick = () => { S.criteria.baseDate = ''; App.update(true); };
   $('#btnSurveyXlsx').onclick = saveSurveyXlsx;
   $('#btnSurveyPrint').onclick = printSurvey;
