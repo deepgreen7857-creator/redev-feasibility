@@ -49,7 +49,7 @@ const Export = {
     const proj = rs => rs.map(r => r.map(c => P.fwd(c)));
     const labelAt = f => { try { return P.fwd(turf.pointOnFeature(f).geometry.coordinates); } catch (e) { return null; } };
 
-    return {
+    const d = {
       P,
       zone: proj(this.rings(zone)),
       parcels: parcels.map(f => {
@@ -60,7 +60,88 @@ const Export = {
         const b = buildingFromFeature(f);
         return { rings: proj(this.rings(f.geometry)), name: b.name, inZone: inZone(f), old: Calc.isOld(S, b, year), noInfo: !b.year, label: labelAt(f), area: turf.area(f) };
       }),
+      shift: [0, 0],
     };
+    // 연속지적도와 건물 자료는 원래 수 미터씩 어긋나 있어서, 건물을 지적에 맞춰 옮김 (지적은 그대로)
+    if ($('#alignBldg') ? $('#alignBldg').checked : true) {
+      const [dx, dy] = this.alignShift(d.parcels, d.buildings);
+      if (dx || dy) {
+        const mv = c => [c[0] + dx, c[1] + dy];
+        d.buildings.forEach(b => { b.rings = b.rings.map(r => r.map(mv)); if (b.label) b.label = mv(b.label); });
+        d.shift = [dx, dy];
+      }
+    }
+    return d;
+  },
+
+  // 건물이 도로 필지에 올라가거나 여러 필지에 걸치는 정도가 가장 작아지는 이동량(m)을 찾음
+  alignShift(parcels, buildings) {
+    const inRing = (x, y, r) => {
+      let inside = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const [xi, yi] = r[i], [xj, yj] = r[j];
+        if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    };
+    const inRings = (x, y, rs) => rs.reduce((n, r) => n + (inRing(x, y, r) ? 1 : 0), 0) % 2 === 1;
+    const bbox = rs => { const xs = rs.flat().map(c => c[0]), ys = rs.flat().map(c => c[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+
+    // 필지 격자 색인 (20m 칸)
+    const C = 20, grid = new Map();
+    const ps = parcels.map((p, i) => ({ i, rs: p.rings, road: p.jimok === '도', b: bbox(p.rings) }));
+    ps.forEach(p => {
+      for (let gx = Math.floor(p.b[0] / C); gx <= Math.floor(p.b[2] / C); gx++)
+        for (let gy = Math.floor(p.b[1] / C); gy <= Math.floor(p.b[3] / C); gy++) {
+          const k = gx + ',' + gy;
+          if (!grid.has(k)) grid.set(k, []);
+          grid.get(k).push(p);
+        }
+    });
+    const parcelAt = (x, y) => {
+      const cand = grid.get(Math.floor(x / C) + ',' + Math.floor(y / C)) || [];
+      for (const p of cand) if (x >= p.b[0] && x <= p.b[2] && y >= p.b[1] && y <= p.b[3] && inRings(x, y, p.rs)) return p;
+      return null;
+    };
+
+    // 건물마다 내부 표본점
+    const samples = buildings.map(b => {
+      const bb = bbox(b.rings), st = Math.max(bb[2] - bb[0], bb[3] - bb[1]) / 6;
+      const pts = [];
+      for (let x = bb[0] + st / 2; x < bb[2]; x += st) for (let y = bb[1] + st / 2; y < bb[3]; y += st) if (inRings(x, y, b.rings)) pts.push([x, y]);
+      return pts;
+    }).filter(p => p.length);
+    if (!samples.length || !ps.length) return [0, 0];
+
+    // 점수: 도로·필지 밖에 떨어진 점 + 건물의 주된 필지가 아닌 점
+    const score = (dx, dy) => {
+      let s = 0;
+      for (const pts of samples) {
+        const cnt = new Map(); let bad = 0;
+        for (const [x, y] of pts) {
+          const p = parcelAt(x + dx, y + dy);
+          if (!p || p.road) bad++;
+          else cnt.set(p.i, (cnt.get(p.i) || 0) + 1);
+        }
+        const major = Math.max(0, ...cnt.values());
+        s += (bad + (pts.length - bad - major)) / pts.length;
+      }
+      return s;
+    };
+    const base = score(0, 0);
+    let best = { dx: 0, dy: 0, v: base };
+    for (let dx = -8; dx <= 8; dx += 1) for (let dy = -8; dy <= 8; dy += 1) { const v = score(dx, dy); if (v < best.v) best = { dx, dy, v }; }
+    const c0 = { ...best };
+    for (let dx = c0.dx - 1; dx <= c0.dx + 1; dx += 0.25) for (let dy = c0.dy - 1; dy <= c0.dy + 1; dy += 0.25) { const v = score(dx, dy); if (v < best.v) best = { dx, dy, v }; }
+    // 개선이 미미하면 옮기지 않음
+    return base - best.v > base * 0.15 ? [best.dx, best.dy] : [0, 0];
+  },
+
+  shiftText([dx, dy]) {
+    const p = [];
+    if (dx) p.push(`${dx > 0 ? '동' : '서'}쪽 ${fmt(Math.abs(dx), 2)}m`);
+    if (dy) p.push(`${dy > 0 ? '북' : '남'}쪽 ${fmt(Math.abs(dy), 2)}m`);
+    return p.join(', ');
   },
 
   niceScale(need) {
@@ -179,6 +260,7 @@ const Export = {
     const notes = [
       `출력일 ${today.getFullYear()}.${today.getMonth() + 1}.${today.getDate()}`,
       '자료: 브이월드(국토교통부) 연속지적도, GIS건물통합정보',
+      ...(d.shift[0] || d.shift[1] ? [`건물 위치를 지적에 맞춰 보정함: ${this.shiftText(d.shift)}`] : []),
       '본 도면은 사업성 검토용 참고도이며 측량 성과가 아닙니다.',
     ];
     let ny2 = fy + fh - notes.length * 3.2 * u;
@@ -207,7 +289,8 @@ const Export = {
         window.removeEventListener('afterprint', done);
       };
       window.addEventListener('afterprint', done);
-      msg.textContent = `축척 1:${fmt(scale)} 도면을 만들었습니다. 인쇄 창에서 대상을 "PDF로 저장"으로 고르세요. (용지 ${paper} 가로, 여백 없음)`;
+      msg.textContent = `축척 1:${fmt(scale)} 도면을 만들었습니다.` + (d.shift[0] || d.shift[1] ? ` 건물 위치를 지적에 맞춰 ${this.shiftText(d.shift)} 보정했습니다.` : '')
+        + ` 인쇄 창에서 대상을 "PDF로 저장"으로 고르세요. (용지 ${paper} 가로, 여백 없음)`;
       setTimeout(() => window.print(), 150);
     } catch (e) {
       msg.textContent = '도면을 만들지 못했습니다: ' + e.message;
@@ -254,7 +337,7 @@ const Export = {
       add(0, 'ENDSEC', 0, 'EOF');
 
       download(`${S.meta.name || '구역계'}_도면_EPSG${d.P.epsg}.dxf`, L.join('\r\n'), 'application/dxf');
-      msg.textContent = `DXF를 저장했습니다. 좌표계 GRS80 TM ${d.P.name}(EPSG:${d.P.epsg}), 단위 m. 레이어: 구역계 ZONE, 필지 PARCEL, 지번 JIBUN, 건물 BUILDING, 노후 건물 BUILDING_OLD.`;
+      msg.textContent = (d.shift[0] || d.shift[1] ? `건물 위치를 지적에 맞춰 ${this.shiftText(d.shift)} 보정했습니다. ` : '') + `DXF를 저장했습니다. 좌표계 GRS80 TM ${d.P.name}(EPSG:${d.P.epsg}), 단위 m. 레이어: 구역계 ZONE, 필지 PARCEL, 지번 JIBUN, 건물 BUILDING, 노후 건물 BUILDING_OLD.`;
     } catch (e) {
       msg.textContent = 'DXF를 만들지 못했습니다: ' + e.message;
     }

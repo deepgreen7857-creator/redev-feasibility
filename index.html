@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=10">
+<link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body>
 
@@ -135,6 +135,7 @@
         <h3>도면 내보내기</h3>
         <p class="note">필지·지번·건물·구역계를 모두 선으로 그려 크게 출력해도 깨지지 않습니다. 노후 건물은 색으로 구분됩니다.</p>
         <label class="inline-field">용지 <select id="exportPaper"><option>A4</option><option>A3</option><option>A2</option></select></label>
+        <label class="radio"><input type="checkbox" id="alignBldg" checked> 건물 위치를 지적 경계에 맞춰 보정</label>
         <button class="btn small primary" id="btnPdf">도면 PDF</button>
         <button class="btn small" id="btnDxf">CAD 도면 (DXF)</button>
         <button class="btn small" id="btnGeojson">GeoJSON</button>
@@ -279,12 +280,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=10"></script>
-<script src="js/util.js?v=10"></script>
-<script src="js/state.js?v=10"></script>
-<script src="js/calc.js?v=10"></script>
-<script src="js/map.js?v=10"></script>
-<script src="js/export.js?v=10"></script>
-<script src="js/app.js?v=10"></script>
+<script src="js/config.js?v=11"></script>
+<script src="js/util.js?v=11"></script>
+<script src="js/state.js?v=11"></script>
+<script src="js/calc.js?v=11"></script>
+<script src="js/map.js?v=11"></script>
+<script src="js/export.js?v=11"></script>
+<script src="js/app.js?v=11"></script>
 </body>
 </html>
