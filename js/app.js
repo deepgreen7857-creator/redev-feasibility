@@ -489,7 +489,7 @@ function saveSurveyXlsx() {
   const { lands, bldgs } = surveyRows();
   const sv = Calc.survey(S);
   const wb = XLSX.utils.book_new();
-  const head = t => [[`${S.meta.name || '정비사업'} ${t}`], [`위치: ${S.meta.location || '-'}`, '', `작성일: ${new Date().toISOString().slice(0, 10)}`], []];
+  const head = t => [[`${S.meta.name || '정비사업'} ${t}`], [`위치: ${S.meta.location || '-'}`, '', `작성일: ${new Date().toLocaleDateString('sv-SE')}`], []];
   const sheet = (title, rows, widths) => {
     const ws = XLSX.utils.aoa_to_sheet(head(title));
     XLSX.utils.sheet_add_json(ws, rows, { origin: 'A4' });
@@ -519,7 +519,7 @@ function printSurvey() {
   };
   let sheet = $('#printSheet');
   if (!sheet) { sheet = document.createElement('div'); sheet.id = 'printSheet'; document.body.append(sheet); }
-  sheet.innerHTML = `<div class="survey-print"><h1>${esc(S.meta.name || '정비사업')} 토지·건축물조서</h1><p>위치: ${esc(S.meta.location || '-')} · 작성일 ${new Date().toISOString().slice(0, 10)}</p>${table('토지조서', lands)}<div class="pb"></div>${table('건축물조서', bldgs)}</div>`;
+  sheet.innerHTML = `<div class="survey-print"><h1>${esc(S.meta.name || '정비사업')} 토지·건축물조서</h1><p>위치: ${esc(S.meta.location || '-')} · 작성일 ${new Date().toLocaleDateString('sv-SE')}</p>${table('토지조서', lands)}<div class="pb"></div>${table('건축물조서', bldgs)}</div>`;
   let st = $('#pageStyle');
   if (!st) { st = document.createElement('style'); st.id = 'pageStyle'; document.head.append(st); }
   st.textContent = '@page { size: A4 landscape; margin: 10mm; }';
