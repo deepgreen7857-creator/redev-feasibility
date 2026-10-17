@@ -39,6 +39,15 @@ const Auto = {
       App.update();
     } catch (e) { console.warn('용도지역 조회 실패', e); }
   },
+  // 주소 검색 없이 구역만 그린 경우: 구역 안 필지 주소로 "○○동 123 일대"
+  async locationFromParcel(lat, lon) {
+    if (!VWorld.enabled || S.meta.locationManual || S.meta.location) return;
+    try {
+      const f = await VWorld.parcelAt(lat, lon);
+      const addr = f && f.properties && f.properties.addr;
+      if (addr) { S.meta.location = addr + ' 일대'; App.update(); }
+    } catch (e) { console.warn('위치 조회 실패', e); }
+  },
   location(r) {
     if (!S.meta.locationManual) S.meta.location = r.label;
     S.area.center = [r.lat, r.lon];

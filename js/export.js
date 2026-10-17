@@ -33,6 +33,10 @@ const Export = {
     if (!S.area.geojson) throw new Error('먼저 지도에 구역계를 그려 주세요.');
     if (!window.proj4 || !window.turf) throw new Error('도면 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.');
     const zone = S.area.geojson;
+    if (!S.meta.location) {
+      const pt = turf.pointOnFeature(zone).geometry.coordinates;
+      await Auto.locationFromParcel(pt[1], pt[0]);
+    }
     const [minX, minY, maxX, maxY] = turf.bbox(zone);
     const mx = (maxX - minX) * 0.15, my = (maxY - minY) * 0.15;
     const box = `BOX(${[minX - mx, minY - my, maxX + mx, maxY + my].join(',')})`;
