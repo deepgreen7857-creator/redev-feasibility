@@ -173,9 +173,9 @@ const Export = {
     const g = search(all, [0, 0], [[8, 2], [2, 0.5], [0.5, 0.25]], () => 0);
     const G = base - g.v > base * 0.15 ? [g.dx, g.dy] : [0, 0];
 
-    // 2) 블록별: 40m 칸마다 칸 중심 반경 50m 안 건물들과 함께 맞춤.
+    // 2) 블록별: 25m 칸마다 칸 중심 반경 35m 안 건물들과 함께 맞춤.
     //    전체 보정값에서 멀어질수록 약간 손해를 줘서 들쭉날쭉하지 않게
-    const CELL = 40, R = 50, cellShift = new Map();
+    const CELL = 25, R = 35, cellShift = new Map();
     const cellOf = i => Math.floor(cent[i][0] / CELL) + ',' + Math.floor(cent[i][1] / CELL);
     return buildings.map((_, i) => {
       if (!samples[i].length) return G;
