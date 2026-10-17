@@ -64,22 +64,29 @@ const Export = {
         const b = buildingFromFeature(f);
         return { rings: proj(this.rings(f.geometry)), name: b.name, inZone: inZone(f), old: Calc.isOld(S, b, year), noInfo: !b.year, label: labelAt(f), area: turf.area(f) };
       }),
-      shift: [0, 0],
+      shift: null,
     };
-    // 연속지적도와 건물 자료는 원래 수 미터씩 어긋나 있어서, 건물을 지적에 맞춰 옮김 (지적은 그대로)
+    // 연속지적도와 건물 자료는 원래 수 미터씩, 그것도 블록마다 다르게 어긋나 있어서
+    // 건물을 주변 블록 단위로 지적에 맞춰 옮김 (지적은 그대로)
     if ($('#alignBldg') ? $('#alignBldg').checked : true) {
-      const [dx, dy] = this.alignShift(d.parcels, d.buildings);
-      if (dx || dy) {
-        const mv = c => [c[0] + dx, c[1] + dy];
-        d.buildings.forEach(b => { b.rings = b.rings.map(r => r.map(mv)); if (b.label) b.label = mv(b.label); });
-        d.shift = [dx, dy];
+      const shifts = this.alignShifts(d.parcels, d.buildings);
+      const lens = shifts.map(s => Math.hypot(s[0], s[1]));
+      if (lens.some(v => v > 0)) {
+        d.buildings.forEach((b, i) => {
+          const [dx, dy] = shifts[i];
+          const mv = c => [c[0] + dx, c[1] + dy];
+          b.rings = b.rings.map(r => r.map(mv));
+          if (b.label) b.label = mv(b.label);
+        });
+        d.shift = { avg: lens.reduce((a, v) => a + v, 0) / lens.length, max: Math.max(...lens) };
       }
     }
     return d;
   },
 
-  // 건물이 도로 필지에 올라가거나 여러 필지에 걸치는 정도가 가장 작아지는 이동량(m)을 찾음
-  alignShift(parcels, buildings) {
+  // 건물마다 [dx, dy](m). 먼저 전체를 한 번 맞추고, 반경 35m 이웃 건물과 함께 블록별로 다시 맞춤.
+  // 점수: 건물 표본점이 도로·필지 밖에 떨어지거나 건물의 주된 필지가 아닌 필지에 걸치는 비율
+  alignShifts(parcels, buildings) {
     const inRing = (x, y, r) => {
       let inside = false;
       for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
@@ -108,50 +115,67 @@ const Export = {
       return null;
     };
 
-    // 건물마다 내부 표본점
+    // 건물마다 내부 표본점과 중심
     const samples = buildings.map(b => {
       const bb = bbox(b.rings), st = Math.max(bb[2] - bb[0], bb[3] - bb[1]) / 5;
       const pts = [];
       for (let x = bb[0] + st / 2; x < bb[2]; x += st) for (let y = bb[1] + st / 2; y < bb[3]; y += st) if (inRings(x, y, b.rings)) pts.push([x, y]);
       return pts;
-    }).filter(p => p.length);
-    if (!samples.length || !ps.length) return [0, 0];
-
-    // 점수: 도로·필지 밖에 떨어진 점 + 건물의 주된 필지가 아닌 점
-    const score = (dx, dy) => {
-      let s = 0;
-      for (const pts of samples) {
-        const cnt = new Map(); let bad = 0;
-        for (const [x, y] of pts) {
-          const p = parcelAt(x + dx, y + dy);
-          if (!p || p.road) bad++;
-          else cnt.set(p.i, (cnt.get(p.i) || 0) + 1);
-        }
-        const major = Math.max(0, ...cnt.values());
-        s += (bad + (pts.length - bad - major)) / pts.length;
-      }
-      return s;
-    };
-    const base = score(0, 0);
-    let best = { dx: 0, dy: 0, v: base };
-    // 2m 간격으로 넓게 찾고 → 0.5m → 0.25m로 좁혀 감
-    [[8, 2], [2, 0.5], [0.5, 0.25]].forEach(([range, step]) => {
-      const c = { ...best };
-      for (let dx = c.dx - range; dx <= c.dx + range + 1e-9; dx += step)
-        for (let dy = c.dy - range; dy <= c.dy + range + 1e-9; dy += step) {
-          const v = score(dx, dy);
-          if (v < best.v) best = { dx, dy, v };
-        }
     });
-    // 개선이 미미하면 옮기지 않음
-    return base - best.v > base * 0.15 ? [best.dx, best.dy] : [0, 0];
+    const cent = buildings.map(b => { const bb = bbox(b.rings); return [(bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2]; });
+    const all = buildings.map((_, i) => i).filter(i => samples[i].length);
+    if (!all.length || !ps.length) return buildings.map(() => [0, 0]);
+
+    // 건물 하나의 점수 (같은 이동량은 여러 번 쓰이므로 기억해 둠)
+    const memo = new Map();
+    const one = (i, dx, dy) => {
+      const key = i + ',' + dx.toFixed(2) + ',' + dy.toFixed(2);
+      if (memo.has(key)) return memo.get(key);
+      const pts = samples[i], cnt = new Map();
+      let bad = 0;
+      for (const [x, y] of pts) {
+        const p = parcelAt(x + dx, y + dy);
+        if (!p || p.road) bad++;
+        else cnt.set(p.i, (cnt.get(p.i) || 0) + 1);
+      }
+      const major = Math.max(0, ...cnt.values());
+      const v = (bad + (pts.length - bad - major)) / pts.length;
+      memo.set(key, v);
+      return v;
+    };
+    const total = (idx, dx, dy) => idx.reduce((s, i) => s + one(i, dx, dy), 0);
+    // 넓게 찾고 점점 좁혀 가는 격자 탐색
+    const search = (idx, start, stages, penalty) => {
+      let best = { dx: start[0], dy: start[1], v: total(idx, start[0], start[1]) + penalty(start[0], start[1]) };
+      stages.forEach(([range, step]) => {
+        const c = { ...best };
+        for (let dx = c.dx - range; dx <= c.dx + range + 1e-9; dx += step)
+          for (let dy = c.dy - range; dy <= c.dy + range + 1e-9; dy += step) {
+            const v = total(idx, dx, dy) + penalty(dx, dy);
+            if (v < best.v) best = { dx, dy, v };
+          }
+      });
+      return best;
+    };
+
+    // 1) 전체를 한 번에
+    const base = total(all, 0, 0);
+    const g = search(all, [0, 0], [[8, 2], [2, 0.5], [0.5, 0.25]], () => 0);
+    const G = base - g.v > base * 0.15 ? [g.dx, g.dy] : [0, 0];
+
+    // 2) 블록별: 반경 35m 이웃과 함께. 전체 보정값에서 멀어질수록 약간 손해를 줘서 들쭉날쭉하지 않게
+    const R = 35;
+    return buildings.map((_, i) => {
+      if (!samples[i].length) return G;
+      const nb = all.filter(j => Math.hypot(cent[j][0] - cent[i][0], cent[j][1] - cent[i][1]) <= R);
+      const pen = (dx, dy) => 0.02 * nb.length * Math.hypot(dx - G[0], dy - G[1]);
+      const b = search(nb, G, [[6, 1.5], [1.5, 0.5], [0.5, 0.25]], pen);
+      return [b.dx, b.dy];
+    });
   },
 
-  shiftText([dx, dy]) {
-    const p = [];
-    if (dx) p.push(`${dx > 0 ? '동' : '서'}쪽 ${fmt(Math.abs(dx), 2)}m`);
-    if (dy) p.push(`${dy > 0 ? '북' : '남'}쪽 ${fmt(Math.abs(dy), 2)}m`);
-    return p.join(', ');
+  shiftText(s) {
+    return s ? `블록별 평균 ${fmt(s.avg, 1)}m, 최대 ${fmt(s.max, 1)}m 이동` : '';
   },
 
   niceScale(need) {
@@ -270,7 +294,7 @@ const Export = {
     const notes = [
       `출력일 ${today.getFullYear()}.${today.getMonth() + 1}.${today.getDate()}`,
       '자료: 브이월드(국토교통부) 연속지적도, GIS건물통합정보',
-      ...(d.shift[0] || d.shift[1] ? [`건물 위치를 지적에 맞춰 보정함: ${this.shiftText(d.shift)}`] : []),
+      ...(d.shift ? [`건물 위치를 지적에 맞춰 보정함 (${this.shiftText(d.shift)})`] : []),
       '본 도면은 사업성 검토용 참고도이며 측량 성과가 아닙니다.',
     ];
     let ny2 = fy + fh - notes.length * 3.2 * u;
@@ -299,7 +323,7 @@ const Export = {
         window.removeEventListener('afterprint', done);
       };
       window.addEventListener('afterprint', done);
-      msg.textContent = `축척 1:${fmt(scale)} 도면을 만들었습니다.` + (d.shift[0] || d.shift[1] ? ` 건물 위치를 지적에 맞춰 ${this.shiftText(d.shift)} 보정했습니다.` : '')
+      msg.textContent = `축척 1:${fmt(scale)} 도면을 만들었습니다.` + (d.shift ? ` 건물 위치를 지적에 맞춰 보정했습니다(${this.shiftText(d.shift)}).` : '')
         + ` 인쇄 창에서 대상을 "PDF로 저장"으로 고르세요. (용지 ${paper} 가로, 여백 없음)`;
       setTimeout(() => window.print(), 150);
     } catch (e) {
@@ -347,7 +371,7 @@ const Export = {
       add(0, 'ENDSEC', 0, 'EOF');
 
       download(`${S.meta.name || '구역계'}_도면_EPSG${d.P.epsg}.dxf`, L.join('\r\n'), 'application/dxf');
-      msg.textContent = (d.shift[0] || d.shift[1] ? `건물 위치를 지적에 맞춰 ${this.shiftText(d.shift)} 보정했습니다. ` : '') + `DXF를 저장했습니다. 좌표계 GRS80 TM ${d.P.name}(EPSG:${d.P.epsg}), 단위 m. 레이어: 구역계 ZONE, 필지 PARCEL, 지번 JIBUN, 건물 BUILDING, 노후 건물 BUILDING_OLD.`;
+      msg.textContent = (d.shift ? `건물 위치를 지적에 맞춰 보정했습니다(${this.shiftText(d.shift)}). ` : '') + `DXF를 저장했습니다. 좌표계 GRS80 TM ${d.P.name}(EPSG:${d.P.epsg}), 단위 m. 레이어: 구역계 ZONE, 필지 PARCEL, 지번 JIBUN, 건물 BUILDING, 노후 건물 BUILDING_OLD.`;
     } catch (e) {
       msg.textContent = 'DXF를 만들지 못했습니다: ' + e.message;
     }
