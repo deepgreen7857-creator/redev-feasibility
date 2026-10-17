@@ -592,17 +592,13 @@ function boot() {
   $('#btnReset').onclick = () => App.home();
   $('#homeCancel').onclick = () => $('#homeDialog').close();
   $('#homeReset').onclick = () => { $('#homeDialog').close(); App.fullReset(); };
-  $('#homeSaveReset').onclick = () => {
-    download(`${S.meta.name || '사업성검토'}.json`, JSON.stringify(S, null, 2), 'application/json');
+  $('#homeSaveReset').onclick = async () => {
     $('#homeDialog').close();
-    setTimeout(() => App.fullReset(), 300);
+    if (await PdfStore.save()) setTimeout(() => App.fullReset(), 300);
   };
-  $('#btnSave').onclick = () => download(`${S.meta.name || '사업성검토'}.json`, JSON.stringify(S, null, 2), 'application/json');
-  $('#btnOpen').onclick = async () => {
-    const text = await pickTextFile('.json,application/json');
-    if (!text) return;
-    try { App.replaceState(JSON.parse(text)); } catch { alert('파일을 읽을 수 없습니다. 이 도구에서 저장한 JSON 파일인지 확인하세요.'); }
-  };
+  // 저장은 PDF(요약·도면 + 숨긴 작업 데이터), 열기는 그 PDF 또는 예전 JSON
+  $('#btnSave').onclick = () => PdfStore.save();
+  $('#btnOpen').onclick = () => PdfStore.open();
   $('#btnPrint').onclick = () => {
     // 인쇄 시 모든 탭을 펼쳐서 보고서처럼 출력
     Object.keys(Tabs).forEach(t => { if (t !== 'area') Tabs[t].render(); });

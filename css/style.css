@@ -309,6 +309,8 @@ td.heat.base { outline: 2px solid var(--ink); outline-offset: -2px; font-weight:
 .export-box .inline-field { padding: 4px 0; }
 .export-box select { width: auto; padding: 4px 8px; }
 #printSheet { display: none; }
+.save-msg { font-size: .8rem; color: var(--muted); }
+.save-msg:empty { display: none; }
 .home-btn { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 700; padding: 6px 12px; border-radius: 7px; cursor: pointer; white-space: nowrap; }
 .home-btn span { font-size: 1.15em; line-height: 1; }
 .home-btn:hover { background: var(--accent); color: #fff; }
