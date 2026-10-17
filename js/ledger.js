@@ -96,7 +96,7 @@ const Ledger = {
       name: [String(t.bldNm || '').trim(), String(t.dongNm || '').trim()].filter(Boolean).join(' '),
       use, structure, structureName: t.strctCdNm || '', purpose: [t.mainPurpsCdNm, etc.trim()].filter(Boolean).join(' / '),
       year: aprDate ? +aprDate.slice(0, 4) : 0, aprDate,
-      floorArea: Math.round(num(t.totArea) * 10) / 10, floors: num(t.grndFlrCnt), basement: num(t.ugrndFlrCnt),
+      floorArea: Math.round(num(t.totArea) * 10) / 10, archArea: Math.round(num(t.archArea) * 10) / 10, floors: num(t.grndFlrCnt), basement: num(t.ugrndFlrCnt),
       units, families: num(t.fmlyCnt), needUnits: isApt && !units, noInfo: !aprDate,
       collective: String(t.regstrGbCd) === '2', dong: String(t.dongNm || '').trim(),
     };
@@ -153,6 +153,11 @@ const Ledger = {
           const mine = col.length === 1 ? us : us.filter(u => String(u.dongNm || '').trim() === r.dong);
           r.hoCount = mine.length;
           r.exposArea = Math.round(mine.reduce((a, u) => a + num(u.area), 0) * 10) / 10;
+          // 인천 조례: 지하층 세대가 있는 공동주택은 20년 / 호수밀도용 한 층 최대 호 수
+          r.resBasement = mine.some(u => u.flrGbCdNm === '지하' && /주택|다세대|연립|아파트/.test(String(u.mainPurpsCdNm || u.etcPurps || '')));
+          const perFloor = {};
+          mine.filter(u => u.flrGbCdNm !== '지하').forEach(u => { const f = num(u.flrNo); perFloor[f] = (perFloor[f] || 0) + 1; });
+          r.maxPerFloor = Math.max(0, ...Object.values(perFloor));
         });
       } catch (e) { unitErr.push(`: ${e.message}`); }
     }

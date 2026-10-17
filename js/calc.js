@@ -109,9 +109,31 @@ const Calc = {
   },
 
   limitYears(s, b) {
+    const c = s.criteria;
     const detached = b.use === '단독주택' || b.use === '다가구주택';
-    const strong = (b.structure === '철근콘크리트' || b.structure === '철골') && !(detached && s.criteria.detachedOther);
-    return strong ? s.criteria.rcYears : s.criteria.otherYears;
+    const apt = ['아파트', '연립주택', '다세대주택'].includes(b.use);
+    let strong = (b.structure === '철근콘크리트' || b.structure === '철골') && !(detached && c.detachedOther);
+    // 인천: 주거용 지하층(반지하 세대 등)이 있는 철근콘크리트 공동주택은 20년
+    if (strong && apt && c.basementRes20 && b.resBasement) strong = false;
+    return strong ? c.rcYears : c.otherYears;
+  },
+
+  // 호수밀도(동/1만㎡): 공동주택은 세대수가 가장 많은 층의 세대 수, 비주거는 건축면적 90㎡당 1동(소수점 절사), 그 외 1동
+  density(s, buildings) {
+    const site = this.siteArea(s);
+    if (!site || !buildings.length) return { value: NaN, exact: false };
+    let dong = 0, approx = 0;
+    for (const b of buildings) {
+      const apt = ['아파트', '연립주택', '다세대주택'].includes(b.use);
+      if (apt) {
+        if (num(b.maxPerFloor)) dong += num(b.maxPerFloor);
+        else { dong += 1; approx++; }        // 전유부가 없으면 1동으로 (과소 계산)
+      } else if (b.use === '근린생활시설' || b.use === '기타') {
+        if (num(b.archArea)) dong += Math.floor(num(b.archArea) / 90);
+        else { dong += 1; approx++; }
+      } else dong += 1;                       // 단독·다가구
+    }
+    return { value: dong / (site / 10000), dong, exact: approx === 0, approx };
   },
 
   aprParts(b) {
@@ -192,10 +214,12 @@ const Calc = {
     const lands = s.lands;
     const landArea = this.landTotal(s);
     const publicArea = lands.filter(l => l.ownerType === '국공유지').reduce((a, l) => a + num(l.area), 0);
-    const small = lands.filter(l => l.jimok === '대' && num(l.area) > 0 && num(l.area) < 90).length;
+    const lot = num(s.criteria.smallLot) || 90;
+    const small = lands.filter(l => l.jimok === '대' && num(l.area) > 0 && num(l.area) < lot).length;
     const owners = new Set(lands.map(l => (l.owner || '').trim()).filter(Boolean)).size;
+    const dens = this.density(s, bs);
     return {
-      year, base, soon1, soon3, req, needMore, reachDate,
+      year, base, soon1, soon3, req, needMore, reachDate, density: dens,
       count: bs.length, old, unknown, oldRatio: bs.length ? old / bs.length * 100 : NaN,
       area, oldArea, oldAreaRatio: area ? oldArea / area * 100 : NaN,
       detached, apartment,
@@ -212,13 +236,21 @@ const Calc = {
     const out = [];
     const has = sv.count > 0;
     if (s.meta.type === 'redevelopment') {
+      const o = c.redev.opt || { road: 40, small: 40, density: 60, oldArea: 60 };
+      const rl = (REGION_PRESETS[c.region] || {}).label || '조례';
       out.push({ label: '노후·불량건축물 비율 (동수 기준)', value: fmtPct(sv.oldRatio), need: `${fmt(c.redev.oldRatio, 1)}% 이상 (재정비촉진지구 50%)`, pass: has ? sv.oldRatio >= c.redev.oldRatio : null });
       out.push({ label: '구역 면적', value: `${fmt(site)}㎡`, need: `${fmt(c.redev.minArea)}㎡ 이상`, pass: site > 0 ? site >= c.redev.minArea : null });
-      // 서울시 조례 선택 요건: 아래 중 하나 이상 (주택접도율 40% 이하는 이 도구로 판단 불가)
+      // 선택 요건: 아래 중 하나 이상 (주택접도율은 도로 폭 자료가 없어 자동 판단 불가)
       const smallRatio = sv.landCount ? sv.small / sv.landCount * 100 : NaN;
-      out.push({ label: '[선택] 노후·불량건축물 연면적 비율', value: fmtPct(sv.oldAreaRatio), need: '60% 이상', pass: isFinite(sv.oldAreaRatio) ? sv.oldAreaRatio >= 60 : null });
-      out.push({ label: '[선택] 과소필지 비율 (90㎡ 미만 토지)', value: `${sv.small}필지 (${fmtPct(smallRatio)})`, need: '40% 이상', pass: isFinite(smallRatio) ? smallRatio >= 40 : null });
-      out.push({ label: '[선택] 주택접도율 · 호수밀도', value: '현장·도면 확인', need: '접도율 40% 이하 또는 호수밀도 60동/ha 이상', pass: null });
+      const d = sv.density;
+      out.push({ label: `[선택] 노후·불량건축물 연면적 비율 (${rl})`, value: fmtPct(sv.oldAreaRatio), need: `${o.oldArea}% 이상`, pass: isFinite(sv.oldAreaRatio) ? sv.oldAreaRatio >= o.oldArea : null });
+      out.push({ label: `[선택] 과소필지 비율 (${fmt(c.smallLot || 90)}㎡ 미만 대지)`, value: `${sv.small}필지 (${fmtPct(smallRatio)})`, need: `${o.small}% 이상`, pass: isFinite(smallRatio) ? smallRatio >= o.small : null });
+      out.push({
+        label: '[선택] 호수밀도 (동/1만㎡)',
+        value: isFinite(d.value) ? `${fmt(d.value, 1)} (${fmt(d.dong)}동)${d.exact ? '' : ` · 추정 – 전유부·건축면적 없는 ${d.approx}동은 1동으로 셈`}` : '–',
+        need: `${o.density} 이상`, pass: isFinite(d.value) ? d.value >= o.density : null,
+      });
+      out.push({ label: '[선택] 주택접도율', value: '현장·도면 확인', need: `${o.road}% 이하 (폭 4m 이상 도로에 4m 이상 접한 건축물 비율)`, pass: null });
     } else if (s.meta.type === 'reconstruction') {
       out.push({ label: '공동주택 준공 후 경과연수 (가장 최근 동)', value: isFinite(sv.aptMinAge) ? `${sv.aptMinAge}년` : '–', need: `${c.recon.minYears}년 이상`, pass: isFinite(sv.aptMinAge) ? sv.aptMinAge >= c.recon.minYears : null });
       const okScale = sv.apartment >= c.recon.minUnits || site >= c.recon.minArea;

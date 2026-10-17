@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=39">
+<link rel="stylesheet" href="css/style.css?v=40">
 </head>
 <body>
 
@@ -19,6 +19,7 @@
   <div class="brand"><span class="logo" aria-hidden="true">▦</span><span>정비사업 사업성 검토</span></div>
   <input class="proj-name" data-bind="meta.name" aria-label="사업명" placeholder="사업명">
   <div class="top-actions">
+    <button class="btn primary" id="btnAssume" title="용적률·분양가·공사비 등 가정값을 넣고 비례율·분담금을 바로 봅니다">사업성 가정값</button>
     <button class="btn ghost" id="btnSample">예시 불러오기</button>
     <button class="btn ghost" id="btnOpen" title="이 사이트에서 저장한 PDF(또는 예전 JSON)를 불러옵니다">파일 열기</button>
     <button class="btn ghost" id="btnSave" title="요약·도면이 담긴 PDF로 저장합니다. 이 PDF를 다시 열면 이어서 작업할 수 있습니다">파일 저장(PDF)</button>
@@ -38,6 +39,57 @@
     <button class="btn primary" id="homeSaveReset">저장하고 처음으로</button>
     <button class="btn danger-solid" id="homeReset">그냥 처음으로 (초기화)</button>
     <button class="btn" id="homeCancel">취소</button>
+  </div>
+</dialog>
+
+<dialog id="assumeDialog" class="home-dialog assume-dialog">
+  <h2>사업성 가정값</h2>
+  <p class="note">아직 확정되지 않은 값을 가정해 비례율·분담금을 미리 봅니다. 값을 바꾸면 아래 결과가 바로 바뀌고, <b>적용</b>을 누르면 분양수입·사업비 표가 이 값으로 채워집니다.</p>
+  <h4>건축 계획</h4>
+  <div class="form-grid three">
+    <label>용적률 (%)<input id="as_far" type="number" step="1"></label>
+    <label>계획연면적 배율<small>지하·공용 포함 연면적 ÷ 용적률 연면적</small><input id="as_gfaFactor" type="number" step="0.01"></label>
+    <label>주거 비율 (%)<small>나머지는 상가</small><input id="as_resRatio" type="number" step="0.1"></label>
+  </div>
+  <h4>평형 구성</h4>
+  <div class="form-grid three">
+    <label>59㎡ 비율 (%)<small>나머지는 84㎡</small><input id="as_mix59" type="number" step="1"></label>
+    <label>59㎡ 공급면적 (㎡)<input id="as_sup59" type="number" step="0.1"></label>
+    <label>84㎡ 공급면적 (㎡)<input id="as_sup84" type="number" step="0.1"></label>
+    <label>임대주택 비율 (세대 %)<input id="as_rentRatio" type="number" step="0.1"></label>
+    <label>임대 공급면적 (㎡)<input id="as_supRent" type="number" step="0.1"></label>
+    <label>조합원 수 (명)<small>분양 신청 예상</small><input id="as_members" type="number" step="1"></label>
+  </div>
+  <h4>분양가 (만원/평, 공급면적 기준)</h4>
+  <div class="form-grid three">
+    <label>일반분양가<input id="as_generalPrice" type="number" step="10"></label>
+    <label class="hl">조합원 분양가 비율 (일반분양가 대비 %)<input id="as_memberRatio" type="number" step="0.5"></label>
+    <label>조합원 분양가<small>비율 또는 금액 어느 쪽을 고쳐도 맞춰집니다</small><input id="as_memberPrice" type="number" step="10"></label>
+    <label>임대 인수가<input id="as_rentPrice" type="number" step="10"></label>
+    <label>상가 분양가<input id="as_shopPrice" type="number" step="10"></label>
+  </div>
+  <h4>사업비·종전자산</h4>
+  <div class="form-grid three">
+    <label>공사비 (만원/평, 계획연면적)<input id="as_conPrice" type="number" step="10"></label>
+    <label>기타 사업비 (공사비 대비 %)<small>설계·감리·금융·제세 등. 사업비 표에 세부 항목을 넣었다면 0</small><input id="as_etcPct" type="number" step="0.5"></label>
+    <label>현금청산·보상비 (억원)<input id="as_comp" type="number" step="1"></label>
+    <label>종전자산 보정배율<small>공시지가 합계 × 배율 ≈ 감정평가액</small><input id="as_priorMul" type="number" step="0.05"></label>
+  </div>
+  <div id="assumeOut" class="assume-out" aria-live="polite"></div>
+  <div class="dialog-actions">
+    <button class="btn primary" id="assumeApply">적용하고 결과 보기</button>
+    <button class="btn" id="assumeReset">기본 가정으로</button>
+    <button class="btn" id="assumeCancel">닫기</button>
+  </div>
+</dialog>
+
+<dialog id="fitDialog" class="home-dialog">
+  <h2>⚠ 지금 지적도와 맞지 않습니다</h2>
+  <p class="warn-box" id="fitText"></p>
+  <p class="note">지도의 지적선은 국토교통부 최신 연속지적도입니다. 이 구역계가 <b>옛 고시 도면을 옮긴 선</b>이거나, 고시 뒤 <b>분할·합병·지적재조사</b>로 경계가 바뀌면 이렇게 어긋납니다. 사이트 자료 오류가 아니니, 조서·면적을 쓰려면 필지 경계에 맞추세요.</p>
+  <div class="dialog-actions">
+    <button class="btn primary" id="fitSnap">필지 경계에 맞추기 (50% 기준)</button>
+    <button class="btn" id="fitKeep">이대로 두기</button>
   </div>
 </dialog>
 
@@ -215,17 +267,31 @@
   </div>
 
   <details class="card criteria">
-    <summary>판정 기준값 설정 <small>2026년 10월 기준 서울시 값입니다. 다른 지자체는 조례에 맞게 고치세요.</small></summary>
-    <p class="note">근거: 도시정비법 시행령 제2조·별표1, 서울시 도시및주거환경정비조례 제4조·제6조, 소규모주택정비법 시행령 제3조. 재개발·가로주택 노후도는 2024.3.19. 개정으로 2/3에서 60%로 완화되었습니다. 경기도는 조례로 재개발 노후도를 50%로 정하고 있습니다. 1989.1.24. 당시 무허가건축물(특정무허가건축물)도 노후도 산정에 포함됩니다(2025.6.4.~).</p>
+    <summary>판정 기준값 설정 <small id="critSummary">서울시 조례 기준</small></summary>
+    <div class="form-grid three">
+      <label>적용 지역 조례<small>구역 주소가 인천이면 자동으로 인천을 고릅니다</small>
+        <select id="regionSelect"><option value="seoul">서울특별시</option><option value="incheon">인천광역시</option></select></label>
+    </div>
+    <p class="note" id="regionLaw"></p>
+    <p class="note">근거: 도시정비법 시행령 제2조·별표1, 각 지자체 도시및주거환경정비조례, 소규모주택정비법 시행령 제3조. 재개발·가로주택 노후도는 2024.3.19. 개정으로 2/3에서 60%로 완화되었습니다. 경기도는 조례로 재개발 노후도를 50%로 정하고 있습니다. 1989.1.24. 당시 무허가건축물(특정무허가건축물)도 노후도 산정에 포함됩니다(2025.6.4.~).</p>
     <div class="form-grid three">
       <label>노후 판정: 철근콘크리트·철골 (년)<input data-bind="criteria.rcYears" data-type="number"></label>
       <label>노후 판정: 그 밖의 구조 (년)<input data-bind="criteria.otherYears" data-type="number"></label>
-      <label class="chk-label"><span><input type="checkbox" data-bind="criteria.detachedOther" data-rerender="1"> 단독·다가구주택은 구조와 관계없이 "그 밖의 구조" 연수 적용</span><small>서울시 조례 기준</small></label>
+      <label class="chk-label"><span><input type="checkbox" data-bind="criteria.detachedOther" data-rerender="1"> 단독·다가구주택은 구조와 관계없이 "그 밖의 구조" 연수 적용</span><small>서울·인천 조례</small></label>
+      <label class="chk-label"><span><input type="checkbox" data-bind="criteria.basementRes20" data-rerender="1"> 지하층에 세대가 있는 공동주택은 "그 밖의 구조" 연수 적용</span><small>인천시 조례 제3조 (전유부로 판단)</small></label>
+      <label>과소필지 기준 (㎡ 미만)<input data-bind="criteria.smallLot" data-type="number" data-rerender="1"></label>
     </div>
     <h4>재개발</h4>
     <div class="form-grid three">
       <label>노후도 기준 (%)<small>재정비촉진지구 50%, 경기도 50%</small><input data-bind="criteria.redev.oldRatio" data-type="number"></label>
-      <label>최소 구역 면적 (㎡)<small>서울시 조례. 재정비촉진지구 5천㎡</small><input data-bind="criteria.redev.minArea" data-type="number"></label>
+      <label>최소 구역 면적 (㎡)<small>재정비촉진지구 5천㎡</small><input data-bind="criteria.redev.minArea" data-type="number"></label>
+    </div>
+    <p class="note">선택 요건 – 아래 중 하나 이상 충족 (서울 40·40·60·60, 인천 50·30·50·50)</p>
+    <div class="form-grid three">
+      <label>주택접도율 (% 이하)<input data-bind="criteria.redev.opt.road" data-type="number" data-rerender="1"></label>
+      <label>과소필지 비율 (% 이상)<input data-bind="criteria.redev.opt.small" data-type="number" data-rerender="1"></label>
+      <label>호수밀도 (동/1만㎡ 이상)<input data-bind="criteria.redev.opt.density" data-type="number" data-rerender="1"></label>
+      <label>노후·불량 연면적 비율 (% 이상)<input data-bind="criteria.redev.opt.oldArea" data-type="number" data-rerender="1"></label>
     </div>
     <h4>재건축</h4>
     <div class="form-grid three">
@@ -348,15 +414,16 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=39"></script>
-<script src="js/util.js?v=39"></script>
-<script src="js/state.js?v=39"></script>
-<script src="js/calc.js?v=39"></script>
-<script src="js/map.js?v=39"></script>
-<script src="js/ledger.js?v=39"></script>
-<script src="js/pdfsave.js?v=39"></script>
-<script src="js/overlay.js?v=39"></script>
-<script src="js/export.js?v=39"></script>
-<script src="js/app.js?v=39"></script>
+<script src="js/config.js?v=40"></script>
+<script src="js/util.js?v=40"></script>
+<script src="js/state.js?v=40"></script>
+<script src="js/calc.js?v=40"></script>
+<script src="js/map.js?v=40"></script>
+<script src="js/ledger.js?v=40"></script>
+<script src="js/pdfsave.js?v=40"></script>
+<script src="js/overlay.js?v=40"></script>
+<script src="js/export.js?v=40"></script>
+<script src="js/assume.js?v=40"></script>
+<script src="js/app.js?v=40"></script>
 </body>
 </html>

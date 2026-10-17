@@ -158,7 +158,7 @@ const RefOverlay = {
       // 맞춘 도면의 축척 (도면 1px이 몇 m인지)
       const mPerPx = this.s * 40075016.7 * Math.cos(e.latlng.lat * Math.PI / 180) / (256 * Math.pow(2, this.Z0));
       const deg = ((this.th * 180 / Math.PI) % 360 + 360) % 360;
-      this.say(`맞췄습니다. 도면 1px ≈ ${fmt(mPerPx, 3)}m, 회전 ${fmt(deg > 180 ? deg - 360 : deg, 1)}°. 어긋나 보이면 기준점을 바꿔 다시 맞추세요. 이제 다각형 도구로 빨간 경계를 따라 그리고 <b>그린 구역을 필지에 맞추기</b>를 누르세요.`);
+      this.say(`맞췄습니다. 도면 1px ≈ ${fmt(mPerPx, 3)}m, 회전 ${fmt(deg > 180 ? deg - 360 : deg, 1)}°. 어긋나 보이면 기준점을 바꿔 다시 맞추세요. <b>겹친 도면이 옛 고시 도면이면 그 뒤 분할·합병·지적재조사로 지금 지적도와 경계가 다를 수 있습니다</b> – 지도의 지적선이 최신입니다. 이제 다각형 도구로 빨간 경계를 따라 그리고 <b>그린 구역을 필지에 맞추기</b>를 누르세요.`);
       setTimeout(() => { if (this.marks && this.step === 0) this.marks.clearLayers(); }, 6000);
     }
   },

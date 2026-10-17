@@ -168,6 +168,7 @@ const PdfStore = {
       if (MapView.map) MapView.load();
       App.go('overview');
       alert(`"${S.meta.name || file.name}" 작업을 불러왔습니다.`);
+      MapView.checkFit('저장된 구역계');
     } catch (e) {
       alert('파일을 열지 못했습니다: ' + e.message);
     }

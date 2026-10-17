@@ -45,11 +45,18 @@ const Auto = {
     try {
       const f = await VWorld.parcelAt(lat, lon);
       const addr = f && f.properties && f.properties.addr;
-      if (addr) { S.meta.location = addr + ' 일대'; App.update(); }
+      if (addr) { S.meta.location = addr + ' 일대'; this.region(addr); App.update(); }
     } catch (e) { console.warn('위치 조회 실패', e); }
+  },
+  // 주소가 인천·서울이면 그 지역 조례 기준으로 (직접 고른 경우 제외)
+  region(addr) {
+    if (S.criteria.regionManual) return;
+    const r = /^인천/.test(addr) ? 'incheon' : /^서울/.test(addr) ? 'seoul' : '';
+    if (r && r !== S.criteria.region) { applyRegion(S.criteria, r); bindInputs(); }
   },
   location(r) {
     if (!S.meta.locationManual) S.meta.location = r.label;
+    this.region(r.label || '');
     S.area.center = [r.lat, r.lon];
     S.area.zoom = r.precise ? 18 : 16;
     App.update();
@@ -405,6 +412,11 @@ const App = {
   },
 
   kpis() {
+    const rp = REGION_PRESETS[S.criteria.region];
+    const rs = $('#regionSelect');
+    if (rs) rs.value = S.criteria.region;
+    if ($('#critSummary')) $('#critSummary').textContent = `${rp ? rp.label : '사용자'} 조례 기준${S.criteria.regionManual ? ' (직접 선택)' : ''}`;
+    if ($('#regionLaw')) $('#regionLaw').textContent = rp ? `적용: ${rp.law}` : '';
     const sv = Calc.survey(S);
     const r = Calc.result(S);
     const site = Calc.siteArea(S);
@@ -731,6 +743,22 @@ function boot() {
     i.click();
   };
   $('#btnBaseToday').onclick = () => { S.criteria.baseDate = ''; App.update(true); };
+  Assume.bind();
+  $('#fitKeep').onclick = () => $('#fitDialog').close();
+  $('#fitSnap').onclick = async () => {
+    $('#fitDialog').close();
+    App.go('area');
+    await new Promise(r => setTimeout(r, 300));   // 지도가 그려진 뒤
+    const jb = $('#jibunMsg');
+    if (jb) jb.closest('details') && (jb.closest('details').open = true);
+    MapView.snapToParcels({ threshold: 0.5, fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked });
+  };
+  $('#regionSelect').onchange = e => {
+    applyRegion(S.criteria, e.target.value);
+    S.criteria.regionManual = true;
+    bindInputs();
+    App.update(true);
+  };
   $('#btnSurveyXlsx').onclick = saveSurveyXlsx;
   $('#btnSurveyPrint').onclick = printSurvey;
 

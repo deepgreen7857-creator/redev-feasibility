@@ -320,6 +320,17 @@ td.heat.base { outline: 2px solid var(--ink); outline-offset: -2px; font-weight:
 .warn-box { background: var(--bad-soft); border: 1px solid var(--bad); color: var(--ink); border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; font-size: .9rem; }
 .warn-box b { color: var(--bad); }
 .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.assume-dialog { max-width: 820px; max-height: calc(100vh - 32px); overflow-y: auto; }
+.assume-dialog h4 { margin: 14px 0 6px; }
+.assume-dialog label.hl { background: var(--accent-soft); border-radius: 8px; padding: 6px 8px; }
+.assume-out { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.as-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.as-grid > div { background: var(--bg); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+.as-grid span { font-size: .78rem; color: var(--muted); }
+.as-grid b { font-size: 1.05rem; }
+.as-grid em { font-style: normal; font-size: .75rem; color: var(--muted); }
+.as-grid .big b { font-size: 1.4rem; }
+.as-grid .good b { color: var(--good); } .as-grid .warn b { color: var(--warn); } .as-grid .bad b { color: var(--bad); }
 .btn.danger-solid { background: var(--bad); border-color: var(--bad); color: #fff; }
 .btn.danger-solid:hover { color: #fff; filter: brightness(1.08); }
 .map-home-btn { display: none !important; place-items: center; padding: 0 10px; height: 30px; background: #fff; font-weight: 700; color: #c2410c !important; text-decoration: none; cursor: pointer; font-size: 13px; }

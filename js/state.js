@@ -34,17 +34,45 @@ const FAR_BY_ZONING = {
   '준공업지역': { seoul: 400, max: 400 },
 };
 
+// 지역별 조례 기준 (재개발 선택 요건은 이 중 하나 이상 충족)
+// road: 주택접도율 % 이하, small: 과소필지 비율 % 이상, density: 호수밀도(동/1만㎡) 이상, oldArea: 노후 연면적 % 이상
+const REGION_PRESETS = {
+  seoul: {
+    label: '서울특별시', law: '서울시 도시및주거환경정비조례 제4조·제6조',
+    rcYears: 30, otherYears: 20, detachedOther: true, basementRes20: false, smallLot: 90,
+    redev: { oldRatio: 60, minArea: 10000, opt: { road: 40, small: 40, density: 60, oldArea: 60 } },
+  },
+  incheon: {
+    label: '인천광역시', law: '인천시 도시및주거환경정비조례(제7686호, 2025.12.31.) 제2조·제3조·제5조',
+    rcYears: 30, otherYears: 20, detachedOther: true, basementRes20: true, smallLot: 90,
+    redev: { oldRatio: 60, minArea: 10000, opt: { road: 50, small: 30, density: 50, oldArea: 50 } },
+  },
+};
+
 // 판정 기준값 (2026-10 기준 조사). 법령·조례에 따라 달라지므로 화면에서 편집 가능하게 둠.
 function defaultCriteria() {
   return {
+    region: 'seoul',       // 적용 중인 지역 기준 (주소가 인천이면 자동으로 인천)
+    regionManual: false,   // 사용자가 직접 고른 경우 자동 전환하지 않음
     baseDate: '',          // 노후도 판단 기준일 (비우면 오늘). 정비계획 입안 기준일 등
-    rcYears: 30,           // 도시정비법 시행령 제2조제3항(20~30년 범위 조례 위임), 서울시 조례 제4조: 철근콘크리트 등 30년
+    rcYears: 30,           // 도시정비법 시행령 제2조제3항(20~30년 범위 조례 위임), 서울·인천 조례: 철근콘크리트 등 30년
     otherYears: 20,        // 그 밖의 구조 20년
-    detachedOther: true,   // 서울시 조례: 단독주택은 구조와 관계없이 20년 (철근콘크리트 30년 항목에서 제외)
-    redev: { oldRatio: 60, minArea: 10000 },             // 시행령 별표1 제2호(2024.3.19. 2/3→60%), 면적은 서울시 조례 제6조
+    detachedOther: true,   // 조례: 단독주택은 구조와 관계없이 20년 (철근콘크리트 30년 항목에서 제외)
+    basementRes20: false,  // 인천 조례: 주거용 지하층이 있는 철근콘크리트 공동주택은 30년 항목에서 제외(20년)
+    smallLot: 90,          // 과소필지 기준 면적(㎡ 미만). 서울 90㎡, 인천은 건축조례 분할제한면적(주거지역 90㎡)
+    redev: { oldRatio: 60, minArea: 10000, opt: { road: 40, small: 40, density: 60, oldArea: 60 } },
     recon: { minYears: 30, minUnits: 300, minArea: 10000 }, // 시행령 별표1 제3호
     garo: { maxArea: 10000, oldRatio: 60, minDetached: 10, minApartment: 20, minMixed: 20 }, // 소규모주택정비법 시행령 제3조(2024.3.19. 2/3→60%)
   };
+}
+
+// 지역 기준을 적용 (기준일 등 지역과 무관한 값은 유지)
+function applyRegion(c, region) {
+  const p = REGION_PRESETS[region];
+  if (!p) return;
+  c.region = region;
+  ['rcYears', 'otherYears', 'detachedOther', 'basementRes20', 'smallLot'].forEach(k => { c[k] = p[k]; });
+  c.redev = JSON.parse(JSON.stringify(p.redev));
 }
 
 function cost(group, name, basis, value) {
@@ -101,6 +129,7 @@ function defaultState() {
     members: [],
     exposUnits: [],   // 건축물대장 전유부 호별 목록 (엑셀 조서 시트용)
     sens: { range: 20, step: 10 },
+    assume: null,     // 사업성 가정값 대화창에 마지막으로 넣은 값
   };
 }
 

@@ -455,6 +455,40 @@ const MapView = {
     S.area.mode = 'drawn';
     this.save();
     $('#jibunMsg').textContent = `구역계 파일을 불러왔습니다 (${fmt(turf.area(merged))}㎡). 필지 경계에 맞추려면 "그린 구역을 필지에 맞추기"를 누르세요.`;
+    this.checkFit('불러온 구역계');
+  },
+
+  // 구역계가 현재 지적 경계와 얼마나 맞는지 확인하고, 많이 어긋나면 먼저 알림
+  // (옛 고시 도면을 옮긴 선 등은 필지를 가로지르므로, 사이트 지적도가 틀린 것으로 오해하지 않게)
+  async checkFit(what = '구역계') {
+    const zone = S.area.geojson;
+    if (!zone || !VWorld.enabled) return;
+    let fs;
+    try { fs = await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${turf.bbox(zone).join(',')})`, 20); }
+    catch (e) { return; }
+    const zA = turf.area(zone);
+    let dev = 0, cut = 0, roadCut = 0;
+    const cutList = [];
+    for (let i = 0; i < fs.length; i++) {
+      if (i % 200 === 199) await new Promise(r => setTimeout(r));
+      const f = fs[i], A = turf.area(f);
+      if (!A) continue;
+      let ratio;
+      try { const x = turf.intersect(f, zone); ratio = x ? turf.area(x) / A : 0; } catch (e) { continue; }
+      if (ratio <= 0.02 || ratio >= 0.98) continue;
+      const sp = splitJibun(f.properties.jibun);
+      // 도로·구거·하천은 경계선이 가운데를 지나는 일이 흔해서 따로 셈
+      if (['도', '구', '천'].includes(sp.jimok)) { roadCut++; continue; }
+      dev += Math.min(ratio, 1 - ratio) * A;
+      if (ratio > 0.15 && ratio < 0.85) { cut++; if (cutList.length < 8) cutList.push(`${sp.no}(${Math.round(ratio * 100)}%)`); }
+    }
+    const pct = zA ? dev / zA * 100 : 0;
+    if (pct < 2 && cut < 10) return;
+    const d = $('#fitDialog');
+    $('#fitText').innerHTML = `${what}이 지금 지적도(국토교통부 브이월드 연속지적도)의 필지 경계와 <b>맞지 않습니다</b>.<br>`
+      + `필지를 가로지르는 곳 <b>${fmt(cut)}필지</b>(도로·구거 제외), 어긋난 면적 약 <b>${fmt(dev)}㎡ (구역의 ${fmt(pct, 1)}%)</b>.`
+      + (cutList.length ? `<br><small>예: ${cutList.map(esc).join(', ')}${cut > cutList.length ? ' 등' : ''}</small>` : '');
+    if (!d.open) d.showModal();
   },
 
   // 선택한 필지들을 합쳐 구역계로
