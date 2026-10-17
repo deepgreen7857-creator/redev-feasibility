@@ -234,7 +234,8 @@ const Export = {
       el(`<path d="${path(b.rings)}" fill="${fill}" fill-opacity="${b.inZone ? 1 : 0.45}" stroke="#555" stroke-width="${0.08 * u}" fill-rule="evenodd"/>`);
     });
     // 필지 경계
-    d.parcels.forEach(p => el(`<path d="${path(p.rings)}" fill="none" stroke="${p.inZone ? '#333' : '#aaa'}" stroke-width="${(p.inZone ? 0.15 : 0.1) * u}"/>`));
+    // 구역 밖 필지선도 건물과 구분되게 충분히 진하게
+    d.parcels.forEach(p => el(`<path d="${path(p.rings)}" fill="none" stroke="${p.inZone ? '#222' : '#777'}" stroke-width="${(p.inZone ? 0.18 : 0.14) * u}"/>`));
     // 구역계
     el(`<path d="${path(d.zone)}" fill="none" stroke="#d40000" stroke-width="${0.6 * u}" stroke-linejoin="round"/>`);
     // 지번 (도면에서 너무 작은 필지는 생략)
@@ -292,8 +293,8 @@ const Export = {
     line('범례', 2.8, 700);
     const legend = [
       ['line', '#d40000', 0.6, '구역계'],
-      ['line', '#333', 0.15, '필지 경계 (구역 내)'],
-      ['line', '#aaa', 0.1, '필지 경계 (구역 외)'],
+      ['line', '#222', 0.18, '필지 경계 (구역 내)'],
+      ['line', '#777', 0.14, '필지 경계 (구역 외)'],
       ['box', '#f2a48f', 0, '노후·불량건축물'],
       ['box', '#c9d3e6', 0, '그 밖의 건축물'],
       ['box', '#e2e2e2', 0, '사용승인일 정보 없음'],

@@ -244,7 +244,7 @@ const MapView = {
       if (VWorld.enabled && window.turf) {
         const pt = turf.pointOnFeature(gj).geometry.coordinates;
         Auto.zoning(pt[1], pt[0], turf.bbox(gj));
-        Auto.locationFromParcel(pt[1], pt[0]);
+        Auto.locationFromParcel(pt[1], pt[0], true);
       }
     }
     App.update(true);

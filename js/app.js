@@ -39,9 +39,9 @@ const Auto = {
       App.update();
     } catch (e) { console.warn('용도지역 조회 실패', e); }
   },
-  // 주소 검색 없이 구역만 그린 경우: 구역 안 필지 주소로 "○○동 123 일대"
-  async locationFromParcel(lat, lon) {
-    if (!VWorld.enabled || S.meta.locationManual || S.meta.location) return;
+  // 구역 안 필지 주소로 "○○동 123 일대". force: 구역을 새로 그렸을 때 (이전 검색 위치를 덮어씀)
+  async locationFromParcel(lat, lon, force) {
+    if (!VWorld.enabled || S.meta.locationManual || (S.meta.location && !force)) return;
     try {
       const f = await VWorld.parcelAt(lat, lon);
       const addr = f && f.properties && f.properties.addr;
