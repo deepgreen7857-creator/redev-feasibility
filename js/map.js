@@ -554,6 +554,16 @@ const MapView = {
       if (inHole.length) merged = unionAll([merged, ...inHole]);
     }
 
+    // 본 구역과 떨어진 100㎡ 미만 자투리 조각은 뺌
+    if (merged.geometry.type === 'MultiPolygon') {
+      const ps = merged.geometry.coordinates.map(c => ({ c, a: turf.area(turf.polygon(c)) }));
+      const keep = ps.filter(p => p.a >= 100), drop = ps.filter(p => p.a < 100);
+      if (keep.length && drop.length) {
+        drop.forEach(p => report.push({ input: '', result: '경계 제외', jibun: '', jimok: '', area: Math.round(p.a * 10) / 10, note: '본 구역과 떨어진 자투리 조각이라 뺌' }));
+        merged = keep.length === 1 ? turf.polygon(keep[0].c) : turf.multiPolygon(keep.map(p => p.c));
+      }
+    }
+
     // 붙어 있는 필지 사이에 생기는 아주 작은 틈(10㎡ 미만 구멍)은 메움
     const g = merged.geometry;
     const fill = poly => [poly[0], ...poly.slice(1).filter(h => turf.area(turf.polygon([h])) >= 10)];
