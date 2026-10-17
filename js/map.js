@@ -92,7 +92,8 @@ const MapView = {
         layers: 'lp_pa_cbnd_bubun,lp_pa_cbnd_bonbun',
         styles: 'lp_pa_cbnd_bubun_line,lp_pa_cbnd_bonbun_line',
         format: 'image/png', transparent: true, version: '1.3.0',
-        minZoom: 16, maxZoom: 19, key: k, domain: VWorld.domain,
+        // WMS는 domain 값을 함께 보내면 INCORRECT_KEY로 거절됨. 브라우저가 보내는 Referer로 확인함.
+        minZoom: 16, maxZoom: 19, key: k,
       });
       base.addTo(this.map);
       cadastral.addTo(this.map);
