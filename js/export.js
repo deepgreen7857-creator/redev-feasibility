@@ -187,7 +187,10 @@ const Export = {
         const b = search(nb, G, [[6, 2], [1, 0.5], [0.25, 0.25]], pen);
         cellShift.set(key, [b.dx, b.dy]);
       }
-      return cellShift.get(key);
+      // 3) 건물 하나씩: 블록 보정값에서 2.5m 안에서 자기 필지에 가장 잘 들어가는 위치로 미세 조정
+      const C0 = cellShift.get(key);
+      const own = search([i], C0, [[2.5, 0.5], [0.5, 0.25]], (dx, dy) => 0.04 * Math.hypot(dx - C0[0], dy - C0[1]));
+      return [own.dx, own.dy];
     });
   },
 

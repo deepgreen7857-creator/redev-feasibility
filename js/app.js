@@ -479,6 +479,17 @@ function boot() {
   $('#btnGeojson').onclick = () => MapView.exportGeoJSON();
   $('#btnPick').onclick = () => MapView.setPicking(!MapView.picking);
   $('#btnImportArea').onclick = () => MapView.importArea();
+  // 지도에서 불러온 필지·건축물만 지움 (직접 입력한 행은 유지)
+  $('#btnClearParcels').onclick = () => {
+    const n = S.lands.filter(l => l.pnu).length, m = S.buildings.filter(b => b.auto).length;
+    if (!n && !m) { alert('지도에서 불러온 필지가 없습니다.'); return; }
+    if (!confirm(`지도에서 불러온 필지 ${n}개와 건축물 ${m}동을 조서에서 지울까요? 직접 입력한 행은 그대로 둡니다.`)) return;
+    S.lands = S.lands.filter(l => !l.pnu);
+    S.buildings = S.buildings.filter(b => !b.auto);
+    MapView.drawParcels();
+    $('#pickMsg').textContent = '불러온 필지와 건축물을 지웠습니다. 필지 선택을 켜고 다시 고르거나, 구역 안 필지·건축물 불러오기를 누르세요.';
+    App.update(true);
+  };
   $('#btnPdf').onclick = () => Export.pdf($('#exportPaper').value);
   $('#btnDxf').onclick = () => Export.dxf();
 
