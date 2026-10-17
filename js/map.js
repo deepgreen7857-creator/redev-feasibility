@@ -144,18 +144,18 @@ const MapView = {
       return;
     }
     const a = S.area;
-    this.map = L.map('map', { maxZoom: 19 }).setView(a.center, a.zoom);
+    this.map = L.map('map', { maxZoom: 21 }).setView(a.center, a.zoom);
 
     const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 21, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap contributors',
     });
     if (VWorld.enabled) {
       const k = VWorld.key;
       const attr = '&copy; <a href="https://www.vworld.kr">VWorld</a>';
-      const base = L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Base/{z}/{y}/{x}.png`, { minZoom: 6, maxZoom: 19, attribution: attr });
+      const base = L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Base/{z}/{y}/{x}.png`, { minZoom: 6, maxZoom: 21, maxNativeZoom: 19, attribution: attr });
       const sat = L.layerGroup([
-        L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Satellite/{z}/{y}/{x}.jpeg`, { minZoom: 6, maxZoom: 19, attribution: attr }),
-        L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Hybrid/{z}/{y}/{x}.png`, { minZoom: 6, maxZoom: 19 }),
+        L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Satellite/{z}/{y}/{x}.jpeg`, { minZoom: 6, maxZoom: 21, maxNativeZoom: 19, attribution: attr }),
+        L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Hybrid/{z}/{y}/{x}.png`, { minZoom: 6, maxZoom: 21, maxNativeZoom: 19 }),
       ]);
       const cadastral = L.tileLayer.wms('https://api.vworld.kr/req/wms', {
         // 기본 스타일은 주황 경계선 + 지번 표시. _line 스타일은 연노랑이라 배경지도 위에서 안 보임.
@@ -163,7 +163,7 @@ const MapView = {
         styles: 'lp_pa_cbnd_bubun',
         format: 'image/png', transparent: true, version: '1.3.0',
         // WMS는 domain 값을 함께 보내면 INCORRECT_KEY로 거절됨. 브라우저가 보내는 Referer로 확인함.
-        minZoom: 16, maxZoom: 19, key: k,
+        minZoom: 16, maxZoom: 21, key: k,
       });
       base.addTo(this.map);
       cadastral.addTo(this.map);
@@ -176,6 +176,38 @@ const MapView = {
     } else {
       osm.addTo(this.map);
     }
+
+    // 전체 화면 버튼 (작은 필지를 고르기 쉽게)
+    const FullBtn = L.Control.extend({
+      options: { position: 'topleft' },
+      onAdd: () => {
+        const b = L.DomUtil.create('a', 'leaflet-bar map-full-btn');
+        b.href = '#'; b.title = '지도 크게 보기 (Esc로 닫기)'; b.textContent = '⛶';
+        L.DomEvent.on(b, 'click', e => { L.DomEvent.stop(e); this.toggleFull(); });
+        return b;
+      },
+    });
+    this.map.addControl(new FullBtn());
+    if (VWorld.enabled) {
+      const PickBtn = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd: () => {
+          const b = L.DomUtil.create('a', 'leaflet-bar map-pick-btn');
+          b.href = '#'; b.id = 'mapPickBtn';
+          L.DomEvent.on(b, 'click', e => { L.DomEvent.stop(e); this.setPicking(!this.picking); });
+          return b;
+        },
+      });
+      this.map.addControl(new PickBtn());
+      // 전체 화면에서도 결과가 보이게 지도 안 알림
+      const Msg = L.Control.extend({ options: { position: 'bottomleft' }, onAdd: () => L.DomUtil.create('div', 'map-msg') });
+      this.map.addControl(new Msg());
+      const mm = $('#map .map-msg'), src = $('#pickMsg');
+      new MutationObserver(() => { mm.textContent = src.textContent; mm.hidden = !src.textContent; }).observe(src, { childList: true, characterData: true, subtree: true });
+      mm.hidden = true;
+      $('#mapPickBtn').textContent = '필지 선택';
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#map').classList.contains('map-full')) this.toggleFull(); });
 
     this.parcels = L.featureGroup().addTo(this.map);
     this.items = new L.FeatureGroup().addTo(this.map);
@@ -288,9 +320,18 @@ const MapView = {
     }
   },
 
+  toggleFull() {
+    const el = $('#map');
+    const on = el.classList.toggle('map-full');
+    document.body.classList.toggle('map-full-open', on);
+    setTimeout(() => this.map.invalidateSize(), 50);
+  },
+
   setPicking(on) {
     this.picking = on;
     if (this.map) this.map.getContainer().classList.toggle('picking', on);
+    const pb = $('#mapPickBtn');
+    if (pb) { pb.textContent = on ? '필지 선택 중 (끄기)' : '필지 선택'; pb.classList.toggle('on', on); }
     App.update(true);
   },
 

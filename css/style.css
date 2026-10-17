@@ -230,6 +230,15 @@ td.refund { color: var(--good); font-weight: 700; }
 .map { height: 560px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface-2); z-index: 0; }
 .map-error { padding: 24px; color: var(--muted); }
 .map.picking, .map.picking .leaflet-interactive { cursor: crosshair; }
+.map { height: max(560px, calc(100vh - 230px)); }
+.map.map-full { position: fixed; inset: 0; height: 100vh; width: 100vw; z-index: 3000; border-radius: 0; border: none; }
+body.map-full-open { overflow: hidden; }
+.map-full-btn { display: grid !important; place-items: center; width: 30px; height: 30px; background: #fff; font-size: 18px; color: #333 !important; text-decoration: none; cursor: pointer; }
+.map-full .map-full-btn { background: var(--accent); color: #fff !important; }
+.map-pick-btn { display: block; padding: 6px 12px; background: #fff; color: #333 !important; font-weight: 700; font-size: 13px; text-decoration: none; cursor: pointer; }
+.map-pick-btn.on { background: #c2410c; color: #fff !important; }
+.map-msg { background: rgba(255,255,255,.95); color: #222; padding: 6px 10px; border-radius: 6px; font-size: 13px; max-width: 420px; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+.map-msg[hidden] { display: none; }
 .pick-box { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
 .pick-box .btn { margin: 4px 4px 0 0; }
 .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
