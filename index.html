@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>정비사업 사업성 검토</title>
+<meta name="description" content="재건축·재개발·가로주택정비사업의 구역 요건, 비례율, 조합원 분담금을 추정해 보는 도구">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="logo" aria-hidden="true">▦</span><span>정비사업 사업성 검토</span></div>
+  <input class="proj-name" data-bind="meta.name" aria-label="사업명" placeholder="사업명">
+  <div class="top-actions">
+    <button class="btn ghost" id="btnSample">예시 불러오기</button>
+    <button class="btn ghost" id="btnOpen">파일 열기</button>
+    <button class="btn ghost" id="btnSave">파일 저장</button>
+    <button class="btn ghost" id="btnPrint">인쇄·PDF</button>
+    <button class="btn ghost danger" id="btnReset">새로 시작</button>
+  </div>
+</header>
+
+<section class="kpis" id="kpis" aria-label="주요 지표"></section>
+
+<nav class="tabs" id="tabs" aria-label="검토 단계">
+  <a href="#overview" data-tab="overview"><b>1</b>사업 개요</a>
+  <a href="#area" data-tab="area"><b>2</b>구역계</a>
+  <a href="#survey" data-tab="survey"><b>3</b>조서·요건</a>
+  <a href="#revenue" data-tab="revenue"><b>4</b>분양수입</a>
+  <a href="#cost" data-tab="cost"><b>5</b>사업비</a>
+  <a href="#result" data-tab="result"><b>6</b>비례율·분담금</a>
+  <a href="#sensitivity" data-tab="sensitivity"><b>7</b>민감도</a>
+</nav>
+
+<main>
+
+<!-- 1. 사업 개요 -->
+<section class="panel" id="tab-overview">
+  <h2>사업 개요</h2>
+  <p class="lead">사업 유형과 건축 계획을 정하면, 이후 단계에서 요건 검토와 사업비 계산에 그대로 쓰입니다. 처음이라면 위의 <b>예시 불러오기</b>로 전체 흐름을 먼저 둘러보세요.</p>
+
+  <div class="type-cards">
+    <label class="type-card">
+      <input type="radio" name="ptype" value="redevelopment" data-bind="meta.type" data-rerender="1">
+      <span class="tc-body"><strong>재개발</strong><span>노후·불량건축물이 밀집하고 도로 등 기반시설이 열악한 지역을 정비합니다.</span><em>도시 및 주거환경정비법</em></span>
+    </label>
+    <label class="type-card">
+      <input type="radio" name="ptype" value="reconstruction" data-bind="meta.type" data-rerender="1">
+      <span class="tc-body"><strong>재건축</strong><span>기반시설은 양호하지만 노후된 공동주택(아파트 등)을 다시 짓습니다.</span><em>도시 및 주거환경정비법</em></span>
+    </label>
+    <label class="type-card">
+      <input type="radio" name="ptype" value="garo" data-bind="meta.type" data-rerender="1">
+      <span class="tc-body"><strong>가로주택정비사업</strong><span>도로로 둘러싸인 1만㎡ 미만 가로구역에서 소규모로 주거환경을 개선합니다.</span><em>빈집 및 소규모주택 정비에 관한 특례법</em></span>
+    </label>
+  </div>
+
+  <div class="form-grid">
+    <label>위치 (주소)<input data-bind="meta.location" placeholder="예: 서울특별시 ○○구 ○○동 123 일대"></label>
+    <label>용도지역<select data-bind="meta.zoning" id="zoningSelect"></select></label>
+  </div>
+
+  <h3>건축 계획</h3>
+  <div class="form-grid three">
+    <label>계획 용적률 (%)<input data-bind="plan.far" data-type="number" inputmode="decimal"></label>
+    <label>전체 연면적 배율<small>지상 연면적 대비 지하·주차장 포함 배율</small><input data-bind="plan.gfaFactor" data-type="number" inputmode="decimal"></label>
+    <label>계획 연면적 직접 입력 (㎡)<small>입력하면 추정값 대신 사용</small><input data-bind="plan.gfaManual" data-type="number" inputmode="decimal"></label>
+  </div>
+  <div class="stat-row" id="planStats"></div>
+
+  <h3>메모</h3>
+  <textarea data-bind="meta.memo" rows="3" placeholder="검토 배경, 가정, 출처 등을 적어 두세요."></textarea>
+</section>
+
+<!-- 2. 구역계 -->
+<section class="panel" id="tab-area" hidden>
+  <h2>구역계 설정</h2>
+  <p class="lead">지도 왼쪽 위의 <b>다각형</b>(또는 사각형) 도구로 사업 구역을 그리면 면적이 자동으로 계산됩니다. 다시 그리면 이전 구역계를 대체합니다.</p>
+  <form class="search" id="searchForm">
+    <input id="searchInput" placeholder="주소·동 이름으로 지도 이동 (예: 성북구 장위동)">
+    <button class="btn" type="submit">검색</button>
+  </form>
+  <ul class="search-results" id="searchResults"></ul>
+  <div class="area-layout">
+    <div id="map" class="map"></div>
+    <aside class="card area-side">
+      <h3>적용할 구역 면적</h3>
+      <label class="radio"><input type="radio" name="amode" value="drawn" data-bind="area.mode"> 지도에서 그린 면적 <b id="drawnArea"></b></label>
+      <label class="radio"><input type="radio" name="amode" value="lands" data-bind="area.mode"> 토지조서 면적 합계 <b id="landsArea"></b></label>
+      <label class="radio"><input type="radio" name="amode" value="manual" data-bind="area.mode"> 직접 입력</label>
+      <input data-bind="area.manualArea" data-type="number" inputmode="decimal" placeholder="면적 (㎡)">
+      <div class="big-stat"><span>적용 면적</span><strong id="siteArea"></strong></div>
+      <button class="btn small" id="btnGeojson">구역계 GeoJSON 내보내기</button>
+      <p class="note">지도에서 그린 면적은 측량 면적이 아닙니다. 정확한 면적은 지적도·토지조서로 확인하세요.</p>
+    </aside>
+  </div>
+</section>
+
+<!-- 3. 조서·요건 -->
+<section class="panel" id="tab-survey" hidden>
+  <h2>토지·건축물 조서와 요건 검토</h2>
+  <p class="lead">조서를 입력하거나 엑셀에서 CSV로 저장해 불러오면, 노후도와 사업 유형별 요건을 자동으로 판단합니다.</p>
+
+  <div class="results-grid">
+    <div class="card"><h3>노후도 분석</h3><div id="oldStats" class="stat-list"></div></div>
+    <div class="card"><h3 id="reqTitle">요건 검토</h3><ul id="reqList" class="req-list"></ul></div>
+  </div>
+
+  <details class="card criteria">
+    <summary>판정 기준값 설정 <small>법령·조례에 따라 다르므로 관할 지자체 기준으로 확인·수정하세요</small></summary>
+    <div class="form-grid three">
+      <label>노후 판정: 철근콘크리트·철골 (년)<input data-bind="criteria.rcYears" data-type="number"></label>
+      <label>노후 판정: 그 밖의 구조 (년)<input data-bind="criteria.otherYears" data-type="number"></label>
+    </div>
+    <h4>재개발</h4>
+    <div class="form-grid three">
+      <label>노후도 기준 (%)<input data-bind="criteria.redev.oldRatio" data-type="number"></label>
+      <label>최소 구역 면적 (㎡)<input data-bind="criteria.redev.minArea" data-type="number"></label>
+    </div>
+    <h4>재건축</h4>
+    <div class="form-grid three">
+      <label>준공 후 경과연수 (년)<input data-bind="criteria.recon.minYears" data-type="number"></label>
+      <label>최소 세대수<input data-bind="criteria.recon.minUnits" data-type="number"></label>
+      <label>또는 최소 부지면적 (㎡)<input data-bind="criteria.recon.minArea" data-type="number"></label>
+    </div>
+    <h4>가로주택정비사업</h4>
+    <div class="form-grid three">
+      <label>가로구역 면적 상한 (㎡ 미만)<input data-bind="criteria.garo.maxArea" data-type="number"></label>
+      <label>노후도 기준 (%)<input data-bind="criteria.garo.oldRatio" data-type="number"></label>
+      <label>단독주택만 있을 때 (호 이상)<input data-bind="criteria.garo.minDetached" data-type="number"></label>
+      <label>공동주택만 있을 때 (세대 이상)<input data-bind="criteria.garo.minApartment" data-type="number"></label>
+      <label>섞여 있을 때 합계 (채 이상)<input data-bind="criteria.garo.minMixed" data-type="number"></label>
+    </div>
+  </details>
+
+  <div class="section-head">
+    <h3>토지조서</h3>
+    <div class="btns">
+      <button class="btn small ghost" data-csv="lands" data-act="template">CSV 양식</button>
+      <button class="btn small ghost" data-csv="lands" data-act="import">CSV 불러오기</button>
+      <button class="btn small ghost" data-csv="lands" data-act="export">CSV 내보내기</button>
+    </div>
+  </div>
+  <div id="landsTable"></div>
+
+  <div class="section-head">
+    <h3>건축물조서</h3>
+    <div class="btns">
+      <button class="btn small ghost" data-csv="buildings" data-act="template">CSV 양식</button>
+      <button class="btn small ghost" data-csv="buildings" data-act="import">CSV 불러오기</button>
+      <button class="btn small ghost" data-csv="buildings" data-act="export">CSV 내보내기</button>
+    </div>
+  </div>
+  <div id="buildingsTable"></div>
+</section>
+
+<!-- 4. 분양수입 -->
+<section class="panel" id="tab-revenue" hidden>
+  <h2>분양수입 (종후자산)</h2>
+  <p class="lead">평형별 세대수, 공급면적, 평당 분양가를 입력합니다. 합계가 <b>종후자산 총액</b>이 됩니다. 임대주택은 인수가격을 평당 단가로 환산해 넣으세요.</p>
+  <div id="salesTable"></div>
+  <div class="stat-row" id="revStats"></div>
+</section>
+
+<!-- 5. 사업비 -->
+<section class="panel" id="tab-cost" hidden>
+  <h2>총사업비</h2>
+  <p class="lead">항목마다 산정 방식을 고를 수 있습니다. 공사비는 <b>평당 단가 × 계획 연면적</b>(<span id="gfaRef"></span>)으로, 설계·감리비 등은 공사비 대비 비율로 넣는 것이 일반적입니다.</p>
+  <div id="costTable"></div>
+  <div class="cost-summary">
+    <div class="card"><h3>항목군별 사업비</h3><div id="costGroups" class="bars"></div></div>
+  </div>
+</section>
+
+<!-- 6. 비례율·분담금 -->
+<section class="panel" id="tab-result" hidden>
+  <h2>비례율과 조합원 분담금</h2>
+
+  <div class="results-grid">
+    <div class="card">
+      <h3>종전자산 총액</h3>
+      <label class="radio"><input type="radio" name="pmode" value="estimate" data-bind="prior.mode"> 공시지가 기준 추정</label>
+      <div class="inline-field">공시지가 합계 <b id="officialSum"></b> × 보정배율 <input data-bind="prior.multiplier" data-type="number" inputmode="decimal" class="short"></div>
+      <label class="radio"><input type="radio" name="pmode" value="members" data-bind="prior.mode"> 아래 조합원 종전자산 합계</label>
+      <label class="radio"><input type="radio" name="pmode" value="manual" data-bind="prior.mode"> 감정평가액 직접 입력 (억원)</label>
+      <input data-bind="prior.manual" data-type="number" data-scale="10000" inputmode="decimal" placeholder="종전자산 총액 (억원)">
+      <p class="note">보정배율은 공시지가 대비 감정평가액 수준의 가정치입니다. 감정평가 결과가 나오면 직접 입력으로 바꾸세요.</p>
+    </div>
+    <div class="card ratio-card">
+      <h3>비례율</h3>
+      <div class="ratio-big" id="ratioBig"></div>
+      <div class="formula" id="ratioFormula"></div>
+    </div>
+  </div>
+
+  <h3>조합원별 분담금</h3>
+  <p class="lead small">권리가액 = 종전자산 평가액 × 비례율 · 분담금 = 조합원 분양가 − 권리가액 (음수면 환급)</p>
+  <div id="membersTable"></div>
+</section>
+
+<!-- 7. 민감도 -->
+<section class="panel" id="tab-sensitivity" hidden>
+  <h2>민감도 분석</h2>
+  <p class="lead">공사비와 일반분양가가 바뀔 때 비례율이 어떻게 달라지는지 봅니다.</p>
+  <div class="form-grid three">
+    <label>변동 범위 (±%)<select data-bind="sens.range" data-type="number"><option value="10">10</option><option value="20">20</option><option value="30">30</option></select></label>
+    <label>간격 (%)<select data-bind="sens.step" data-type="number"><option value="5">5</option><option value="10">10</option></select></label>
+  </div>
+  <div class="card">
+    <h3>비례율 표 <small>행: 공사비 변동 · 열: 일반분양가 변동</small></h3>
+    <div id="sensGrid" class="table-wrap"></div>
+    <div class="legend"><span class="sw good"></span>100% 이상 <span class="sw warn"></span>90~100% <span class="sw bad"></span>90% 미만</div>
+  </div>
+  <div class="card">
+    <h3>일반분양가 변동에 따른 비례율</h3>
+    <div class="chart-box"><canvas id="sensChart" aria-label="민감도 차트"></canvas></div>
+  </div>
+</section>
+
+</main>
+
+<footer class="disclaimer">
+  이 도구의 결과는 입력한 가정에 따른 추정치이며, 실제 비례율과 분담금은 감정평가·관리처분계획에 따라 달라집니다. 판정 기준값은 법령과 관할 지자체 조례를 반드시 확인하세요.
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="js/util.js"></script>
+<script src="js/state.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/map.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
