@@ -89,8 +89,9 @@ const MapView = {
         L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Hybrid/{z}/{y}/{x}.png`, { minZoom: 6, maxZoom: 19 }),
       ]);
       const cadastral = L.tileLayer.wms('https://api.vworld.kr/req/wms', {
-        layers: 'lp_pa_cbnd_bubun,lp_pa_cbnd_bonbun',
-        styles: 'lp_pa_cbnd_bubun_line,lp_pa_cbnd_bonbun_line',
+        // 기본 스타일은 주황 경계선 + 지번 표시. _line 스타일은 연노랑이라 배경지도 위에서 안 보임.
+        layers: 'lp_pa_cbnd_bubun',
+        styles: 'lp_pa_cbnd_bubun',
         format: 'image/png', transparent: true, version: '1.3.0',
         // WMS는 domain 값을 함께 보내면 INCORRECT_KEY로 거절됨. 브라우저가 보내는 Referer로 확인함.
         minZoom: 16, maxZoom: 19, key: k,
