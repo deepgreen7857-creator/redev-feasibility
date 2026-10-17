@@ -155,7 +155,12 @@ const Calc = {
   survey(s) {
     const base = this.baseDate(s);
     const year = base.getFullYear();
-    const bs = s.buildings;
+    // 기준일에 아직 사용승인 전인 건물은 그때 없던 건물이므로 제외
+    const bs = s.buildings.filter(b => {
+      const p = this.aprParts(b);
+      if (p) return new Date(p[0], p[1] - 1, p[2]) <= base;
+      return !num(b.year) || num(b.year) <= year;
+    });
     let old = 0, oldArea = 0, area = 0, detached = 0, apartment = 0, minAge = Infinity, aptMinAge = Infinity, unknown = 0;
     const future = [];          // 아직 노후가 아닌 건물이 노후가 되는 날
     for (const b of bs) {
