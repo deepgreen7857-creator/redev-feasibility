@@ -1,5 +1,185 @@
 'use strict';
 
+// 대지 자르기 (따로 쓰는 기능): 필지를 골라 크게 확대한 뒤 선을 그어 나누고, 구역에 넣을 조각을 고름.
+// 대지는 필지 경계대로가 원칙이므로 일부러 쓸 때만 동작하고, 자른 필지는 "분할 측량 필요"로 표시.
+const LotCut = {
+  waiting: false, lineHandler: null, f: null, pieces: [], layer: null, panel: null,
+  COLORS: ['#2563eb', '#16a34a', '#9333ea', '#ea580c', '#0891b2', '#be123c'],
+
+  start() {
+    if (!MapView.map) return;
+    if (!S.area.geojson) { $('#jibunMsg').textContent = '먼저 구역계를 만들어 주세요.'; return; }
+    if (typeof RoadCut !== 'undefined') RoadCut.stop();
+    this.stop();
+    if (MapView.picking) MapView.setPicking(false);
+    this.waiting = true;
+    MapView.map.getContainer().classList.add('picking');
+    this.ensurePanel();
+    this.panel.innerHTML = `<div class="rc-head"><b>대지 자르기</b> · 자를 필지를 지도에서 누르세요. <span class="muted">필지는 크게 확대되어 보입니다.</span></div>
+      <div class="rc-nav"><button type="button" data-a="cancel">취소</button></div>`;
+    this.bindNav();
+    $('#map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  },
+
+  ensurePanel() {
+    if (this.panel) return;
+    this.panel = L.DomUtil.create('div', 'roadcut-panel', MapView.map.getContainer());
+    L.DomEvent.disableClickPropagation(this.panel);
+    L.DomEvent.disableScrollPropagation(this.panel);
+    this.layer = L.layerGroup().addTo(MapView.map);
+  },
+
+  bindNav() {
+    this.panel.querySelectorAll('[data-a]').forEach(b => {
+      b.onclick = () => {
+        const a = b.dataset.a;
+        if (a === 'cancel') this.stop();
+        else if (a === 'redraw') this.drawLine();
+        else if (a === 'apply') this.apply();
+        else if (a === 'other') this.start();
+      };
+    });
+  },
+
+  async onPick(latlng) {
+    this.waiting = false;
+    MapView.map.getContainer().classList.remove('picking');
+    this.panel.innerHTML = '<div class="rc-head">필지를 불러오는 중…</div>';
+    let f;
+    try { f = await VWorld.parcelAt(latlng.lat, latlng.lng); } catch (e) { f = null; }
+    if (!f) { this.panel.innerHTML = '<div class="rc-head">필지를 찾지 못했습니다.</div><div class="rc-nav"><button type="button" data-a="other">다시 고르기</button><button type="button" data-a="cancel">취소</button></div>'; this.bindNav(); return; }
+    this.f = f;
+    this.sp = splitJibun(f.properties.jibun);
+    this.A = turf.area(f);
+    const b = L.geoJSON(f).getBounds();
+    MapView.map.fitBounds(b, { padding: [70, 70], maxZoom: 21 });
+    if (this.A < (num(S.criteria.smallLot) || 90) && MapView.map.getZoom() < 20) MapView.map.setView(b.getCenter(), 20);
+    this.drawLine();
+  },
+
+  drawLine() {
+    this.pieces = [];
+    this.layer.clearLayers();
+    L.geoJSON(S.area.geojson, { style: { color: '#d9480f', weight: 2, dashArray: '6 5', fill: false }, interactive: false }).addTo(this.layer);
+    L.geoJSON(this.f, { style: { color: '#111', weight: 3, dashArray: '8 5', fillOpacity: 0.05 }, interactive: false })
+      .bindTooltip(`${this.sp.no} ${this.sp.jimok} · ${fmt(this.A, 1)}㎡`, { permanent: true, direction: 'top', className: 'rc-label' }).addTo(this.layer);
+    this.panel.innerHTML = `<div class="rc-head"><b>대지 자르기</b> · ${esc(this.sp.no)} <span class="muted">${esc(this.sp.jimok)} · ${fmt(this.A, 1)}㎡</span></div>
+      <p class="rc-note">필지를 <b>완전히 가로지르도록</b> 선을 그으세요. 점을 차례로 누르고 마지막 점을 한 번 더 누르면 끝납니다. 선 끝은 필지 밖으로 조금 나가게 그리면 됩니다.</p>
+      <div class="rc-nav"><button type="button" data-a="other">다른 필지</button><button type="button" data-a="cancel">취소</button></div>`;
+    this.bindNav();
+    if (this.lineHandler) this.lineHandler.disable();
+    this.lineHandler = new L.Draw.Polyline(MapView.map, { shapeOptions: { color: '#dc2626', weight: 3 }, showLength: true, metric: true });
+    this.lineHandler.enable();
+  },
+
+  onLine(layer) {
+    if (this.lineHandler) { this.lineHandler.disable(); this.lineHandler = null; }
+    let line = layer.toGeoJSON();
+    // 선 양 끝을 3m씩 늘려, 경계선 위에서 끝나도 확실히 가로지르게
+    const c = line.geometry.coordinates;
+    if (c.length >= 2) {
+      const ext = (a, b) => turf.destination(turf.point(a), 0.003, turf.bearing(turf.point(b), turf.point(a)), { units: 'kilometers' }).geometry.coordinates;
+      c[0] = ext(c[0], c[1]);
+      c[c.length - 1] = ext(c[c.length - 1], c[c.length - 2]);
+    }
+    let rest = null;
+    try { rest = turf.difference(this.f, turf.buffer(line, 0.005, { units: 'meters' })); } catch (e) { rest = null; }
+    const g = rest && rest.geometry;
+    const polys = !g ? [] : (g.type === 'Polygon' ? [g.coordinates] : g.coordinates);
+    const pieces = polys.map(p => turf.polygon(p)).filter(p => turf.area(p) >= 0.05);
+    if (pieces.length < 2) {
+      this.panel.querySelector('.rc-note').innerHTML = '<b class="warn">선이 필지를 완전히 가로지르지 않았습니다.</b> 필지 바깥에서 시작해 바깥에서 끝나게 다시 그어 주세요.';
+      this.lineHandler = new L.Draw.Polyline(MapView.map, { shapeOptions: { color: '#dc2626', weight: 3 }, showLength: true, metric: true });
+      this.lineHandler.enable();
+      return;
+    }
+    // 지금 구역과 더 많이 겹치는 조각을 기본으로 넣음
+    const zone = S.area.geojson;
+    this.pieces = pieces.map((p, k) => {
+      let inZ = 0;
+      try { const x = turf.intersect(p, zone); inZ = x ? turf.area(x) / turf.area(p) : 0; } catch (e) { inZ = 0; }
+      return { p, area: turf.area(p), on: inZ >= 0.5, color: this.COLORS[k % this.COLORS.length], line };
+    });
+    this.cutLine = line;
+    this.renderPieces();
+  },
+
+  renderPieces() {
+    this.layer.clearLayers();
+    L.geoJSON(S.area.geojson, { style: { color: '#d9480f', weight: 2, dashArray: '6 5', fill: false }, interactive: false }).addTo(this.layer);
+    this.pieces.forEach((x, k) => {
+      L.geoJSON(x.p, { style: { color: x.color, weight: 2, fillColor: x.color, fillOpacity: x.on ? 0.5 : 0.08, dashArray: x.on ? null : '4 4' } })
+        .bindTooltip(`조각 ${k + 1} · ${fmt(x.area, 1)}㎡`, { permanent: true, direction: 'center', className: 'rc-label' })
+        .on('click', () => { x.on = !x.on; this.renderPieces(); })
+        .addTo(this.layer);
+    });
+    L.geoJSON(this.cutLine, { style: { color: '#dc2626', weight: 2 }, interactive: false }).addTo(this.layer);
+    const inA = this.pieces.filter(x => x.on).reduce((a, x) => a + x.area, 0);
+    this.panel.innerHTML = `<div class="rc-head"><b>대지 자르기</b> · ${esc(this.sp.no)} <span class="muted">${esc(this.sp.jimok)} · ${fmt(this.A, 1)}㎡</span>
+        <span class="rc-small">대지를 자르면 분할 측량이 필요합니다</span></div>
+      <div class="rc-opts">${this.pieces.map((x, k) => `<button type="button" data-p="${k}" class="${x.on ? 'on' : ''}" style="border-color:${x.color}">조각 ${k + 1} ${x.on ? '– 구역에 넣음' : '– 뺌'}<small>${fmt(x.area, 1)}㎡</small></button>`).join('')}</div>
+      <p class="rc-note">조각(버튼이나 지도)을 누르면 넣고 빼기가 바뀝니다. 진하게 칠한 조각이 구역에 들어갑니다 – 편입 <b>${fmt(inA, 1)}㎡</b> / 전체 ${fmt(this.A, 1)}㎡</p>
+      <div class="rc-nav"><button type="button" data-a="redraw">선 다시 긋기</button><button type="button" data-a="apply" class="primary">적용</button><button type="button" data-a="other">다른 필지</button><button type="button" data-a="cancel">취소</button></div>`;
+    this.panel.querySelectorAll('[data-p]').forEach(b => { b.onclick = () => { const x = this.pieces[+b.dataset.p]; x.on = !x.on; this.renderPieces(); }; });
+    this.bindNav();
+  },
+
+  async apply() {
+    const f = this.f, pnu = f.properties.pnu, on = this.pieces.filter(x => x.on);
+    let z = S.area.geojson;
+    try { z = turf.difference(z, f) || null; }
+    catch (e) { try { z = turf.difference(turf.truncate(z, { precision: 7 }), turf.truncate(f, { precision: 7 })) || null; } catch (e2) { /* 그대로 */ } }
+    const keep = on.length ? safeUnion(on.map(x => x.p)) : null;
+    let merged = [z, keep].filter(Boolean);
+    merged = merged.length ? safeUnion(merged) : null;
+    if (merged) {
+      // 자르면서 생긴 10㎡ 미만 틈은 메우고 5㎡ 미만 부스러기는 뺌
+      const g = merged.geometry;
+      const fill = p => [p[0], ...p.slice(1).filter(h => turf.area(turf.polygon([h])) >= 10)];
+      const polys = (g.type === 'Polygon' ? [g.coordinates] : g.coordinates).map(fill).filter(p => turf.area(turf.polygon(p)) >= 5);
+      merged = polys.length === 1 ? turf.polygon(polys[0]) : turf.multiPolygon(polys);
+    }
+    MapView.items.clearLayers();
+    if (merged) L.geoJSON(merged, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => MapView.items.addLayer(l));
+    MapView.save();
+
+    // 토지조서: 편입 조각 면적으로, 건축물은 편입 조각 위에 있는 것만
+    const had = S.lands.findIndex(l => l.pnu === pnu);
+    if (had >= 0) S.lands.splice(had, 1);
+    const r1 = x => Math.round(x * 10) / 10;
+    const inA = on.reduce((a, x) => a + x.area, 0);
+    const ptIn = (bf, poly) => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(bf), poly); } catch (e) { return false; } };
+    if (keep) {
+      const land = landFromFeature(f);
+      land.area = r1(inA); land.partial = true; land.wholeArea = r1(this.A); land.cutBy = '대지 자르기 – 분할 측량 필요'; land.splitNeeded = true; land.geom = keep.geometry;
+      S.lands.push(land);
+      if (had < 0) {
+        try {
+          const bs = (await VWorld.dataPage('LT_C_BLDGINFO', `BOX(${turf.bbox(f).join(',')})`, 1, 50)).features.filter(bf => ptIn(bf, f));
+          bs.forEach(bf => S.buildings.push(buildingFromFeature(bf, this.sp.no, pnu)));
+        } catch (e) { /* 건축물 없이 */ }
+      }
+    } else {
+      S.buildings = S.buildings.filter(b => !(b.auto && b.pnu === pnu));
+    }
+    const row = { input: '', result: '경계 정리', jibun: this.sp.no, jimok: this.sp.jimok, area: r1(inA), note: keep ? `대지 자르기 – 일부 편입 (전체 ${fmt(this.A, 1)}㎡), 분할 측량 필요` : '대지 자르기 – 구역에서 뺌' };
+    MapView.showReport([row, ...(MapView.lastReport || []).filter(r => r.jibun !== this.sp.no)]);
+    MapView.drawParcels();
+    sortByJibun();
+    $('#jibunMsg').innerHTML = `${esc(this.sp.no)} 필지를 잘라 <b>${fmt(inA, 1)}㎡</b>(전체 ${fmt(this.A, 1)}㎡)를 구역에 넣었습니다. 구역 면적 <b>${fmt(S.area.drawnArea)}㎡</b>. 토지조서에 "분할 측량 필요"로 표시했습니다.`
+      + (keep && S.buildings.some(b => b.pnu === pnu) ? ' 이 필지의 건축물은 조서에 그대로 두었으니, 뺀 쪽에 있는 건물은 건축물조서에서 직접 지워 주세요.' : '');
+    this.stop();
+  },
+
+  stop() {
+    this.waiting = false;
+    if (this.lineHandler) { this.lineHandler.disable(); this.lineHandler = null; }
+    if (MapView.map) MapView.map.getContainer().classList.toggle('picking', !!MapView.picking);
+    if (this.layer) { this.layer.remove(); this.layer = null; }
+    if (this.panel) { this.panel.remove(); this.panel = null; }
+  },
+};
+
 // 경계 정리: 구역 경계에 걸친 도로(중심선까지 / 도로 전체 / 빼기 / 지금 구역선대로)와
 // 경계의 작은 필지(넣기 / 빼기)를 하나씩 확대해 보며 고름. 작은 필지는 최대로 확대해 잘못 고르지 않게.
 // 대지는 필지 경계 그대로가 원칙이고, "지금 구역선대로"를 고를 때만 잘림(분할 측량 필요 표시).

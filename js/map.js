@@ -261,7 +261,10 @@ const MapView = {
       edit: { featureGroup: this.items },
     }));
 
-    this.map.on(L.Draw.Event.CREATED, e => { if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; } this.items.clearLayers(); this.items.addLayer(e.layer); this.save(); });
+    this.map.on(L.Draw.Event.CREATED, e => {
+      if (typeof LotCut !== 'undefined' && LotCut.lineHandler) { LotCut.onLine(e.layer); return; }   // 대지 자르기 선
+      if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; } this.items.clearLayers(); this.items.addLayer(e.layer); this.save();
+    });
     this.map.on(L.Draw.Event.EDITED, () => this.save());
     this.map.on(L.Draw.Event.DELETED, () => this.save());
     // 그리기 중에는 필지 선택이 끼어들지 않도록
@@ -269,6 +272,7 @@ const MapView = {
     this.map.on(L.Draw.Event.DRAWSTOP, () => { this.drawing = false; });
     this.map.on('click', e => {
       if (typeof RefOverlay !== 'undefined' && RefOverlay.step) { RefOverlay.onClick(e); return; }   // 도면 맞추기 중
+      if (typeof LotCut !== 'undefined' && LotCut.waiting) { LotCut.onPick(e.latlng); return; }     // 자를 필지 고르기
       if (this.picking && !this.drawing) this.pick(e.latlng);
     });
     this.map.on('moveend', () => {

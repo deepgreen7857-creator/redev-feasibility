@@ -744,7 +744,8 @@ function boot() {
   };
   $('#btnBaseToday').onclick = () => { S.criteria.baseDate = ''; App.update(true); };
   Assume.bind();
-  $('#btnRoadCut').onclick = () => RoadCut.start();
+  $('#btnRoadCut').onclick = () => { LotCut.stop(); RoadCut.start(); };
+  $('#btnLotCut').onclick = () => LotCut.start();
   $('#fitKeep').onclick = () => $('#fitDialog').close();
   $('#fitSnap').onclick = async () => {
     $('#fitDialog').close();
