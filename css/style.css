@@ -309,6 +309,15 @@ td.heat.base { outline: 2px solid var(--ink); outline-offset: -2px; font-weight:
 .export-box .inline-field { padding: 4px 0; }
 .export-box select { width: auto; padding: 4px 8px; }
 #printSheet { display: none; }
+.survey-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 20px 0 4px; }
+.survey-actions .note { margin: 0; }
+.survey-print { font-size: 9pt; color: #000; }
+.survey-print h1 { font-size: 14pt; margin: 0 0 4px; }
+.survey-print h2 { font-size: 11pt; margin: 10px 0 4px; }
+.survey-print table { width: 100%; border-collapse: collapse; }
+.survey-print th, .survey-print td { border: 0.5pt solid #555; padding: 2px 4px; }
+.survey-print th { background: #eee; }
+.survey-print .pb { break-after: page; }
 
 /* ---------- 인쇄 ---------- */
 @media print {

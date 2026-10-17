@@ -105,6 +105,8 @@ function buildingFromFeature(f, jibun, pnu) {
     id: uid(), jibun: jibun || '', use, structure, year, floorArea,
     units: isApt ? 0 : (use === '단독주택' || use === '다가구주택' ? 1 : 0),
     name: p.bld_nm || '', floors, pnu: pnu || '', auto: true, needUnits: isApt, guessed,
+    aprDate: /^\d{8}$/.test(String(p.useapr_day || '')) ? `${String(p.useapr_day).slice(0, 4)}-${String(p.useapr_day).slice(4, 6)}-${String(p.useapr_day).slice(6, 8)}` : '',
+    basement: num(p.ugrnd_flr),
     noInfo: !year && !floorArea && !code,
   };
 }
@@ -121,6 +123,7 @@ function landFromFeature(f) {
     area: window.turf ? Math.round(turf.area(f) * 10) / 10 : 0,
     ownerType: publicJimok.includes(jimok) ? '국공유지' : '사유지', owner: '',
     price: num(p.jiga), geom: f.geometry,
+    addr: p.addr || '', priceYear: p.gosi_year || '',
   };
 }
 

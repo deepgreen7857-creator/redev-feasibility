@@ -130,6 +130,7 @@ const Tabs = {
         newRow: () => ({ id: uid(), jibun: '', jimok: '대', area: 0, ownerType: '사유지', owner: '', price: 0 }),
         onChange: () => App.update(),
         columns: [
+          { key: 'no', label: '연번', computed: (r, i) => String(i + 1) },
           { key: 'jibun', label: '지번', width: 80 },
           { key: 'jimok', label: '지목', type: 'select', options: JIMOK },
           { key: 'area', label: '면적 (㎡)', type: 'number', dec: 1, width: 90 },
@@ -149,17 +150,21 @@ const Tabs = {
         newRow: () => ({ id: uid(), jibun: '', use: '단독주택', structure: '조적', year: 0, floorArea: 0, units: 1 }),
         onChange: () => App.update(),
         columns: [
+          { key: 'no', label: '연번', computed: (r, i) => String(i + 1) },
           { key: 'jibun', label: '지번', width: 80 },
+          { key: 'name', label: '건물명', width: 110 },
           { key: 'use', label: '용도', type: 'select', options: BLDG_USES },
           { key: 'structure', label: '구조', type: 'select', options: STRUCTURES },
+          { key: 'floors', label: '지상층', type: 'number', width: 55 },
           { key: 'year', label: '사용승인연도', type: 'number', width: 90 },
+          { key: 'aprDate', label: '사용승인일', width: 100, placeholder: 'YYYY-MM-DD' },
           { key: 'floorArea', label: '연면적 (㎡)', type: 'number', dec: 1, width: 90 },
           { key: 'units', label: '호·세대수', type: 'number', width: 70 },
           { key: 'age', label: '경과연수', computed: r => (num(r.year) ? `${year - num(r.year)}년` : '–') },
           { key: 'old', label: '노후 판정', computed: r => (Calc.isOld(S, r, year) ? '노후' : '–'), cls: r => (Calc.isOld(S, r, year) ? 'tag bad' : 'tag') },
           {
             key: 'check', label: '비고',
-            computed: r => [r.name, r.noInfo && !num(r.year) ? '정보 없음 – 건축물대장 확인' : '', r.needUnits && !num(r.units) ? '세대수 확인 필요' : '', r.guessed ? '용도 추정' : ''].filter(Boolean).join(' · '),
+            computed: r => [r.noInfo && !num(r.year) ? '정보 없음 – 건축물대장 확인' : '', r.needUnits && !num(r.units) ? '세대수 확인 필요' : '', r.guessed ? '용도 추정' : ''].filter(Boolean).join(' · '),
             cls: r => ((r.noInfo && !num(r.year)) || (r.needUnits && !num(r.units)) ? 'tag warn' : 'tag'),
           },
         ],
@@ -447,6 +452,83 @@ async function csvAction(kind, act) {
   App.update(true);
 }
 
+// ---------- 조서: 지번순 정렬, 엑셀 저장, 인쇄 ----------
+// "123-4" < "123-10" < "산1" 순서
+function jibunKey(j) {
+  const s = String(j || '').trim(), san = s.startsWith('산') ? 1 : 0;
+  const m = s.replace(/^산/, '').match(/(\d+)(?:-(\d+))?/);
+  return m ? [san, +m[1], +(m[2] || 0)] : [2, 0, 0];
+}
+function sortByJibun() {
+  const cmp = (a, b) => { const x = jibunKey(a.jibun), y = jibunKey(b.jibun); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; };
+  S.lands.sort(cmp);
+  S.buildings.sort(cmp);
+  App.update(true);
+}
+
+function surveyRows() {
+  const year = new Date().getFullYear();
+  const lands = S.lands.map((l, i) => ({
+    '연번': i + 1, '소재지': l.addr || S.meta.location || '', '지번': l.jibun, '지목': l.jimok,
+    '면적(㎡)': num(l.area), '소유구분': l.ownerType, '소유자': l.owner || '',
+    '공시지가(원/㎡)': num(l.price), '공시가격(원)': Math.round(num(l.area) * num(l.price)),
+    '비고': l.jimok === '대' && num(l.area) > 0 && num(l.area) < 90 ? '과소필지' : '',
+  }));
+  const bldgs = S.buildings.map((b, i) => ({
+    '연번': i + 1, '지번': b.jibun, '건물명': b.name || '', '용도': b.use, '구조': b.structure,
+    '지상층': num(b.floors) || '', '사용승인일': b.aprDate || (num(b.year) ? String(b.year) : ''),
+    '경과연수': num(b.year) ? year - num(b.year) : '', '연면적(㎡)': num(b.floorArea), '호·세대수': num(b.units) || '',
+    '노후여부': Calc.isOld(S, b, year) ? '노후' : (num(b.year) ? '' : '판정불가'),
+    '비고': [b.noInfo && !num(b.year) ? '건축물대장 확인' : '', b.needUnits && !num(b.units) ? '세대수 확인' : '', b.guessed ? '용도 추정' : ''].filter(Boolean).join(', '),
+  }));
+  return { lands, bldgs };
+}
+
+function saveSurveyXlsx() {
+  if (!window.XLSX) { alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'); return; }
+  const { lands, bldgs } = surveyRows();
+  const sv = Calc.survey(S);
+  const wb = XLSX.utils.book_new();
+  const head = t => [[`${S.meta.name || '정비사업'} ${t}`], [`위치: ${S.meta.location || '-'}`, '', `작성일: ${new Date().toISOString().slice(0, 10)}`], []];
+  const sheet = (title, rows, widths) => {
+    const ws = XLSX.utils.aoa_to_sheet(head(title));
+    XLSX.utils.sheet_add_json(ws, rows, { origin: 'A4' });
+    ws['!cols'] = widths.map(w => ({ wch: w }));
+    return ws;
+  };
+  XLSX.utils.book_append_sheet(wb, sheet('토지조서', lands, [5, 28, 10, 6, 10, 9, 12, 14, 16, 10]), '토지조서');
+  XLSX.utils.book_append_sheet(wb, sheet('건축물조서', bldgs, [5, 10, 16, 12, 12, 7, 12, 8, 11, 9, 8, 18]), '건축물조서');
+  const sum = [
+    ['구분', '값'], ['필지 수', sv.landCount], ['토지 면적(㎡)', Math.round(sv.landArea * 10) / 10], ['국공유지 면적(㎡)', Math.round(sv.publicArea * 10) / 10],
+    ['과소필지(90㎡ 미만)', sv.small], ['건축물 동수', sv.count], ['노후·불량건축물', sv.old], ['노후도(동수, %)', Math.round(sv.oldRatio * 10) / 10],
+    ['노후도(연면적, %)', Math.round(sv.oldAreaRatio * 10) / 10], ['사용승인연도 없음(판정 불가)', sv.unknown],
+    ['노후 기준', `철근콘크리트·철골 ${S.criteria.rcYears}년, 기타 ${S.criteria.otherYears}년`],
+  ];
+  const ws3 = XLSX.utils.aoa_to_sheet(sum); ws3['!cols'] = [{ wch: 26 }, { wch: 30 }];
+  XLSX.utils.book_append_sheet(wb, ws3, '요약');
+  XLSX.writeFile(wb, `${S.meta.name || '정비사업'}_토지건축물조서.xlsx`);
+}
+
+function printSurvey() {
+  const { lands, bldgs } = surveyRows();
+  const table = (title, rows) => {
+    if (!rows.length) return `<h2>${title}</h2><p>입력된 행이 없습니다.</p>`;
+    const keys = Object.keys(rows[0]);
+    const cell = v => (typeof v === 'number' ? fmt(v, Number.isInteger(v) ? 0 : 1) : esc(v));
+    return `<h2>${title}</h2><table><thead><tr>${keys.map(k => `<th>${esc(k)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${keys.map(k => `<td>${cell(r[k])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  };
+  let sheet = $('#printSheet');
+  if (!sheet) { sheet = document.createElement('div'); sheet.id = 'printSheet'; document.body.append(sheet); }
+  sheet.innerHTML = `<div class="survey-print"><h1>${esc(S.meta.name || '정비사업')} 토지·건축물조서</h1><p>위치: ${esc(S.meta.location || '-')} · 작성일 ${new Date().toISOString().slice(0, 10)}</p>${table('토지조서', lands)}<div class="pb"></div>${table('건축물조서', bldgs)}</div>`;
+  let st = $('#pageStyle');
+  if (!st) { st = document.createElement('style'); st.id = 'pageStyle'; document.head.append(st); }
+  st.textContent = '@page { size: A4 landscape; margin: 10mm; }';
+  document.body.classList.add('print-sheet');
+  const done = () => { document.body.classList.remove('print-sheet'); sheet.innerHTML = ''; st.textContent = ''; window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  setTimeout(() => window.print(), 100);
+}
+
 // ---------- 시작 ----------
 function boot() {
   bindInputs();
@@ -528,6 +610,9 @@ function boot() {
   $$('.step-nav [data-goto]').forEach(b => { b.onclick = () => App.go(b.dataset.goto); });
   $('#btnParcelsToArea').onclick = () => MapView.parcelsToArea();
   $$('[data-csv]').forEach(b => { b.onclick = () => csvAction(b.dataset.csv, b.dataset.act); });
+  $('#btnSortJibun').onclick = sortByJibun;
+  $('#btnSurveyXlsx').onclick = saveSurveyXlsx;
+  $('#btnSurveyPrint').onclick = printSurvey;
 
   App.show((location.hash || '#overview').slice(1));
 }
