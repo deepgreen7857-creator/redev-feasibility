@@ -312,6 +312,9 @@ td.heat.base { outline: 2px solid var(--ink); outline-offset: -2px; font-weight:
 .jibun-box { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
 .jibun-box .btn { margin: 6px 4px 0 0; }
 .jibun-box textarea { font-size: .85rem; }
+.snap-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.snap-row select { width: auto; padding: 5px 8px; font-size: .85rem; }
+.snap-row .btn { margin: 0; }
 .jibun-report .report-head { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: .85rem; }
 .jibun-report table.grid { font-size: .78rem; }
 .jibun-report td.auto { color: var(--series-1); font-weight: 700; }

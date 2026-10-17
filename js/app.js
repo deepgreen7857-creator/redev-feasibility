@@ -475,6 +475,7 @@ function landNote(l) {
   return [
     l.jimok === '대' && num(l.area) > 0 && num(l.area) < 90 ? '과소필지' : '',
     l.enclosed ? '갇힌 필지' : '',
+    l.boundary ? `경계 필지(${l.boundary}%)` : '',
     l.partial ? '일부 편입' : '',
   ].filter(Boolean).join(', ');
 }
@@ -642,6 +643,10 @@ function boot() {
     const m = String(S.meta.location || '').match(/^(.*?[가-힣]+(동|리|가))(\s|\d|$)/);
     return m ? m[1].trim() : '';
   };
+  $('#btnSnapZone').onclick = () => MapView.snapToParcels({
+    threshold: num($('#snapThreshold').value) || 0.5,
+    fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked,
+  });
   $('#btnJibunZone').onclick = () => {
     const base = $('#jibunBase').value.trim() || guessBase();
     const items = $('#jibunList').value.split(/[\n,;\t]+/);

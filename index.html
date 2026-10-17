@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=28">
+<link rel="stylesheet" href="css/style.css?v=31">
 </head>
 <body>
 
@@ -132,8 +132,17 @@
         <p class="note" id="pickMsg" aria-live="polite"></p>
       </div>
       <div class="jibun-box">
-        <h3>지번 목록으로 구역 만들기</h3>
-        <p class="note">엑셀의 지번 열을 복사해 붙여넣거나 파일(엑셀·CSV)을 불러오면, 그 필지들을 찾아 <b>구역계를 자동으로 그리고</b> 토지·건축물조서까지 불러옵니다.</p>
+        <h3>필지 경계로 구역 만들기</h3>
+        <p class="note"><b>방법 1. 대략 그리기</b> – 지도 왼쪽 다각형 도구로 도로를 따라 구역을 대충 그린 뒤 누르세요. 필지 면적의 기준 % 이상이 들어간 필지로 구역계를 다시 그립니다.</p>
+        <div class="snap-row">
+          <select id="snapThreshold" aria-label="포함 기준">
+            <option value="0.5">50% 이상 들어가면 포함</option>
+            <option value="0.3">30% 이상 (넓게)</option>
+            <option value="0.7">70% 이상 (좁게)</option>
+          </select>
+          <button class="btn small primary" id="btnSnapZone">그린 구역을 필지에 맞추기</button>
+        </div>
+        <p class="note"><b>방법 2. 지번 목록</b> – 엑셀의 지번 열을 붙여넣거나 파일(엑셀·CSV)을 불러오면 그 필지들로 구역계를 그립니다.</p>
         <label class="stack">기준 동 주소<input id="jibunBase" placeholder="예: 인천광역시 남동구 간석동"></label>
         <textarea id="jibunList" rows="5" placeholder="한 줄에 하나씩&#10;387&#10;388-1&#10;산12-3"></textarea>
         <label class="radio"><input type="checkbox" id="optFillHoles" checked> 구역 안에 갇힌 필지(도로 등) 자동 포함</label>
@@ -307,12 +316,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=28"></script>
-<script src="js/util.js?v=28"></script>
-<script src="js/state.js?v=28"></script>
-<script src="js/calc.js?v=28"></script>
-<script src="js/map.js?v=30"></script>
-<script src="js/export.js?v=28"></script>
-<script src="js/app.js?v=28"></script>
+<script src="js/config.js?v=31"></script>
+<script src="js/util.js?v=31"></script>
+<script src="js/state.js?v=31"></script>
+<script src="js/calc.js?v=31"></script>
+<script src="js/map.js?v=31"></script>
+<script src="js/export.js?v=31"></script>
+<script src="js/app.js?v=31"></script>
 </body>
 </html>

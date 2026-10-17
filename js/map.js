@@ -250,7 +250,7 @@ const MapView = {
       edit: { featureGroup: this.items },
     }));
 
-    this.map.on(L.Draw.Event.CREATED, e => { this.items.clearLayers(); this.items.addLayer(e.layer); this.save(); });
+    this.map.on(L.Draw.Event.CREATED, e => { if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; } this.items.clearLayers(); this.items.addLayer(e.layer); this.save(); });
     this.map.on(L.Draw.Event.EDITED, () => this.save());
     this.map.on(L.Draw.Event.DELETED, () => this.save());
     // 그리기 중에는 필지 선택이 끼어들지 않도록
@@ -450,8 +450,59 @@ const MapView = {
     const queue = items.slice();
     await Promise.all([1, 2, 3, 4].map(async () => { while (queue.length) await work(queue.shift()); }));
 
+    await this.buildZone(found, report, opts, `지번 ${items.length}개 → `);
+  },
+
+  // 대략 그린 구역 → 필지 경계에 맞춘 구역계
+  // 필지 면적의 threshold(기본 50%) 이상이 그린 범위 안이면 포함. 걸친 필지는 대조표에 '경계 필지'로
+  async snapToParcels(opts) {
+    const msg = $('#jibunMsg');
+    if (!VWorld.enabled) { msg.textContent = '브이월드 인증키가 있어야 필지에 맞출 수 있습니다.'; return; }
+    if (!S.area.geojson) { msg.textContent = '먼저 지도 왼쪽 다각형 도구로 구역을 대략 그려 주세요.'; return; }
+    const rough = JSON.parse(JSON.stringify(S.area.geojson));
+    const TH = opts.threshold || 0.5;
+    msg.textContent = '그린 범위의 필지를 불러오는 중…';
+    const [x0, y0, x1, y1] = turf.bbox(rough);
+    let fs;
+    try { fs = await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${x0},${y0},${x1},${y1})`, 20); }
+    catch (e) { msg.textContent = '필지를 불러오지 못했습니다: ' + e.message; return; }
+
+    const found = new Map(), report = [], boundary = new Map();
+    const area1 = f => Math.round(turf.area(f) * 10) / 10;
+    let i = 0;
+    for (const f of fs) {
+      if (++i % 200 === 0) { msg.textContent = `필지 포함 여부 계산 중… ${i}/${fs.length}`; await new Promise(r => setTimeout(r)); }
+      const A = turf.area(f);
+      if (!A) continue;
+      let ratio;
+      try { const x = turf.intersect(f, rough); ratio = x ? turf.area(x) / A : 0; }
+      catch (e) { try { ratio = turf.booleanPointInPolygon(turf.pointOnFeature(f), rough) ? 1 : 0; } catch (e2) { ratio = 0; } }
+      if (ratio < 0.02) continue;
+      const sp = splitJibun(f.properties.jibun), pct = Math.round(ratio * 100);
+      if (ratio >= 0.98) {
+        found.set(f.properties.pnu, f);
+        report.push({ input: '', result: '포함', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: '' });
+      } else if (ratio >= TH) {
+        found.set(f.properties.pnu, f);
+        boundary.set(f.properties.pnu, pct);
+        report.push({ input: '', result: '경계 필지', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: `그린 범위 안 ${pct}% – 포함함` });
+      } else {
+        report.push({ input: '', result: '경계 제외', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: `그린 범위 안 ${pct}% – 제외함 (필요하면 필지 선택으로 추가)` });
+      }
+    }
+    // 대략 그린 선은 점선으로 남겨 비교할 수 있게
+    if (this.roughLayer) this.roughLayer.remove();
+    this.roughLayer = L.geoJSON(rough, { style: { color: '#555', weight: 2, dashArray: '6 6', fill: false }, interactive: false }).addTo(this.map);
+    await this.buildZone(found, report, { ...opts, boundary }, `그린 범위에 걸친 필지 ${report.length}개 → `);
+  },
+
+  // 고른 필지들로 구역계를 만들고(블록 사이 도로 잇기·갇힌 필지 포함) 조서·대조표까지
+  // found: pnu → 필지, report: 대조표 행, intro: 결과 문구 앞부분
+  async buildZone(found, report, opts, intro) {
+    const msg = $('#jibunMsg');
+    const area1 = f => Math.round(turf.area(f) * 10) / 10;
     let feats = [...found.values()];
-    if (!feats.length) { msg.textContent = '필지를 하나도 찾지 못했습니다. 기준 동 주소를 확인해 주세요.'; this.showReport(report); return; }
+    if (!feats.length) { msg.textContent = '구역에 넣을 필지가 없습니다.'; this.showReport(report); return; }
 
     const unionAll = fs => safeUnion(fs);
     const polysOf = g => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates);
@@ -526,13 +577,16 @@ const MapView = {
       const i = S.lands.findIndex(l => l.pnu === land.pnu);
       if (i >= 0) S.lands[i] = land; else S.lands.push(land);
     });
-    S.lands.forEach(l => { if (enclosed.has(l.pnu)) l.enclosed = true; });
+    S.lands.forEach(l => {
+      if (enclosed.has(l.pnu)) l.enclosed = true;
+      if (opts.boundary && opts.boundary.has(l.pnu)) l.boundary = opts.boundary.get(l.pnu);
+    });
     App.update(true);
 
     const parts = g.type === 'MultiPolygon' ? g.coordinates.length : 1;
     const cnt = r => report.filter(x => x.result === r).length;
-    msg.innerHTML = `지번 ${items.length}개 → 포함 <b>${cnt('포함')}필지</b>`
-      + (cnt('갇힌 필지') ? `, 갇힌 필지 <b>${cnt('갇힌 필지')}필지</b>` : '') + (cnt('도로 잇기') ? `, 블록 사이 도로 <b>${cnt('도로 잇기')}필지</b>` : '')
+    msg.innerHTML = `${intro}포함 <b>${cnt('포함')}필지</b>`
+      + (cnt('경계 필지') ? `, 경계 필지 <b>${cnt('경계 필지')}필지</b>` : '') + (cnt('경계 제외') ? `, 경계에서 제외 ${cnt('경계 제외')}필지` : '') + (cnt('갇힌 필지') ? `, 갇힌 필지 <b>${cnt('갇힌 필지')}필지</b>` : '') + (cnt('도로 잇기') ? `, 블록 사이 도로 <b>${cnt('도로 잇기')}필지</b>` : '')
       + `로 구역계를 그리고 조서를 불러왔습니다.`
       + (parts > 1 ? ` <b class="warn">구역이 아직 ${parts}덩어리로 떨어져 있습니다.</b>` : '')
       + (cnt('실패') + cnt('확인 필요') ? `<br><b class="warn">확인 필요 ${cnt('실패') + cnt('확인 필요')}건</b> – 아래 대조표를 보세요.` : '');
@@ -542,11 +596,11 @@ const MapView = {
   // 입력 지번 대조표
   showReport(report) {
     this.lastReport = report;
-    const order = { '실패': 0, '확인 필요': 1, '갇힌 필지': 2, '도로 잇기': 3, '포함': 4, '중복': 5 };
+    const order = { '실패': 0, '확인 필요': 1, '경계 필지': 2, '경계 제외': 3, '갇힌 필지': 4, '도로 잇기': 5, '포함': 6, '중복': 7 };
     const rows = report.slice().sort((a, b) => order[a.result] - order[b.result]);
-    const cls = r => (r === '포함' ? 'good' : r === '갇힌 필지' || r === '도로 잇기' ? 'auto' : r === '중복' ? '' : 'warn');
+    const cls = r => (r === '포함' ? 'good' : ['갇힌 필지', '도로 잇기', '경계 필지'].includes(r) ? 'auto' : r === '중복' ? '' : 'warn');
     $('#jibunReport').innerHTML = `
-      <div class="report-head"><b>입력 지번 대조표</b> <button class="btn small" id="btnReportXlsx">엑셀 저장</button></div>
+      <div class="report-head"><b>필지 대조표</b> <button class="btn small" id="btnReportXlsx">엑셀 저장</button></div>
       <div class="table-wrap"><table class="grid"><thead><tr><th>입력</th><th>결과</th><th>필지</th><th>지목</th><th class="num">면적(㎡)</th><th>비고</th></tr></thead><tbody>
       ${rows.map(r => `<tr><td>${esc(r.input || '–')}</td><td class="${cls(r.result)}">${esc(r.result)}</td><td>${esc(r.jibun)}</td><td>${esc(r.jimok)}</td><td class="num">${r.area === '' ? '' : fmt(r.area, 1)}</td><td>${esc(r.note)}</td></tr>`).join('')}
       </tbody></table></div>`;
@@ -554,8 +608,8 @@ const MapView = {
       const ws = XLSX.utils.json_to_sheet(rows.map(r => ({ '입력 지번': r.input, '결과': r.result, '필지': r.jibun, '지목': r.jimok, '면적(㎡)': r.area, '비고': r.note })));
       ws['!cols'] = [{ wch: 18 }, { wch: 10 }, { wch: 12 }, { wch: 6 }, { wch: 10 }, { wch: 50 }];
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, '지번대조표');
-      XLSX.writeFile(wb, `${S.meta.name || '정비사업'}_지번대조표.xlsx`);
+      XLSX.utils.book_append_sheet(wb, ws, '필지대조표');
+      XLSX.writeFile(wb, `${S.meta.name || '정비사업'}_필지대조표.xlsx`);
     };
   },
 
