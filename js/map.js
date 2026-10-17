@@ -387,6 +387,17 @@ const MapView = {
       const p = f.properties || {};
       const idx = S.lands.findIndex(l => l.pnu && l.pnu === p.pnu);
       const no = splitJibun(p.jibun).no;
+      // 작은 필지는 덜 확대된 화면에서 옆 필지를 잘못 누르기 쉬우므로, 먼저 크게 확대해 보여주고 다시 누르게 함
+      const fa = turf.area(f);
+      if (fa < (num(S.criteria.smallLot) || 90) && this.map.getZoom() < 19) {
+        this.map.fitBounds(L.geoJSON(f).getBounds(), { padding: [80, 80], maxZoom: 21 });
+        if (this.map.getZoom() < 20) this.map.setView(L.geoJSON(f).getBounds().getCenter(), 20);
+        if (this.smallMark) this.smallMark.remove();
+        this.smallMark = L.geoJSON(f, { style: { color: '#dc2626', weight: 3, dashArray: '6 4', fillOpacity: 0.15 }, interactive: false }).addTo(this.map);
+        setTimeout(() => { if (this.smallMark) { this.smallMark.remove(); this.smallMark = null; } }, 6000);
+        msg.innerHTML = `<b class="warn">작은 필지(${esc(no)}, ${fmt(fa, 1)}㎡)라 크게 확대했습니다.</b> 빨간 점선이 맞는 필지면 다시 눌러 주세요.`;
+        return;
+      }
       if (idx >= 0) {
         S.lands.splice(idx, 1);
         S.buildings = S.buildings.filter(b => !(b.auto && b.pnu === p.pnu));
@@ -750,9 +761,9 @@ const MapView = {
   // 입력 지번 대조표
   showReport(report) {
     this.lastReport = report;
-    const order = { '실패': 0, '확인 필요': 1, '경계 필지': 2, '경계 제외': 3, '갇힌 필지': 4, '도로 잇기': 5, '포함': 6, '중복': 7 };
-    const rows = report.slice().sort((a, b) => order[a.result] - order[b.result]);
-    const cls = r => (r === '포함' ? 'good' : ['갇힌 필지', '도로 잇기', '경계 필지'].includes(r) ? 'auto' : r === '중복' ? '' : 'warn');
+    const order = { '실패': 0, '확인 필요': 1, '경계 정리': 2, '경계 필지': 3, '경계 제외': 4, '갇힌 필지': 5, '도로 잇기': 6, '포함': 7, '중복': 8 };
+    const rows = report.slice().sort((a, b) => (order[a.result] ?? 9) - (order[b.result] ?? 9));
+    const cls = r => (r === '포함' ? 'good' : ['갇힌 필지', '도로 잇기', '경계 필지', '경계 정리'].includes(r) ? 'auto' : r === '중복' ? '' : 'warn');
     $('#jibunReport').innerHTML = `
       <div class="report-head"><b>필지 대조표</b> <button class="btn small" id="btnReportXlsx">엑셀 저장</button></div>
       <div class="table-wrap"><table class="grid"><thead><tr><th>입력</th><th>결과</th><th>필지</th><th>지목</th><th class="num">면적(㎡)</th><th>비고</th></tr></thead><tbody>

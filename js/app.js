@@ -507,10 +507,10 @@ function jibunKey(j) {
 }
 function landNote(l) {
   return [
-    l.jimok === '대' && num(l.area) > 0 && num(l.area) < 90 ? '과소필지' : '',
+    l.jimok === '대' && num(l.area) > 0 && num(l.area) < (num(S.criteria.smallLot) || 90) ? '과소필지' : '',
     l.enclosed ? '갇힌 필지' : '',
     l.boundary ? `경계 필지(${l.boundary}%)` : '',
-    l.partial ? '일부 편입' : '',
+    l.partial ? `일부 편입${l.wholeArea ? `(전체 ${fmt(l.wholeArea, 1)}㎡${l.cutBy ? ', ' + l.cutBy : ''})` : ''}` : '',
   ].filter(Boolean).join(', ');
 }
 
@@ -744,6 +744,7 @@ function boot() {
   };
   $('#btnBaseToday').onclick = () => { S.criteria.baseDate = ''; App.update(true); };
   Assume.bind();
+  $('#btnRoadCut').onclick = () => RoadCut.start();
   $('#fitKeep').onclick = () => $('#fitDialog').close();
   $('#fitSnap').onclick = async () => {
     $('#fitDialog').close();

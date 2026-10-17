@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=40">
+<link rel="stylesheet" href="css/style.css?v=42">
 </head>
 <body>
 
@@ -230,6 +230,8 @@
           <input id="anchorTarget" inputmode="decimal" placeholder="목표 면적 ㎡ (예: 160201.8)" style="width:200px">
           <button class="btn small" id="btnAnchorZone">위치 지번 + 면적으로 추정</button>
         </div>
+        <p class="note" style="margin-top:10px"><b>마무리. 경계 도로·작은 필지 정리</b> – 구역 경계에 걸친 도로를 하나씩 확대해 보며 <b>중심선까지 / 도로 전체 / 빼기 / 지금 구역선대로</b> 중에 고릅니다. 작은 필지는 최대로 확대해 보여줍니다.</p>
+        <button class="btn small primary" id="btnRoadCut">경계 도로·작은 필지 정리</button>
         <p class="note" id="jibunMsg" aria-live="polite"></p>
         <div id="jibunReport" class="jibun-report"></div>
       </div>
@@ -414,16 +416,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=40"></script>
-<script src="js/util.js?v=40"></script>
-<script src="js/state.js?v=40"></script>
-<script src="js/calc.js?v=40"></script>
-<script src="js/map.js?v=41"></script>
-<script src="js/ledger.js?v=40"></script>
-<script src="js/pdfsave.js?v=40"></script>
-<script src="js/overlay.js?v=40"></script>
-<script src="js/export.js?v=40"></script>
-<script src="js/assume.js?v=40"></script>
-<script src="js/app.js?v=40"></script>
+<script src="js/config.js?v=42"></script>
+<script src="js/util.js?v=42"></script>
+<script src="js/state.js?v=42"></script>
+<script src="js/calc.js?v=42"></script>
+<script src="js/map.js?v=42"></script>
+<script src="js/ledger.js?v=42"></script>
+<script src="js/pdfsave.js?v=42"></script>
+<script src="js/overlay.js?v=42"></script>
+<script src="js/export.js?v=42"></script>
+<script src="js/roadcut.js?v=42"></script>
+<script src="js/assume.js?v=42"></script>
+<script src="js/app.js?v=42"></script>
 </body>
 </html>
