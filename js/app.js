@@ -586,6 +586,12 @@ function boot() {
   $('#searchForm').onsubmit = e => { e.preventDefault(); MapView.search($('#searchInput').value); };
   $('#btnGeojson').onclick = () => MapView.exportGeoJSON();
   $('#btnGeojsonOpen').onclick = () => MapView.importGeoJSON();
+  // 참고 도면 겹쳐 보기
+  $('#btnRefLoad').onclick = () => RefOverlay.load();
+  $('#btnRefAlign').onclick = () => RefOverlay.startAlign();
+  $('#btnRefToggle').onclick = () => RefOverlay.toggle();
+  $('#btnRefRemove').onclick = () => RefOverlay.remove();
+  $('#refOpacity').oninput = e => RefOverlay.setOpacity(num(e.target.value));
   $('#btnPick').onclick = () => MapView.setPicking(!MapView.picking);
   $('#btnImportArea').onclick = () => MapView.importArea();
   // 지도에서 불러온 필지·건축물만 지움 (직접 입력한 행은 유지)

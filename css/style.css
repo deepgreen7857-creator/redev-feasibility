@@ -309,6 +309,11 @@ td.heat.base { outline: 2px solid var(--ink); outline-offset: -2px; font-weight:
 .export-box .inline-field { padding: 4px 0; }
 .export-box select { width: auto; padding: 4px 8px; }
 #printSheet { display: none; }
+.ref-box { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
+.ref-box .btn { margin: 4px 4px 0 0; }
+.ref-box input[type="range"] { width: 120px; padding: 0; }
+.ref-img { position: absolute; left: 0; top: 0; transform-origin: 0 0; max-width: none !important; pointer-events: none; user-select: none; }
+.ref-tip { font-weight: 700; font-size: 12px; }
 .jibun-box { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
 .jibun-box .btn { margin: 6px 4px 0 0; }
 .jibun-box textarea { font-size: .85rem; }

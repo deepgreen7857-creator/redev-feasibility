@@ -256,7 +256,10 @@ const MapView = {
     // 그리기 중에는 필지 선택이 끼어들지 않도록
     this.map.on(L.Draw.Event.DRAWSTART, () => { this.drawing = true; });
     this.map.on(L.Draw.Event.DRAWSTOP, () => { this.drawing = false; });
-    this.map.on('click', e => { if (this.picking && !this.drawing) this.pick(e.latlng); });
+    this.map.on('click', e => {
+      if (typeof RefOverlay !== 'undefined' && RefOverlay.step) { RefOverlay.onClick(e); return; }   // 도면 맞추기 중
+      if (this.picking && !this.drawing) this.pick(e.latlng);
+    });
     this.map.on('moveend', () => {
       const c = this.map.getCenter();
       S.area.center = [c.lat, c.lng];
