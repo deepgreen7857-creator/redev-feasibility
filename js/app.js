@@ -415,6 +415,26 @@ const App = {
       <div class="hl"><span>비례율</span><strong class="${ratioClass(r.ratio)}">${fmtPct(r.ratio)}</strong></div>`;
   },
 
+  // 홈: 초기화 안내 창을 띄움
+  home() {
+    const d = $('#homeDialog');
+    if (d.open) return;
+    d.showModal();
+  },
+
+  // 모든 입력·지도 표시를 지우고 첫 화면으로
+  fullReset() {
+    if ($('#map').classList.contains('map-full')) MapView.toggleFull();
+    if (MapView.picking) MapView.setPicking(false);
+    if (typeof RefOverlay !== 'undefined') RefOverlay.remove(true);
+    if (MapView.roughLayer) { MapView.roughLayer.remove(); MapView.roughLayer = null; }
+    if (MapView.marker) { MapView.marker.remove(); MapView.marker = null; }
+    ['#jibunList', '#jibunBase', '#anchorTarget', '#ovSearchInput', '#searchInput'].forEach(s => { const e = $(s); if (e) e.value = ''; });
+    ['#jibunMsg', '#jibunReport', '#pickMsg', '#refMsg', '#exportMsg', '#ovSearchMsg', '#searchResults'].forEach(s => { const e = $(s); if (e) e.innerHTML = ''; });
+    this.replaceState(defaultState());
+    this.go('overview');
+  },
+
   replaceState(next) {
     S = migrate(mergeDefaults(defaultState(), next));
     saveState();
@@ -567,8 +587,15 @@ function boot() {
   $('#btnSample').onclick = () => {
     if (confirm('예시 데이터(가상의 재개발 구역)를 불러옵니다. 지금 입력한 내용은 바뀝니다. 계속할까요?')) App.replaceState(sampleState());
   };
-  $('#btnReset').onclick = () => {
-    if (confirm('모든 입력을 지우고 새로 시작할까요? 필요하면 먼저 "파일 저장"으로 보관하세요.')) App.replaceState(defaultState());
+  // 홈·새로 시작: 둘 다 초기화 안내 창을 거침
+  $('#btnHome').onclick = () => App.home();
+  $('#btnReset').onclick = () => App.home();
+  $('#homeCancel').onclick = () => $('#homeDialog').close();
+  $('#homeReset').onclick = () => { $('#homeDialog').close(); App.fullReset(); };
+  $('#homeSaveReset').onclick = () => {
+    download(`${S.meta.name || '사업성검토'}.json`, JSON.stringify(S, null, 2), 'application/json');
+    $('#homeDialog').close();
+    setTimeout(() => App.fullReset(), 300);
   };
   $('#btnSave').onclick = () => download(`${S.meta.name || '사업성검토'}.json`, JSON.stringify(S, null, 2), 'application/json');
   $('#btnOpen').onclick = async () => {

@@ -10,11 +10,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=34">
+<link rel="stylesheet" href="css/style.css?v=35">
 </head>
 <body>
 
 <header class="topbar">
+  <button class="home-btn" id="btnHome" title="처음 화면으로 (입력 내용이 초기화됩니다)"><span aria-hidden="true">⌂</span> 홈</button>
   <div class="brand"><span class="logo" aria-hidden="true">▦</span><span>정비사업 사업성 검토</span></div>
   <input class="proj-name" data-bind="meta.name" aria-label="사업명" placeholder="사업명">
   <div class="top-actions">
@@ -27,6 +28,17 @@
 </header>
 
 <section class="kpis" id="kpis" aria-label="주요 지표"></section>
+
+<dialog id="homeDialog" class="home-dialog">
+  <h2>처음 화면으로 돌아갈까요?</h2>
+  <p class="warn-box"><b>⚠ 지금까지 입력한 내용이 모두 초기화됩니다.</b><br>구역계, 토지·건축물조서, 분양수입·사업비, 겹친 도면이 모두 지워지고 첫 화면으로 돌아갑니다.</p>
+  <p class="note">나중에 다시 쓰려면 <b>저장하고 처음으로</b>를 누르세요. 저장한 파일은 상단 <b>파일 열기</b>로 다시 불러올 수 있습니다.</p>
+  <div class="dialog-actions">
+    <button class="btn primary" id="homeSaveReset">저장하고 처음으로</button>
+    <button class="btn danger-solid" id="homeReset">그냥 처음으로 (초기화)</button>
+    <button class="btn" id="homeCancel">취소</button>
+  </div>
+</dialog>
 
 <nav class="tabs" id="tabs" aria-label="검토 단계">
   <a href="#overview" data-tab="overview"><b>1</b>사업 개요</a>
@@ -333,13 +345,13 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=34"></script>
-<script src="js/util.js?v=34"></script>
-<script src="js/state.js?v=34"></script>
-<script src="js/calc.js?v=34"></script>
-<script src="js/map.js?v=34"></script>
-<script src="js/overlay.js?v=34"></script>
-<script src="js/export.js?v=34"></script>
-<script src="js/app.js?v=34"></script>
+<script src="js/config.js?v=35"></script>
+<script src="js/util.js?v=35"></script>
+<script src="js/state.js?v=35"></script>
+<script src="js/calc.js?v=35"></script>
+<script src="js/map.js?v=35"></script>
+<script src="js/overlay.js?v=35"></script>
+<script src="js/export.js?v=35"></script>
+<script src="js/app.js?v=35"></script>
 </body>
 </html>

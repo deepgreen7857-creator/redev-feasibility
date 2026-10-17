@@ -216,6 +216,17 @@ const MapView = {
       },
     });
     this.map.addControl(new FullBtn());
+    // 전체 화면에서도 홈으로 갈 수 있게 (평소엔 상단 홈 버튼이 보여서 숨김)
+    const HomeBtn = L.Control.extend({
+      options: { position: 'topleft' },
+      onAdd: () => {
+        const b = L.DomUtil.create('a', 'leaflet-bar map-home-btn');
+        b.href = '#'; b.title = '처음 화면으로 (입력 내용이 초기화됩니다)'; b.textContent = '⌂ 홈';
+        L.DomEvent.on(b, 'click', e => { L.DomEvent.stop(e); App.home(); });
+        return b;
+      },
+    });
+    this.map.addControl(new HomeBtn());
     if (VWorld.enabled) {
       const PickBtn = L.Control.extend({
         options: { position: 'topright' },

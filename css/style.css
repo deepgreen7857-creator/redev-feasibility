@@ -309,6 +309,19 @@ td.heat.base { outline: 2px solid var(--ink); outline-offset: -2px; font-weight:
 .export-box .inline-field { padding: 4px 0; }
 .export-box select { width: auto; padding: 4px 8px; }
 #printSheet { display: none; }
+.home-btn { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 700; padding: 6px 12px; border-radius: 7px; cursor: pointer; white-space: nowrap; }
+.home-btn span { font-size: 1.15em; line-height: 1; }
+.home-btn:hover { background: var(--accent); color: #fff; }
+.home-dialog { border: none; border-radius: 12px; padding: 22px 24px; max-width: 460px; width: calc(100% - 32px); background: var(--surface); color: var(--ink); box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+.home-dialog::backdrop { background: rgba(0,0,0,.45); }
+.home-dialog h2 { margin: 0 0 10px; }
+.warn-box { background: var(--bad-soft); border: 1px solid var(--bad); color: var(--ink); border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; font-size: .9rem; }
+.warn-box b { color: var(--bad); }
+.dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.btn.danger-solid { background: var(--bad); border-color: var(--bad); color: #fff; }
+.btn.danger-solid:hover { color: #fff; filter: brightness(1.08); }
+.map-home-btn { display: none !important; place-items: center; padding: 0 10px; height: 30px; background: #fff; font-weight: 700; color: #c2410c !important; text-decoration: none; cursor: pointer; font-size: 13px; }
+.map-full .map-home-btn { display: grid !important; }
 .ref-box { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
 .ref-box .btn { margin: 4px 4px 0 0; }
 .ref-box input[type="range"] { width: 120px; padding: 0; }
