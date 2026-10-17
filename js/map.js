@@ -68,24 +68,50 @@ const MapView = {
     App.update(true);
   },
 
+  // 검색 결과 위치로 이동하고 표시
+  goTo(r) {
+    const hasNumber = !!(r.address && r.address.house_number);
+    this.map.setView([+r.lat, +r.lon], hasNumber ? 18 : 16);
+    if (this.marker) this.marker.remove();
+    this.marker = L.circleMarker([+r.lat, +r.lon], { radius: 8, color: '#2563eb', weight: 3, fillOpacity: 0.3 })
+      .addTo(this.map)
+      .bindTooltip(r.display_name.split(',').slice(0, 3).join(','), { direction: 'top' });
+  },
+
   async search(q) {
     const out = $('#searchResults');
-    if (!q.trim()) return;
+    q = q.trim();
+    if (!q) return;
+    if (!this.map) this.init();
     out.innerHTML = '<li class="muted">검색 중…</li>';
     try {
-      const url = 'https://nominatim.openstreetmap.org/search?format=json&countrycodes=kr&limit=6&q=' + encodeURIComponent(q);
+      const url = 'https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&countrycodes=kr&limit=6&q=' + encodeURIComponent(q);
       const res = await fetch(url, { headers: { 'Accept-Language': 'ko' } });
       const list = await res.json();
-      if (!list.length) { out.innerHTML = '<li class="muted">검색 결과가 없습니다. 동 이름이나 도로명으로 다시 검색해 보세요.</li>'; return; }
+      if (!list.length) { out.innerHTML = '<li class="muted">검색 결과가 없습니다. "○○구 ○○동"처럼 동 이름이나 도로명 주소로 다시 검색해 보세요.</li>'; return; }
+
+      // 첫 번째 결과로 바로 이동
+      this.goTo(list[0]);
       out.innerHTML = '';
-      list.forEach(r => {
-        const li = document.createElement('li');
-        const b = document.createElement('button');
-        b.textContent = r.display_name;
-        b.onclick = () => { this.map.setView([+r.lat, +r.lon], 17); out.innerHTML = ''; };
-        li.append(b);
-        out.append(li);
-      });
+      // 지번·건물번호까지 쳤는데 그 번호를 찾지 못한 경우 알림
+      const askedNumber = /\d+(-\d+)?\s*(번지)?\s*$/.test(q) || /\d+-\d+/.test(q);
+      if (askedNumber && !(list[0].address && list[0].address.house_number)) {
+        out.insertAdjacentHTML('beforeend', `<li class="muted warn-note">입력한 번지를 지도에서 찾지 못해 <b>${esc(list[0].display_name.split(',')[0])}</b> 일대로 이동했습니다. 지도를 확대해 직접 위치를 찾아 주세요.</li>`);
+      }
+      // 첫 결과와 거의 같은 위치(같은 건물의 상호 등)는 빼고 보여줌
+      const first = L.latLng(+list[0].lat, +list[0].lon);
+      const others = list.slice(1).filter(r => first.distanceTo([+r.lat, +r.lon]) > 100);
+      if (others.length) {
+        out.insertAdjacentHTML('beforeend', '<li class="muted">다른 검색 결과:</li>');
+        others.forEach(r => {
+          const li = document.createElement('li');
+          const b = document.createElement('button');
+          b.textContent = r.display_name;
+          b.onclick = () => this.goTo(r);
+          li.append(b);
+          out.append(li);
+        });
+      }
     } catch (e) {
       out.innerHTML = '<li class="muted">검색에 실패했습니다. 잠시 후 다시 시도해 주세요.</li>';
     }
