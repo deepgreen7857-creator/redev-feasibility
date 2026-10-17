@@ -34,14 +34,15 @@ const FAR_BY_ZONING = {
   '준공업지역': { seoul: 400, max: 400 },
 };
 
-// 판정 기준값. 법령·조례에 따라 달라지므로 화면에서 편집 가능하게 둠.
+// 판정 기준값 (2026-10 기준 조사). 법령·조례에 따라 달라지므로 화면에서 편집 가능하게 둠.
 function defaultCriteria() {
   return {
-    rcYears: 30,      // 철근콘크리트·철골 노후 판정 연수 (서울시 조례 기준 예시)
-    otherYears: 20,   // 그 밖의 구조
-    redev: { oldRatio: 60, minArea: 10000 },
-    recon: { minYears: 30, minUnits: 300, minArea: 10000 },
-    garo: { maxArea: 10000, oldRatio: 66.7, minDetached: 10, minApartment: 20, minMixed: 20 },
+    rcYears: 30,           // 도시정비법 시행령 제2조제3항(20~30년 범위 조례 위임), 서울시 조례 제4조: 철근콘크리트 등 30년
+    otherYears: 20,        // 그 밖의 구조 20년
+    detachedOther: true,   // 서울시 조례: 단독주택은 구조와 관계없이 20년 (철근콘크리트 30년 항목에서 제외)
+    redev: { oldRatio: 60, minArea: 10000 },             // 시행령 별표1 제2호(2024.3.19. 2/3→60%), 면적은 서울시 조례 제6조
+    recon: { minYears: 30, minUnits: 300, minArea: 10000 }, // 시행령 별표1 제3호
+    garo: { maxArea: 10000, oldRatio: 60, minDetached: 10, minApartment: 20, minMixed: 20 }, // 소규모주택정비법 시행령 제3조(2024.3.19. 2/3→60%)
   };
 }
 
@@ -84,7 +85,7 @@ function defaultSales() {
 
 function defaultState() {
   return {
-    version: 1,
+    version: 2,
     // zoningManual/locationManual: 사용자가 직접 고친 값이면 자동 입력으로 덮어쓰지 않음
     meta: { name: '새 정비사업', type: 'redevelopment', location: '', zoning: '', memo: '', zoningList: [], zoningManual: false, locationManual: false },
     area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'drawn', center: [37.5665, 126.978], zoom: 16 },
@@ -113,10 +114,19 @@ function mergeDefaults(def, val) {
   return val === undefined ? def : val;
 }
 
+// 예전 기본값으로 저장된 기준을 현행 기준으로 바꿈
+function migrate(s) {
+  if ((s.version || 1) < 2) {
+    if (s.criteria.garo.oldRatio === 66.7) s.criteria.garo.oldRatio = 60;
+    s.version = 2;
+  }
+  return s;
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return mergeDefaults(defaultState(), JSON.parse(raw));
+    if (raw) return migrate(mergeDefaults(defaultState(), JSON.parse(raw)));
   } catch (e) { /* 저장소를 쓸 수 없으면 새로 시작 */ }
   return defaultState();
 }

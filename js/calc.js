@@ -102,7 +102,8 @@ const Calc = {
   isOld(s, b, year) {
     const y = num(b.year);
     if (!y) return false;
-    const strong = b.structure === '철근콘크리트' || b.structure === '철골';
+    const detached = b.use === '단독주택' || b.use === '다가구주택';
+    const strong = (b.structure === '철근콘크리트' || b.structure === '철골') && !(detached && s.criteria.detachedOther);
     return year - y >= (strong ? s.criteria.rcYears : s.criteria.otherYears);
   },
 
@@ -146,18 +147,21 @@ const Calc = {
     const out = [];
     const has = sv.count > 0;
     if (s.meta.type === 'redevelopment') {
-      out.push({ label: '노후·불량건축물 비율 (동수 기준)', value: fmtPct(sv.oldRatio), need: `${fmt(c.redev.oldRatio, 1)}% 이상`, pass: has ? sv.oldRatio >= c.redev.oldRatio : null });
+      out.push({ label: '노후·불량건축물 비율 (동수 기준)', value: fmtPct(sv.oldRatio), need: `${fmt(c.redev.oldRatio, 1)}% 이상 (재정비촉진지구 50%)`, pass: has ? sv.oldRatio >= c.redev.oldRatio : null });
       out.push({ label: '구역 면적', value: `${fmt(site)}㎡`, need: `${fmt(c.redev.minArea)}㎡ 이상`, pass: site > 0 ? site >= c.redev.minArea : null });
-      out.push({ label: '노후·불량건축물 비율 (연면적 기준)', value: fmtPct(sv.oldAreaRatio), need: '참고 (조례에 따라 요건)', pass: null });
-      out.push({ label: '과소필지 (90㎡ 미만 대지)', value: `${sv.small}필지`, need: '참고 (호수밀도·과소필지 등 선택 요건)', pass: null });
+      // 서울시 조례 선택 요건: 아래 중 하나 이상 (주택접도율 40% 이하는 이 도구로 판단 불가)
+      const smallRatio = sv.landCount ? sv.small / sv.landCount * 100 : NaN;
+      out.push({ label: '[선택] 노후·불량건축물 연면적 비율', value: fmtPct(sv.oldAreaRatio), need: '60% 이상', pass: isFinite(sv.oldAreaRatio) ? sv.oldAreaRatio >= 60 : null });
+      out.push({ label: '[선택] 과소필지 비율 (90㎡ 미만 토지)', value: `${sv.small}필지 (${fmtPct(smallRatio)})`, need: '40% 이상', pass: isFinite(smallRatio) ? smallRatio >= 40 : null });
+      out.push({ label: '[선택] 주택접도율 · 호수밀도', value: '현장·도면 확인', need: '접도율 40% 이하 또는 호수밀도 60동/ha 이상', pass: null });
     } else if (s.meta.type === 'reconstruction') {
       out.push({ label: '공동주택 준공 후 경과연수 (가장 최근 동)', value: isFinite(sv.aptMinAge) ? `${sv.aptMinAge}년` : '–', need: `${c.recon.minYears}년 이상`, pass: isFinite(sv.aptMinAge) ? sv.aptMinAge >= c.recon.minYears : null });
       const okScale = sv.apartment >= c.recon.minUnits || site >= c.recon.minArea;
       out.push({ label: '규모 (세대수 또는 부지면적)', value: `${fmt(sv.apartment)}세대 / ${fmt(site)}㎡`, need: `${fmt(c.recon.minUnits)}세대 이상 또는 ${fmt(c.recon.minArea)}㎡ 이상`, pass: has || site > 0 ? okScale : null });
-      out.push({ label: '재건축진단(구 안전진단) 통과', value: s.checks.safety ? '확인함' : '미확인', need: 'D·E등급 등', pass: s.checks.safety ? true : null, check: 'safety' });
+      out.push({ label: '재건축진단(구 안전진단) 통과', value: s.checks.safety ? '확인함' : '미확인', need: '2025.6.4.부터 사업시행계획인가 전까지 통과하면 됨', pass: s.checks.safety ? true : null, check: 'safety' });
     } else {
       const g = c.garo;
-      out.push({ label: '가로구역 면적', value: `${fmt(site)}㎡`, need: `${fmt(g.maxArea)}㎡ 미만`, pass: site > 0 ? site < g.maxArea : null });
+      out.push({ label: '가로구역 면적', value: `${fmt(site)}㎡`, need: `${fmt(g.maxArea)}㎡ 미만 (조례 1만3천㎡, 심의 시 2만㎡, 관리지역 4만㎡ 미만 특례)`, pass: site > 0 ? site < g.maxArea : null });
       out.push({ label: '노후·불량건축물 비율 (동수 기준)', value: fmtPct(sv.oldRatio), need: `${fmt(g.oldRatio, 1)}% 이상`, pass: has ? sv.oldRatio >= g.oldRatio : null });
       let need, pass;
       if (sv.detached && !sv.apartment) { need = `단독주택 ${g.minDetached}호 이상`; pass = sv.detached >= g.minDetached; }

@@ -390,7 +390,7 @@ const App = {
   },
 
   replaceState(next) {
-    S = mergeDefaults(defaultState(), next);
+    S = migrate(mergeDefaults(defaultState(), next));
     saveState();
     bindInputs();
     if (MapView.map) MapView.load();
@@ -470,6 +470,8 @@ function boot() {
   $('#btnGeojson').onclick = () => MapView.exportGeoJSON();
   $('#btnPick').onclick = () => MapView.setPicking(!MapView.picking);
   $('#btnImportArea').onclick = () => MapView.importArea();
+  $('#btnPdf').onclick = () => Export.pdf($('#exportPaper').value);
+  $('#btnDxf').onclick = () => Export.dxf();
 
   // 개요의 주소 검색: 위치·용도지역 자동 입력, 구역계 지도도 그 위치로
   $('#ovSearchForm').onsubmit = async e => {

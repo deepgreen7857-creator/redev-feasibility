@@ -116,6 +116,8 @@ input[type="radio"], input[type="checkbox"] { width: auto; accent-color: var(--a
 .form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; font-weight: 500; }
 .form-grid label small { font-weight: 400; color: var(--muted); font-size: .75rem; margin-top: -3px; }
 .form-grid label input, .form-grid label select { margin-top: auto; }
+.chk-label span { display: flex; gap: 6px; align-items: flex-start; font-weight: 400; }
+.chk-label input { margin-top: 4px; }
 .radio { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: .9rem; }
 .radio b { margin-left: auto; font-variant-numeric: tabular-nums; }
 .inline-field { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .85rem; color: var(--muted); padding: 0 0 6px 26px; }
@@ -292,8 +294,19 @@ td.heat.base { outline: 2px solid var(--ink); outline-offset: -2px; font-weight:
   .disclaimer { padding: 8px 16px 32px; }
 }
 
+.export-box { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
+.export-box .btn { margin: 4px 4px 0 0; }
+.export-box .inline-field { padding: 4px 0; }
+.export-box select { width: auto; padding: 4px 8px; }
+#printSheet { display: none; }
+
 /* ---------- 인쇄 ---------- */
 @media print {
+  /* 도면 PDF: 도면 한 장만 출력 */
+  body.print-sheet > *:not(#printSheet) { display: none !important; }
+  body.print-sheet { background: #fff; margin: 0; }
+  body.print-sheet #printSheet { display: block; }
+  body.print-sheet #printSheet svg { display: block; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   :root { --bg: #fff; }
   .topbar .top-actions, .tabs, .icon-btn, .btn, .search, .search-results, #tab-area, .criteria { display: none !important; }
   .topbar { position: static; }

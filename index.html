@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=9">
+<link rel="stylesheet" href="css/style.css?v=10">
 </head>
 <body>
 
@@ -131,7 +131,15 @@
         <p class="note" id="pickMsg" aria-live="polite"></p>
       </div>
       <p class="note" id="vworldOff">브이월드 인증키를 설정하면 지적도, 지번 검색, 필지 선택을 쓸 수 있습니다.</p>
-      <button class="btn small" id="btnGeojson">구역계 GeoJSON 내보내기</button>
+      <div class="export-box">
+        <h3>도면 내보내기</h3>
+        <p class="note">필지·지번·건물·구역계를 모두 선으로 그려 크게 출력해도 깨지지 않습니다. 노후 건물은 색으로 구분됩니다.</p>
+        <label class="inline-field">용지 <select id="exportPaper"><option>A4</option><option>A3</option><option>A2</option></select></label>
+        <button class="btn small primary" id="btnPdf">도면 PDF</button>
+        <button class="btn small" id="btnDxf">CAD 도면 (DXF)</button>
+        <button class="btn small" id="btnGeojson">GeoJSON</button>
+        <p class="note" id="exportMsg" aria-live="polite"></p>
+      </div>
       <p class="note">지도에서 그린 면적은 측량 면적이 아닙니다. 정확한 면적은 지적도·토지조서로 확인하세요.</p>
     </aside>
   </div>
@@ -148,15 +156,17 @@
   </div>
 
   <details class="card criteria">
-    <summary>판정 기준값 설정 <small>법령·조례에 따라 다르므로 관할 지자체 기준으로 확인·수정하세요</small></summary>
+    <summary>판정 기준값 설정 <small>2026년 10월 기준 서울시 값입니다. 다른 지자체는 조례에 맞게 고치세요.</small></summary>
+    <p class="note">근거: 도시정비법 시행령 제2조·별표1, 서울시 도시및주거환경정비조례 제4조·제6조, 소규모주택정비법 시행령 제3조. 재개발·가로주택 노후도는 2024.3.19. 개정으로 2/3에서 60%로 완화되었습니다. 경기도는 조례로 재개발 노후도를 50%로 정하고 있습니다. 1989.1.24. 당시 무허가건축물(특정무허가건축물)도 노후도 산정에 포함됩니다(2025.6.4.~).</p>
     <div class="form-grid three">
       <label>노후 판정: 철근콘크리트·철골 (년)<input data-bind="criteria.rcYears" data-type="number"></label>
       <label>노후 판정: 그 밖의 구조 (년)<input data-bind="criteria.otherYears" data-type="number"></label>
+      <label class="chk-label"><span><input type="checkbox" data-bind="criteria.detachedOther" data-rerender="1"> 단독·다가구주택은 구조와 관계없이 "그 밖의 구조" 연수 적용</span><small>서울시 조례 기준</small></label>
     </div>
     <h4>재개발</h4>
     <div class="form-grid three">
-      <label>노후도 기준 (%)<input data-bind="criteria.redev.oldRatio" data-type="number"></label>
-      <label>최소 구역 면적 (㎡)<input data-bind="criteria.redev.minArea" data-type="number"></label>
+      <label>노후도 기준 (%)<small>재정비촉진지구 50%, 경기도 50%</small><input data-bind="criteria.redev.oldRatio" data-type="number"></label>
+      <label>최소 구역 면적 (㎡)<small>서울시 조례. 재정비촉진지구 5천㎡</small><input data-bind="criteria.redev.minArea" data-type="number"></label>
     </div>
     <h4>재건축</h4>
     <div class="form-grid three">
@@ -166,8 +176,8 @@
     </div>
     <h4>가로주택정비사업</h4>
     <div class="form-grid three">
-      <label>가로구역 면적 상한 (㎡ 미만)<input data-bind="criteria.garo.maxArea" data-type="number"></label>
-      <label>노후도 기준 (%)<input data-bind="criteria.garo.oldRatio" data-type="number"></label>
+      <label>가로구역 면적 상한 (㎡ 미만)<small>조례 1만3천, 심의 시 2만, 관리지역 4만</small><input data-bind="criteria.garo.maxArea" data-type="number"></label>
+      <label>노후도 기준 (%)<small>관리지역·재정비촉진지구 50%</small><input data-bind="criteria.garo.oldRatio" data-type="number"></label>
       <label>단독주택만 있을 때 (호 이상)<input data-bind="criteria.garo.minDetached" data-type="number"></label>
       <label>공동주택만 있을 때 (세대 이상)<input data-bind="criteria.garo.minApartment" data-type="number"></label>
       <label>섞여 있을 때 합계 (채 이상)<input data-bind="criteria.garo.minMixed" data-type="number"></label>
@@ -267,12 +277,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=9"></script>
-<script src="js/util.js?v=9"></script>
-<script src="js/state.js?v=9"></script>
-<script src="js/calc.js?v=9"></script>
-<script src="js/map.js?v=9"></script>
-<script src="js/app.js?v=9"></script>
+<script src="js/config.js?v=10"></script>
+<script src="js/util.js?v=10"></script>
+<script src="js/state.js?v=10"></script>
+<script src="js/calc.js?v=10"></script>
+<script src="js/map.js?v=10"></script>
+<script src="js/export.js?v=10"></script>
+<script src="js/app.js?v=10"></script>
 </body>
 </html>
