@@ -111,6 +111,31 @@ function buildingFromFeature(f, jibun, pnu) {
   };
 }
 
+// 필지 여러 개를 하나로 합침. 연속지적도는 이웃 필지 경계 좌표가 미세하게 어긋나 있어
+// 그냥 합치면 계산이 실패하는 경우가 있음 → 좌표 정리(1cm) → 살짝 부풀려 합치기 → 그래도 안 되면 따로 둠
+function safeUnion2(a, b) {
+  try { const u = turf.union(a, b); if (u) return u; } catch (e) { /* 아래에서 다시 시도 */ }
+  try { const u = turf.union(turf.truncate(a, { precision: 7 }), turf.truncate(b, { precision: 7 })); if (u) return u; } catch (e) { /* 다음 */ }
+  try {
+    const grow = f => turf.buffer(turf.truncate(f, { precision: 7 }), 0.02, { units: 'meters' });
+    const u = turf.union(grow(a), grow(b)); if (u) return u;
+  } catch (e) { /* 다음 */ }
+  // 마지막: 합치지 않고 두 도형을 한 묶음(MultiPolygon)으로
+  const polys = f => (f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates);
+  return turf.multiPolygon([...polys(a), ...polys(b)]);
+}
+// 반씩 나눠 합치면 빠르고, 한 번의 실패가 전체로 번지지 않음
+function safeUnion(fs) {
+  fs = fs.filter(Boolean);
+  if (!fs.length) return null;
+  while (fs.length > 1) {
+    const next = [];
+    for (let i = 0; i < fs.length; i += 2) next.push(i + 1 < fs.length ? safeUnion2(fs[i], fs[i + 1]) : fs[i]);
+    fs = next;
+  }
+  return fs[0];
+}
+
 // 연속지적도 객체 → 토지조서 한 행
 function landFromFeature(f) {
   const p = f.properties || {};
@@ -378,13 +403,7 @@ const MapView = {
     const polys = S.lands.filter(l => l.geom).map(l => ({ type: 'Feature', properties: {}, geometry: l.geom }));
     if (!polys.length) { alert('먼저 "필지 선택"을 켜고 지도에서 필지를 눌러 추가하세요.'); return; }
     if (S.area.geojson && !confirm('지금 그려진 구역계를 선택한 필지 경계로 바꿀까요?')) return;
-    let merged = polys[0];
-    try {
-      for (let i = 1; i < polys.length; i++) merged = turf.union(merged, polys[i]) || merged;
-    } catch (e) {
-      alert('필지 경계를 합치는 중 오류가 났습니다. 필지가 서로 붙어 있는지 확인해 주세요.');
-      return;
-    }
+    const merged = safeUnion(polys);
     this.items.clearLayers();
     L.geoJSON(merged, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => this.items.addLayer(l));
     this.map.fitBounds(this.items.getBounds(), { padding: [30, 30] });
@@ -434,7 +453,7 @@ const MapView = {
     let feats = [...found.values()];
     if (!feats.length) { msg.textContent = '필지를 하나도 찾지 못했습니다. 기준 동 주소를 확인해 주세요.'; this.showReport(report); return; }
 
-    const unionAll = fs => { let m = fs[0]; for (let i = 1; i < fs.length; i++) m = turf.union(m, fs[i]) || m; return m; };
+    const unionAll = fs => safeUnion(fs);
     const polysOf = g => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates);
     let merged;
     try { merged = unionAll(feats); } catch (e) { msg.textContent = '필지 경계를 합치는 중 오류가 났습니다.'; return; }
