@@ -231,7 +231,8 @@ td.refund { color: var(--good); font-weight: 700; }
 .map-error { padding: 24px; color: var(--muted); }
 .map.picking, .map.picking .leaflet-interactive { cursor: crosshair; }
 .map { height: max(560px, calc(100vh - 230px)); }
-.map.map-full { position: fixed; inset: 0; height: 100vh; width: 100vw; z-index: 3000; border-radius: 0; border: none; }
+/* Leaflet이 지도에 position:relative를 직접 넣어서 !important 필요 */
+.map.map-full { position: fixed !important; inset: 0; height: 100vh; width: 100vw; z-index: 3000; border-radius: 0; border: none; }
 body.map-full-open { overflow: hidden; }
 .map-full-btn { display: grid !important; place-items: center; width: 30px; height: 30px; background: #fff; font-size: 18px; color: #333 !important; text-decoration: none; cursor: pointer; }
 .map-full .map-full-btn { background: var(--accent); color: #fff !important; }
