@@ -99,30 +99,90 @@ const Calc = {
   },
 
   // ---------- 조서 분석 ----------
-  isOld(s, b, year) {
-    const y = num(b.year);
-    if (!y) return false;
+  // 노후도 판단 기준일 (비어 있으면 오늘)
+  baseDate(s) {
+    const d = s.criteria.baseDate;
+    const t = d ? new Date(d + 'T00:00:00') : new Date();
+    if (isNaN(t)) return new Date();
+    t.setHours(0, 0, 0, 0);
+    return t;
+  },
+
+  limitYears(s, b) {
     const detached = b.use === '단독주택' || b.use === '다가구주택';
     const strong = (b.structure === '철근콘크리트' || b.structure === '철골') && !(detached && s.criteria.detachedOther);
-    return year - y >= (strong ? s.criteria.rcYears : s.criteria.otherYears);
+    return strong ? s.criteria.rcYears : s.criteria.otherYears;
+  },
+
+  aprParts(b) {
+    const m = String(b.aprDate || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    return m ? [+m[1], +m[2], +m[3]] : null;
+  },
+
+  // 노후가 되는 날 = 사용승인일 + 기준 연수. 사용승인일이 없고 연도만 있으면 그해 1월 1일로 가정
+  oldDate(s, b) {
+    const n = this.limitYears(s, b), p = this.aprParts(b);
+    if (p) return new Date(p[0] + n, p[1] - 1, p[2]);
+    const y = num(b.year);
+    return y ? new Date(y + n, 0, 1) : null;
+  },
+
+  isOld(s, b) {
+    const d = this.oldDate(s, b);
+    return !!d && d <= this.baseDate(s);
+  },
+
+  // 기준일 현재 만 경과연수
+  age(s, b) {
+    const base = this.baseDate(s), p = this.aprParts(b);
+    if (p) {
+      let a = base.getFullYear() - p[0];
+      const bm = base.getMonth() + 1, bd = base.getDate();
+      if (bm < p[1] || (bm === p[1] && bd < p[2])) a--;
+      return a;
+    }
+    const y = num(b.year);
+    return y ? base.getFullYear() - y : NaN;
+  },
+
+  // 노후도 요건 기준(%): 재개발·가로주택만
+  oldRequirement(s) {
+    if (s.meta.type === 'redevelopment') return s.criteria.redev.oldRatio;
+    if (s.meta.type === 'garo') return s.criteria.garo.oldRatio;
+    return NaN;
   },
 
   survey(s) {
-    const year = new Date().getFullYear();
+    const base = this.baseDate(s);
+    const year = base.getFullYear();
     const bs = s.buildings;
     let old = 0, oldArea = 0, area = 0, detached = 0, apartment = 0, minAge = Infinity, aptMinAge = Infinity, unknown = 0;
+    const future = [];          // 아직 노후가 아닌 건물이 노후가 되는 날
     for (const b of bs) {
       if (!num(b.year)) unknown++;
-      const isOld = this.isOld(s, b, year);
+      const isOld = this.isOld(s, b);
       const fa = num(b.floorArea);
       area += fa;
       if (isOld) { old++; oldArea += fa; }
+      else { const od = this.oldDate(s, b); if (od) future.push(od); }
+      const age = this.age(s, b);
       if (b.use === '단독주택' || b.use === '다가구주택') detached += 1;
       if (b.use === '다세대주택' || b.use === '연립주택' || b.use === '아파트') {
         apartment += num(b.units);
-        if (num(b.year)) aptMinAge = Math.min(aptMinAge, year - num(b.year));
+        if (isFinite(age)) aptMinAge = Math.min(aptMinAge, age);
       }
-      if (num(b.year)) minAge = Math.min(minAge, year - num(b.year));
+      if (isFinite(age)) minAge = Math.min(minAge, age);
+    }
+    future.sort((a, b) => a - b);
+    const addYears = n => new Date(base.getFullYear() + n, base.getMonth(), base.getDate());
+    const soon1 = future.filter(d => d <= addYears(1)).length;
+    const soon3 = future.filter(d => d <= addYears(3)).length;
+    // 노후도 요건을 채우는 날 (지금 그대로 시간이 흐른다고 볼 때)
+    const req = this.oldRequirement(s);
+    let reachDate = null, needMore = 0;
+    if (isFinite(req) && bs.length) {
+      needMore = Math.max(0, Math.ceil(req / 100 * bs.length - 1e-9) - old);
+      if (needMore > 0 && future.length >= needMore) reachDate = future[needMore - 1];
     }
     const lands = s.lands;
     const landArea = this.landTotal(s);
@@ -130,7 +190,7 @@ const Calc = {
     const small = lands.filter(l => l.jimok === '대' && num(l.area) > 0 && num(l.area) < 90).length;
     const owners = new Set(lands.map(l => (l.owner || '').trim()).filter(Boolean)).size;
     return {
-      year,
+      year, base, soon1, soon3, req, needMore, reachDate,
       count: bs.length, old, unknown, oldRatio: bs.length ? old / bs.length * 100 : NaN,
       area, oldArea, oldAreaRatio: area ? oldArea / area * 100 : NaN,
       detached, apartment,

@@ -160,7 +160,15 @@ const Tabs = {
           { key: 'aprDate', label: '사용승인일', width: 100, placeholder: 'YYYY-MM-DD' },
           { key: 'floorArea', label: '연면적 (㎡)', type: 'number', dec: 1, width: 90 },
           { key: 'units', label: '호·세대수', type: 'number', width: 70 },
-          { key: 'age', label: '경과연수', computed: r => (num(r.year) ? `${year - num(r.year)}년` : '–') },
+          {
+            key: 'age', label: '경과연수 (노후 도래일)',
+            computed: r => {
+              const a = Calc.age(S, r);
+              if (!isFinite(a)) return '–';
+              const od = Calc.oldDate(S, r);
+              return Calc.isOld(S, r) ? `${a}년` : `${a}년 (${od.toLocaleDateString('sv-SE')})`;
+            },
+          },
           { key: 'old', label: '노후 판정', computed: r => (Calc.isOld(S, r, year) ? '노후' : '–'), cls: r => (Calc.isOld(S, r, year) ? 'tag bad' : 'tag') },
           {
             key: 'check', label: '비고',
@@ -178,7 +186,11 @@ const Tabs = {
       const sv = Calc.survey(S);
       $('#oldStats').innerHTML = `
         <div><span>건축물</span><b>${fmt(sv.count)}동</b></div>
+        <div><span>기준일</span><b>${sv.base.toLocaleDateString('sv-SE')}${S.criteria.baseDate ? '' : ' (오늘)'}</b></div>
         <div><span>노후·불량건축물</span><b>${fmt(sv.old)}동</b></div>
+        <div><span>1년 안에 노후 도래</span><b>${fmt(sv.soon1)}동</b></div>
+        <div><span>3년 안에 노후 도래</span><b>${fmt(sv.soon3)}동</b></div>
+        ${isFinite(sv.req) && sv.count ? `<div class="hl"><span>노후도 ${fmt(sv.req, 1)}% 요건</span><b class="${sv.needMore ? 'warn' : 'good'}">${sv.needMore ? (sv.reachDate ? `${sv.needMore}동 부족 → ${sv.reachDate.toLocaleDateString('sv-SE')} 충족 예상` : `${sv.needMore}동 부족 (도래 예정 건물로 충족 불가)`) : '충족'}</b></div>` : ''}
         ${sv.unknown ? `<div><span>사용승인연도 없음 (판정 불가)</span><b class="warn">${fmt(sv.unknown)}동</b></div>` : ''}
         <div class="hl"><span>노후도 (동수 기준)</span><b class="${sv.oldRatio >= 60 ? 'good' : ''}">${fmtPct(sv.oldRatio)}</b></div>
         <div><span>노후도 (연면적 기준)</span><b>${fmtPct(sv.oldAreaRatio)}</b></div>
@@ -477,7 +489,9 @@ function surveyRows() {
   const bldgs = S.buildings.map((b, i) => ({
     '연번': i + 1, '지번': b.jibun, '건물명': b.name || '', '용도': b.use, '구조': b.structure,
     '지상층': num(b.floors) || '', '사용승인일': b.aprDate || (num(b.year) ? String(b.year) : ''),
-    '경과연수': num(b.year) ? year - num(b.year) : '', '연면적(㎡)': num(b.floorArea), '호·세대수': num(b.units) || '',
+    '경과연수': isFinite(Calc.age(S, b)) ? Calc.age(S, b) : '',
+    '노후도래일': Calc.oldDate(S, b) ? Calc.oldDate(S, b).toLocaleDateString('sv-SE') : '',
+    '연면적(㎡)': num(b.floorArea), '호·세대수': num(b.units) || '',
     '노후여부': Calc.isOld(S, b, year) ? '노후' : (num(b.year) ? '' : '판정불가'),
     '비고': [b.noInfo && !num(b.year) ? '건축물대장 확인' : '', b.needUnits && !num(b.units) ? '세대수 확인' : '', b.guessed ? '용도 추정' : ''].filter(Boolean).join(', '),
   }));
@@ -497,12 +511,15 @@ function saveSurveyXlsx() {
     return ws;
   };
   XLSX.utils.book_append_sheet(wb, sheet('토지조서', lands, [5, 28, 10, 6, 10, 9, 12, 14, 16, 10]), '토지조서');
-  XLSX.utils.book_append_sheet(wb, sheet('건축물조서', bldgs, [5, 10, 16, 12, 12, 7, 12, 8, 11, 9, 8, 18]), '건축물조서');
+  XLSX.utils.book_append_sheet(wb, sheet('건축물조서', bldgs, [5, 10, 16, 12, 12, 7, 12, 8, 12, 11, 9, 8, 18]), '건축물조서');
   const sum = [
     ['구분', '값'], ['필지 수', sv.landCount], ['토지 면적(㎡)', Math.round(sv.landArea * 10) / 10], ['국공유지 면적(㎡)', Math.round(sv.publicArea * 10) / 10],
     ['과소필지(90㎡ 미만)', sv.small], ['건축물 동수', sv.count], ['노후·불량건축물', sv.old], ['노후도(동수, %)', Math.round(sv.oldRatio * 10) / 10],
     ['노후도(연면적, %)', Math.round(sv.oldAreaRatio * 10) / 10], ['사용승인연도 없음(판정 불가)', sv.unknown],
     ['노후 기준', `철근콘크리트·철골 ${S.criteria.rcYears}년, 기타 ${S.criteria.otherYears}년`],
+    ['노후도 기준일', sv.base.toLocaleDateString('sv-SE')],
+    ['1년 안에 노후 도래', sv.soon1], ['3년 안에 노후 도래', sv.soon3],
+    ...(isFinite(sv.req) ? [[`노후도 ${sv.req}% 요건`, sv.needMore ? (sv.reachDate ? `${sv.needMore}동 부족, ${sv.reachDate.toLocaleDateString('sv-SE')} 충족 예상` : `${sv.needMore}동 부족`) : '충족']] : []),
   ];
   const ws3 = XLSX.utils.aoa_to_sheet(sum); ws3['!cols'] = [{ wch: 26 }, { wch: 30 }];
   XLSX.utils.book_append_sheet(wb, ws3, '요약');
@@ -611,6 +628,7 @@ function boot() {
   $('#btnParcelsToArea').onclick = () => MapView.parcelsToArea();
   $$('[data-csv]').forEach(b => { b.onclick = () => csvAction(b.dataset.csv, b.dataset.act); });
   $('#btnSortJibun').onclick = sortByJibun;
+  $('#btnBaseToday').onclick = () => { S.criteria.baseDate = ''; App.update(true); };
   $('#btnSurveyXlsx').onclick = saveSurveyXlsx;
   $('#btnSurveyPrint').onclick = printSurvey;
 

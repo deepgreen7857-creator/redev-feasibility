@@ -309,6 +309,8 @@ td.heat.base { outline: 2px solid var(--ink); outline-offset: -2px; font-weight:
 .export-box .inline-field { padding: 4px 0; }
 .export-box select { width: auto; padding: 4px 8px; }
 #printSheet { display: none; }
+.base-date { display: flex; align-items: center; gap: 8px; font-size: .85rem; font-weight: 500; margin-bottom: 4px; flex-wrap: wrap; }
+.base-date input { width: auto; padding: 4px 8px; }
 .survey-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 20px 0 4px; }
 .survey-actions .note { margin: 0; }
 .survey-print { font-size: 9pt; color: #000; }

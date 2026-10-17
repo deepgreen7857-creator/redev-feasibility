@@ -280,6 +280,7 @@ const Export = {
       ['건축물', `${fmt(d.buildings.filter(b => b.inZone).length)}동`],
       ['노후·불량건축물', `${fmt(d.buildings.filter(b => b.inZone && b.old).length)}동 (${fmtPct(d.buildings.filter(b => b.inZone).length ? d.buildings.filter(b => b.inZone && b.old).length / d.buildings.filter(b => b.inZone).length * 100 : NaN)})`],
       ['노후 기준', `철근콘크리트·철골 ${S.criteria.rcYears}년, 기타 ${S.criteria.otherYears}년 이상`],
+      ['노후도 기준일', Calc.baseDate(S).toLocaleDateString('sv-SE')],
       ['축척', `1:${fmt(scale)} (${paper} 출력 기준)`],
       ['좌표계', `GRS80 TM ${d.P.name} (EPSG:${d.P.epsg})`],
     ];
