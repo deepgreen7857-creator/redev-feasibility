@@ -99,6 +99,7 @@ function defaultState() {
     costs: defaultCosts(),
     prior: { mode: 'estimate', manual: 0, multiplier: 1.4 },
     members: [],
+    exposUnits: [],   // 건축물대장 전유부 호별 목록 (엑셀 조서 시트용)
     sens: { range: 20, step: 10 },
   };
 }

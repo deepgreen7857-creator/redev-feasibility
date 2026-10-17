@@ -26,6 +26,35 @@ const Ledger = {
     }
   },
 
+  // 전유부: 집합건물의 호별 전유면적 (전유공용면적 중 '전유'만). 여러 쪽이면 모두 받음
+  async unitsOf(pnu) {
+    const p = String(pnu), all = [];
+    for (let page = 1; page <= 20; page++) {
+      await this.throttle();
+      const params = new URLSearchParams({
+        serviceKey: DATA_GO_KR_KEY.trim(), sigunguCd: p.slice(0, 5), bjdongCd: p.slice(5, 10),
+        platGbCd: p.charAt(10) === '2' ? '1' : '0', bun: p.slice(11, 15), ji: p.slice(15, 19),
+        numOfRows: '500', pageNo: String(page), _type: 'json',
+      });
+      let j = null;
+      for (let k = 0; k < 6; k++) {
+        const res = await fetch(`${this.URL.replace('getBrTitleInfo', 'getBrExposPubuseAreaInfo')}?${params}`);
+        j = await res.json().catch(() => null);
+        const err = j && j.OpenAPI_ServiceResponse && j.OpenAPI_ServiceResponse.cmmMsgHeader && j.OpenAPI_ServiceResponse.cmmMsgHeader.errMsg;
+        if (err && /PER_SECOND|LIMITED_NUMBER/.test(err)) { await new Promise(r => setTimeout(r, 800 * (k + 1))); continue; }
+        if (err) throw new Error(err);
+        break;
+      }
+      const body = j && j.response && j.response.body;
+      if (!body) throw new Error('전유부 응답 오류');
+      const it = body.items && body.items.item;
+      const rows = !it ? [] : Array.isArray(it) ? it : [it];
+      all.push(...rows);
+      if (all.length >= num(body.totalCount) || !rows.length) break;
+    }
+    return all.filter(r => String(r.exposPubuseGbCd) === '1');
+  },
+
   async titleOf(pnu) {
     const p = String(pnu);
     const params = new URLSearchParams({
@@ -69,6 +98,7 @@ const Ledger = {
       year: aprDate ? +aprDate.slice(0, 4) : 0, aprDate,
       floorArea: Math.round(num(t.totArea) * 10) / 10, floors: num(t.grndFlrCnt), basement: num(t.ugrndFlrCnt),
       units, families: num(t.fmlyCnt), needUnits: isApt && !units, noInfo: !aprDate,
+      collective: String(t.regstrGbCd) === '2', dong: String(t.dongNm || '').trim(),
     };
   },
 
@@ -104,6 +134,31 @@ const Ledger = {
     // 요청 간격은 throttle이 지키므로 동시에 2개까지만
     await Promise.all([1, 2].map(async () => { while (queue.length) await work(queue.shift()); }));
 
+    // 집합건물(다세대·연립·아파트 등)이 있는 필지만 전유부(호별 전유면적)를 받음
+    const collective = [...found.entries()].filter(([, rows]) => rows.some(r => r.collective));
+    const unitRows = [], unitErr = [];
+    for (let i = 0; i < collective.length; i++) {
+      const [pnu, rows] = collective[i];
+      msg.textContent = `전유부(호별) 조회 중… ${i + 1}/${collective.length}`;
+      try {
+        const us = await this.unitsOf(pnu);
+        us.forEach(u => unitRows.push({
+          pnu, jibun: rows[0].jibun, bldNm: String(u.bldNm || '').trim(), dong: String(u.dongNm || '').trim(),
+          ho: String(u.hoNm || '').trim(), floor: (u.flrGbCdNm === '지하' ? 'B' : '') + num(u.flrNo),
+          area: Math.round(num(u.area) * 100) / 100, purpose: String(u.mainPurpsCdNm || u.etcPurps || '').trim(),
+        }));
+        // 동별 호 수를 표제부 행에 붙임 (동 이름이 같으면 그 동, 한 동뿐이면 전부)
+        const col = rows.filter(r => r.collective);
+        col.forEach(r => {
+          const mine = col.length === 1 ? us : us.filter(u => String(u.dongNm || '').trim() === r.dong);
+          r.hoCount = mine.length;
+          r.exposArea = Math.round(mine.reduce((a, u) => a + num(u.area), 0) * 10) / 10;
+        });
+      } catch (e) { unitErr.push(`: ${e.message}`); }
+    }
+    const refreshed = new Set(collective.map(([p]) => p));
+    S.exposUnits = (S.exposUnits || []).filter(u => !refreshed.has(u.pnu)).concat(unitRows);
+
     // 인증 문제 등으로 전부 실패하면 기존 조서를 건드리지 않음
     if (!found.size && errors.length) {
       msg.textContent = `건축물대장을 불러오지 못했습니다: ${errors[0]}`;
@@ -121,6 +176,8 @@ const Ledger = {
     sortByJibun();
     msg.innerHTML = `필지 ${fmt(lands.length)}개 조회 → <b>건축물대장 ${fmt(ledgerCnt)}동</b>으로 건축물조서를 채웠습니다 (이전 ${fmt(before)}동).`
       + (noLedger ? ` 대장이 없는 필지 ${fmt(noLedger)}개` + (kept ? `(지도 자료 건물 ${fmt(kept)}동은 "대장 없음"으로 남김 – 무허가 등 확인 필요)` : '') + '.' : '')
+      + (unitRows.length ? ` 전유부 <b>${fmt(unitRows.length)}호</b>(집합건물 ${fmt(collective.length)}필지)도 받았습니다.` : '')
+      + (unitErr.length ? ` 전유부 실패 ${unitErr.length}건.` : '')
       + (errors.length ? ` <b class="warn">조회 실패 ${errors.length}건</b> – 잠시 후 다시 누르면 그 필지만 다시 채웁니다.` : '');
   },
 };

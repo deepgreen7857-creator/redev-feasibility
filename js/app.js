@@ -160,6 +160,7 @@ const Tabs = {
           { key: 'aprDate', label: '사용승인일', width: 100, placeholder: 'YYYY-MM-DD' },
           { key: 'floorArea', label: '연면적 (㎡)', type: 'number', dec: 1, width: 90 },
           { key: 'units', label: '호·세대수', type: 'number', width: 70 },
+          { key: 'hoCount', label: '전유 호수', computed: r => (r.hoCount ? `${r.hoCount}호` : '') },
           {
             key: 'age', label: '경과연수 (노후 도래일)',
             computed: r => {
@@ -196,6 +197,7 @@ const Tabs = {
         <div><span>노후도 (연면적 기준)</span><b>${fmtPct(sv.oldAreaRatio)}</b></div>
         <div><span>단독·다가구</span><b>${fmt(sv.detached)}호</b></div>
         <div><span>공동주택</span><b>${fmt(sv.apartment)}세대</b></div>
+        ${(S.exposUnits || []).length ? `<div><span>전유부 호수 (집합건물)</span><b>${fmt(S.exposUnits.length)}호 · ${fmt(new Set(S.exposUnits.map(u => u.pnu)).size)}필지</b></div>` : ''}
         <div><span>토지</span><b>${fmt(sv.landCount)}필지 · ${fmt(sv.landArea)}㎡</b></div>
         <div><span>국공유지</span><b>${fmt(sv.publicArea)}㎡ (${fmtPct(sv.landArea ? sv.publicArea / sv.landArea * 100 : NaN)})</b></div>
         <div><span>과소필지 (90㎡ 미만)</span><b>${fmt(sv.small)}필지</b></div>
@@ -520,7 +522,7 @@ function surveyRows() {
     '지상층': num(b.floors) || '', '사용승인일': b.aprDate || (num(b.year) ? String(b.year) : ''),
     '경과연수': isFinite(Calc.age(S, b)) ? Calc.age(S, b) : '',
     '노후도래일': Calc.oldDate(S, b) ? Calc.oldDate(S, b).toLocaleDateString('sv-SE') : '',
-    '연면적(㎡)': num(b.floorArea), '호·세대수': num(b.units) || '',
+    '연면적(㎡)': num(b.floorArea), '호·세대수': num(b.units) || '', '전유 호수': num(b.hoCount) || '',
     '노후여부': Calc.isOld(S, b, year) ? '노후' : (num(b.year) ? '' : '판정불가'),
     '비고': [b.ledger ? '건축물대장' : '', b.noLedger ? '대장 없음' : '', b.purpose || '', b.noInfo && !num(b.year) ? '건축물대장 확인' : '', b.needUnits && !num(b.units) ? '세대수 확인' : '', b.guessed ? '용도 추정' : ''].filter(Boolean).join(', '),
   }));
@@ -540,7 +542,13 @@ function saveSurveyXlsx() {
     return ws;
   };
   XLSX.utils.book_append_sheet(wb, sheet('토지조서', lands, [5, 28, 10, 6, 10, 9, 12, 14, 16, 10]), '토지조서');
-  XLSX.utils.book_append_sheet(wb, sheet('건축물조서', bldgs, [5, 10, 16, 12, 12, 7, 12, 8, 12, 11, 9, 8, 18]), '건축물조서');
+  XLSX.utils.book_append_sheet(wb, sheet('건축물조서', bldgs, [5, 10, 16, 12, 12, 7, 12, 8, 12, 11, 9, 9, 8, 18]), '건축물조서');
+  // 전유부(호별 목록): 건축물대장으로 채운 집합건물만
+  const units = (S.exposUnits || []).slice().sort((a, b) => {
+    const x = jibunKey(a.jibun), y = jibunKey(b.jibun);
+    return x[0] - y[0] || x[1] - y[1] || x[2] - y[2] || a.dong.localeCompare(b.dong) || a.ho.localeCompare(b.ho, 'ko', { numeric: true });
+  }).map((u, i) => ({ '연번': i + 1, '지번': u.jibun, '건물명': u.bldNm, '동': u.dong, '호': u.ho, '층': u.floor, '전유면적(㎡)': u.area, '전유면적(평)': Math.round(u.area / PY * 100) / 100, '용도': u.purpose }));
+  if (units.length) XLSX.utils.book_append_sheet(wb, sheet('호별 목록(건축물대장 전유부)', units, [5, 10, 16, 8, 14, 6, 11, 11, 14]), '호별목록(전유부)');
   const sum = [
     ['구분', '값'], ['필지 수', sv.landCount], ['토지 면적(㎡)', Math.round(sv.landArea * 10) / 10], ['국공유지 면적(㎡)', Math.round(sv.publicArea * 10) / 10],
     ['과소필지(90㎡ 미만)', sv.small], ['건축물 동수', sv.count], ['노후·불량건축물', sv.old], ['노후도(동수, %)', Math.round(sv.oldRatio * 10) / 10],
