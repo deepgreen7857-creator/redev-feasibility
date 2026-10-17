@@ -98,21 +98,35 @@ const Export = {
     const inRings = (x, y, rs) => rs.reduce((n, r) => n + (inRing(x, y, r) ? 1 : 0), 0) % 2 === 1;
     const bbox = rs => { const xs = rs.flat().map(c => c[0]), ys = rs.flat().map(c => c[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
 
-    // 필지 격자 색인 (20m 칸)
-    const C = 20, grid = new Map();
-    const ps = parcels.map((p, i) => ({ i, rs: p.rings, road: p.jimok === '도', b: bbox(p.rings) }));
+    // 필지를 0.5m 격자에 미리 칠해 둠 (칸마다 필지 번호, 없으면 -1) → 점 조회가 한 번의 배열 접근
+    const ps = parcels.map((p, i) => ({ i, rs: p.rings, road: p.jimok === '도' }));
+    if (!ps.length) return buildings.map(() => [0, 0]);
+    const RES = 0.5, PAD = 12;
+    const pb = bbox(ps.flatMap(p => p.rs));
+    const ox = pb[0] - PAD, oy = pb[1] - PAD;
+    const GW = Math.ceil((pb[2] - pb[0] + PAD * 2) / RES), GH = Math.ceil((pb[3] - pb[1] + PAD * 2) / RES);
+    const grid = new Int32Array(GW * GH).fill(-1);
     ps.forEach(p => {
-      for (let gx = Math.floor(p.b[0] / C); gx <= Math.floor(p.b[2] / C); gx++)
-        for (let gy = Math.floor(p.b[1] / C); gy <= Math.floor(p.b[3] / C); gy++) {
-          const k = gx + ',' + gy;
-          if (!grid.has(k)) grid.set(k, []);
-          grid.get(k).push(p);
+      // 짝홀 규칙 스캔라인 채우기
+      const edges = [];
+      p.rs.forEach(r => { for (let k = 0; k < r.length - 1; k++) edges.push([r[k], r[k + 1]]); });
+      const ys = p.rs.flat().map(c => c[1]);
+      const r0 = Math.max(0, Math.floor((Math.min(...ys) - oy) / RES)), r1 = Math.min(GH - 1, Math.ceil((Math.max(...ys) - oy) / RES));
+      for (let row = r0; row <= r1; row++) {
+        const y = oy + (row + 0.5) * RES, xs = [];
+        for (const [a, b] of edges) if ((a[1] > y) !== (b[1] > y)) xs.push(a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+        xs.sort((m, n) => m - n);
+        for (let k = 0; k + 1 < xs.length; k += 2) {
+          const c0 = Math.max(0, Math.ceil((xs[k] - ox) / RES - 0.5)), c1 = Math.min(GW - 1, Math.floor((xs[k + 1] - ox) / RES - 0.5));
+          for (let col = c0; col <= c1; col++) grid[row * GW + col] = p.i;
         }
+      }
     });
     const parcelAt = (x, y) => {
-      const cand = grid.get(Math.floor(x / C) + ',' + Math.floor(y / C)) || [];
-      for (const p of cand) if (x >= p.b[0] && x <= p.b[2] && y >= p.b[1] && y <= p.b[3] && inRings(x, y, p.rs)) return p;
-      return null;
+      const col = Math.floor((x - ox) / RES), row = Math.floor((y - oy) / RES);
+      if (col < 0 || row < 0 || col >= GW || row >= GH) return null;
+      const id = grid[row * GW + col];
+      return id < 0 ? null : ps[id];
     };
 
     // 건물마다 내부 표본점과 중심
@@ -124,13 +138,10 @@ const Export = {
     });
     const cent = buildings.map(b => { const bb = bbox(b.rings); return [(bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2]; });
     const all = buildings.map((_, i) => i).filter(i => samples[i].length);
-    if (!all.length || !ps.length) return buildings.map(() => [0, 0]);
+    if (!all.length) return buildings.map(() => [0, 0]);
 
-    // 건물 하나의 점수 (같은 이동량은 여러 번 쓰이므로 기억해 둠)
-    const memo = new Map();
+    // 건물 하나의 점수
     const one = (i, dx, dy) => {
-      const key = i + ',' + dx.toFixed(2) + ',' + dy.toFixed(2);
-      if (memo.has(key)) return memo.get(key);
       const pts = samples[i], cnt = new Map();
       let bad = 0;
       for (const [x, y] of pts) {
@@ -138,10 +149,9 @@ const Export = {
         if (!p || p.road) bad++;
         else cnt.set(p.i, (cnt.get(p.i) || 0) + 1);
       }
-      const major = Math.max(0, ...cnt.values());
-      const v = (bad + (pts.length - bad - major)) / pts.length;
-      memo.set(key, v);
-      return v;
+      let major = 0;
+      for (const v of cnt.values()) if (v > major) major = v;
+      return (bad + (pts.length - bad - major)) / pts.length;
     };
     const total = (idx, dx, dy) => idx.reduce((s, i) => s + one(i, dx, dy), 0);
     // 넓게 찾고 점점 좁혀 가는 격자 탐색
