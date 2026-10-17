@@ -6,6 +6,26 @@ const Ledger = {
   URL: 'https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo',
   get enabled() { return typeof DATA_GO_KR_KEY === 'string' && DATA_GO_KR_KEY.trim() !== ''; },
 
+  // 개발계정은 초당 요청 수 제한이 있어 요청 간격을 두고, 막히면 기다렸다 다시 시도
+  GAP: 300, last: 0,
+  async throttle() {
+    const wait = this.last + this.GAP - Date.now();
+    this.last = Math.max(Date.now(), this.last + this.GAP);
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  },
+
+  async titleOfRetry(pnu) {
+    for (let k = 0; ; k++) {
+      await this.throttle();
+      try { return await this.titleOf(pnu); }
+      catch (e) {
+        if (!/PER_SECOND|LIMITED_NUMBER/.test(e.message) || k >= 5) throw e;
+        this.GAP = Math.min(1500, this.GAP + 100);          // 계속 막히면 간격을 넓힘
+        await new Promise(r => setTimeout(r, 800 * (k + 1)));
+      }
+    }
+  },
+
   async titleOf(pnu) {
     const p = String(pnu);
     const params = new URLSearchParams({
@@ -56,22 +76,33 @@ const Ledger = {
   async fill() {
     const msg = $('#ledgerMsg');
     if (!this.enabled) { msg.textContent = '건축물대장 인증키가 없습니다.'; return; }
-    const lands = S.lands.filter(l => /^\d{19}$/.test(String(l.pnu || '')));
-    if (!lands.length) { msg.textContent = '지도에서 불러온 필지(토지조서)가 있어야 조회할 수 있습니다. 구역계에서 먼저 필지를 불러오세요.'; return; }
+    const all = S.lands.filter(l => /^\d{19}$/.test(String(l.pnu || '')));
+    if (!all.length) { msg.textContent = '지도에서 불러온 필지(토지조서)가 있어야 조회할 수 있습니다. 구역계에서 먼저 필지를 불러오세요.'; return; }
+    // 이미 대장으로 채웠거나 대장이 없다고 확인된 필지는 건너뜀 (실패한 필지만 다시)
+    const doneSet = new Set(S.buildings.filter(b => b.ledger).map(b => b.pnu));
+    let lands = all.filter(l => !doneSet.has(l.pnu) && !l.ledgerEmpty);
+    if (!lands.length) {
+      if (!confirm('모든 필지를 이미 건축물대장으로 확인했습니다. 처음부터 다시 조회할까요?')) return;
+      lands = all;
+    }
     if (lands.length > 3000 && !confirm(`필지 ${lands.length}개를 조회합니다. 하루 조회 한도(1만 건)를 많이 씁니다. 계속할까요?`)) return;
 
-    const found = new Map(), errors = [];
+    const found = new Map(), empty = new Set(), errors = [];
     let done = 0;
     const queue = lands.slice();
+    const t0 = Date.now();
     const work = async land => {
       try {
-        const items = (await this.titleOf(land.pnu)).filter(t => String(t.mainAtchGbCd) !== '1');   // 부속건축물 제외
+        const items = (await this.titleOfRetry(land.pnu)).filter(t => String(t.mainAtchGbCd) !== '1');   // 부속건축물 제외
         if (items.length) found.set(land.pnu, items.map(t => this.toRow(t, land)));
+        else empty.add(land.pnu);
       } catch (e) { errors.push(`${land.jibun}: ${e.message}`); }
       done++;
-      if (done % 5 === 0 || done === lands.length) msg.textContent = `건축물대장 조회 중… ${done}/${lands.length}`;
+      const left = Math.round((Date.now() - t0) / done * (lands.length - done) / 1000);
+      msg.textContent = `건축물대장 조회 중… ${done}/${lands.length}` + (done < lands.length ? ` (약 ${left >= 60 ? Math.ceil(left / 60) + '분' : left + '초'} 남음)` : '');
     };
-    await Promise.all([1, 2, 3, 4].map(async () => { while (queue.length) await work(queue.shift()); }));
+    // 요청 간격은 throttle이 지키므로 동시에 2개까지만
+    await Promise.all([1, 2].map(async () => { while (queue.length) await work(queue.shift()); }));
 
     // 인증 문제 등으로 전부 실패하면 기존 조서를 건드리지 않음
     if (!found.size && errors.length) {
@@ -82,9 +113,11 @@ const Ledger = {
     S.buildings = S.buildings.filter(b => !(b.pnu && found.has(b.pnu)));   // 대장이 있는 필지는 대장 기준으로 교체
     found.forEach(rows => S.buildings.push(...rows));
     const ledgerCnt = [...found.values()].reduce((a, r) => a + r.length, 0);
-    const noLedger = lands.length - found.size - errors.length;
-    const kept = S.buildings.filter(b => b.pnu && !b.ledger && !found.has(b.pnu)).length;
-    S.buildings.forEach(b => { if (b.pnu && !b.ledger && !found.has(b.pnu)) b.noLedger = true; });
+    // '대장 없음'은 조회는 됐는데 표제부가 없는 필지의 건물만 (조회 실패는 표시하지 않음)
+    S.lands.forEach(l => { if (empty.has(l.pnu)) l.ledgerEmpty = true; else if (found.has(l.pnu)) l.ledgerEmpty = false; });
+    const noLedger = empty.size;
+    S.buildings.forEach(b => { if (b.pnu && !b.ledger) b.noLedger = empty.has(b.pnu); });
+    const kept = S.buildings.filter(b => b.noLedger).length;
     sortByJibun();
     msg.innerHTML = `필지 ${fmt(lands.length)}개 조회 → <b>건축물대장 ${fmt(ledgerCnt)}동</b>으로 건축물조서를 채웠습니다 (이전 ${fmt(before)}동).`
       + (noLedger ? ` 대장이 없는 필지 ${fmt(noLedger)}개` + (kept ? `(지도 자료 건물 ${fmt(kept)}동은 "대장 없음"으로 남김 – 무허가 등 확인 필요)` : '') + '.' : '')
