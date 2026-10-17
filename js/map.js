@@ -485,7 +485,7 @@ const MapView = {
     const pct = zA ? dev / zA * 100 : 0;
     if (pct < 2 && cut < 10) return;
     const d = $('#fitDialog');
-    $('#fitText').innerHTML = `${what}이 지금 지적도(국토교통부 브이월드 연속지적도)의 필지 경계와 <b>맞지 않습니다</b>.<br>`
+    $('#fitText').innerHTML = `${what}는 지금 지적도(국토교통부 브이월드 연속지적도)의 필지 경계와 <b>맞지 않습니다</b>.<br>`
       + `필지를 가로지르는 곳 <b>${fmt(cut)}필지</b>(도로·구거 제외), 어긋난 면적 약 <b>${fmt(dev)}㎡ (구역의 ${fmt(pct, 1)}%)</b>.`
       + (cutList.length ? `<br><small>예: ${cutList.map(esc).join(', ')}${cut > cutList.length ? ' 등' : ''}</small>` : '');
     if (!d.open) d.showModal();
