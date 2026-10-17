@@ -138,7 +138,7 @@ const Tabs = {
           { key: 'owner', label: '소유자', width: 90 },
           { key: 'price', label: '공시지가 (원/㎡)', type: 'number', width: 120 },
           { key: 'value', label: '공시가격', computed: r => fmtEok(num(r.area) * num(r.price) / 10000, 2) },
-          { key: 'small', label: '비고', computed: r => (r.jimok === '대' && num(r.area) > 0 && num(r.area) < 90 ? '과소필지' : ''), cls: () => 'tag' },
+          { key: 'small', label: '비고', computed: r => landNote(r), cls: () => 'tag' },
         ],
         footer: rows => ({ jibun: `${rows.length}필지`, area: fmt(rows.reduce((a, r) => a + num(r.area), 0), 1), value: fmtEok(Calc.officialLandValue(S), 2) }),
       });
@@ -471,6 +471,14 @@ function jibunKey(j) {
   const m = s.replace(/^산/, '').match(/(\d+)(?:-(\d+))?/);
   return m ? [san, +m[1], +(m[2] || 0)] : [2, 0, 0];
 }
+function landNote(l) {
+  return [
+    l.jimok === '대' && num(l.area) > 0 && num(l.area) < 90 ? '과소필지' : '',
+    l.enclosed ? '갇힌 필지' : '',
+    l.partial ? '일부 편입' : '',
+  ].filter(Boolean).join(', ');
+}
+
 function sortByJibun() {
   const cmp = (a, b) => { const x = jibunKey(a.jibun), y = jibunKey(b.jibun); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; };
   S.lands.sort(cmp);
@@ -484,7 +492,7 @@ function surveyRows() {
     '연번': i + 1, '소재지': l.addr || S.meta.location || '', '지번': l.jibun, '지목': l.jimok,
     '면적(㎡)': num(l.area), '소유구분': l.ownerType, '소유자': l.owner || '',
     '공시지가(원/㎡)': num(l.price), '공시가격(원)': Math.round(num(l.area) * num(l.price)),
-    '비고': l.jimok === '대' && num(l.area) > 0 && num(l.area) < 90 ? '과소필지' : '',
+    '비고': landNote(l),
   }));
   const bldgs = S.buildings.map((b, i) => ({
     '연번': i + 1, '지번': b.jibun, '건물명': b.name || '', '용도': b.use, '구조': b.structure,
@@ -637,7 +645,7 @@ function boot() {
   $('#btnJibunZone').onclick = () => {
     const base = $('#jibunBase').value.trim() || guessBase();
     const items = $('#jibunList').value.split(/[\n,;\t]+/);
-    MapView.zoneFromJibuns(items, base);
+    MapView.zoneFromJibuns(items, base, { fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked });
   };
   $('#btnJibunFile').onclick = () => {
     const i = document.createElement('input');

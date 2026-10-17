@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=27">
+<link rel="stylesheet" href="css/style.css?v=28">
 </head>
 <body>
 
@@ -136,9 +136,12 @@
         <p class="note">엑셀의 지번 열을 복사해 붙여넣거나 파일(엑셀·CSV)을 불러오면, 그 필지들을 찾아 <b>구역계를 자동으로 그리고</b> 토지·건축물조서까지 불러옵니다.</p>
         <label class="stack">기준 동 주소<input id="jibunBase" placeholder="예: 인천광역시 남동구 간석동"></label>
         <textarea id="jibunList" rows="5" placeholder="한 줄에 하나씩&#10;387&#10;388-1&#10;산12-3"></textarea>
+        <label class="radio"><input type="checkbox" id="optFillHoles" checked> 구역 안에 갇힌 필지(도로 등) 자동 포함</label>
+        <label class="radio"><input type="checkbox" id="optBridge" checked> 떨어진 블록 사이 도로로 잇기</label>
         <button class="btn small primary" id="btnJibunZone">지번으로 구역 만들기</button>
         <button class="btn small" id="btnJibunFile">파일 불러오기</button>
         <p class="note" id="jibunMsg" aria-live="polite"></p>
+        <div id="jibunReport" class="jibun-report"></div>
       </div>
       <p class="note" id="vworldOff">브이월드 인증키를 설정하면 지적도, 지번 검색, 필지 선택을 쓸 수 있습니다.</p>
       <div class="export-box">
@@ -304,12 +307,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=27"></script>
-<script src="js/util.js?v=27"></script>
-<script src="js/state.js?v=27"></script>
-<script src="js/calc.js?v=27"></script>
-<script src="js/map.js?v=27"></script>
-<script src="js/export.js?v=27"></script>
-<script src="js/app.js?v=27"></script>
+<script src="js/config.js?v=28"></script>
+<script src="js/util.js?v=28"></script>
+<script src="js/state.js?v=28"></script>
+<script src="js/calc.js?v=28"></script>
+<script src="js/map.js?v=28"></script>
+<script src="js/export.js?v=28"></script>
+<script src="js/app.js?v=28"></script>
 </body>
 </html>

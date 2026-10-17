@@ -394,26 +394,36 @@ const MapView = {
 
   // 지번 목록 → 필지를 찾아 합쳐서 구역계를 그리고, 조서까지 불러옴
   // base: "인천광역시 남동구 간석동" 처럼 지번 앞에 붙일 동 주소
-  async zoneFromJibuns(items, base) {
+  // opts.fillHoles: 구역 안에 둘러싸인 필지(도로 등) 자동 포함, opts.bridge: 떨어진 덩어리 사이 도로 잇기
+  async zoneFromJibuns(items, base, opts = { fillHoles: true, bridge: true }) {
     const msg = $('#jibunMsg');
     if (!VWorld.enabled) { msg.textContent = '브이월드 인증키가 있어야 지번으로 필지를 찾을 수 있습니다.'; return; }
     items = [...new Set(items.map(s => String(s).trim()).filter(s => /\d/.test(s)))];
     if (!items.length) { msg.textContent = '지번이 없습니다. 한 줄에 하나씩 넣어 주세요. 예: 387, 388-1, 산12'; return; }
     if (S.area.geojson && !confirm('지금 그려진 구역계를 지번 목록의 필지로 바꿀까요?')) return;
 
-    const found = new Map(), fails = [];
+    const report = [];            // 대조표 행
+    const found = new Map();      // pnu → 필지
     // 동·리 이름이 들어 있으면 그대로, 숫자만 있으면 기준 동을 앞에 붙임
     const query = it => (/[가-힣]+(동|리|가)\s*(산\s*)?\d/.test(it) || /[가-힣]+(시|군|구)\s/.test(it) ? it : `${base} ${it}`.trim());
     const norm = s => String(s).replace(/번지/g, '').replace(/.*[가-힣](동|리|가)\s*/, '').replace(/\s/g, '');
+    const area1 = f => Math.round(turf.area(f) * 10) / 10;
     let done = 0;
     const work = async it => {
       try {
         const list = await VWorld.search(query(it), 'address', 'parcel');
         const f = list.length ? await VWorld.parcelAt(list[0].lat, list[0].lon) : null;
-        const no = f ? splitJibun(f.properties.jibun).no : '';
-        if (!f || no !== norm(it)) fails.push(it + (f ? ` (→ ${no})` : ''));
-        if (f) found.set(f.properties.pnu, f);
-      } catch (e) { fails.push(it); }
+        const sp = f ? splitJibun(f.properties.jibun) : null;
+        if (!f) report.push({ input: it, result: '실패', jibun: '', jimok: '', area: '', note: '검색 결과 없음 – 지번·기준 동(법정동) 확인' });
+        else if (sp.no !== norm(it)) report.push({ input: it, result: '확인 필요', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: `다른 지번(${sp.no})으로 검색됨 – 분할·합병·표기 확인, 구역에 넣지 않음` });
+        else {
+          if (!found.has(f.properties.pnu)) report.push({ input: it, result: '포함', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: '' });
+          else report.push({ input: it, result: '중복', jibun: sp.no, jimok: sp.jimok, area: '', note: '같은 필지가 이미 있음' });
+          found.set(f.properties.pnu, f);
+        }
+      } catch (e) {
+        report.push({ input: it, result: '실패', jibun: '', jimok: '', area: '', note: '조회 오류: ' + e.message });
+      }
       done++;
       msg.textContent = `필지를 찾는 중… ${done}/${items.length}`;
     };
@@ -421,11 +431,58 @@ const MapView = {
     const queue = items.slice();
     await Promise.all([1, 2, 3, 4].map(async () => { while (queue.length) await work(queue.shift()); }));
 
-    const feats = [...found.values()];
-    if (!feats.length) { msg.textContent = '필지를 하나도 찾지 못했습니다. 기준 동 주소를 확인해 주세요.'; return; }
-    let merged = feats[0];
-    try { for (let i = 1; i < feats.length; i++) merged = turf.union(merged, feats[i]) || merged; }
-    catch (e) { msg.textContent = '필지 경계를 합치는 중 오류가 났습니다.'; return; }
+    let feats = [...found.values()];
+    if (!feats.length) { msg.textContent = '필지를 하나도 찾지 못했습니다. 기준 동 주소를 확인해 주세요.'; this.showReport(report); return; }
+
+    const unionAll = fs => { let m = fs[0]; for (let i = 1; i < fs.length; i++) m = turf.union(m, fs[i]) || m; return m; };
+    const polysOf = g => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates);
+    let merged;
+    try { merged = unionAll(feats); } catch (e) { msg.textContent = '필지 경계를 합치는 중 오류가 났습니다.'; return; }
+
+    // 주변 필지 (도로·둘러싸인 필지를 찾기 위해)
+    let around = [];
+    const enclosed = new Set();
+    if (opts.fillHoles || opts.bridge) {
+      msg.textContent = '주변 도로·필지를 확인하는 중…';
+      const [x0, y0, x1, y1] = turf.bbox(merged), e = 30 / 88000, n = 30 / 111000;
+      around = (await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${x0 - e},${y0 - n},${x1 + e},${y1 + n})`)).filter(f => !found.has(f.properties.pnu));
+    }
+    const ptIn = (f, poly) => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), poly); } catch (e) { return false; } };
+
+    // 1) 구역 안에 둘러싸인 필지(구멍) 자동 포함 (10㎡ 미만 틈은 그냥 메움)
+    if (opts.fillHoles) {
+      const holes = polysOf(merged.geometry).flatMap(p => p.slice(1)).map(h => turf.polygon([h])).filter(h => turf.area(h) >= 10);
+      const inHole = around.filter(f => holes.some(h => ptIn(f, h)));
+      inHole.forEach(f => {
+        const sp = splitJibun(f.properties.jibun);
+        found.set(f.properties.pnu, f);
+        report.push({ input: '', result: '갇힌 필지', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: '목록에 없지만 구역 안에 갇혀 자동 포함' });
+        enclosed.add(f.properties.pnu);
+      });
+      if (inHole.length) merged = unionAll([merged, ...inHole]);
+    }
+
+    // 2) 떨어진 덩어리 사이를 도로·구거·하천 필지로 잇기 (구역 외곽선 안쪽 부분만)
+    let partial = [];
+    if (opts.bridge && merged.geometry.type === 'MultiPolygon' && merged.geometry.coordinates.length > 1) {
+      const hull = turf.convex(merged);
+      const parts = merged.geometry.coordinates.map(c => turf.buffer(turf.polygon(c), 1.5, { units: 'meters' }));
+      const roads = around.filter(f => !found.has(f.properties.pnu) && ['도', '구', '천'].includes(splitJibun(f.properties.jibun).jimok));
+      roads.forEach(f => {
+        const touching = parts.filter(p => { try { return turf.booleanIntersects(p, f); } catch (e) { return false; } }).length;
+        if (touching < 2) return;
+        let piece = null;
+        try { piece = turf.intersect(f, hull); } catch (e) { piece = null; }
+        if (!piece || turf.area(piece) < 1) return;
+        const sp = splitJibun(f.properties.jibun);
+        const whole = area1(f), part = area1(piece);
+        const isPart = part < whole * 0.98;
+        partial.push({ f, piece, isPart, part });
+        report.push({ input: '', result: '도로 잇기', jibun: sp.no, jimok: sp.jimok, area: part, note: `떨어진 블록 사이 도로${isPart ? ` – 일부 편입 (전체 ${fmt(whole, 1)}㎡)` : ''}` });
+      });
+      if (partial.length) merged = unionAll([merged, ...partial.map(p => p.piece)]);
+    }
+
     // 붙어 있는 필지 사이에 생기는 아주 작은 틈(10㎡ 미만 구멍)은 메움
     const g = merged.geometry;
     const fill = poly => [poly[0], ...poly.slice(1).filter(h => turf.area(turf.polygon([h])) >= 10)];
@@ -441,10 +498,45 @@ const MapView = {
     S.lands = S.lands.filter(l => !l.pnu);
     S.buildings = S.buildings.filter(b => !b.auto);
     await this.importArea();
+    // 일부만 편입된 도로는 편입 면적으로 조서에 넣음
+    partial.filter(p => p.isPart).forEach(p => {
+      const land = landFromFeature(p.f);
+      land.area = Math.round(p.part * 10) / 10;
+      land.partial = true;
+      const i = S.lands.findIndex(l => l.pnu === land.pnu);
+      if (i >= 0) S.lands[i] = land; else S.lands.push(land);
+    });
+    S.lands.forEach(l => { if (enclosed.has(l.pnu)) l.enclosed = true; });
+    App.update(true);
+
     const parts = g.type === 'MultiPolygon' ? g.coordinates.length : 1;
-    msg.innerHTML = `지번 ${items.length}개 중 <b>${feats.length}필지</b>로 구역계를 그리고 조서를 불러왔습니다.`
-      + (parts > 1 ? ` 구역이 ${parts}덩어리로 떨어져 있습니다.` : '')
-      + (fails.length ? `<br><b class="warn">확인 필요 ${fails.length}건:</b> ${fails.map(esc).join(', ')}` : '');
+    const cnt = r => report.filter(x => x.result === r).length;
+    msg.innerHTML = `지번 ${items.length}개 → 포함 <b>${cnt('포함')}필지</b>`
+      + (cnt('갇힌 필지') ? `, 갇힌 필지 <b>${cnt('갇힌 필지')}필지</b>` : '') + (cnt('도로 잇기') ? `, 블록 사이 도로 <b>${cnt('도로 잇기')}필지</b>` : '')
+      + `로 구역계를 그리고 조서를 불러왔습니다.`
+      + (parts > 1 ? ` <b class="warn">구역이 아직 ${parts}덩어리로 떨어져 있습니다.</b>` : '')
+      + (cnt('실패') + cnt('확인 필요') ? `<br><b class="warn">확인 필요 ${cnt('실패') + cnt('확인 필요')}건</b> – 아래 대조표를 보세요.` : '');
+    this.showReport(report);
+  },
+
+  // 입력 지번 대조표
+  showReport(report) {
+    this.lastReport = report;
+    const order = { '실패': 0, '확인 필요': 1, '갇힌 필지': 2, '도로 잇기': 3, '포함': 4, '중복': 5 };
+    const rows = report.slice().sort((a, b) => order[a.result] - order[b.result]);
+    const cls = r => (r === '포함' ? 'good' : r === '갇힌 필지' || r === '도로 잇기' ? 'auto' : r === '중복' ? '' : 'warn');
+    $('#jibunReport').innerHTML = `
+      <div class="report-head"><b>입력 지번 대조표</b> <button class="btn small" id="btnReportXlsx">엑셀 저장</button></div>
+      <div class="table-wrap"><table class="grid"><thead><tr><th>입력</th><th>결과</th><th>필지</th><th>지목</th><th class="num">면적(㎡)</th><th>비고</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td>${esc(r.input || '–')}</td><td class="${cls(r.result)}">${esc(r.result)}</td><td>${esc(r.jibun)}</td><td>${esc(r.jimok)}</td><td class="num">${r.area === '' ? '' : fmt(r.area, 1)}</td><td>${esc(r.note)}</td></tr>`).join('')}
+      </tbody></table></div>`;
+    $('#btnReportXlsx').onclick = () => {
+      const ws = XLSX.utils.json_to_sheet(rows.map(r => ({ '입력 지번': r.input, '결과': r.result, '필지': r.jibun, '지목': r.jimok, '면적(㎡)': r.area, '비고': r.note })));
+      ws['!cols'] = [{ wch: 18 }, { wch: 10 }, { wch: 12 }, { wch: 6 }, { wch: 10 }, { wch: 50 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '지번대조표');
+      XLSX.writeFile(wb, `${S.meta.name || '정비사업'}_지번대조표.xlsx`);
+    };
   },
 
   // 검색 결과 위치로 이동하고 표시. r: { lat, lon, label, precise }
