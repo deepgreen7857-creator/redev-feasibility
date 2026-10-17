@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=36">
+<link rel="stylesheet" href="css/style.css?v=37">
 </head>
 <body>
 
@@ -247,6 +247,8 @@
     <button class="btn primary" id="btnSurveyXlsx">조서 엑셀 저장</button>
     <button class="btn" id="btnSurveyPrint">조서 인쇄·PDF</button>
     <button class="btn" id="btnSortJibun">지번순 정렬</button>
+    <button class="btn primary" id="btnLedger" title="필지마다 건축물대장 표제부를 조회해 용도·구조·사용승인일·세대수를 채웁니다">건축물대장으로 채우기</button>
+    <span class="note" id="ledgerMsg" aria-live="polite"></span>
     <span class="note">소유자는 브이월드에서 제공하지 않으니 등기부·토지대장을 보고 입력하세요.</span>
   </div>
 
@@ -346,14 +348,15 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=36"></script>
-<script src="js/util.js?v=36"></script>
-<script src="js/state.js?v=36"></script>
-<script src="js/calc.js?v=36"></script>
-<script src="js/map.js?v=36"></script>
-<script src="js/pdfsave.js?v=36"></script>
-<script src="js/overlay.js?v=36"></script>
-<script src="js/export.js?v=36"></script>
-<script src="js/app.js?v=36"></script>
+<script src="js/config.js?v=37"></script>
+<script src="js/util.js?v=37"></script>
+<script src="js/state.js?v=37"></script>
+<script src="js/calc.js?v=37"></script>
+<script src="js/map.js?v=37"></script>
+<script src="js/ledger.js?v=37"></script>
+<script src="js/pdfsave.js?v=37"></script>
+<script src="js/overlay.js?v=37"></script>
+<script src="js/export.js?v=37"></script>
+<script src="js/app.js?v=37"></script>
 </body>
 </html>

@@ -172,7 +172,7 @@ const Tabs = {
           { key: 'old', label: '노후 판정', computed: r => (Calc.isOld(S, r, year) ? '노후' : '–'), cls: r => (Calc.isOld(S, r, year) ? 'tag bad' : 'tag') },
           {
             key: 'check', label: '비고',
-            computed: r => [r.noInfo && !num(r.year) ? '정보 없음 – 건축물대장 확인' : '', r.needUnits && !num(r.units) ? '세대수 확인 필요' : '', r.guessed ? '용도 추정' : ''].filter(Boolean).join(' · '),
+            computed: r => [r.ledger ? '대장' : '', r.noLedger ? '대장 없음 – 무허가 등 확인' : '', r.noInfo && !num(r.year) ? '정보 없음 – 건축물대장 확인' : '', r.needUnits && !num(r.units) ? '세대수 확인 필요' : '', r.guessed ? '용도 추정' : ''].filter(Boolean).join(' · '),
             cls: r => ((r.noInfo && !num(r.year)) || (r.needUnits && !num(r.units)) ? 'tag warn' : 'tag'),
           },
         ],
@@ -522,7 +522,7 @@ function surveyRows() {
     '노후도래일': Calc.oldDate(S, b) ? Calc.oldDate(S, b).toLocaleDateString('sv-SE') : '',
     '연면적(㎡)': num(b.floorArea), '호·세대수': num(b.units) || '',
     '노후여부': Calc.isOld(S, b, year) ? '노후' : (num(b.year) ? '' : '판정불가'),
-    '비고': [b.noInfo && !num(b.year) ? '건축물대장 확인' : '', b.needUnits && !num(b.units) ? '세대수 확인' : '', b.guessed ? '용도 추정' : ''].filter(Boolean).join(', '),
+    '비고': [b.ledger ? '건축물대장' : '', b.noLedger ? '대장 없음' : '', b.purpose || '', b.noInfo && !num(b.year) ? '건축물대장 확인' : '', b.needUnits && !num(b.units) ? '세대수 확인' : '', b.guessed ? '용도 추정' : ''].filter(Boolean).join(', '),
   }));
   return { lands, bldgs };
 }
@@ -667,6 +667,7 @@ function boot() {
   $('#btnParcelsToArea').onclick = () => MapView.parcelsToArea();
   $$('[data-csv]').forEach(b => { b.onclick = () => csvAction(b.dataset.csv, b.dataset.act); });
   $('#btnSortJibun').onclick = sortByJibun;
+  $('#btnLedger').onclick = async () => { await Ledger.fill(); App.update(true); };
 
   // 지번 목록으로 구역 만들기
   const guessBase = () => {
