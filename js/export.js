@@ -163,14 +163,21 @@ const Export = {
     const g = search(all, [0, 0], [[8, 2], [2, 0.5], [0.5, 0.25]], () => 0);
     const G = base - g.v > base * 0.15 ? [g.dx, g.dy] : [0, 0];
 
-    // 2) 블록별: 반경 35m 이웃과 함께. 전체 보정값에서 멀어질수록 약간 손해를 줘서 들쭉날쭉하지 않게
-    const R = 35;
+    // 2) 블록별: 40m 칸마다 칸 중심 반경 50m 안 건물들과 함께 맞춤.
+    //    전체 보정값에서 멀어질수록 약간 손해를 줘서 들쭉날쭉하지 않게
+    const CELL = 40, R = 50, cellShift = new Map();
+    const cellOf = i => Math.floor(cent[i][0] / CELL) + ',' + Math.floor(cent[i][1] / CELL);
     return buildings.map((_, i) => {
       if (!samples[i].length) return G;
-      const nb = all.filter(j => Math.hypot(cent[j][0] - cent[i][0], cent[j][1] - cent[i][1]) <= R);
-      const pen = (dx, dy) => 0.02 * nb.length * Math.hypot(dx - G[0], dy - G[1]);
-      const b = search(nb, G, [[6, 1.5], [1.5, 0.5], [0.5, 0.25]], pen);
-      return [b.dx, b.dy];
+      const key = cellOf(i);
+      if (!cellShift.has(key)) {
+        const [cx, cy] = key.split(',').map(v => (+v + 0.5) * CELL);
+        const nb = all.filter(j => Math.hypot(cent[j][0] - cx, cent[j][1] - cy) <= R);
+        const pen = (dx, dy) => 0.02 * nb.length * Math.hypot(dx - G[0], dy - G[1]);
+        const b = search(nb, G, [[6, 2], [1, 0.5], [0.25, 0.25]], pen);
+        cellShift.set(key, [b.dx, b.dy]);
+      }
+      return cellShift.get(key);
     });
   },
 
