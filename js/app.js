@@ -470,27 +470,48 @@ const CSV_SPEC = {
     cols: [['지번', 'jibun'], ['용도', 'use'], ['구조', 'structure'], ['사용승인연도', 'year', 1], ['연면적', 'floorArea', 1], ['세대수', 'units', 1]],
     make: () => ({ id: uid(), jibun: '', use: '단독주택', structure: '조적', year: 0, floorArea: 0, units: 1 }),
   },
+  // 조합원 명단: 종전자산은 만원 단위 (제목에 "(원)"이 있으면 원 단위로 보고 바꿈)
+  members: {
+    file: '조합원명단',
+    cols: [['조합원', 'name'], ['종전자산', 'prior', 1], ['신청평형', 'want']],
+    make: () => ({ id: uid(), name: '', prior: 0, want: '' }),
+    sample: ['조합원1', '45000', '84㎡'],
+  },
 };
+
+// "84", "84타입", "84㎡A" → 분양수입 표의 조합원 평형 이름(예: "84㎡")
+function matchWant(v) {
+  const s = String(v || '').trim();
+  if (!s) return '';
+  const names = S.sales.filter(r => r.cat === '조합원').map(r => r.name);
+  if (names.includes(s)) return s;
+  const n = (s.match(/\d+/) || [])[0];
+  return (n && names.find(x => (x.match(/\d+/) || [])[0] === n)) || s;
+}
 
 async function csvAction(kind, act) {
   const spec = CSV_SPEC[kind];
   if (act === 'template' || act === 'export') {
     const rows = [spec.cols.map(c => c[0])];
     if (act === 'export') S[kind].forEach(r => rows.push(spec.cols.map(c => r[c[1]])));
-    else rows.push(kind === 'lands' ? ['123-4', '대', '165.3', '사유지', '홍길동', '6500000'] : ['123-4', '단독주택', '조적', '1985', '120.5', '1']);
+    else rows.push(spec.sample || (kind === 'lands' ? ['123-4', '대', '165.3', '사유지', '홍길동', '6500000'] : ['123-4', '단독주택', '조적', '1985', '120.5', '1']));
+    if (kind === 'members') rows[0] = ['조합원', '종전자산(만원)', '신청평형'];
     download(`${spec.file}${act === 'template' ? '_양식' : ''}.csv`, toCSV(rows), 'text/csv;charset=utf-8');
     return;
   }
-  const text = await pickTextFile('.csv,text/csv');
-  if (!text) return;
-  const rows = parseCSV(text);
+  const rows = (await pickTableFile() || []).filter(r => r.some(v => String(v).trim()));
+  if (!rows.length) return;
   if (rows.length < 2) { alert('데이터 행이 없습니다.'); return; }
-  const header = rows[0].map(h => h.trim());
+  const header = rows[0].map(h => String(h).trim());
   const idx = spec.cols.map(c => header.findIndex(h => h.replace(/\s|\(.*\)/g, '').startsWith(c[0])));
-  if (idx[0] < 0) { alert(`첫 줄에 '${spec.cols.map(c => c[0]).join(', ')}' 제목이 있어야 합니다. CSV 양식을 받아 확인하세요.`); return; }
+  if (idx[0] < 0) { alert(`첫 줄에 '${spec.cols.map(c => c[0]).join(', ')}' 제목이 있어야 합니다. 양식을 받아 확인하세요.`); return; }
+  // 종전자산이 원 단위면 만원으로
+  const won = kind === 'members' && idx[1] >= 0 && /\(원\)|원\s*$/.test(header[idx[1]]) && !/만원/.test(header[idx[1]]);
   const items = rows.slice(1).map(r => {
     const o = spec.make();
-    spec.cols.forEach((c, k) => { if (idx[k] >= 0) o[c[1]] = c[2] ? num(r[idx[k]]) : (r[idx[k]] || '').trim() || o[c[1]]; });
+    spec.cols.forEach((c, k) => { if (idx[k] >= 0) o[c[1]] = c[2] ? num(r[idx[k]]) : String(r[idx[k]] || '').trim() || o[c[1]]; });
+    if (won) o.prior = Math.round(o.prior / 10000);
+    if (kind === 'members') o.want = matchWant(o.want);
     return o;
   });
   const replace = !S[kind].length || confirm(`${items.length}행을 불러옵니다. 기존 ${S[kind].length}행을 지우고 바꿀까요?\n(취소를 누르면 뒤에 추가합니다)`);

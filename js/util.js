@@ -88,6 +88,29 @@ function download(name, text, type = 'text/plain;charset=utf-8') {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
 
+// 엑셀(.xlsx·.xls) 또는 CSV → 행 배열 (첫 시트)
+function pickTableFile() {
+  return new Promise(resolve => {
+    const i = document.createElement('input');
+    i.type = 'file';
+    i.accept = '.xlsx,.xls,.csv,text/csv';
+    i.onchange = async () => {
+      const f = i.files[0];
+      if (!f) return resolve(null);
+      const buf = await f.arrayBuffer();
+      if (/\.xlsx?$/i.test(f.name) && window.XLSX) {
+        const wb = XLSX.read(buf, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        return resolve(XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }).map(r => r.map(v => String(v ?? ''))));
+      }
+      let text;
+      try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { text = new TextDecoder('euc-kr').decode(buf); }
+      resolve(parseCSV(text));
+    };
+    i.click();
+  });
+}
+
 // 엑셀에서 저장한 CSV는 CP949(EUC-KR)인 경우가 많아 UTF-8 실패 시 EUC-KR로 다시 읽음
 function pickTextFile(accept) {
   return new Promise(resolve => {

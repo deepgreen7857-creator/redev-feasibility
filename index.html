@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=43">
+<link rel="stylesheet" href="css/style.css?v=44">
 </head>
 <body>
 
@@ -383,6 +383,12 @@
 
   <h3>조합원별 분담금</h3>
   <p class="lead small">권리가액 = 종전자산 평가액 × 비례율 · 분담금 = 조합원 분양가 − 권리가액 (음수면 환급)</p>
+  <div class="btns">
+    <button class="btn small ghost" data-csv="members" data-act="template">명단 양식</button>
+    <button class="btn small ghost" data-csv="members" data-act="import">엑셀·CSV 불러오기</button>
+    <button class="btn small ghost" data-csv="members" data-act="export">CSV 내보내기</button>
+  </div>
+  <p class="note">엑셀 첫 줄에 <b>조합원 · 종전자산 · 신청평형</b> 제목을 넣으세요. 종전자산은 만원 단위이고, 제목이 "종전자산(원)"이면 원 단위로 읽습니다. 신청평형은 "84"처럼 숫자만 써도 됩니다.</p>
   <div id="membersTable"></div>
 </section>
 
@@ -417,17 +423,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=43"></script>
-<script src="js/util.js?v=43"></script>
-<script src="js/state.js?v=43"></script>
-<script src="js/calc.js?v=43"></script>
-<script src="js/map.js?v=43"></script>
-<script src="js/ledger.js?v=43"></script>
-<script src="js/pdfsave.js?v=43"></script>
-<script src="js/overlay.js?v=43"></script>
-<script src="js/export.js?v=43"></script>
-<script src="js/roadcut.js?v=43"></script>
-<script src="js/assume.js?v=43"></script>
-<script src="js/app.js?v=43"></script>
+<script src="js/config.js?v=44"></script>
+<script src="js/util.js?v=44"></script>
+<script src="js/state.js?v=44"></script>
+<script src="js/calc.js?v=44"></script>
+<script src="js/map.js?v=44"></script>
+<script src="js/ledger.js?v=44"></script>
+<script src="js/pdfsave.js?v=44"></script>
+<script src="js/overlay.js?v=44"></script>
+<script src="js/export.js?v=44"></script>
+<script src="js/roadcut.js?v=44"></script>
+<script src="js/assume.js?v=44"></script>
+<script src="js/app.js?v=44"></script>
 </body>
 </html>
