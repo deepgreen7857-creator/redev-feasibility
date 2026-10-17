@@ -106,7 +106,7 @@ const Export = {
 
     // 건물마다 내부 표본점
     const samples = buildings.map(b => {
-      const bb = bbox(b.rings), st = Math.max(bb[2] - bb[0], bb[3] - bb[1]) / 6;
+      const bb = bbox(b.rings), st = Math.max(bb[2] - bb[0], bb[3] - bb[1]) / 5;
       const pts = [];
       for (let x = bb[0] + st / 2; x < bb[2]; x += st) for (let y = bb[1] + st / 2; y < bb[3]; y += st) if (inRings(x, y, b.rings)) pts.push([x, y]);
       return pts;
@@ -130,9 +130,15 @@ const Export = {
     };
     const base = score(0, 0);
     let best = { dx: 0, dy: 0, v: base };
-    for (let dx = -8; dx <= 8; dx += 1) for (let dy = -8; dy <= 8; dy += 1) { const v = score(dx, dy); if (v < best.v) best = { dx, dy, v }; }
-    const c0 = { ...best };
-    for (let dx = c0.dx - 1; dx <= c0.dx + 1; dx += 0.25) for (let dy = c0.dy - 1; dy <= c0.dy + 1; dy += 0.25) { const v = score(dx, dy); if (v < best.v) best = { dx, dy, v }; }
+    // 2m 간격으로 넓게 찾고 → 0.5m → 0.25m로 좁혀 감
+    [[8, 2], [2, 0.5], [0.5, 0.25]].forEach(([range, step]) => {
+      const c = { ...best };
+      for (let dx = c.dx - range; dx <= c.dx + range + 1e-9; dx += step)
+        for (let dy = c.dy - range; dy <= c.dy + range + 1e-9; dy += step) {
+          const v = score(dx, dy);
+          if (v < best.v) best = { dx, dy, v };
+        }
+    });
     // 개선이 미미하면 옮기지 않음
     return base - best.v > base * 0.15 ? [best.dx, best.dy] : [0, 0];
   },
