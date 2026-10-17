@@ -22,6 +22,18 @@ const BLDG_USES = ['단독주택', '다가구주택', '다세대주택', '연립
 const STRUCTURES = ['철근콘크리트', '철골', '조적', '목조', '기타'];
 const ZONINGS = ['제1종전용주거지역', '제2종전용주거지역', '제1종일반주거지역', '제2종일반주거지역', '제3종일반주거지역', '준주거지역', '일반상업지역', '준공업지역', '기타'];
 
+// 용도지역별 용적률 (참고용). seoul: 서울특별시 도시계획 조례, max: 국토계획법 시행령 상한
+const FAR_BY_ZONING = {
+  '제1종전용주거지역': { seoul: 100, max: 100 },
+  '제2종전용주거지역': { seoul: 120, max: 150 },
+  '제1종일반주거지역': { seoul: 150, max: 200 },
+  '제2종일반주거지역': { seoul: 200, max: 250 },
+  '제3종일반주거지역': { seoul: 250, max: 300 },
+  '준주거지역': { seoul: 400, max: 500 },
+  '일반상업지역': { seoul: 800, max: 1300 },
+  '준공업지역': { seoul: 400, max: 400 },
+};
+
 // 판정 기준값. 법령·조례에 따라 달라지므로 화면에서 편집 가능하게 둠.
 function defaultCriteria() {
   return {
@@ -73,7 +85,8 @@ function defaultSales() {
 function defaultState() {
   return {
     version: 1,
-    meta: { name: '새 정비사업', type: 'redevelopment', location: '', zoning: '제2종일반주거지역', memo: '' },
+    // zoningManual/locationManual: 사용자가 직접 고친 값이면 자동 입력으로 덮어쓰지 않음
+    meta: { name: '새 정비사업', type: 'redevelopment', location: '', zoning: '', memo: '', zoningList: [], zoningManual: false, locationManual: false },
     area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'drawn', center: [37.5665, 126.978], zoom: 16 },
     plan: { far: 250, gfaFactor: 1.45, gfaManual: 0 },
     lands: [],
@@ -121,7 +134,7 @@ function sampleState() {
   const pick = arr => arr[Math.floor(rnd() * arr.length)];
 
   const s = defaultState();
-  s.meta = { name: '○○1구역 주택재개발 (예시)', type: 'redevelopment', location: '서울특별시 ○○구 ○○동 일대 (가상)', zoning: '제2종일반주거지역', memo: '예시 데이터입니다. 실제 사업지와 무관합니다.' };
+  s.meta = { ...s.meta, name: '○○1구역 주택재개발 (예시)', type: 'redevelopment', location: '서울특별시 ○○구 ○○동 일대 (가상)', zoning: '제2종일반주거지역', memo: '예시 데이터입니다. 실제 사업지와 무관합니다.', zoningManual: true, locationManual: true };
 
   // 약 2만㎡ 크기의 가상 구역계
   const c = [37.5893, 127.0305];

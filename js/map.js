@@ -39,21 +39,89 @@ const VWorld = {
     }));
   },
 
+  // 2D 데이터 API 한 페이지 조회. data: LP_PA_CBND_BUBUN(연속지적도), LT_C_UQ111(용도지역), LT_C_BLDGINFO(GIS건물통합정보)
+  async dataPage(data, geomFilter, page = 1, size = 1000, geometry = true) {
+    const d = await jsonp('https://api.vworld.kr/req/data', {
+      service: 'data', request: 'GetFeature', data, key: this.key, domain: this.domain,
+      geomFilter, geometry: String(geometry), attribute: 'true', crs: 'EPSG:4326',
+      format: 'json', errorformat: 'json', size, page,
+    }, 20000);
+    const r = d && d.response;
+    if (!r || r.status === 'NOT_FOUND') return { features: [], pages: 0 };
+    if (r.status !== 'OK') throw new Error((r.error && r.error.text) || 'VWorld 오류');
+    return { features: r.result.featureCollection.features || [], pages: +(r.page && r.page.total) || 1 };
+  },
+
+  // 범위 안의 모든 객체 (여러 페이지)
+  async dataAll(data, geomFilter, maxPages = 10) {
+    const first = await this.dataPage(data, geomFilter, 1);
+    let all = first.features;
+    for (let p = 2; p <= Math.min(first.pages, maxPages); p++) all = all.concat((await this.dataPage(data, geomFilter, p)).features);
+    return all;
+  },
+
   // 한 점을 포함하는 필지(연속지적도) 조회
   async parcelAt(lat, lon) {
-    const d = await jsonp('https://api.vworld.kr/req/data', {
-      service: 'data', request: 'GetFeature', data: 'LP_PA_CBND_BUBUN', key: this.key, domain: this.domain,
-      geomFilter: `POINT(${lon} ${lat})`, geometry: 'true', attribute: 'true', crs: 'EPSG:4326',
-      format: 'json', errorformat: 'json', size: 1, page: 1,
-    });
-    const r = d && d.response;
-    if (!r || r.status !== 'OK') {
-      if (r && r.status === 'ERROR') throw new Error((r.error && r.error.text) || 'VWorld 오류');
-      return null;
-    }
-    return r.result.featureCollection.features[0] || null;
+    return (await this.dataPage('LP_PA_CBND_BUBUN', `POINT(${lon} ${lat})`, 1, 1)).features[0] || null;
+  },
+
+  // 한 점의 용도지역 이름 (예: 제2종일반주거지역)
+  async zoningAt(lat, lon) {
+    const fs = (await this.dataPage('LT_C_UQ111', `POINT(${lon} ${lat})`, 1, 10, false)).features;
+    const f = fs.find(x => x.properties && x.properties.uname);
+    return f ? f.properties.uname : '';
+  },
+
+  // 범위(bbox) 안에 걸친 용도지역 이름 목록
+  async zoningsInBox(b) {
+    const fs = (await this.dataPage('LT_C_UQ111', `BOX(${b.join(',')})`, 1, 100, false)).features;
+    return [...new Set(fs.map(f => f.properties && f.properties.uname).filter(Boolean))];
   },
 };
+
+// GIS건물통합정보 → 건축물조서 한 행
+// usability: 건축물대장 주용도코드, strct_cd: 구조코드 (1x 조적, 2x 철근콘크리트, 3x 철골, 4x 철골철근콘크리트, 5x 목구조)
+function buildingFromFeature(f, jibun, pnu) {
+  const p = f.properties || {};
+  const code = String(p.usability || '');
+  const floors = num(p.grnd_flr);
+  const floorArea = Math.round(num(p.totalarea) * 10) / 10;
+  let use = '기타', guessed = false;
+  if (code === '01003') use = '다가구주택';
+  else if (code.startsWith('01')) use = '단독주택';
+  else if (code === '02001') use = '아파트';
+  else if (code === '02002') use = '연립주택';
+  else if (code === '02003') use = '다세대주택';
+  else if (code.startsWith('02')) {
+    // 공동주택 세부 용도가 없으면 층수·면적으로 추정 (5층 이상 아파트, 660㎡ 초과 연립, 이하 다세대)
+    use = floors >= 5 ? '아파트' : floorArea > 660 ? '연립주택' : '다세대주택';
+    guessed = true;
+  } else if (code.startsWith('03') || code.startsWith('04')) use = '근린생활시설';
+  const s = String(p.strct_cd || '').charAt(0);
+  const structure = s === '1' ? '조적' : s === '2' || s === '4' ? '철근콘크리트' : s === '3' ? '철골' : s === '5' ? '목조' : '기타';
+  const year = num(String(p.useapr_day || '').slice(0, 4));
+  const isApt = ['아파트', '연립주택', '다세대주택'].includes(use);
+  return {
+    id: uid(), jibun: jibun || '', use, structure, year, floorArea,
+    units: isApt ? 0 : (use === '단독주택' || use === '다가구주택' ? 1 : 0),
+    name: p.bld_nm || '', floors, pnu: pnu || '', auto: true, needUnits: isApt, guessed,
+  };
+}
+
+// 연속지적도 객체 → 토지조서 한 행
+function landFromFeature(f) {
+  const p = f.properties || {};
+  const sp = splitJibun(p.jibun);
+  const jimok = sp.jimok === '임' ? '임야' : sp.jimok;
+  const publicJimok = ['도', '구', '천', '제', '공'];
+  return {
+    id: uid(), pnu: p.pnu || '', jibun: sp.no,
+    jimok: JIMOK.includes(jimok) ? jimok : (jimok || '기타'),
+    area: window.turf ? Math.round(turf.area(f) * 10) / 10 : 0,
+    ownerType: publicJimok.includes(jimok) ? '국공유지' : '사유지', owner: '',
+    price: num(p.jiga), geom: f.geometry,
+  };
+}
 
 // 연속지적도 jibun 값은 "233-42대", "산12-3임" 형태
 function splitJibun(s) {
@@ -170,8 +238,48 @@ const MapView = {
       S.area.geojson = gj;
       S.area.drawnArea = window.turf ? turf.area(gj) : 0;
       if (S.area.mode !== 'manual') S.area.mode = 'drawn';
+      // 구역이 정해지면 그 안의 용도지역을 자동으로 채움
+      if (VWorld.enabled && window.turf) {
+        const pt = turf.pointOnFeature(gj).geometry.coordinates;
+        Auto.zoning(pt[1], pt[0], turf.bbox(gj));
+      }
     }
     App.update(true);
+  },
+
+  // 구역계 안의 필지·건축물을 한꺼번에 토지조서·건축물조서로 불러오기
+  async importArea() {
+    const msg = $('#pickMsg');
+    if (!S.area.geojson) { alert('먼저 지도에 구역계를 그려 주세요.'); return; }
+    const autoLands = S.lands.filter(l => l.pnu).length;
+    const autoBldgs = S.buildings.filter(b => b.auto).length;
+    if ((autoLands || autoBldgs) && !confirm(`이미 지도에서 불러온 필지 ${autoLands}개, 건축물 ${autoBldgs}동이 있습니다. 구역계 기준으로 다시 불러올까요?\n(직접 입력한 행은 그대로 둡니다)`)) return;
+    const zone = S.area.geojson;
+    const box = `BOX(${turf.bbox(zone).join(',')})`;
+    const inZone = f => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), zone); } catch (e) { return false; } };
+    try {
+      msg.textContent = '구역 안 필지를 불러오는 중…';
+      const parcels = (await VWorld.dataAll('LP_PA_CBND_BUBUN', box)).filter(inZone);
+      msg.textContent = `필지 ${parcels.length}개 확인. 건축물을 불러오는 중…`;
+      const bldgs = (await VWorld.dataAll('LT_C_BLDGINFO', box)).filter(inZone);
+
+      // 지도로 불러온 기존 행은 교체, 직접 입력한 행은 유지
+      S.lands = S.lands.filter(l => !l.pnu);
+      S.buildings = S.buildings.filter(b => !b.auto);
+      parcels.forEach(f => S.lands.push(landFromFeature(f)));
+      bldgs.forEach(f => {
+        const owner = parcels.find(pf => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), pf); } catch (e) { return false; } });
+        const pp = owner ? owner.properties : {};
+        S.buildings.push(buildingFromFeature(f, splitJibun(pp.jibun).no, pp.pnu));
+      });
+      S.area.mode = S.area.mode === 'manual' ? 'manual' : 'drawn';
+      const need = S.buildings.filter(b => b.needUnits).length;
+      msg.textContent = `필지 ${parcels.length}개, 건축물 ${bldgs.length}동을 불러왔습니다.` + (need ? ` 공동주택 ${need}동은 세대수를 확인해 입력하세요.` : '');
+      this.drawParcels();
+      App.update(true);
+    } catch (e) {
+      msg.textContent = '불러오기에 실패했습니다: ' + e.message;
+    }
   },
 
   setPicking(on) {
@@ -189,22 +297,24 @@ const MapView = {
       if (!f) { msg.textContent = '이 위치에서 필지를 찾지 못했습니다.'; return; }
       const p = f.properties || {};
       const idx = S.lands.findIndex(l => l.pnu && l.pnu === p.pnu);
-      const sp = splitJibun(p.jibun);
-      const no = sp.no;
-      const jimok = sp.jimok === '임' ? '임야' : sp.jimok;
+      const no = splitJibun(p.jibun).no;
       if (idx >= 0) {
         S.lands.splice(idx, 1);
-        msg.textContent = `${no} 필지를 토지조서에서 뺐습니다.`;
+        S.buildings = S.buildings.filter(b => !(b.auto && b.pnu === p.pnu));
+        msg.textContent = `${no} 필지와 그 위 건축물을 조서에서 뺐습니다.`;
       } else {
-        const area = window.turf ? Math.round(turf.area(f) * 10) / 10 : 0;
-        const publicJimok = ['도', '구', '천', '제', '공'];
-        S.lands.push({
-          id: uid(), pnu: p.pnu || '', jibun: no,
-          jimok: JIMOK.includes(jimok) ? jimok : (jimok || '기타'),
-          area, ownerType: publicJimok.includes(jimok) ? '국공유지' : '사유지', owner: '',
-          price: num(p.jiga), geom: f.geometry,
-        });
-        msg.textContent = `${p.addr || no} 추가 · ${fmt(area, 1)}㎡ · 공시지가 ${p.jiga ? fmt(num(p.jiga)) + '원/㎡' : '정보 없음'}`;
+        const land = landFromFeature(f);
+        S.lands.push(land);
+        // 그 필지 위 건축물도 함께
+        let added = 0;
+        try {
+          const bs = (await VWorld.dataPage('LT_C_BLDGINFO', `BOX(${turf.bbox(f).join(',')})`, 1, 100)).features
+            .filter(bf => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(bf), f); } catch (e) { return false; } });
+          bs.forEach(bf => S.buildings.push(buildingFromFeature(bf, no, p.pnu)));
+          added = bs.length;
+        } catch (e) { /* 건축물 조회 실패해도 필지는 추가 */ }
+        msg.textContent = `${p.addr || no} 추가 · ${fmt(land.area, 1)}㎡ · 공시지가 ${p.jiga ? fmt(num(p.jiga)) + '원/㎡' : '정보 없음'} · 건축물 ${added}동`;
+        if (!S.meta.zoning || S.meta.zoningAuto) Auto.zoning(latlng.lat, latlng.lng);
       }
       this.drawParcels();
       App.update(true);
@@ -279,8 +389,9 @@ const MapView = {
     }
     if (!list.length) { out.innerHTML = '<li class="muted">검색 결과가 없습니다. "○○구 ○○동 123-4"처럼 지번 주소나 도로명 주소로 다시 검색해 보세요.</li>'; return; }
 
-    // 첫 번째 결과로 바로 이동
+    // 첫 번째 결과로 바로 이동하고, 위치·용도지역을 개요에 자동 기록
     this.goTo(list[0]);
+    Auto.location(list[0]);
     out.innerHTML = '';
     // 번지까지 쳤는데 정확한 위치를 찾지 못한 경우 알림
     const askedNumber = /\d+(-\d+)?\s*(번지)?\s*$/.test(q);

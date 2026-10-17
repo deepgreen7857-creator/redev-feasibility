@@ -27,6 +27,27 @@ function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+// 주소 검색·구역 지정 결과로 개요의 위치·용도지역을 자동 기록
+const Auto = {
+  async zoning(lat, lon, bbox) {
+    if (!VWorld.enabled || S.meta.zoningManual) return;
+    try {
+      const z = await VWorld.zoningAt(lat, lon);
+      const list = bbox ? await VWorld.zoningsInBox(bbox) : (z ? [z] : []);
+      if (z) S.meta.zoning = z;
+      S.meta.zoningList = list;
+      App.update();
+    } catch (e) { console.warn('용도지역 조회 실패', e); }
+  },
+  location(r) {
+    if (!S.meta.locationManual) S.meta.location = r.label;
+    S.area.center = [r.lat, r.lon];
+    S.area.zoom = r.precise ? 18 : 16;
+    App.update();
+    return this.zoning(r.lat, r.lon);
+  },
+};
+
 function ratioClass(r) {
   if (!isFinite(r)) return '';
   return r >= 100 ? 'good' : r >= 90 ? 'warn' : 'bad';
@@ -36,12 +57,28 @@ function ratioClass(r) {
 const Tabs = {
   overview: {
     render() {
-      const sel = $('#zoningSelect');
-      if (!sel.options.length) ZONINGS.forEach(z => sel.add(new Option(z, z)));
-      bindInputs($('#tab-overview'));
       this.refresh();
     },
     refresh() {
+      // 용도지역 목록에 없는 값(자동으로 받은 세부 용도지역 등)도 고를 수 있게
+      const sel = $('#zoningSelect');
+      const opts = ['', ...ZONINGS];
+      if (S.meta.zoning && !opts.includes(S.meta.zoning)) opts.push(S.meta.zoning);
+      if (sel.options.length !== opts.length) {
+        sel.innerHTML = '';
+        opts.forEach(z => sel.add(new Option(z || '주소를 검색하면 자동으로 채워집니다', z)));
+      }
+      bindInputs($('#tab-overview'));
+      $('#zoningBadge').hidden = !S.meta.zoning || S.meta.zoningManual;
+      $('#locBadge').hidden = !S.meta.location || S.meta.locationManual;
+      const others = (S.meta.zoningList || []).filter(z => z !== S.meta.zoning);
+      $('#zoningListNote').textContent = others.length ? `구역에 ${others.join(', ')}도 걸쳐 있습니다.` : '';
+      const fz = FAR_BY_ZONING[S.meta.zoning];
+      $('#farHint').innerHTML = fz
+        ? `참고: 서울시 조례 ${fz.seoul}%, 법정 상한 ${fz.max}%. 정비계획으로 높아질 수 있습니다. <button type="button" class="link-btn" data-far="${fz.seoul}">${fz.seoul}% 넣기</button>`
+        : '';
+      const fb = $('#farHint [data-far]');
+      if (fb) fb.onclick = () => { S.plan.far = num(fb.dataset.far); App.update(); };
       const site = Calc.siteArea(S);
       const gfa = Calc.gfa(S);
       $('#planStats').innerHTML = `
@@ -111,6 +148,11 @@ const Tabs = {
           { key: 'units', label: '호·세대수', type: 'number', width: 70 },
           { key: 'age', label: '경과연수', computed: r => (num(r.year) ? `${year - num(r.year)}년` : '–') },
           { key: 'old', label: '노후 판정', computed: r => (Calc.isOld(S, r, year) ? '노후' : '–'), cls: r => (Calc.isOld(S, r, year) ? 'tag bad' : 'tag') },
+          {
+            key: 'check', label: '비고',
+            computed: r => [r.name, r.needUnits && !num(r.units) ? '세대수 확인 필요' : '', r.guessed ? '용도 추정' : ''].filter(Boolean).join(' · '),
+            cls: r => (r.needUnits && !num(r.units) ? 'tag warn' : 'tag'),
+          },
         ],
         footer: rows => ({ jibun: `${rows.length}동`, floorArea: fmt(rows.reduce((a, r) => a + num(r.floorArea), 0), 1), units: fmt(rows.reduce((a, r) => a + num(r.units), 0)) }),
       });
@@ -320,6 +362,12 @@ const App = {
     this.kpis();
   },
 
+  go(tab) {
+    history.replaceState(null, '', '#' + tab);
+    this.show(tab);
+    window.scrollTo(0, 0);
+  },
+
   update(rerender) {
     this.persist();
     this.kpis();
@@ -395,8 +443,7 @@ function boot() {
 
   $$('#tabs a').forEach(a => a.addEventListener('click', e => {
     e.preventDefault();
-    history.replaceState(null, '', '#' + a.dataset.tab);
-    App.show(a.dataset.tab);
+    App.go(a.dataset.tab);
   }));
 
   $('#btnSample').onclick = () => {
@@ -421,6 +468,41 @@ function boot() {
   $('#searchForm').onsubmit = e => { e.preventDefault(); MapView.search($('#searchInput').value); };
   $('#btnGeojson').onclick = () => MapView.exportGeoJSON();
   $('#btnPick').onclick = () => MapView.setPicking(!MapView.picking);
+  $('#btnImportArea').onclick = () => MapView.importArea();
+
+  // 개요의 주소 검색: 위치·용도지역 자동 입력, 구역계 지도도 그 위치로
+  $('#ovSearchForm').onsubmit = async e => {
+    e.preventDefault();
+    const q = $('#ovSearchInput').value.trim();
+    const msg = $('#ovSearchMsg');
+    if (!q) return;
+    msg.textContent = '검색 중…';
+    try {
+      let list = VWorld.enabled ? await MapView.searchVWorld(q).catch(() => []) : [];
+      if (!list.length) list = await MapView.searchOSM(q);
+      if (!list.length) { msg.textContent = '검색 결과가 없습니다. 지번이나 도로명 주소로 다시 검색해 보세요.'; return; }
+      if (MapView.map) MapView.goTo(list[0]);
+      await Auto.location(list[0]);
+      msg.innerHTML = `<b>${esc(list[0].label)}</b>(으)로 설정했습니다. 다음은 <a href="#area" data-goto="area">구역계</a>에서 사업 구역을 그려 주세요.`;
+      $('[data-goto]', msg).onclick = ev => { ev.preventDefault(); App.go('area'); };
+    } catch (err) {
+      msg.textContent = '검색에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+    }
+  };
+  // 직접 고친 위치·용도지역은 이후 자동 입력으로 덮어쓰지 않음
+  $('#locInput').addEventListener('input', () => { S.meta.locationManual = true; });
+  $('#zoningSelect').addEventListener('change', () => { S.meta.zoningManual = true; App.update(); });
+
+  // 각 단계 아래에 이전/다음 버튼
+  const order = Object.keys(Tabs);
+  order.forEach((t, i) => {
+    const nav = document.createElement('div');
+    nav.className = 'step-nav';
+    if (i > 0) nav.innerHTML += `<button class="btn" data-goto="${order[i - 1]}">← ${$(`#tabs a[data-tab="${order[i - 1]}"]`).textContent.slice(1)}</button>`;
+    if (i < order.length - 1) nav.innerHTML += `<button class="btn primary" data-goto="${order[i + 1]}">다음: ${$(`#tabs a[data-tab="${order[i + 1]}"]`).textContent.slice(1)} →</button>`;
+    $('#tab-' + t).append(nav);
+  });
+  $$('.step-nav [data-goto]').forEach(b => { b.onclick = () => App.go(b.dataset.goto); });
   $('#btnParcelsToArea').onclick = () => MapView.parcelsToArea();
   $$('[data-csv]').forEach(b => { b.onclick = () => csvAction(b.dataset.csv, b.dataset.act); });
 

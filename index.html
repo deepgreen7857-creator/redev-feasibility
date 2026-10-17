@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=3">
+<link rel="stylesheet" href="css/style.css?v=7">
 </head>
 <body>
 
@@ -42,9 +42,20 @@
 
 <!-- 1. 사업 개요 -->
 <section class="panel" id="tab-overview">
-  <h2>사업 개요</h2>
-  <p class="lead">사업 유형과 건축 계획을 정하면, 이후 단계에서 요건 검토와 사업비 계산에 그대로 쓰입니다. 처음이라면 위의 <b>예시 불러오기</b>로 전체 흐름을 먼저 둘러보세요.</p>
+  <div class="welcome">
+    <h2>우리 구역, 사업성이 나올까요?</h2>
+    <p>주소만 넣으면 지도·지적도·공시지가·건축물 정보를 불러와 <b>노후도와 요건</b>을 판단하고, 분양가·공사비를 넣으면 <b>비례율과 조합원 분담금</b>을 추정합니다.</p>
+    <ol class="steps">
+      <li><b>여기서</b> 사업 유형을 고르고 주소를 검색합니다.</li>
+      <li><b>구역계</b>에서 사업 구역을 그리고 "구역 안 필지·건축물 불러오기"를 누릅니다.</li>
+      <li><b>분양수입·사업비</b>를 입력합니다. 모르면 예시 값을 참고하세요.</li>
+      <li><b>비례율·분담금</b>에서 결과를 봅니다.</li>
+    </ol>
+    <p class="note">처음이라면 위의 <b>예시 불러오기</b>로 전체 흐름을 먼저 둘러봐도 좋습니다.</p>
+  </div>
 
+  <h3 class="step-h"><span>1</span> 사업 유형</h3>
+  <p class="hint">잘 모르겠다면: 아파트 단지는 <b>재건축</b>, 단독·다세대주택이 모인 동네는 <b>재개발</b>, 도로로 둘러싸인 1만㎡ 미만 한 블록은 <b>가로주택정비사업</b>입니다.</p>
   <div class="type-cards">
     <label class="type-card">
       <input type="radio" name="ptype" value="redevelopment" data-bind="meta.type" data-rerender="1">
@@ -60,16 +71,31 @@
     </label>
   </div>
 
+  <h3 class="step-h"><span>2</span> 위치 찾기</h3>
+  <p class="hint">사업지 대표 주소(지번이나 도로명)를 검색하면 <b>위치와 용도지역이 자동으로 채워지고</b>, 구역계 지도도 그 위치로 열립니다.</p>
+  <form class="search" id="ovSearchForm">
+    <input id="ovSearchInput" placeholder="예: 성북구 장위동 233-42">
+    <button class="btn primary" type="submit">주소 검색</button>
+  </form>
+  <p class="note" id="ovSearchMsg" aria-live="polite"></p>
   <div class="form-grid">
-    <label>위치 (주소)<input data-bind="meta.location" placeholder="예: 서울특별시 ○○구 ○○동 123 일대"></label>
-    <label>용도지역<select data-bind="meta.zoning" id="zoningSelect"></select></label>
+    <label>위치 (주소) <span class="auto-badge" id="locBadge">자동</span><input data-bind="meta.location" id="locInput" placeholder="주소를 검색하면 자동으로 채워집니다"></label>
+    <label>용도지역 <span class="auto-badge" id="zoningBadge">자동</span><select data-bind="meta.zoning" id="zoningSelect"></select>
+      <small id="zoningListNote"></small></label>
   </div>
 
-  <h3>건축 계획</h3>
+  <h3 class="step-h"><span>3</span> 건축 계획 <small>대략적인 값이어도 됩니다</small></h3>
   <div class="form-grid three">
-    <label>계획 용적률 (%)<input data-bind="plan.far" data-type="number" inputmode="decimal"></label>
-    <label>전체 연면적 배율<small>지상 연면적 대비 지하·주차장 포함 배율</small><input data-bind="plan.gfaFactor" data-type="number" inputmode="decimal"></label>
-    <label>계획 연면적 직접 입력 (㎡)<small>입력하면 추정값 대신 사용</small><input data-bind="plan.gfaManual" data-type="number" inputmode="decimal"></label>
+    <label>계획 용적률 (%)
+      <small>대지면적 대비 지상층 바닥면적 합계 비율. 높을수록 많이 지을 수 있습니다.</small>
+      <input data-bind="plan.far" data-type="number" inputmode="decimal">
+      <small id="farHint" class="far-hint"></small></label>
+    <label>전체 연면적 배율
+      <small>지하주차장·공용시설까지 합친 전체 연면적이 지상 연면적의 몇 배인지. 보통 1.4~1.6입니다.</small>
+      <input data-bind="plan.gfaFactor" data-type="number" inputmode="decimal"></label>
+    <label>계획 연면적 직접 입력 (㎡)
+      <small>설계안이 있어 연면적을 알면 입력하세요. 비우면 위 값으로 추정합니다.</small>
+      <input data-bind="plan.gfaManual" data-type="number" inputmode="decimal"></label>
   </div>
   <div class="stat-row" id="planStats"></div>
 
@@ -96,8 +122,9 @@
       <input data-bind="area.manualArea" data-type="number" inputmode="decimal" placeholder="면적 (㎡)">
       <div class="big-stat"><span>적용 면적</span><strong id="siteArea"></strong></div>
       <div id="pickBox" class="pick-box">
-        <h3>필지로 구역계 만들기</h3>
-        <p class="note">필지 선택을 켜고 지도에서 필지를 누르면 토지조서에 면적·공시지가와 함께 추가됩니다. 다시 누르면 빠집니다.</p>
+        <h3>토지·건축물 자동 입력</h3>
+        <p class="note">구역계를 그린 뒤 <b>구역 안 필지·건축물 불러오기</b>를 누르면 토지조서(면적·공시지가)와 건축물조서(용도·구조·사용승인연도·연면적)가 한 번에 채워집니다. 필지를 하나씩 고르려면 필지 선택을 켜고 지도를 누르세요.</p>
+        <button class="btn small primary" id="btnImportArea">구역 안 필지·건축물 불러오기</button>
         <button class="btn small" id="btnPick">필지 선택 켜기</button>
         <button class="btn small" id="btnParcelsToArea">선택 필지 → 구역계</button>
         <p class="pick-count" id="pickCount"></p>
@@ -241,11 +268,11 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=6"></script>
-<script src="js/util.js?v=2"></script>
-<script src="js/state.js?v=2"></script>
-<script src="js/calc.js?v=6"></script>
-<script src="js/map.js?v=5"></script>
-<script src="js/app.js?v=6"></script>
+<script src="js/config.js?v=7"></script>
+<script src="js/util.js?v=7"></script>
+<script src="js/state.js?v=7"></script>
+<script src="js/calc.js?v=7"></script>
+<script src="js/map.js?v=7"></script>
+<script src="js/app.js?v=7"></script>
 </body>
 </html>
