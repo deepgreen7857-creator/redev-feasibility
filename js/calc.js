@@ -85,7 +85,8 @@ const Calc = {
     const rev = this.revenue(s, m);
     const cost = this.costs(s, rev.total, m);
     const prior = this.prior(s);
-    const ratio = prior > 0 ? (rev.total - cost.total) / prior * 100 : NaN;
+    // 분양수입을 아직 입력하지 않았으면 비례율을 계산하지 않음
+    const ratio = prior > 0 && rev.total > 0 ? (rev.total - cost.total) / prior * 100 : NaN;
     return { rev, cost, prior, ratio, profit: rev.total - cost.total };
   },
 
