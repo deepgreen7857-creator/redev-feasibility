@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=31">
+<link rel="stylesheet" href="css/style.css?v=33">
 </head>
 <body>
 
@@ -125,6 +125,7 @@
         <h3>토지·건축물 자동 입력</h3>
         <p class="note">구역계를 그린 뒤 <b>구역 안 필지·건축물 불러오기</b>를 누르면 토지조서(면적·공시지가)와 건축물조서(용도·구조·사용승인연도·연면적)가 한 번에 채워집니다. 필지를 하나씩 고르려면 필지 선택을 켜고 지도를 누르세요.</p>
         <button class="btn small primary" id="btnImportArea">구역 안 필지·건축물 불러오기</button>
+        <label class="radio"><input type="checkbox" id="pickZone" checked> 필지를 누르면 구역계에도 넣고 빼기</label>
         <button class="btn small" id="btnPick">필지 선택 켜기</button>
         <button class="btn small" id="btnParcelsToArea">선택 필지 → 구역계</button>
         <button class="btn small ghost danger" id="btnClearParcels">불러온 필지·건축물 지우기</button>
@@ -149,6 +150,11 @@
         <label class="radio"><input type="checkbox" id="optBridge" checked> 떨어진 블록 사이 도로로 잇기</label>
         <button class="btn small primary" id="btnJibunZone">지번으로 구역 만들기</button>
         <button class="btn small" id="btnJibunFile">파일 불러오기</button>
+        <p class="note" style="margin-top:10px"><b>방법 3. 고시문 위치 지번 + 면적으로 추정</b> – 구역도가 없을 때, 위 칸에 고시문의 위치 지번(○○번지 일원, 획지 위치 등)을 넣고 목표 면적을 넣으세요.</p>
+        <div class="snap-row">
+          <input id="anchorTarget" inputmode="decimal" placeholder="목표 면적 ㎡ (예: 160201.8)" style="width:200px">
+          <button class="btn small" id="btnAnchorZone">위치 지번 + 면적으로 추정</button>
+        </div>
         <p class="note" id="jibunMsg" aria-live="polite"></p>
         <div id="jibunReport" class="jibun-report"></div>
       </div>
@@ -160,7 +166,8 @@
         <label class="radio"><input type="checkbox" id="alignBldg" checked> 건물 위치를 지적 경계에 맞춰 보정</label>
         <button class="btn small primary" id="btnPdf">도면 PDF</button>
         <button class="btn small" id="btnDxf">CAD 도면 (DXF)</button>
-        <button class="btn small" id="btnGeojson">GeoJSON</button>
+        <button class="btn small" id="btnGeojson">GeoJSON 저장</button>
+        <button class="btn small" id="btnGeojsonOpen">구역계 파일 불러오기</button>
         <p class="note" id="exportMsg" aria-live="polite"></p>
       </div>
       <p class="note">지도에서 그린 면적은 측량 면적이 아닙니다. 정확한 면적은 지적도·토지조서로 확인하세요.</p>
@@ -316,12 +323,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=31"></script>
-<script src="js/util.js?v=31"></script>
-<script src="js/state.js?v=31"></script>
-<script src="js/calc.js?v=31"></script>
-<script src="js/map.js?v=32"></script>
-<script src="js/export.js?v=31"></script>
-<script src="js/app.js?v=31"></script>
+<script src="js/config.js?v=33"></script>
+<script src="js/util.js?v=33"></script>
+<script src="js/state.js?v=33"></script>
+<script src="js/calc.js?v=33"></script>
+<script src="js/map.js?v=33"></script>
+<script src="js/export.js?v=33"></script>
+<script src="js/app.js?v=33"></script>
 </body>
 </html>

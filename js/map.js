@@ -391,11 +391,56 @@ const MapView = {
         msg.textContent = `${p.addr || no} 추가 · ${fmt(land.area, 1)}㎡ · 공시지가 ${p.jiga ? fmt(num(p.jiga)) + '원/㎡' : '정보 없음'} · 건축물 ${added}동`;
         if (!S.meta.zoning || S.meta.zoningAuto) Auto.zoning(latlng.lat, latlng.lng);
       }
+      // 구역계에도 넣고 빼기
+      if (!$('#pickZone') || $('#pickZone').checked) this.toggleZoneParcel(f, idx < 0);
       this.drawParcels();
       App.update(true);
     } catch (e) {
       msg.textContent = '필지 조회에 실패했습니다: ' + e.message + ' (인증키와 등록한 서비스 URL을 확인하세요)';
     }
+  },
+
+  // 필지 하나를 구역계에 더하거나(add=true) 뺌
+  toggleZoneParcel(f, add) {
+    const zone = S.area.geojson;
+    let next = null;
+    if (add) next = zone ? safeUnion([zone, f]) : f;
+    else if (zone) {
+      try { next = turf.difference(zone, f); }
+      catch (e) { try { next = turf.difference(turf.truncate(zone, { precision: 7 }), turf.truncate(f, { precision: 7 })); } catch (e2) { next = zone; } }
+    }
+    this.items.clearLayers();
+    if (next) L.geoJSON(next, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => this.items.addLayer(l));
+    if (S.area.mode !== 'manual') S.area.mode = 'drawn';
+    const layers = this.items.getLayers();
+    S.area.geojson = layers.length ? layers[0].toGeoJSON() : null;
+    S.area.drawnArea = S.area.geojson ? turf.area(S.area.geojson) : 0;
+  },
+
+  // GeoJSON 파일(구역계)을 불러와 구역계로
+  async importGeoJSON() {
+    const text = await pickTextFile('.geojson,.json,application/geo+json,application/json');
+    if (!text) return;
+    let gj;
+    try { gj = JSON.parse(text); } catch (e) { alert('GeoJSON 파일을 읽을 수 없습니다.'); return; }
+    const polys = [];
+    const take = g => {
+      if (!g) return;
+      if (g.type === 'FeatureCollection') g.features.forEach(take);
+      else if (g.type === 'Feature') take(g.geometry);
+      else if (g.type === 'Polygon' || g.type === 'MultiPolygon') polys.push({ type: 'Feature', properties: {}, geometry: g });
+    };
+    take(gj);
+    if (!polys.length) { alert('파일에 면(Polygon) 도형이 없습니다.'); return; }
+    if (S.area.geojson && !confirm('지금 구역계를 파일의 경계로 바꿀까요?')) return;
+    const merged = safeUnion(polys);
+    if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; }
+    this.items.clearLayers();
+    L.geoJSON(merged, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => this.items.addLayer(l));
+    this.map.fitBounds(this.items.getBounds(), { padding: [30, 30] });
+    S.area.mode = 'drawn';
+    this.save();
+    $('#jibunMsg').textContent = `구역계 파일을 불러왔습니다 (${fmt(turf.area(merged))}㎡). 필지 경계에 맞추려면 "그린 구역을 필지에 맞추기"를 누르세요.`;
   },
 
   // 선택한 필지들을 합쳐 구역계로
@@ -451,6 +496,56 @@ const MapView = {
     await Promise.all([1, 2, 3, 4].map(async () => { while (queue.length) await work(queue.shift()); }));
 
     await this.buildZone(found, report, opts, `지번 ${items.length}개 → `);
+  },
+
+  // 고시문의 위치 지번들 + 목표 면적 → 지번들을 감싼 범위를 넓혀 가며 면적이 맞는 구역을 추정
+  async estimateFromAnchors(items, base, target, opts) {
+    const msg = $('#jibunMsg');
+    if (!VWorld.enabled) { msg.textContent = '브이월드 인증키가 있어야 합니다.'; return; }
+    items = [...new Set(items.map(s => String(s).trim()).filter(s => /\d/.test(s)))];
+    if (!items.length || !(target > 0)) { msg.textContent = '위치 지번(한 줄에 하나)과 목표 면적(㎡)을 넣어 주세요.'; return; }
+    const query = it => (/[가-힣]+(동|리|가)\s*(산\s*)?\d/.test(it) ? it : `${base} ${it}`.trim());
+    const pts = [], miss = [];
+    for (const it of items) {
+      msg.textContent = `위치 지번을 찾는 중… ${pts.length + miss.length + 1}/${items.length}`;
+      try {
+        const l = await VWorld.search(query(it), 'address', 'parcel');
+        if (l.length) pts.push(turf.point([l[0].lon, l[0].lat])); else miss.push(it);
+      } catch (e) { miss.push(it); }
+    }
+    if (!pts.length) { msg.textContent = '위치 지번을 하나도 찾지 못했습니다. 기준 동 주소를 확인해 주세요.'; return; }
+    const core = pts.length >= 3 ? turf.convex(turf.featureCollection(pts)) : turf.buffer(turf.featureCollection(pts).features[0], 30, { units: 'meters' });
+    msg.textContent = '주변 필지를 불러오는 중…';
+    const reach = Math.sqrt(target) * 0.8;
+    const big = turf.buffer(core, reach, { units: 'meters' });
+    const fs = await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${turf.bbox(big).join(',')})`, 20);
+    const snapped = d => {
+      const rough = d > 0 ? turf.buffer(core, d, { units: 'meters' }) : core;
+      let sum = 0;
+      for (const f of fs) {
+        const A = turf.area(f);
+        if (!A) continue;
+        try { const x = turf.intersect(f, rough); if (x && turf.area(x) / A >= (opts.threshold || 0.5)) sum += A; } catch (e) { /* 건너뜀 */ }
+      }
+      return { rough, sum };
+    };
+    // 넓히는 거리를 이분 탐색해 목표 면적에 맞춤
+    let lo = 0, hi = reach, best = null;
+    for (let k = 0; k < 9; k++) {
+      const mid = (lo + hi) / 2;
+      msg.textContent = `목표 면적에 맞추는 중… (${k + 1}/9)`;
+      await new Promise(r => setTimeout(r));
+      const r = snapped(mid);
+      if (!best || Math.abs(r.sum - target) < Math.abs(best.sum - target)) best = { ...r, d: mid };
+      if (r.sum < target) lo = mid; else hi = mid;
+    }
+    S.area.geojson = best.rough;
+    this.items.clearLayers();
+    L.geoJSON(best.rough).eachLayer(l => this.items.addLayer(l));
+    await this.snapToParcels(opts);
+    const diff = (S.area.drawnArea / target - 1) * 100;
+    msg.insertAdjacentHTML('afterbegin', `<b>추정 구역</b>: 위치 지번 ${pts.length}개를 감싼 범위를 ${fmt(best.d)}m 넓혀 목표 면적 ${fmt(target, 1)}㎡에 맞췄습니다 (차이 ${diff >= 0 ? '+' : ''}${fmt(diff, 1)}%). 경계는 추정이니 필지 선택으로 넣고 빼며 다듬으세요.`
+      + (miss.length ? ` 못 찾은 지번: ${miss.map(esc).join(', ')}.` : '') + '<br>');
   },
 
   // 대략 그린 구역 → 필지 경계에 맞춘 구역계
@@ -584,6 +679,7 @@ const MapView = {
       const land = landFromFeature(p.f);
       land.area = Math.round(p.part * 10) / 10;
       land.partial = true;
+      land.geom = p.piece.geometry;   // 지도에는 편입된 부분만
       const i = S.lands.findIndex(l => l.pnu === land.pnu);
       if (i >= 0) S.lands[i] = land; else S.lands.push(land);
     });

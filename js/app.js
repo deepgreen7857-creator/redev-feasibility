@@ -585,6 +585,7 @@ function boot() {
 
   $('#searchForm').onsubmit = e => { e.preventDefault(); MapView.search($('#searchInput').value); };
   $('#btnGeojson').onclick = () => MapView.exportGeoJSON();
+  $('#btnGeojsonOpen').onclick = () => MapView.importGeoJSON();
   $('#btnPick').onclick = () => MapView.setPicking(!MapView.picking);
   $('#btnImportArea').onclick = () => MapView.importArea();
   // 지도에서 불러온 필지·건축물만 지움 (직접 입력한 행은 유지)
@@ -643,6 +644,12 @@ function boot() {
     const m = String(S.meta.location || '').match(/^(.*?[가-힣]+(동|리|가))(\s|\d|$)/);
     return m ? m[1].trim() : '';
   };
+  $('#btnAnchorZone').onclick = () => MapView.estimateFromAnchors(
+    $('#jibunList').value.split(/[\n,;\t]+/),
+    $('#jibunBase').value.trim() || guessBase(),
+    num($('#anchorTarget').value),
+    { threshold: num($('#snapThreshold').value) || 0.5, fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked },
+  );
   $('#btnSnapZone').onclick = () => MapView.snapToParcels({
     threshold: num($('#snapThreshold').value) || 0.5,
     fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked,
