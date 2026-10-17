@@ -109,8 +109,9 @@ const Calc = {
   survey(s) {
     const year = new Date().getFullYear();
     const bs = s.buildings;
-    let old = 0, oldArea = 0, area = 0, detached = 0, apartment = 0, minAge = Infinity, aptMinAge = Infinity;
+    let old = 0, oldArea = 0, area = 0, detached = 0, apartment = 0, minAge = Infinity, aptMinAge = Infinity, unknown = 0;
     for (const b of bs) {
+      if (!num(b.year)) unknown++;
       const isOld = this.isOld(s, b, year);
       const fa = num(b.floorArea);
       area += fa;
@@ -129,7 +130,7 @@ const Calc = {
     const owners = new Set(lands.map(l => (l.owner || '').trim()).filter(Boolean)).size;
     return {
       year,
-      count: bs.length, old, oldRatio: bs.length ? old / bs.length * 100 : NaN,
+      count: bs.length, old, unknown, oldRatio: bs.length ? old / bs.length * 100 : NaN,
       area, oldArea, oldAreaRatio: area ? oldArea / area * 100 : NaN,
       detached, apartment,
       minAge: isFinite(minAge) ? minAge : NaN,

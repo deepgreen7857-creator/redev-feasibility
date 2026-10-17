@@ -150,8 +150,8 @@ const Tabs = {
           { key: 'old', label: '노후 판정', computed: r => (Calc.isOld(S, r, year) ? '노후' : '–'), cls: r => (Calc.isOld(S, r, year) ? 'tag bad' : 'tag') },
           {
             key: 'check', label: '비고',
-            computed: r => [r.name, r.needUnits && !num(r.units) ? '세대수 확인 필요' : '', r.guessed ? '용도 추정' : ''].filter(Boolean).join(' · '),
-            cls: r => (r.needUnits && !num(r.units) ? 'tag warn' : 'tag'),
+            computed: r => [r.name, r.noInfo && !num(r.year) ? '정보 없음 – 건축물대장 확인' : '', r.needUnits && !num(r.units) ? '세대수 확인 필요' : '', r.guessed ? '용도 추정' : ''].filter(Boolean).join(' · '),
+            cls: r => ((r.noInfo && !num(r.year)) || (r.needUnits && !num(r.units)) ? 'tag warn' : 'tag'),
           },
         ],
         footer: rows => ({ jibun: `${rows.length}동`, floorArea: fmt(rows.reduce((a, r) => a + num(r.floorArea), 0), 1), units: fmt(rows.reduce((a, r) => a + num(r.units), 0)) }),
@@ -165,6 +165,7 @@ const Tabs = {
       $('#oldStats').innerHTML = `
         <div><span>건축물</span><b>${fmt(sv.count)}동</b></div>
         <div><span>노후·불량건축물</span><b>${fmt(sv.old)}동</b></div>
+        ${sv.unknown ? `<div><span>사용승인연도 없음 (판정 불가)</span><b class="warn">${fmt(sv.unknown)}동</b></div>` : ''}
         <div class="hl"><span>노후도 (동수 기준)</span><b class="${sv.oldRatio >= 60 ? 'good' : ''}">${fmtPct(sv.oldRatio)}</b></div>
         <div><span>노후도 (연면적 기준)</span><b>${fmtPct(sv.oldAreaRatio)}</b></div>
         <div><span>단독·다가구</span><b>${fmt(sv.detached)}호</b></div>

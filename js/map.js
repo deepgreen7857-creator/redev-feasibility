@@ -105,6 +105,7 @@ function buildingFromFeature(f, jibun, pnu) {
     id: uid(), jibun: jibun || '', use, structure, year, floorArea,
     units: isApt ? 0 : (use === '단독주택' || use === '다가구주택' ? 1 : 0),
     name: p.bld_nm || '', floors, pnu: pnu || '', auto: true, needUnits: isApt, guessed,
+    noInfo: !year && !floorArea && !code,
   };
 }
 
@@ -274,7 +275,10 @@ const MapView = {
       });
       S.area.mode = S.area.mode === 'manual' ? 'manual' : 'drawn';
       const need = S.buildings.filter(b => b.needUnits).length;
-      msg.textContent = `필지 ${parcels.length}개, 건축물 ${bldgs.length}동을 불러왔습니다.` + (need ? ` 공동주택 ${need}동은 세대수를 확인해 입력하세요.` : '');
+      const noInfo = S.buildings.filter(b => b.noInfo).length;
+      msg.textContent = `필지 ${parcels.length}개, 건축물 ${bldgs.length}동을 불러왔습니다.`
+        + (need ? ` 공동주택 ${need}동은 세대수를 확인해 입력하세요.` : '')
+        + (noInfo ? ` ${noInfo}동은 용도·사용승인일 정보가 없어 건축물대장 확인이 필요합니다.` : '');
       this.drawParcels();
       App.update(true);
     } catch (e) {
