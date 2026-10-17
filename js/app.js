@@ -55,6 +55,7 @@ const Tabs = {
     render() {
       bindInputs($('#tab-area'));
       MapView.init();
+      MapView.drawParcels();
       this.refresh();
     },
     refresh() {
@@ -62,6 +63,12 @@ const Tabs = {
       $('#landsArea').textContent = `${fmt(Calc.landTotal(S))}㎡`;
       const site = Calc.siteArea(S);
       $('#siteArea').innerHTML = `${fmt(site)}㎡ <em>${fmt(site / PY)}평</em>`;
+      $('#pickBox').hidden = !VWorld.enabled;
+      $('#vworldOff').hidden = VWorld.enabled;
+      $('#btnPick').textContent = MapView.picking ? '필지 선택 끄기' : '필지 선택 켜기';
+      $('#btnPick').classList.toggle('on', MapView.picking);
+      const picked = S.lands.filter(l => l.geom);
+      $('#pickCount').textContent = `지도에서 선택한 필지 ${picked.length}개 · ${fmt(picked.reduce((a, l) => a + num(l.area), 0), 1)}㎡`;
     },
   },
 
@@ -413,6 +420,8 @@ function boot() {
 
   $('#searchForm').onsubmit = e => { e.preventDefault(); MapView.search($('#searchInput').value); };
   $('#btnGeojson').onclick = () => MapView.exportGeoJSON();
+  $('#btnPick').onclick = () => MapView.setPicking(!MapView.picking);
+  $('#btnParcelsToArea').onclick = () => MapView.parcelsToArea();
   $$('[data-csv]').forEach(b => { b.onclick = () => csvAction(b.dataset.csv, b.dataset.act); });
 
   App.show((location.hash || '#overview').slice(1));

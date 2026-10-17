@@ -207,6 +207,12 @@ td.refund { color: var(--good); font-weight: 700; }
 .area-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 10px; }
 .map { height: 560px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface-2); z-index: 0; }
 .map-error { padding: 24px; color: var(--muted); }
+.map.picking, .map.picking .leaflet-interactive { cursor: crosshair; }
+.pick-box { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
+.pick-box .btn { margin: 4px 4px 0 0; }
+.btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pick-count { font-size: .85rem; font-weight: 500; margin: 8px 0 0; }
+.leaflet-control-layers { font: inherit; font-size: .8rem; }
 .area-side input[data-type] { margin: 2px 0 8px 26px; width: calc(100% - 26px); }
 .big-stat { display: flex; flex-direction: column; background: var(--accent-soft); border-radius: 8px; padding: 12px; margin: 12px 0; }
 .big-stat span { font-size: .78rem; color: var(--muted); }
