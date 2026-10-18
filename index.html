@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=46">
+<link rel="stylesheet" href="css/style.css?v=47">
 </head>
 <body>
 
@@ -158,9 +158,6 @@
     <label>전체 연면적 배율
       <small>지하주차장·공용시설까지 합친 전체 연면적이 지상 연면적의 몇 배인지. 보통 1.4~1.6입니다.</small>
       <input data-bind="plan.gfaFactor" data-type="number" inputmode="decimal"></label>
-    <label>계획 연면적 직접 입력 (㎡)
-      <small>설계안이 있어 연면적을 알면 입력하세요. 비우면 위 값으로 추정합니다.</small>
-      <input data-bind="plan.gfaManual" data-type="number" inputmode="decimal"></label>
   </div>
   <div class="stat-row" id="planStats"></div>
   <p class="note">면적(구역면적·건축 대지면적·계획 연면적)은 <b>2단계(구역계)</b>에서 구역을 정하면 계산됩니다.</p>
@@ -266,6 +263,10 @@
         <input data-bind="plan.infraRatio" data-type="number" inputmode="decimal"></label>
       <label id="infraAreaBox">기반시설 면적 (㎡)<small>정비계획의 정비기반시설 면적</small>
         <input data-bind="plan.infraArea" data-type="number" inputmode="decimal"></label>
+      <label class="chk-label"><span><input type="checkbox" id="gfaUseManual"> 추정값 대신 설계 연면적 쓰기</span>
+        <small>끄면 건축 대지 × 용적률 × 연면적 배율로 추정</small></label>
+      <label>설계 연면적 (㎡)<small>건축계획·정비계획의 연면적</small>
+        <input id="gfaManualInput" data-bind="plan.gfaManual" data-type="number" inputmode="decimal"></label>
     </div>
     <div class="table-wrap"><table class="grid area-sum">
       <thead><tr><th>구분</th><th class="num">㎡</th><th class="num">평</th><th>근거</th></tr></thead>
@@ -444,19 +445,19 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=46"></script>
-<script src="js/util.js?v=46"></script>
-<script src="js/state.js?v=46"></script>
-<script src="js/calc.js?v=46"></script>
-<script src="js/map.js?v=46"></script>
-<script src="js/ledger.js?v=46"></script>
-<script src="js/pdfsave.js?v=46"></script>
-<script src="js/overlay.js?v=46"></script>
-<script src="js/export.js?v=46"></script>
-<script src="js/roadcut.js?v=46"></script>
-<script src="js/assume.js?v=46"></script>
-<script src="js/app.js?v=46"></script>
-<script src="js/forms.js?v=46"></script>
-<script src="js/review.js?v=46"></script>
+<script src="js/config.js?v=47"></script>
+<script src="js/util.js?v=47"></script>
+<script src="js/state.js?v=47"></script>
+<script src="js/calc.js?v=47"></script>
+<script src="js/map.js?v=47"></script>
+<script src="js/ledger.js?v=47"></script>
+<script src="js/pdfsave.js?v=47"></script>
+<script src="js/overlay.js?v=47"></script>
+<script src="js/export.js?v=47"></script>
+<script src="js/roadcut.js?v=47"></script>
+<script src="js/assume.js?v=47"></script>
+<script src="js/app.js?v=47"></script>
+<script src="js/forms.js?v=47"></script>
+<script src="js/review.js?v=47"></script>
 </body>
 </html>

@@ -247,6 +247,7 @@ body.map-full-open { overflow: hidden; }
 .leaflet-control-layers { font: inherit; font-size: .8rem; }
 .area-side input[data-type] { margin: 2px 0 8px 26px; width: calc(100% - 26px); }
 .area-summary { margin-top: 16px; }
+.area-summary .form-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .area-summary h3 small { font-weight: 400; color: var(--muted); font-size: .8rem; margin-left: 6px; }
 .area-sum td.num, .area-sum th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .area-sum td:last-child { white-space: normal; color: var(--muted); font-size: .82rem; }
