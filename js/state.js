@@ -118,7 +118,9 @@ function defaultState() {
     // zoningManual/locationManual: 사용자가 직접 고친 값이면 자동 입력으로 덮어쓰지 않음
     meta: { name: '새 정비사업', type: 'redevelopment', location: '', zoning: '', memo: '', zoningList: [], zoningManual: false, locationManual: false },
     area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'drawn', center: [37.5665, 126.978], zoom: 16 },
-    plan: { far: 250, gfaFactor: 1.45, gfaManual: 0 },
+    // 연면적 = (구역면적 − 정비기반시설) × 용적률 × 연면적 배율
+    // infraMode: 'auto' 토지조서 지목(도로·공원 등) 합계 | 'ratio' 구역면적의 infraRatio% | 'area' infraArea㎡ 직접 입력
+    plan: { far: 250, gfaFactor: 1.45, gfaManual: 0, infraMode: 'auto', infraRatio: 20, infraArea: 0 },
     lands: [],
     buildings: [],
     criteria: defaultCriteria(),
@@ -151,6 +153,10 @@ function migrate(s) {
     if (s.criteria.garo.oldRatio === 66.7) s.criteria.garo.oldRatio = 60;
     s.version = 2;
   }
+  // 예전 파일: 기반시설 값이 없거나 이상하면 기본값 (mergeDefaults가 빈 키는 채움)
+  if (!['auto', 'ratio', 'area'].includes(s.plan.infraMode)) s.plan.infraMode = 'auto';
+  if (!(num(s.plan.infraRatio) >= 0)) s.plan.infraRatio = 20;
+  if (!(num(s.plan.infraArea) >= 0)) s.plan.infraArea = 0;
   return s;
 }
 
@@ -218,7 +224,7 @@ function sampleState() {
     });
   }
 
-  s.plan = { far: 250, gfaFactor: 1.45, gfaManual: 0 };
+  s.plan = { ...s.plan, far: 250, gfaFactor: 1.45, gfaManual: 0 };
   s.sales = [
     sale('조합원', '59㎡', 80, 82, 3200),
     sale('조합원', '84㎡', 150, 112, 3200),

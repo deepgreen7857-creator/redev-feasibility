@@ -40,7 +40,7 @@ const Assume = {
   // 가정값 → 세대수·분양 행·사업비 행
   plan(s, v) {
     const site = Calc.siteArea(s);
-    const farArea = site * v.far / 100;
+    const farArea = Calc.netSite(s) * v.far / 100;   // 기반시설을 뺀 건축 대지 기준
     const resArea = farArea * v.resRatio / 100;
     const m59 = v.mix59 / 100, rent = v.rentRatio / 100;
     const avg = rent * v.supRent + (1 - rent) * (m59 * v.sup59 + (1 - m59) * v.sup84);

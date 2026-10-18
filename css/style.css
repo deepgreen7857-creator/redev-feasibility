@@ -246,6 +246,12 @@ body.map-full-open { overflow: hidden; }
 .pick-count { font-size: .85rem; font-weight: 500; margin: 8px 0 0; }
 .leaflet-control-layers { font: inherit; font-size: .8rem; }
 .area-side input[data-type] { margin: 2px 0 8px 26px; width: calc(100% - 26px); }
+.area-summary { margin-top: 16px; }
+.area-summary h3 small { font-weight: 400; color: var(--muted); font-size: .8rem; margin-left: 6px; }
+.area-sum td.num, .area-sum th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.area-sum td:last-child { white-space: normal; color: var(--muted); font-size: .82rem; }
+.area-sum tr.strong td { font-weight: 700; }
+.area-sum tr.strong td:last-child { font-weight: 400; }
 .big-stat { display: flex; flex-direction: column; background: var(--accent-soft); border-radius: 8px; padding: 12px; margin: 12px 0; }
 .big-stat span { font-size: .78rem; color: var(--muted); }
 .big-stat strong { font-size: 1.4rem; font-variant-numeric: tabular-nums; }

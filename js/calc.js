@@ -13,9 +13,31 @@ const Calc = {
     return num(a.drawnArea);
   },
 
+  // 정비기반시설(도로·공원·구거·하천·제방·철도·수도) 지목. 한 글자 부호와 전체 이름 모두
+  INFRA_JIMOK: ['도', '공', '구', '천', '제', '철', '수', '도로', '공원', '구거', '하천', '제방', '철도용지', '수도용지'],
+  isInfra(jimok) { return this.INFRA_JIMOK.includes(String(jimok || '').trim()); },
+
+  // 정비기반시설 면적과 근거. auto: 토지조서 지목 합계(토지조서가 비면 구역면적 × infraRatio%)
+  infra(s) {
+    const p = s.plan, site = this.siteArea(s);
+    const ratio = num(p.infraRatio);
+    const byRatio = basis => ({ area: site * ratio / 100, basis });
+    if (p.infraMode === 'area') return { area: Math.min(num(p.infraArea), site), basis: '직접 입력' };
+    if (p.infraMode === 'ratio') return byRatio(`구역면적의 ${fmt(ratio, 1)}%`);
+    if (!s.lands.length) return { ...byRatio(`토지조서가 없어 구역면적의 ${fmt(ratio, 1)}%로 계산`), fallback: true };
+    const ls = s.lands.filter(l => this.isInfra(l.jimok));
+    const sum = ls.reduce((a, l) => a + num(l.area), 0);
+    return { area: Math.min(sum, site), count: ls.length, basis: `토지조서 지목 도로 등 ${ls.length}필지 합계` };
+  },
+  infraArea(s) { return this.infra(s).area; },
+
+  // 건축 대지(획지)면적 = 구역면적 − 정비기반시설
+  netSite(s) { return Math.max(0, this.siteArea(s) - this.infraArea(s)); },
+
+  // 계획 연면적: 구역면적이 아니라 건축 대지면적에 용적률을 곱함 (요건 판정은 그대로 구역면적)
   gfa(s) {
     if (num(s.plan.gfaManual) > 0) return num(s.plan.gfaManual);
-    return this.siteArea(s) * num(s.plan.far) / 100 * num(s.plan.gfaFactor);
+    return this.netSite(s) * num(s.plan.far) / 100 * num(s.plan.gfaFactor);
   },
 
   saleAmount(row, mul = 1) {

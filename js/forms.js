@@ -19,6 +19,20 @@ const Forms = (() => {
   const PY = 3.305785;
   const PUBLIC = ['국유지', '시유지', '구유지', '도유지', '군유지', '국공유지'];
   const isPublic = t => PUBLIC.includes(t);
+  // 정비기반시설 지목 (도로·공원·구거·하천·제방·철도·수도). 한 글자 부호와 전체 이름 모두
+  const INFRA = ['도', '공', '구', '천', '제', '철', '수', '도로', '공원', '구거', '하천', '제방', '철도용지', '수도용지'];
+  const isInfra = j => INFRA.includes(String(j || '').trim());
+  // 구역면적 → 정비기반시설 → 건축 대지면적. 기반시설 지목 필지가 없으면 구역면적의 20%
+  function netSite(parcels, infraM2) {
+    const site = parcels.reduce((a, q) => a + (+q.area || 0), 0);
+    const r2 = x => Math.round(x * 100) / 100;
+    if (infraM2 != null && infraM2 !== '' && isFinite(+infraM2)) return { site, infra: r2(+infraM2), net: r2(Math.max(0, site - +infraM2)), basis: '입력값' };
+    const ls = parcels.filter(q => isInfra(q.jimok));
+    const sum = ls.reduce((a, q) => a + (+q.area || 0), 0);
+    const infra = sum > 0 ? Math.min(sum, site) : site * 0.2;
+    return { site, infra: r2(infra), net: r2(Math.max(0, site - infra)), count: ls.length,
+      basis: sum > 0 ? `지목 도로·공원 등 ${ls.length}필지 합계` : '지목 도로 등 필지가 없어 구역면적의 20%(추정)' };
+  }
 
   // ---------- 시트 도우미 ----------
   const A1 = (r, c) => XLSX.utils.encode_cell({ r, c });            // 0-based
@@ -257,7 +271,8 @@ const Forms = (() => {
   const DEFAULTS = {
     multiplier: 1.4,          // 종전자산 = 공시지가 × 배율
     consent: 0.8,             // 분양대상자(조합설립 동의자) 비율
-    gfaM2: null,              // 계획 연면적(㎡) - 비우면 구역면적 × 용적률 × 연면적계수
+    gfaM2: null,              // 계획 연면적(㎡) - 비우면 건축 대지면적 × 용적률 × 연면적계수
+    infraM2: null,            // 정비기반시설 면적(㎡) - 비우면 지목 도로 등 합계(없으면 구역면적의 20%)
     far: 250, gfaFactor: 1.45,
     supplyRatio: 0.63,        // 분양 공급면적 합 ÷ 연면적 (세대수 자동 배분용)
     constPerPy: 7000000,      // 평당 공사비
@@ -402,14 +417,18 @@ const Forms = (() => {
     // ---- 가정값 시트 (모든 수식이 참조) ----
     const ga = Sheet();
     ga.set(0, 0, '사업성 검토 가정값 (노란 칸을 고치면 전체가 다시 계산됨)');
-    const siteArea = P.reduce((a, q) => a + (+q.area || 0), 0);
-    const gfaM2 = p.gfaM2 || Math.round(siteArea * p.far / 100 * p.gfaFactor * 100) / 100;
-    const G = {};   // 이름 -> 셀 주소
+    // 구역 → 정비기반시설 공제 → 건축 대지 → 연면적
+    const NS = netSite(P, p.infraM2);
+    const gfaM2 = p.gfaM2 || Math.round(NS.net * p.far / 100 * p.gfaFactor * 100) / 100;
+    const G = {};   // 이름 -> 셀 주소 (값이 함수면 앞 행들의 주소가 정해진 뒤 계산)
     const gRows = [
       ['SITE', '구역면적(㎡)', F(`'종전자산'!E${P.length + 5}`), M2, '종전자산 시트 편입면적 합계'],
+      ['INFRA', '정비기반시설 면적(㎡)', NS.infra, M2, NS.basis + ' · 정비계획 값이 있으면 고쳐 쓰세요'],
+      ['NET_SITE', '건축 대지면적(㎡)', () => F(`${G.SITE}-${G.INFRA}`), M2, '구역면적 − 정비기반시설'],
       ['MULT', '종전자산 배율(공시지가 ×)', p.multiplier, RATE, '구청 검토 관행 1.4 (1.5·1.8 비교)'],
       ['CONSENT', '분양대상자 비율(동의율)', p.consent, PCT, '나머지는 청산대상자(미동의)로 봄'],
-      ['GFA_M2', '계획 연면적(㎡)', gfaM2, M2, p.gfaM2 ? '입력값' : `구역면적 × 용적률 ${p.far}% × 연면적계수 ${p.gfaFactor} (추정)`],
+      ['GFA_M2', '계획 연면적(㎡)', p.gfaM2 ? gfaM2 : () => F(`ROUND(${G.NET_SITE}*${p.far}/100*${p.gfaFactor},2)`), M2,
+        p.gfaM2 ? '입력값' : `건축 대지면적 × 용적률 ${p.far}% × 연면적계수 ${p.gfaFactor} (추정)`],
       ['GFA_PY', '계획 연면적(평)', null, M2, '㎡ ÷ 3.305785'],
       ['CONST_PY', '평당 공사비(원)', p.constPerPy, WON, '철거·석면해체 포함, VAT 별도'],
       ['MEMBER_RATIO', '조합원 분양가 비율', p.memberRatio, PCT, '일반분양가 대비'],
@@ -424,7 +443,7 @@ const Forms = (() => {
     gRows.forEach(([k, lab, v, z2, note], i) => {
       const r = 3 + i; G[k] = `'가정값'!$B$${r + 1}`;
       ga.set(r, 0, lab);
-      if (k === 'GFA_PY') ga.set(r, 1, F(`B${r}/${PY}`), M2); else ga.set(r, 1, v, z2);
+      if (k === 'GFA_PY') ga.set(r, 1, F(`B${r}/${PY}`), M2); else ga.set(r, 1, typeof v === 'function' ? v() : v, z2);
       ga.set(r, 2, note);
     });
     ga.cols([30, 18, 60]);
@@ -628,10 +647,10 @@ const Forms = (() => {
   // 화면용 간이 계산 (비례상수 방식): 기타사업비 = 공사비 × k
   function quick(z, prm = {}) {
     const p = { ...DEFAULTS, ...prm, retail: { ...DEFAULTS.retail, ...(prm.retail || {}) } };
-    const site = z.parcels.reduce((a, q) => a + (+q.area || 0), 0);
+    const NS = netSite(z.parcels, p.infraM2), site = NS.site;
     const land = z.parcels.reduce((a, q) => a + (+q.area || 0) * (+q.jiga || 0), 0) * p.multiplier;
     const pub = z.parcels.filter(q => isPublic(q.ownerType)).reduce((a, q) => a + (+q.area || 0) * (+q.jiga || 0), 0) * p.multiplier;
-    const gfa = p.gfaM2 || site * p.far / 100 * p.gfaFactor;
+    const gfa = p.gfaM2 || NS.net * p.far / 100 * p.gfaFactor;
     const constr = gfa / PY * p.constPerPy;
     let income = prm.income || 0;
     if (!income) {
@@ -640,10 +659,10 @@ const Forms = (() => {
         + (p.retail ? (p.retail.areaM2 || 0) / PY * ((p.retail.memberShare || 0) * p.retail.memberPy + (1 - (p.retail.memberShare || 0)) * p.retail.genPy) : 0);
     }
     const res = k => { const etc = constr * k; const fin = (constr + etc) * p.fin.share * p.fin.rate * p.fin.years; const out = constr + etc + fin; const base = (land - pub) * p.consent; return base ? (income - out) / base * 100 : 0; };
-    return { site, land, pub, gfa, constr, income, ratioLow: res(0.44), ratioMid: res(0.36), ratioHigh: res(0.27) };
+    return { site, infra: NS.infra, netSite: NS.net, land, pub, gfa, constr, income, ratioLow: res(0.44), ratioMid: res(0.36), ratioHigh: res(0.27) };
   }
 
-  return { exportForms, feasibility, quick, autoUnits, sheet4, sheet5, sheet6, sheet9, countOwners, DEFAULTS, costItems, isPublic };
+  return { exportForms, feasibility, quick, autoUnits, sheet4, sheet5, sheet6, sheet9, countOwners, DEFAULTS, costItems, isPublic, isInfra, netSite };
 })();
 
 if (typeof module !== 'undefined') module.exports = Forms;

@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=44">
+<link rel="stylesheet" href="css/style.css?v=46">
 </head>
 <body>
 
@@ -163,6 +163,7 @@
       <input data-bind="plan.gfaManual" data-type="number" inputmode="decimal"></label>
   </div>
   <div class="stat-row" id="planStats"></div>
+  <p class="note">면적(구역면적·건축 대지면적·계획 연면적)은 <b>2단계(구역계)</b>에서 구역을 정하면 계산됩니다.</p>
 
   <h3>메모</h3>
   <textarea data-bind="meta.memo" rows="3" placeholder="검토 배경, 가정, 출처 등을 적어 두세요."></textarea>
@@ -250,6 +251,26 @@
       </div>
       <p class="note">지도에서 그린 면적은 측량 면적이 아닙니다. 정확한 면적은 지적도·토지조서로 확인하세요.</p>
     </aside>
+  </div>
+
+  <div class="card area-summary">
+    <h3>면적 요약 <small>구역 → 정비기반시설 공제 → 건축 대지 → 연면적</small></h3>
+    <div class="form-grid three">
+      <label>정비기반시설 산정 방식
+        <select data-bind="plan.infraMode" data-rerender="1">
+          <option value="auto">자동 (토지조서 현황 지목)</option>
+          <option value="ratio">구역면적의 비율 (%)</option>
+          <option value="area">직접 입력 (㎡)</option>
+        </select></label>
+      <label id="infraRatioBox">기반시설 비율 (%)<small>도로·공원 등. 보통 20~30%</small>
+        <input data-bind="plan.infraRatio" data-type="number" inputmode="decimal"></label>
+      <label id="infraAreaBox">기반시설 면적 (㎡)<small>정비계획의 정비기반시설 면적</small>
+        <input data-bind="plan.infraArea" data-type="number" inputmode="decimal"></label>
+    </div>
+    <div class="table-wrap"><table class="grid area-sum">
+      <thead><tr><th>구분</th><th class="num">㎡</th><th class="num">평</th><th>근거</th></tr></thead>
+      <tbody id="areaSummary"></tbody>
+    </table></div>
   </div>
 </section>
 
@@ -423,19 +444,19 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=44"></script>
-<script src="js/util.js?v=44"></script>
-<script src="js/state.js?v=44"></script>
-<script src="js/calc.js?v=44"></script>
-<script src="js/map.js?v=44"></script>
-<script src="js/ledger.js?v=44"></script>
-<script src="js/pdfsave.js?v=44"></script>
-<script src="js/overlay.js?v=44"></script>
-<script src="js/export.js?v=44"></script>
-<script src="js/roadcut.js?v=44"></script>
-<script src="js/assume.js?v=44"></script>
-<script src="js/app.js?v=44"></script>
-<script src="js/forms.js?v=45"></script>
-<script src="js/review.js?v=45"></script>
+<script src="js/config.js?v=46"></script>
+<script src="js/util.js?v=46"></script>
+<script src="js/state.js?v=46"></script>
+<script src="js/calc.js?v=46"></script>
+<script src="js/map.js?v=46"></script>
+<script src="js/ledger.js?v=46"></script>
+<script src="js/pdfsave.js?v=46"></script>
+<script src="js/overlay.js?v=46"></script>
+<script src="js/export.js?v=46"></script>
+<script src="js/roadcut.js?v=46"></script>
+<script src="js/assume.js?v=46"></script>
+<script src="js/app.js?v=46"></script>
+<script src="js/forms.js?v=46"></script>
+<script src="js/review.js?v=46"></script>
 </body>
 </html>

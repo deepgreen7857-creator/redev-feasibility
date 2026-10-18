@@ -879,9 +879,10 @@ const Review = (() => {
     S.meta.name = z.name; S.meta.location = z.location; S.meta.locationManual = true;
     S.criteria = critFor();
     const fp = feasParams(); S.plan.far = fp.far; if (fp.gfaM2) S.plan.gfaManual = fp.gfaM2;
-    // 분양 수입표(S.sales)도 채움: 평형별 세대수가 비어 있으면 자동 배분(연면적 × 공급비율)
+    S.plan.infraMode = 'auto';   // 기반시설은 보낸 토지조서의 지목(도로 등)으로
+    // 분양 수입표(S.sales)도 채움: 평형별 세대수가 비어 있으면 자동 배분(건축 대지 연면적 × 공급비율)
     const pp = { ...Forms.DEFAULTS, ...fp };
-    const gfa = fp.gfaM2 || z.parcels.reduce((a, q) => a + (+q.area || 0), 0) * fp.far / 100 * pp.gfaFactor;
+    const gfa = fp.gfaM2 || Forms.netSite(z.parcels, fp.infraM2).net * fp.far / 100 * pp.gfaFactor;
     const AU = Forms.autoUnits(pp, gfa, z);
     S.sales = [];
     AU.units.forEach(u => {

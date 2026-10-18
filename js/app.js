@@ -95,12 +95,11 @@ const Tabs = {
         : '';
       const fb = $('#farHint [data-far]');
       if (fb) fb.onclick = () => { S.plan.far = num(fb.dataset.far); App.update(); };
-      const site = Calc.siteArea(S);
-      const gfa = Calc.gfa(S);
+      // 1단계는 계획 조건만. 면적은 2단계(구역계)에서 구역을 정해야 생김
       $('#planStats').innerHTML = `
-        <div><span>적용 대지면적</span><strong>${fmt(site)}㎡</strong><em>${fmt(site / PY)}평</em></div>
-        <div><span>계획 연면적 ${num(S.plan.gfaManual) > 0 ? '(직접 입력)' : '(추정)'}</span><strong>${fmt(gfa)}㎡</strong><em>${fmt(gfa / PY)}평</em></div>
-        <div><span>사업 유형</span><strong>${TYPES[S.meta.type].label}</strong><em>${TYPES[S.meta.type].law}</em></div>`;
+        <div><span>사업 유형</span><strong>${TYPES[S.meta.type].label}</strong><em>${TYPES[S.meta.type].law}</em></div>
+        <div><span>계획 용적률</span><strong>${fmt(num(S.plan.far))}%</strong><em>${esc(S.meta.zoning || '용도지역 미정')}</em></div>
+        <div><span>연면적 배율</span><strong>${num(S.plan.gfaManual) > 0 ? '직접 입력' : '× ' + fmt(num(S.plan.gfaFactor), 2)}</strong><em>${num(S.plan.gfaManual) > 0 ? fmt(num(S.plan.gfaManual)) + '㎡' : '지하·공용 포함'}</em></div>`;
     },
   },
 
@@ -122,6 +121,24 @@ const Tabs = {
       $('#btnPick').classList.toggle('on', MapView.picking);
       const picked = S.lands.filter(l => l.geom);
       $('#pickCount').textContent = `지도에서 선택한 필지 ${picked.length}개 · ${fmt(picked.reduce((a, l) => a + num(l.area), 0), 1)}㎡`;
+      this.summary();
+    },
+    // 면적 요약: 구역 → 기반시설 공제 → 건축 대지 → 연면적
+    summary() {
+      bindInputs($('.area-summary'));
+      const mode = S.plan.infraMode;
+      $('#infraRatioBox').hidden = mode === 'area';
+      $('#infraAreaBox').hidden = mode !== 'area';
+      const site = Calc.siteArea(S), inf = Calc.infra(S), net = Calc.netSite(S), gfa = Calc.gfa(S);
+      const modeName = { drawn: '지도에서 그린 면적', lands: '토지조서 면적 합계', manual: '직접 입력' }[S.area.mode] || '';
+      const manual = num(S.plan.gfaManual) > 0;
+      const row = (label, v, basis, cls = '') => `<tr class="${cls}"><td>${label}</td><td class="num">${site ? fmt(v) : '–'}</td><td class="num">${site ? fmt(v / PY) : '–'}</td><td>${esc(basis)}</td></tr>`;
+      $('#areaSummary').innerHTML = !site
+        ? '<tr><td colspan="4" class="muted">구역을 그리거나 면적을 입력하면 계산됩니다.</td></tr>'
+        : row('구역면적', site, modeName)
+          + row('− 정비기반시설', inf.area, `${inf.basis}${site ? ` (구역의 ${fmt(inf.area / site * 100, 1)}%)` : ''}`)
+          + row('= 건축 대지면적', net, '구역면적 − 정비기반시설', 'strong')
+          + row('계획 연면적', gfa, manual ? '1단계에서 직접 입력한 값' : `건축 대지 × 용적률 ${fmt(num(S.plan.far))}% × 연면적 배율 ${fmt(num(S.plan.gfaFactor), 2)}`, 'strong');
     },
   },
 
