@@ -19,7 +19,7 @@ const Ledger = {
       await this.throttle();
       try { return await this.titleOf(pnu); }
       catch (e) {
-        if (!/PER_SECOND|LIMITED_NUMBER/.test(e.message) || k >= 5) throw e;
+        if (!/PER_SECOND|LIMITED_NUMBER|TIMEOUT|빈 응답/.test(e.message) || k >= 5) throw e;   // 초당 제한·일시 시간 초과·빈 응답은 다시
         this.GAP = Math.min(1500, this.GAP + 100);          // 계속 막히면 간격을 넓힘
         await new Promise(r => setTimeout(r, 800 * (k + 1)));
       }
@@ -40,8 +40,9 @@ const Ledger = {
       for (let k = 0; k < 6; k++) {
         const res = await fetch(`${this.URL.replace('getBrTitleInfo', 'getBrExposPubuseAreaInfo')}?${params}`);
         j = await res.json().catch(() => null);
+        if (!j) { await new Promise(r => setTimeout(r, 800 * (k + 1))); continue; }   // 포털이 가끔 빈 응답(HTTP 200)을 줌 → 다시 시도
         const err = j && j.OpenAPI_ServiceResponse && j.OpenAPI_ServiceResponse.cmmMsgHeader && j.OpenAPI_ServiceResponse.cmmMsgHeader.errMsg;
-        if (err && /PER_SECOND|LIMITED_NUMBER/.test(err)) { await new Promise(r => setTimeout(r, 800 * (k + 1))); continue; }
+        if (err && /PER_SECOND|LIMITED_NUMBER|TIMEOUT/.test(err)) { await new Promise(r => setTimeout(r, 800 * (k + 1))); continue; }
         if (err) throw new Error(err);
         break;
       }
@@ -66,7 +67,8 @@ const Ledger = {
     const j = await res.json().catch(() => null);
     const h = j && j.response && j.response.header;
     if (!h || h.resultCode !== '00') {
-      const msg = (j && j.OpenAPI_ServiceResponse && j.OpenAPI_ServiceResponse.cmmMsgHeader && j.OpenAPI_ServiceResponse.cmmMsgHeader.errMsg) || (h && h.resultMsg) || `HTTP ${res.status}`;
+      // 포털이 가끔 빈 응답(HTTP 200)을 줌 → '빈 응답'이면 titleOfRetry가 다시 시도
+      const msg = (j && j.OpenAPI_ServiceResponse && j.OpenAPI_ServiceResponse.cmmMsgHeader && j.OpenAPI_ServiceResponse.cmmMsgHeader.errMsg) || (h && h.resultMsg) || (!j ? `빈 응답(HTTP ${res.status})` : `HTTP ${res.status}`);
       throw new Error(msg);
     }
     const it = j.response.body && j.response.body.items && j.response.body.items.item;
