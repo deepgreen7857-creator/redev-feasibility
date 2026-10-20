@@ -554,14 +554,11 @@ const Review = (() => {
       const miss = R.parcels.filter(p => !p.feat);
       // 토지특성
       if ($r('rvChar').checked) {
-        const yr = new Date().getFullYear();
         for (let i = 0; i < R.parcels.length; i++) {
           const p = R.parcels[i];
           try {
-            let d = await jsonp('https://api.vworld.kr/ned/data/getLandCharacteristics', { pnu: p.pnu, key: VWorld.key, domain: VWorld.domain, format: 'json', numOfRows: 1, pageNo: 1, stdrYear: String(yr) }, 15000);
-            let f = d && d.landCharacteristicss && d.landCharacteristicss.field && d.landCharacteristicss.field[0];
-            if (!f) { d = await jsonp('https://api.vworld.kr/ned/data/getLandCharacteristics', { pnu: p.pnu, key: VWorld.key, domain: VWorld.domain, format: 'json', numOfRows: 1, pageNo: 1, stdrYear: String(yr - 1) }, 15000); f = d && d.landCharacteristicss && d.landCharacteristicss.field && d.landCharacteristicss.field[0]; }
-            if (f) { p.ledgerArea = +f.lndpclAr; p.ledgerJimok = f.lndcgrCodeNm; p.zoning = [f.prposArea1Nm, f.prposArea2Nm].filter(x => x && x !== '지정되지않음').join(', '); p.jiga = +f.pblntfPclnd || p.jiga; p.baseYear = f.stdrYear; p.landUse = f.ladUseSittnNm; }
+            const c = await VWorld.landChar(p.pnu);   // 토지특성 (올해 없으면 전년도) – 설정 모드와 같은 함수
+            if (c) { p.ledgerArea = c.ledgerArea; p.ledgerJimok = c.ledgerJimok; p.zoning = c.zoning; p.jiga = c.jiga || p.jiga; p.baseYear = c.baseYear; p.landUse = c.landUse; }
             else p.charMissing = true;
           } catch (e) { p.charError = e.message; await sleep(1200); }
           if (i % 5 === 0) { prog(0.5 + 0.5 * (i + 1) / R.parcels.length); msg('rvMsg2', `토지특성 ${i + 1}/${R.parcels.length}`); }

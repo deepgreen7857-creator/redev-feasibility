@@ -17,6 +17,7 @@ const BASIS = [
   { value: 'pctRevenue', label: '총수입 대비 (%)' },
   { value: 'pctSubtotal', label: '기타 사업비 합계 대비 (%)' },
 ];
+const SAMPLE_NAME = '○○1구역 주택재개발 (예시)';   // 예시 데이터 사업명 (loadState보다 먼저 선언)
 const JIMOK = ['대', '전', '답', '도', '임야', '잡', '공', '구', '기타'];
 const BLDG_USES = ['단독주택', '다가구주택', '다세대주택', '연립주택', '아파트', '근린생활시설', '기타'];
 const STRUCTURES = ['철근콘크리트', '철골', '조적', '목조', '기타'];
@@ -114,12 +115,13 @@ function defaultSales() {
 
 function defaultState() {
   return {
-    version: 2,
+    version: 3,
     // zoningManual/locationManual: 사용자가 직접 고친 값이면 자동 입력으로 덮어쓰지 않음
     meta: { name: '새 정비사업', type: 'redevelopment', location: '', zoning: '', memo: '', zoningList: [], zoningManual: false, locationManual: false },
     // importedKey: 조서(필지·건축물)를 마지막으로 불러온 구역의 지문(zoneKey), importedAt: 그 시각
     //  지금 구역의 지문과 다르면 3단계에 들어갈 때 다시 불러옴
-    area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'drawn', center: [37.5665, 126.978], zoom: 16, importedKey: '', importedAt: '' },
+    area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'ledger', center: [37.5665, 126.978], zoom: 16, importedKey: '', importedAt: '' },
+    // mode: 'ledger' 토지대장 면적 합계(조서 편입면적, 조서가 없으면 그린 면적) | 'drawn' 연속지적 도형 면적(참고) | 'manual' 직접 입력
     // 연면적 = (구역면적 − 정비기반시설) × 용적률 × 연면적 배율
     // infraMode: 'auto' 토지조서 지목(도로·공원 등) 합계 | 'ratio' 구역면적의 infraRatio% | 'area' infraArea㎡ 직접 입력
     plan: { far: 250, gfaFactor: 1.45, gfaManual: 0, infraMode: 'auto', infraRatio: 20, infraArea: 0 },
@@ -154,6 +156,24 @@ function migrate(s) {
   if ((s.version || 1) < 2) {
     if (s.criteria.garo.oldRatio === 66.7) s.criteria.garo.oldRatio = 60;
     s.version = 2;
+  }
+  // v3: 구역 면적 기본을 토지대장 합계로 (예전 기본값 '지도에서 그린 면적'·'토지조서 합계'는 ledger로)
+  if (s.version < 3) {
+    if (s.area.mode === 'drawn' || s.area.mode === 'lands') s.area.mode = 'ledger';
+    s.version = 3;
+  }
+  if (s.area.mode === 'lands') s.area.mode = 'ledger';
+  // 예전 지도 필지: 면적이 연속지적 도형 면적이었음 → 참고값으로 옮기고 '토지대장 면적 다시 조회' 대상으로
+  s.lands.forEach(l => {
+    if (!l.pnu || !l.geom || l.cadArea != null || l.ledgerArea != null) return;
+    if (l.partial) { l.cadArea = num(l.wholeArea) || null; l.inRatio = l.cadArea ? Math.min(1, num(l.area) / l.cadArea) : null; if (l.cadArea == null) l.cadArea = num(l.area); }
+    else { l.cadArea = num(l.area); l.inRatio = 1; }
+    l.areaSrc = '연속지적';
+  });
+  // 표시가 없던 예전 예시 데이터
+  if (s.meta.name === SAMPLE_NAME) {
+    s.lands.forEach(l => { if (!l.pnu) l.sample = true; });
+    s.buildings.forEach(b => { if (!b.auto) b.sample = true; });
   }
   // 예전 파일: 기반시설 값이 없거나 이상하면 기본값 (mergeDefaults가 빈 키는 채움)
   if (!['auto', 'ratio', 'area'].includes(s.plan.infraMode)) s.plan.infraMode = 'auto';
@@ -190,7 +210,7 @@ function sampleState() {
   const pick = arr => arr[Math.floor(rnd() * arr.length)];
 
   const s = defaultState();
-  s.meta = { ...s.meta, name: '○○1구역 주택재개발 (예시)', type: 'redevelopment', location: '서울특별시 ○○구 ○○동 일대 (가상)', zoning: '제2종일반주거지역', memo: '예시 데이터입니다. 실제 사업지와 무관합니다.', zoningManual: true, locationManual: true };
+  s.meta = { ...s.meta, name: SAMPLE_NAME, type: 'redevelopment', location: '서울특별시 ○○구 ○○동 일대 (가상)', zoning: '제2종일반주거지역', memo: '예시 데이터입니다. 실제 사업지와 무관합니다.', zoningManual: true, locationManual: true };
 
   // 약 2만㎡ 크기의 가상 구역계
   const c = [37.5893, 127.0305];
@@ -219,6 +239,7 @@ function sampleState() {
       ownerType: jimok === '도' ? '국공유지' : '사유지',
       owner: jimok === '도' ? '○○구' : `소유자${i + 1}`,
       price: Math.round((5200000 + rnd() * 2600000) / 10000) * 10000,
+      sample: true,
     });
   }
 
@@ -231,6 +252,7 @@ function sampleState() {
       id: uid(), jibun: `${100 + Math.floor(rnd() * 64)}`, use, structure, year,
       floorArea: Math.round(80 + rnd() * (use === '다세대주택' ? 600 : 260)),
       units: use === '다세대주택' ? 6 + Math.floor(rnd() * 10) : use === '다가구주택' ? 1 : use === '근린생활시설' ? 0 : 1,
+      sample: true,
     });
   }
 

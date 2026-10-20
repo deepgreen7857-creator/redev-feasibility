@@ -150,9 +150,10 @@ const LotCut = {
     const inA = on.reduce((a, x) => a + x.area, 0);
     const ptIn = (bf, poly) => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(bf), poly); } catch (e) { return false; } };
     if (keep) {
-      const land = landFromFeature(f);
-      land.area = r1(inA); land.partial = true; land.wholeArea = r1(this.A); land.cutBy = '대지 자르기 – 분할 측량 필요'; land.splitNeeded = true; land.geom = keep.geometry;
+      const land = landFromFeature(f, inA);   // 조서 면적 = 대장 면적 × 편입비율 (아래 fillLedger)
+      land.partial = true; land.cutBy = '대지 자르기 – 분할 측량 필요'; land.splitNeeded = true; land.geom = keep.geometry;
       S.lands.push(land);
+      MapView.fillLedger([land]).then(() => App.update(true));
       if (had < 0) {
         try {
           const bs = (await VWorld.dataPage('LT_C_BLDGINFO', `BOX(${turf.bbox(f).join(',')})`, 1, 50)).features.filter(bf => ptIn(bf, f));
@@ -459,12 +460,12 @@ const RoadCut = {
 
     MapView.items.clearLayers();
     L.geoJSON(merged, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => MapView.items.addLayer(l));
-    S.area.mode = S.area.mode === 'manual' ? 'manual' : 'drawn';
     MapView.save();
 
     // 토지조서: 일부 편입은 편입 면적으로, 뺀 필지는 조서에서 빼고, 새로 넣은 작은 필지는 건축물도
     const r1 = x => Math.round(x * 10) / 10;
     const rows = [];
+    const newLands = [];
     for (const it of items) {
       const pnu = it.f.properties.pnu, v = it.opts[it.choice];
       const had = S.lands.findIndex(l => l.pnu === pnu);
@@ -475,11 +476,10 @@ const RoadCut = {
         rows.push({ input: '', result: '경계 정리', jibun: it.sp.no, jimok: it.sp.jimok, area: 0, note: `${label} – 구역에서 뺌 (전체 ${fmt(it.A, 1)}㎡)` });
         continue;
       }
-      const land = landFromFeature(it.f);
-      if (v.area < it.A * 0.98) {
-        land.area = r1(v.area); land.partial = true; land.wholeArea = r1(it.A); land.cutBy = label; land.geom = v.geom;
-      }
+      const land = landFromFeature(it.f, v.area);   // 98% 미만이면 일부 편입 (편입비율)
+      if (land.inRatio < 1) { land.cutBy = label; land.geom = v.geom; }
       S.lands.push(land);
+      newLands.push(land);
       if (had < 0 && it.kind === 'small') {
         try {
           const bs = (await VWorld.dataPage('LT_C_BLDGINFO', `BOX(${turf.bbox(it.f).join(',')})`, 1, 50)).features
@@ -490,6 +490,7 @@ const RoadCut = {
       rows.push({ input: '', result: '경계 정리', jibun: it.sp.no, jimok: it.sp.jimok, area: r1(v.area), note: `${label}${land.partial ? ` – 일부 편입 (전체 ${fmt(it.A, 1)}㎡)` : ''}${it.kind === 'small' && land.partial ? ' – 분할 측량 필요' : ''}` });
     }
     this.stop();
+    MapView.fillLedger(newLands).then(() => App.update(true));   // 토지대장 면적으로
     MapView.map.fitBounds(MapView.items.getBounds(), { padding: [30, 30] });
     MapView.drawParcels();
     sortByJibun();

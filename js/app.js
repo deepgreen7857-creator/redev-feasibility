@@ -112,7 +112,8 @@ const Tabs = {
     },
     refresh() {
       $('#drawnArea').textContent = S.area.drawnArea ? `${fmt(S.area.drawnArea)}㎡` : '(없음)';
-      $('#landsArea').textContent = `${fmt(Calc.landTotal(S))}㎡`;
+      $('#ledgerArea').textContent = S.lands.length ? `${fmt(Calc.landTotal(S), 1)}㎡` : '(조서 없음)';
+      this.areaDiff();
       const site = Calc.siteArea(S);
       $('#siteArea').innerHTML = `${fmt(site)}㎡ <em>${fmt(site / PY)}평</em>`;
       $('#pickBox').hidden = !VWorld.enabled;
@@ -124,6 +125,23 @@ const Tabs = {
       $('#pickCount').textContent = `지도에서 선택한 필지 ${picked.length}개 · ${fmt(picked.reduce((a, l) => a + num(l.area), 0), 1)}㎡`;
       this.summary();
     },
+    // 토지대장 합계(조서 편입면적)와 연속지적 도형(그린 구역) 면적 차이
+    areaDiff() {
+      const el = $('#areaDiff');
+      const L = Calc.landTotal(S), D = num(S.area.drawnArea);
+      if (!L || !D) { el.hidden = true; return; }
+      const d = D - L, pct = Math.abs(d) / L * 100;
+      const text = `대장 합계 ${fmt(L, 1)}㎡ / 연속지적 도형 ${fmt(D, 1)}㎡ (차이 ${d > 0 ? '+' : ''}${fmt(d, 1)}㎡, ${fmt(pct, 2)}%)`;
+      el.hidden = false;
+      el.className = pct <= 0.1 ? 'note' : 'note warn-box';
+      if (pct <= 0.1) { el.textContent = text; return; }
+      // 대장·연속지적 차이가 가장 큰 필지
+      const gap = l => (num(l.ledgerArea) > 0 && num(l.cadArea) > 0 ? Math.abs(l.ledgerArea - l.cadArea) * (l.inRatio ?? 1) : 0);
+      const worst = S.lands.filter(l => l.geom && gap(l) > 0.05).sort((a, b) => gap(b) - gap(a))[0];
+      el.innerHTML = `<b>${esc(text)}</b><br>구역선과 조서 필지가 맞지 않거나(빠진·남은 필지), 공부와 도면 면적이 다른 필지가 있습니다.`
+        + (worst ? ` <a href="#" id="areaDiffGo">차이 큰 필지: ${esc(worst.jibun)} (대장 ${fmt(worst.ledgerArea, 1)}㎡ / 연속지적 ${fmt(worst.cadArea, 1)}㎡)</a>` : '');
+      if (worst) $('#areaDiffGo').onclick = e => { e.preventDefault(); MapView.focusLand(worst); };
+    },
     // 면적 요약: 구역 → 기반시설 공제 → 건축 대지 → 연면적
     summary() {
       bindInputs($('.area-summary'));
@@ -131,7 +149,9 @@ const Tabs = {
       $('#infraRatioBox').hidden = mode === 'area';
       $('#infraAreaBox').hidden = mode !== 'area';
       const site = Calc.siteArea(S), inf = Calc.infra(S), net = Calc.netSite(S), gfa = Calc.gfa(S);
-      const modeName = { drawn: '지도에서 그린 면적', lands: '토지조서 면적 합계', manual: '직접 입력' }[S.area.mode] || '';
+      const modeName = S.area.mode === 'ledger'
+        ? (Calc.landTotal(S) > 0 ? '토지대장 면적 합계(편입면적 기준)' : '토지조서가 없어 지도에서 그린 면적')
+        : { drawn: '연속지적 도형 면적(참고)', manual: '직접 입력' }[S.area.mode] || '';
       // 설계 연면적: 체크 상태는 따로 저장하지 않고 gfaManual > 0 으로 판단
       const manual = num(S.plan.gfaManual) > 0;
       const est = net * num(S.plan.far) / 100 * num(S.plan.gfaFactor);
@@ -199,6 +219,7 @@ const Tabs = {
       let cls = '', html;
       if (!S.area.geojson) html = '2단계에서 구역을 먼저 그리면 필지·건축물이 자동으로 들어옵니다.';
       else if (MapView.importing) html = '구역 안 필지 불러오는 중…';
+      else if (MapView.ledgerBusy) html = '토지대장 면적 조회 중…';
       else if (!VWorld.enabled) html = '지적 조회를 쓸 수 없어 조서를 직접 입력하거나 CSV로 불러와야 합니다.';
       else if (this.stale()) {
         cls = 'warn';
@@ -212,10 +233,29 @@ const Tabs = {
             ? `조서 필지 <b>${fmt(S.lands.length)}개</b> · 건축물 <b>${fmt(S.buildings.length)}동</b> (직접 입력하거나 파일에서 불러온 조서)`
             : '2단계 구역 안에서 불러온 필지가 없습니다. 필지를 추가하거나 CSV를 불러오세요.';
       }
+      // 대장 면적을 아직 못 받은 지도 필지(예전 파일·조회 실패)
+      const need = this.ledgerTodo();
+      if (need.length && VWorld.enabled && !MapView.importing && !MapView.ledgerBusy) html += ` <span class="warn">· 연속지적 면적으로 들어간 필지 ${fmt(need.length)}개</span> <button type="button" class="btn small" id="btnLedgerRefetch">토지대장 면적 다시 조회</button>`;
       bar.className = 'sync-bar ' + cls;
       bar.innerHTML = html;
       const b = $('#btnSurveyReimport');
       if (b) b.onclick = () => this.reimport();
+      const lb = $('#btnLedgerRefetch');
+      if (lb) lb.onclick = () => this.refetchLedger();
+    },
+
+    ledgerTodo() {
+      return S.lands.filter(l => l.pnu && (l.ledgerFail || (!(num(l.ledgerArea) > 0) && /연속지적/.test(l.areaSrc || ''))));
+    },
+
+    async refetchLedger() {
+      const ls = this.ledgerTodo();
+      const out = $('#surveySyncMsg');
+      const p = MapView.fillLedger(ls, t => { out.textContent = t; });
+      this.sync();
+      const fail = await p;
+      out.textContent = `토지대장 면적 ${fmt(ls.length - fail)}/${fmt(ls.length)}필지 조회했습니다.` + (fail ? ` ${fail}필지는 대장 자료가 없어 연속지적 면적으로 두었습니다(분할·합병 여부 확인).` : '');
+      App.update(true);
     },
 
     render() {
@@ -230,14 +270,18 @@ const Tabs = {
           { key: 'no', label: '연번', computed: (r, i) => String(i + 1) },
           { key: 'jibun', label: '지번', width: 80 },
           { key: 'jimok', label: '지목', type: 'select', options: JIMOK },
-          { key: 'area', label: '면적 (㎡)', type: 'number', dec: 1, width: 90 },
+          { key: 'ledgerArea', label: '대장 면적 (㎡)', computed: r => (num(r.ledgerArea) > 0 ? fmt(r.ledgerArea, 1) : '–') },
+          { key: 'cadArea', label: '연속지적 면적 (㎡)', computed: r => (num(r.cadArea) > 0 ? fmt(r.cadArea, 1) : '–') },
+          { key: 'inRatio', label: '편입비율', computed: r => (r.inRatio == null ? '–' : `${fmt(r.inRatio * 100, 1)}%`) },
+          { key: 'area', label: '조서(편입) 면적 (㎡)', type: 'number', dec: 1, width: 90 },
+          { key: 'areaSrc', label: '면적 출처', computed: r => landAreaSrc(r), cls: r => (/연속지적/.test(landAreaSrc(r)) ? 'tag warn' : 'tag') },
           { key: 'ownerType', label: '소유 구분', type: 'select', options: ['사유지', '국공유지'] },
           { key: 'owner', label: '소유자', width: 90 },
           { key: 'price', label: '공시지가 (원/㎡)', type: 'number', width: 120 },
           { key: 'value', label: '공시가격', computed: r => fmtEok(num(r.area) * num(r.price) / 10000, 2) },
           { key: 'small', label: '비고', computed: r => landNote(r), cls: () => 'tag' },
         ],
-        footer: rows => ({ jibun: `${rows.length}필지`, area: fmt(rows.reduce((a, r) => a + num(r.area), 0), 1), value: fmtEok(Calc.officialLandValue(S), 2) }),
+        footer: rows => ({ jibun: `${rows.length}필지`, ledgerArea: fmt(rows.reduce((a, r) => a + num(r.ledgerArea), 0), 1), cadArea: fmt(rows.reduce((a, r) => a + num(r.cadArea), 0), 1), area: fmt(rows.reduce((a, r) => a + num(r.area), 0), 1), value: fmtEok(Calc.officialLandValue(S), 2) }),
       });
       const year = new Date().getFullYear();
       this.buildings = makeTable($('#buildingsTable'), {
@@ -546,6 +590,7 @@ const App = {
     S = adoptZoneKey(next, migrate(mergeDefaults(defaultState(), next)));
     if ($('#surveySyncMsg')) $('#surveySyncMsg').textContent = '';   // 다른 작업의 불러오기 결과 문구는 지움
     Tabs.survey.declinedKey = '';
+    MapView.sampleAsked = false;   // 예시를 다시 불러오면 다시 물어봄
     saveState();
     bindInputs();
     if (MapView.map) MapView.load();
@@ -621,8 +666,19 @@ function jibunKey(j) {
   const m = s.replace(/^산/, '').match(/(\d+)(?:-(\d+))?/);
   return m ? [san, +m[1], +(m[2] || 0)] : [2, 0, 0];
 }
+// 조서 면적의 출처: 토지대장 / 연속지적(대장 조회 전·실패) / 직접 수정 / 직접 입력
+function landAreaSrc(l) {
+  if (num(l.ledgerArea) > 0 && l.inRatio != null && Math.abs(num(l.area) - Math.round(l.ledgerArea * l.inRatio * 10) / 10) > 0.05) return '직접 수정';
+  return l.areaSrc || (l.pnu ? '' : '직접 입력');
+}
+
 function landNote(l) {
+  const led = num(l.ledgerArea), cad = num(l.cadArea);
+  const gap = led > 0 && cad > 0 ? Math.abs(led - cad) / led * 100 : 0;
+  const thisYear = String(new Date().getFullYear());
   return [
+    gap > 1 ? `공부-도면 면적 차이 ${fmt(gap, 1)}%` : '',
+    l.pnu && (l.ledgerFail || l.areaSrc === '연속지적' || (l.baseYear && String(l.baseYear) !== thisYear)) ? '대장 면적 확인 필요(분할·합병 여부)' : '',
     l.jimok === '대' && num(l.area) > 0 && num(l.area) < (num(S.criteria.smallLot) || 90) ? '과소필지' : '',
     l.enclosed ? '갇힌 필지' : '',
     l.boundary ? `경계 필지(${l.boundary}%)` : '',
@@ -756,10 +812,15 @@ function boot() {
   // 지도에서 불러온 필지·건축물만 지움 (직접 입력한 행은 유지)
   $('#btnClearParcels').onclick = () => {
     const n = S.lands.filter(l => l.pnu).length, m = S.buildings.filter(b => b.auto).length;
-    if (!n && !m) { alert('지도에서 불러온 필지가 없습니다.'); return; }
-    if (!confirm(`지도에서 불러온 필지 ${n}개와 건축물 ${m}동을 조서에서 지울까요? 직접 입력한 행은 그대로 둡니다.`)) return;
-    S.lands = S.lands.filter(l => !l.pnu);
-    S.buildings = S.buildings.filter(b => !b.auto);
+    const sr = sampleRows(), sn = sr.lands.length + sr.buildings.length;
+    if (!n && !m && !sn) { alert('지도에서 불러온 필지가 없습니다.'); return; }
+    // 예시 데이터(가상 필지)가 있으면 같이 지울지 따로 물음
+    const withSample = sn > 0 && confirm(`예시 데이터(가상 필지 ${sr.lands.length}개·건축물 ${sr.buildings.length}동)도 함께 지울까요?`);
+    if (n || m) {
+      if (!confirm(`지도에서 불러온 필지 ${n}개와 건축물 ${m}동을 조서에서 지울까요? 직접 입력한 행은 그대로 둡니다.`)) { if (!withSample) return; }
+      else { S.lands = S.lands.filter(l => !l.pnu); S.buildings = S.buildings.filter(b => !b.auto); }
+    } else if (!withSample) return;
+    if (withSample) clearSampleRows();
     MapView.drawParcels();
     $('#pickMsg').textContent = '불러온 필지와 건축물을 지웠습니다. 필지 선택을 켜고 다시 고르거나, 구역 안 필지·건축물 불러오기를 누르세요.';
     App.update(true);

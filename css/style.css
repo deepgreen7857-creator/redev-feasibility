@@ -248,6 +248,8 @@ body.map-full-open { overflow: hidden; }
 .sync-bar.warn { background: var(--warn-soft); color: var(--ink); border: 1px solid var(--warn); }
 .sync-bar .btn { margin-left: 6px; }
 #surveySyncMsg:empty { display: none; }
+/* 2단계: 토지대장 합계와 연속지적 도형 면적 차이가 0.1%를 넘을 때 */
+.warn-box { background: var(--warn-soft); color: var(--ink); border: 1px solid var(--warn); border-radius: 7px; padding: 6px 9px; }
 .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .pick-count { font-size: .85rem; font-weight: 500; margin: 8px 0 0; }
 .leaflet-control-layers { font: inherit; font-size: .8rem; }

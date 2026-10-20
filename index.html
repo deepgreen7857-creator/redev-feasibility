@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=52">
+<link rel="stylesheet" href="css/style.css?v=53">
 </head>
 <body>
 
@@ -179,10 +179,11 @@
     <div id="map" class="map"></div>
     <aside class="card area-side">
       <h3>적용할 구역 면적</h3>
-      <label class="radio"><input type="radio" name="amode" value="drawn" data-bind="area.mode"> 지도에서 그린 면적 <b id="drawnArea"></b></label>
-      <label class="radio"><input type="radio" name="amode" value="lands" data-bind="area.mode"> 토지조서 면적 합계 <b id="landsArea"></b></label>
+      <label class="radio"><input type="radio" name="amode" value="ledger" data-bind="area.mode"> 토지대장 면적 합계(편입면적 기준) <b id="ledgerArea"></b></label>
+      <label class="radio"><input type="radio" name="amode" value="drawn" data-bind="area.mode"> 연속지적 도형 면적(참고) <b id="drawnArea"></b></label>
       <label class="radio"><input type="radio" name="amode" value="manual" data-bind="area.mode"> 직접 입력</label>
       <input data-bind="area.manualArea" data-type="number" inputmode="decimal" placeholder="면적 (㎡)">
+      <p class="note" id="areaDiff" hidden></p>
       <div class="big-stat"><span>적용 면적</span><strong id="siteArea"></strong></div>
       <div id="pickBox" class="pick-box">
         <h3>토지·건축물 자동 입력</h3>
@@ -447,19 +448,19 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=52"></script>
-<script src="js/util.js?v=52"></script>
-<script src="js/state.js?v=52"></script>
-<script src="js/calc.js?v=52"></script>
-<script src="js/map.js?v=52"></script>
-<script src="js/ledger.js?v=52"></script>
-<script src="js/pdfsave.js?v=52"></script>
-<script src="js/overlay.js?v=52"></script>
-<script src="js/export.js?v=52"></script>
-<script src="js/roadcut.js?v=52"></script>
-<script src="js/assume.js?v=52"></script>
-<script src="js/app.js?v=52"></script>
-<script src="js/forms.js?v=52"></script>
-<script src="js/review.js?v=52"></script>
+<script src="js/config.js?v=53"></script>
+<script src="js/util.js?v=53"></script>
+<script src="js/state.js?v=53"></script>
+<script src="js/calc.js?v=53"></script>
+<script src="js/map.js?v=53"></script>
+<script src="js/ledger.js?v=53"></script>
+<script src="js/pdfsave.js?v=53"></script>
+<script src="js/overlay.js?v=53"></script>
+<script src="js/export.js?v=53"></script>
+<script src="js/roadcut.js?v=53"></script>
+<script src="js/assume.js?v=53"></script>
+<script src="js/app.js?v=53"></script>
+<script src="js/forms.js?v=53"></script>
+<script src="js/review.js?v=53"></script>
 </body>
 </html>

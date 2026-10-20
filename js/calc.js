@@ -9,7 +9,8 @@ const Calc = {
   siteArea(s) {
     const a = s.area;
     if (a.mode === 'manual') return num(a.manualArea);
-    if (a.mode === 'lands') return this.landTotal(s);
+    // ledger: 토지조서 면적(토지대장 × 편입비율) 합계. 조서가 아직 없으면 그린 구역 면적
+    if (a.mode === 'ledger' || a.mode === 'lands') { const t = this.landTotal(s); return t > 0 ? t : num(a.drawnArea); }
     return num(a.drawnArea);
   },
 
