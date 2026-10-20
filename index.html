@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=54">
+<link rel="stylesheet" href="css/style.css?v=55">
 </head>
 <body>
 
@@ -198,6 +198,12 @@
         <p class="pick-count" id="pickCount"></p>
         <p class="note" id="pickMsg" aria-live="polite"></p>
       </div>
+      <div class="docs-box">
+        <h3>구역지정 서류</h3>
+        <p class="note">이 구역의 <b>토지조서·건축물조서(별지 제4호)</b>와 <b>토지등소유자 명부(별지 제9호)</b>, 기초 조사(제5호)·요건 검토·동의총괄표(제6호)를 한 엑셀로 받습니다. 소유자는 브이월드에서 제공하지 않아 명부의 소유자 칸은 비어 있습니다(등기부 등 열람으로 기재).</p>
+        <button class="btn small primary btn-zone-docs">구역지정 서류 엑셀</button>
+        <p class="note zone-docs-msg" aria-live="polite"></p>
+      </div>
       <div class="ref-box">
         <h3>참고 도면 겹쳐 보기</h3>
         <p class="note">구역도 그림(JPG·PNG)이나 PDF를 지도 위에 반투명으로 겹치고, <b>두 점</b>으로 위치·크기·방향을 맞춘 뒤 그 선을 따라 그리세요.</p>
@@ -340,12 +346,14 @@
   </details>
 
   <div class="survey-actions">
-    <button class="btn primary" id="btnSurveyXlsx">조서 엑셀 저장</button>
+    <button class="btn primary btn-zone-docs" title="토지·건축물 조서(별지 제4호) + 토지등소유자 명부(별지 제9호, 소유자 칸 빈칸) + 기초조사·요건검토·동의총괄표">구역지정 서류 엑셀 (조서·명부)</button>
+    <button class="btn" id="btnSurveyXlsx">조서 엑셀 저장</button>
     <button class="btn" id="btnSurveyPrint">조서 인쇄·PDF</button>
     <button class="btn" id="btnSortJibun">지번순 정렬</button>
     <button class="btn primary" id="btnLedger" title="필지마다 건축물대장 표제부를 조회해 용도·구조·사용승인일·세대수를 채웁니다">건축물대장으로 채우기</button>
     <span class="note" id="ledgerMsg" aria-live="polite"></span>
     <span class="note">소유자는 브이월드에서 제공하지 않으니 등기부·토지대장을 보고 입력하세요.</span>
+    <span class="note zone-docs-msg" aria-live="polite"></span>
   </div>
 
   <div class="section-head">
@@ -450,19 +458,19 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=54"></script>
-<script src="js/util.js?v=54"></script>
-<script src="js/state.js?v=54"></script>
-<script src="js/calc.js?v=54"></script>
-<script src="js/map.js?v=54"></script>
-<script src="js/ledger.js?v=54"></script>
-<script src="js/pdfsave.js?v=54"></script>
-<script src="js/overlay.js?v=54"></script>
-<script src="js/export.js?v=54"></script>
-<script src="js/roadcut.js?v=54"></script>
-<script src="js/assume.js?v=54"></script>
-<script src="js/app.js?v=54"></script>
-<script src="js/forms.js?v=54"></script>
-<script src="js/review.js?v=54"></script>
+<script src="js/config.js?v=55"></script>
+<script src="js/util.js?v=55"></script>
+<script src="js/state.js?v=55"></script>
+<script src="js/calc.js?v=55"></script>
+<script src="js/map.js?v=55"></script>
+<script src="js/ledger.js?v=55"></script>
+<script src="js/pdfsave.js?v=55"></script>
+<script src="js/overlay.js?v=55"></script>
+<script src="js/export.js?v=55"></script>
+<script src="js/roadcut.js?v=55"></script>
+<script src="js/assume.js?v=55"></script>
+<script src="js/app.js?v=55"></script>
+<script src="js/forms.js?v=55"></script>
+<script src="js/review.js?v=55"></script>
 </body>
 </html>

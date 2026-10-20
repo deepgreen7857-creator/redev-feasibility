@@ -717,6 +717,51 @@ function surveyRows() {
   return { lands, bldgs };
 }
 
+// ---------- 구역지정 서류 (생성 모드) ----------
+// 구역계로 만든 토지·건축물 조서를 법정서식 자료(Forms의 zone)로 바꿈. 소유자는 브이월드에서 오지 않으므로 빈칸(직접 입력한 소유자만)
+function zoneDocsData() {
+  const dongOf = l => { const a = String((l && l.addr) || '').trim().split(/\s+/); return a.length > 1 ? a[a.length - 2] : ''; };
+  const landOf = b => S.lands.find(l => (b.pnu && l.pnu === b.pnu) || l.jibun === b.jibun);
+  const APT = ['아파트', '연립주택', '다세대주택'];
+  const parcels = S.lands.map(l => ({
+    jibun: l.jibun, dong: dongOf(l), jimok: l.ledgerJimok || l.jimok || '',
+    ledgerArea: num(l.ledgerArea) > 0 ? num(l.ledgerArea) : '', area: num(l.area),
+    zoning: l.zoning || '', jiga: num(l.price), ownerType: l.ownerType === '국공유지' ? '국공유지' : '사유지',
+    ownerName: l.owner || '', landUse: l.landUse || '', note: landNote(l),
+  }));
+  const buildings = S.buildings.map(b => {
+    const apt = APT.includes(b.use);
+    return {
+      jibun: b.jibun, dong: dongOf(landOf(b)), bname: b.name || '', use: b.use || '', structure: b.structureName || b.structure || '',
+      dongs: 1, units: apt ? (num(b.hoCount) || '') : num(b.units), households: apt ? num(b.units) : '',
+      year: b.year || '', archArea: num(b.archArea) || '', floorArea: num(b.floorArea), floors: num(b.floors), basement: num(b.basement),
+      source: b.ledger ? '건축물대장' : b.auto ? 'GIS건물통합정보' : '직접 입력', aprDate: b.aprDate || '',
+      note: [b.noLedger ? '대장 없음 – 무허가 등 확인' : '', b.needUnits && !num(b.units) ? '세대수 확인 필요' : '', !b.ledger && b.auto ? '건축물대장 확인 전(GIS 기준)' : ''].filter(Boolean).join(' · '),
+    };
+  });
+  const units = (S.exposUnits || []).map(u => ({ dong: dongOf(landOf(u)), jibun: u.jibun, bldgName: u.bldNm || '', use: u.purpose || '', dongNo: u.dong || '', ho: u.ho || '', excl: u.area }));
+  const sv = Calc.survey(S);
+  const years = [...new Set(S.lands.map(l => l.baseYear).filter(Boolean))];
+  return {
+    name: S.meta.name, location: S.meta.location, baseYear: years.join('·'), parcels, buildings, units,
+    req: Calc.requirements(S, sv), baseDate: sv.base.toLocaleDateString('sv-SE'),
+    ledgerDone: S.lands.filter(l => l.ledgerEmpty === true || S.buildings.some(b => b.ledger && b.pnu === l.pnu)).map(l => l.jibun),
+  };
+}
+
+// 토지조서·건축물조서·토지등소유자 명부(작성 틀)·기초조사·요건검토·동의총괄표를 한 엑셀로
+function saveZoneDocs() {
+  if (!S.lands.length) { alert('토지조서가 비어 있습니다. 2단계에서 구역을 정하고 구역 안 필지·건축물을 불러오세요.'); return; }
+  if (!window.XLSX || typeof Forms === 'undefined') { alert('엑셀·서식 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'); return; }
+  if (Tabs.survey.stale() && !confirm('조서가 지금 구역이 아니라 예전 구역 기준입니다. 그래도 저장할까요?\n(3단계에 들어가면 지금 구역 기준으로 다시 불러올 수 있습니다)')) return;
+  const todo = Tabs.survey.ledgerTodo().length, noLedger = S.buildings.filter(b => b.auto && !b.ledger).length;
+  Forms.exportZoneDocs(zoneDocsData(), `${S.meta.name || '정비구역'}_구역지정서류.xlsx`);
+  const msg = [`구역지정 서류를 저장했습니다: 토지 ${S.lands.length}필지 · 건축물 ${S.buildings.length}동.`, '토지등소유자 명부의 소유자 칸은 등기부등본 등 열람으로 채워 주세요.'];
+  if (todo) msg.push(`토지대장 면적을 못 받은 필지 ${todo}개는 연속지적 면적입니다.`);
+  if (noLedger) msg.push(`건축물 ${noLedger}동은 건축물대장 확인 전(GIS 기준)입니다. 3단계 "건축물대장으로 채우기" 후 다시 저장하면 정확해집니다.`);
+  $$('.zone-docs-msg').forEach(e => { e.textContent = msg.join(' '); });
+}
+
 function saveSurveyXlsx() {
   if (!window.XLSX) { alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'); return; }
   const { lands, bldgs } = surveyRows();
@@ -944,6 +989,7 @@ function boot() {
     App.update(true);
   };
   $('#btnSurveyXlsx').onclick = saveSurveyXlsx;
+  $$('.btn-zone-docs').forEach(b => { b.onclick = saveZoneDocs; });
   $('#btnSurveyPrint').onclick = printSurvey;
 
   App.show((location.hash || '#overview').slice(1));

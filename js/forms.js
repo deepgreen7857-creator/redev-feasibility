@@ -277,10 +277,10 @@ const Forms = (() => {
     const total = P.reduce((a, p) => a + (+p.area || 0), 0);
     s.set(0, 0, '[별지 제9호서식] 토 지 등 소 유 자 명 부 — 작성 틀 (공부 기준, 소유자 칸은 등기부 등 열람으로 기재)');
     s.set(1, 0, `(정비사업 명칭 : ${z.name || ''})   ${z.confirm ? `구역계 확정 ${z.confirm.at}` : '구역계 확정 전(참고)'} · 토지 ${P.length}필지 · 편입면적 합계 ${fmt1(total)}㎡ · 건축물 ${B.length}동${U.length ? ` · 집합건물 ${U.length}호` : ''}`);
-    s.row(3, ['연번', '토지등소유자', '', '', '', '권 리 내 역', '', '', '', '', '', '', '', '세대주 성명', '동의여부', '비고', '— 공부(작성 근거) —', '', '', '', '', '등기부 열람', '제출 명부 참고']);
+    s.row(3, ['연번', '토지등소유자', '', '', '', '권 리 내 역', '', '', '', '', '', '', '', '세대주 성명', '동의여부', '비고', '— 공부(작성 근거) —', '', '', '', '', '등기부 열람', z.noRoster ? '' : '제출 명부 참고']);
     s.row(4, ['', '성 명', '생년월일', '주 소', '전화번호', '소재지', '토    지', '', '', '건 축 물', '', '', '지상권']);
     s.row(5, ['소유면적(㎡)', '편입면적(㎡)', '공유여부', '동수', '허가유무', '공유여부'], 6);
-    s.row(5, ['지목', '공부면적(㎡)', '편입비율', '건축물(대장)', '집합건물 호(전유㎡)', '확인(□)', '소유자 번호·인원'], 16);
+    s.row(5, ['지목', '공부면적(㎡)', '편입비율', '건축물(대장)', '집합건물 호(전유㎡)', '확인(□)', z.noRoster ? '' : '소유자 번호·인원'], 16);
     s.merge(3, 1, 3, 4).merge(3, 5, 3, 12).merge(4, 6, 4, 8).merge(4, 9, 4, 11).merge(3, 16, 4, 20);
     [0, 13, 14, 15].forEach(c => s.merge(3, c, 5, c));
     [1, 2, 3, 4, 5, 12].forEach(c => s.merge(4, c, 5, c));
@@ -291,7 +291,7 @@ const Forms = (() => {
       const ratio = p.ledgerArea ? (+p.area || 0) / p.ledgerArea : 1;
       const permit = !bs.length ? '' : bs.every(b => b.source === '건축물대장') ? '유' : bs.some(b => b.source === '건축물대장') ? '유·확인 필요' : '확인 필요(대장 없음)';
       const bsum = bs.length ? `${bs.length}동 · ${[...new Set(bs.map(b => b.use))].join('·')}${bs.some(b => b.source !== '건축물대장') ? ' · 대장 없는 건물 있음' : ''}` : '';
-      const ref = p.rosterNos && p.rosterNos.length ? `${p.rosterNos.length}명 (번호 ${p.rosterNos.slice(0, 6).join(', ')}${p.rosterNos.length > 6 ? ' …' : ''})` : '제출 명부에 없음';
+      const ref = z.noRoster ? '' : p.rosterNos && p.rosterNos.length ? `${p.rosterNos.length}명 (번호 ${p.rosterNos.slice(0, 6).join(', ')}${p.rosterNos.length > 6 ? ' …' : ''})` : '제출 명부에 없음';
       s.row(r, ['', '', '', '', '', `${p.dong || ''} ${p.jibun}`.trim(), '', +p.area || 0, '', bs.length || '', permit, '', '', '', '', p.note || ''], 0, [null, null, null, null, null, null, M2, M2]);
       s.row(r, [p.jimok || '', p.ledgerArea === '' || p.ledgerArea == null ? '' : +p.ledgerArea, ratio, bsum, us.length ? `${us.length}호 (아래 행)` : '', '□', ref], 16, [null, M2, PCT]);
       r++;
@@ -303,9 +303,23 @@ const Forms = (() => {
     });
     s.set(r + 1, 0, '※ 소유자 칸(성명·생년월일·주소·전화·지분·공유여부)은 등기부등본 등 열람으로 기재. 공유 토지는 소유자마다 행을 늘려 소유면적(공부면적×지분)·편입면적(소유면적×편입비율)을 기재');
     s.set(r + 2, 0, '※ 공동주택의 경우 소재지에 호수를 기재(집합건물 호별 행). 건축물 허가유무 "확인 필요"는 무허가건축물확인원으로 확인');
-    s.set(r + 3, 0, '※ "제출 명부 참고"는 제출된 명부의 토지등소유자 번호와 인원만 적음(대조용)');
+    if (!z.noRoster) s.set(r + 3, 0, '※ "제출 명부 참고"는 제출된 명부의 토지등소유자 번호와 인원만 적음(대조용)');
     s.cols([6, 12, 11, 30, 13, 26, 12, 12, 9, 7, 12, 9, 8, 10, 8, 30, 8, 12, 9, 30, 20, 9, 30]);
     return s.done();
+  }
+
+  // 생성 모드(구역계 설정)의 구역지정 서류: 토지·건축물 조서(제4호) + 토지등소유자 명부 작성 틀(제9호, 소유자 칸 빈칸)
+  //   + 집합건축물 조서 + 기초 조사(제5호) + 별표1 요건 검토 + 동의총괄표(제6호, 소유자 수·동의 칸 빈칸)
+  function exportZoneDocs(z, fname) {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet4(z).ws, '제4호_토지및건축물조서');
+    if (z.units && z.units.length) XLSX.utils.book_append_sheet(wb, sheetUnits(z), '집합건축물조서');
+    XLSX.utils.book_append_sheet(wb, sheet9Frame({ ...z, noRoster: true }), '제9호_토지등소유자명부');
+    XLSX.utils.book_append_sheet(wb, sheet5({ ...z, parcels: z.parcels.map(p => ({ ...p })) }), '제5호_기초조사');
+    if (z.req && z.req.length) XLSX.utils.book_append_sheet(wb, sheetReq(z), '별표1_요건검토');
+    XLSX.utils.book_append_sheet(wb, sheet6(z, null), '제6호_동의총괄표');
+    XLSX.writeFile(wb, fname || `${z.name || '정비구역'}_구역지정서류.xlsx`);
+    return wb;
   }
 
   // 최종 결과 틀: 공부 기준 토지·건축물 조서 + 별지 제9호 작성 틀 + 판단 근거(대조표)
@@ -765,7 +779,7 @@ const Forms = (() => {
     return { site, infra: NS.infra, netSite: NS.net, land, pub, gfa, constr, income, ratioLow: res(0.44), ratioMid: res(0.36), ratioHigh: res(0.27) };
   }
 
-  return { exportForms, exportFrame, sheet9Frame, feasibility, quick, autoUnits, sheet4, sheet4Review, sheet5, sheet6, sheet9, countOwners, DEFAULTS, costItems, isPublic, isInfra, netSite };
+  return { exportForms, exportFrame, exportZoneDocs, sheet9Frame, feasibility, quick, autoUnits, sheet4, sheet4Review, sheet5, sheet6, sheet9, countOwners, DEFAULTS, costItems, isPublic, isInfra, netSite };
 })();
 
 if (typeof module !== 'undefined') module.exports = Forms;
