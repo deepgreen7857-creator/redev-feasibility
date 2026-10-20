@@ -413,6 +413,8 @@ td.heat.base { outline: 2px solid var(--ink); outline-offset: -2px; font-weight:
   body.print-sheet { background: #fff; margin: 0; }
   body.print-sheet #printSheet { display: block; }
   body.print-sheet #printSheet svg { display: block; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* 기초조사 현황도처럼 여러 장이면 한 장씩 쪽 나눔 */
+  body.print-sheet #printSheet svg + svg { break-before: page; }
   :root { --bg: #fff; }
   .topbar .top-actions, .tabs, .icon-btn, .btn, .search, .search-results, #tab-area, .criteria { display: none !important; }
   .topbar { position: static; }

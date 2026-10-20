@@ -759,7 +759,7 @@ function zoneDocsData() {
 
 // 서식 내려받기. kind: land 토지조서 | bldg 건축물조서 | survey 기초조사·확인 내역서 | owners 토지등소유자 명부
 //   | consent 동의총괄표 | req 요건 검토 | 없으면 전부 한 엑셀로
-const ZONE_DOC_NAMES = { land: '토지조서', bldg: '건축물조서', survey: '기초조사·확인 내역서', owners: '토지등소유자 명부', consent: '동의총괄표', req: '요건 검토' };
+const ZONE_DOC_NAMES = { maps: '기초조사 현황도', land: '토지조서', bldg: '건축물조서', survey: '기초조사·확인 내역서', owners: '토지등소유자 명부', consent: '동의총괄표', req: '요건 검토' };
 //  서식은 공부 기준이어야 하므로, 토지대장 면적·건축물대장을 아직 안 받은 필지가 있으면 먼저 자동으로 조회한 뒤 만듦
 let zoneDocsBusy = false;
 // 서식 버튼: 서식마다 [한글] [엑셀]. full = 3단계(요건 검토 포함), short = 2단계
@@ -770,6 +770,7 @@ const DOC_ITEMS = [
   { kind: 'owners', label: '토지등소유자 명부', form: '별지 제9호', tip: '소유자 칸은 등기부 열람으로 기재' },
   { kind: 'consent', label: '동의총괄표', form: '별지 제6호', tip: '동의자 칸은 빈칸' },
   { kind: 'req', label: '요건 검토', form: '시행령 별표 1', full: true, noHwp: true },
+  { kind: 'maps', label: '기초조사 현황도', form: '별지 제5호 15번', tip: 'A4 13장(토지이용·용도지역·지목·건축물 노후 등), 인쇄 창에서 PDF로 저장', pdf: true },
 ];
 function renderDocButtons() {
   $$('.doc-grid').forEach(g => {
@@ -777,8 +778,9 @@ function renderDocButtons() {
     g.innerHTML = DOC_ITEMS.filter(d => full || !d.full).map(d => `
       <div class="doc-item" title="${esc(d.form + (d.tip ? ' · ' + d.tip : ''))}">
         <span class="doc-name">${esc(d.label)} <small>${esc(d.form)}</small></span>
-        ${d.noHwp ? '' : `<button type="button" class="btn small primary" data-zdoc="${d.kind}" data-fmt="hwpx">한글</button>`}
-        <button type="button" class="btn small" data-zdoc="${d.kind}" data-fmt="xlsx">엑셀</button>
+        ${d.pdf ? `<button type="button" class="btn small primary" data-zdoc="${d.kind}" data-fmt="pdf">PDF</button>`
+    : `${d.noHwp ? '' : `<button type="button" class="btn small primary" data-zdoc="${d.kind}" data-fmt="hwpx">한글</button>`}
+        <button type="button" class="btn small" data-zdoc="${d.kind}" data-fmt="xlsx">엑셀</button>`}
       </div>`).join('') + `<div class="doc-item"><span class="doc-name">전체 한 번에</span><button type="button" class="btn small btn-zone-docs" data-fmt="xlsx">엑셀</button></div>`;
   });
   refreshDocButtons();
@@ -829,6 +831,10 @@ async function saveZoneDocs(kind, fmt = 'xlsx') {
     App.update(true);
   } finally { zoneDocsBusy = false; }
 
+  if (fmt === 'pdf') {   // 기초조사 현황도: 인쇄 창 → PDF로 저장
+    try { await SurveyMaps.pdf(say); } catch (e) { say('현황도를 만들지 못했습니다: ' + e.message); }
+    return;
+  }
   const DOC_FILE = { land: '토지조서(별지제4호)', bldg: '건축물조서(별지제4호)', survey: '기초조사확인내역서(별지제5호)', consent: '동의총괄표(별지제6호)', owners: '토지등소유자명부(별지제9호)' };
   if (fmt === 'hwpx') {
     try { await ZoneHwp.make(zoneDocsData(), kind, region, `${S.meta.name || '정비구역'}_${DOC_FILE[kind] || kind}.hwpx`); }

@@ -58,16 +58,28 @@ const Export = {
     const proj = rs => rs.map(r => r.map(c => P.fwd(c)));
     const labelAt = f => { try { return P.fwd(turf.pointOnFeature(f).geometry.coordinates); } catch (e) { return null; } };
 
+    // 건물이 선 필지(PNU): 건물 안 한 점을 품은 필지 (기초조사 현황도에서 건축물대장과 맞출 때 씀)
+    const pbb = parcels.map(f => turf.bbox(f));
+    const pnuOf = f => {
+      let pt; try { pt = turf.pointOnFeature(f).geometry.coordinates; } catch (e) { return ''; }
+      for (let i = 0; i < parcels.length; i++) {
+        const b = pbb[i];
+        if (pt[0] < b[0] || pt[0] > b[2] || pt[1] < b[1] || pt[1] > b[3]) continue;
+        try { if (turf.booleanPointInPolygon(pt, parcels[i])) return parcels[i].properties.pnu || ''; } catch (e) { /* 다음 필지 */ }
+      }
+      return '';
+    };
     const d = {
       P,
+      lonlatBox: [minX - mx, minY - my, maxX + mx, maxY + my],
       zone: proj(this.rings(zone)),
       parcels: parcels.map(f => {
         const sp = splitJibun(f.properties && f.properties.jibun);
-        return { rings: proj(this.rings(f.geometry)), jibun: sp.no, jimok: sp.jimok, inZone: parcelIn(f), area: turf.area(f), label: labelAt(f) };
+        return { rings: proj(this.rings(f.geometry)), jibun: sp.no, jimok: sp.jimok, pnu: (f.properties && f.properties.pnu) || '', inZone: parcelIn(f), area: turf.area(f), label: labelAt(f) };
       }),
       buildings: bldgs.map(f => {
         const b = buildingFromFeature(f);
-        return { rings: proj(this.rings(f.geometry)), name: b.name, inZone: inZone(f), old: Calc.isOld(S, b, year), noInfo: !b.year, label: labelAt(f), area: turf.area(f) };
+        return { rings: proj(this.rings(f.geometry)), name: b.name, inZone: inZone(f), old: Calc.isOld(S, b, year), noInfo: !b.year, label: labelAt(f), area: turf.area(f), gis: b, pnu: pnuOf(f) };
       }),
       shift: null,
     };
