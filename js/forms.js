@@ -95,42 +95,48 @@ const Forms = (() => {
 
   // 별지 제4호 토지 및 건축물 조서 (인천광역시 도시 및 주거환경정비 조례 시행규칙 서식의 칸 그대로)
   //   대조·판단 내용은 sheet4Review(별도 시트)에 둠
+  //   opt.part: 'land' 토지조서만 / 'bldg' 건축물조서만 (생성 모드의 서식별 내려받기)
   function sheet4(z, opt = {}) {
     const s = Sheet();
     s.set(0, 0, '[별지 제4호서식]');
-    s.set(1, 0, '토지 및 건축물 조서'); s.merge(1, 0, 1, 11);
+    s.set(1, 0, opt.part === 'land' ? '토지 및 건축물 조서 — 토지조서' : opt.part === 'bldg' ? '토지 및 건축물 조서 — 건축물조서' : '토지 및 건축물 조서'); s.merge(1, 0, 1, 11);
     s.set(2, 0, `사업명: ${z.name || ''}   위치: ${z.location || ''}`);
-    s.set(4, 0, '1. 토지조서');
-    s.row(5, ['연번', '위치', '지목', '면적(㎡)', '용도지역', '용도지구', '도시계획시설', '소유주', '용도']);
-    const P = sorted(z), first = 8, last = 7 + P.length;
-    s.set(6, 0, '계'); s.set(6, 3, F(P.length ? `SUM(D${first}:D${last})` : '0'), M2);
-    P.forEach((p, i) => s.row(7 + i, [i + 1, locOf(p), p.jimok || '', +p.area || 0, p.zoning || '', p.district || '', p.facility || '', ownersLabel(p), p.landUse || p.use || ''], 0, [null, null, null, M2]));
-    let r = 7 + P.length;
-    const HL = housingLots(z);
-    s.set(r++, 0, `※ 단독주택 용지 : ${fmt1(HL.detached)}㎡,  공동주택 용지 : ${fmt1(HL.apt)}㎡`);
-    const part = P.filter(p => p.ledgerArea && p.area != null && p.area < p.ledgerArea - 0.05);
-    if (part.length) s.set(r++, 0, `※ 일부편입 ${part.length}필지(면적은 편입면적): ` + part.map(p => `${p.jibun}(공부 ${fmt1(p.ledgerArea)}㎡ 중 ${fmt1(p.area)}㎡)`).join(', '));
-    r++;
-    s.set(r++, 0, '2. 건축물 조서');
-    s.row(r, ['연번', '위 치', '용 도', '구 조', '동 수', '호 수', '세대수', '준공연도', '규  모', '', '', '비 고']);
-    s.row(r + 1, ['건축면적(㎡)', '연면적(㎡)', '층수(지하/지상)'], 8);
-    s.merge(r, 8, r, 10); [0, 1, 2, 3, 4, 5, 6, 7, 11].forEach(c => s.merge(r, c, r + 1, c));
-    r += 2;
-    const B = z.buildings || [], tr = r, b1 = r + 2, b2 = r + 1 + B.length;
-    s.set(tr, 0, '계');
-    if (B.length) [['E', 4], ['F', 5], ['G', 6], ['I', 8], ['J', 9]].forEach(([L, c]) => s.set(tr, c, F(`SUM(${L}${b1}:${L}${b2})`), c >= 8 ? M2 : undefined));
-    r++;
-    B.forEach((b, i) => {
-      s.row(r++, [i + 1, `${locOf(b)}${b.bname ? ' ' + b.bname : ''}`, b.use || '', b.structure || '', +b.dongs || 1, b.units === '' || b.units == null ? '' : +b.units || 0,
-        b.households === '' || b.households == null ? '' : +b.households || 0, b.year || '', b.archArea === '' ? '' : +b.archArea || '', +b.floorArea || '', floorsLabel(b), b.note || ''],
-        0, [null, null, null, null, null, null, null, null, M2, M2]);
-    });
-    const det = B.filter(isDetached).reduce((a, b) => a + (+b.units || 1), 0);
-    const apt = B.filter(isApt), aptH = apt.reduce((a, b) => a + (+b.households || +b.units || 0), 0);
-    s.set(r++, 0, '주) 1. 호수 산정은 「인천광역시 도시 및 주거환경정비 조례」에 따름');
-    s.set(r++, 0, '    2. 비고란에 빈집(공가․폐가) 현황 등 기재');
-    s.set(r++, 0, `※ 단독주택 수 : ${det}호,  공동주택 수 : ${apt.length}개동, ${aptH}세대`);
-    r++;
+    let r = 4;
+    if (opt.part !== 'bldg') {
+      s.set(4, 0, '1. 토지조서');
+      s.row(5, ['연번', '위치', '지목', '면적(㎡)', '용도지역', '용도지구', '도시계획시설', '소유주', '용도']);
+      const P = sorted(z), first = 8, last = 7 + P.length;
+      s.set(6, 0, '계'); s.set(6, 3, F(P.length ? `SUM(D${first}:D${last})` : '0'), M2);
+      P.forEach((p, i) => s.row(7 + i, [i + 1, locOf(p), p.jimok || '', +p.area || 0, p.zoning || '', p.district || '', p.facility || '', ownersLabel(p), p.landUse || p.use || ''], 0, [null, null, null, M2]));
+      r = 7 + P.length;
+      const HL = housingLots(z);
+      s.set(r++, 0, `※ 단독주택 용지 : ${fmt1(HL.detached)}㎡,  공동주택 용지 : ${fmt1(HL.apt)}㎡`);
+      const part = P.filter(p => p.ledgerArea && p.area != null && p.area < p.ledgerArea - 0.05);
+      if (part.length) s.set(r++, 0, `※ 일부편입 ${part.length}필지(면적은 편입면적): ` + part.map(p => `${p.jibun}(공부 ${fmt1(p.ledgerArea)}㎡ 중 ${fmt1(p.area)}㎡)`).join(', '));
+      r++;
+    }
+    if (opt.part !== 'land') {
+      s.set(r++, 0, opt.part === 'bldg' ? '건축물 조서' : '2. 건축물 조서');
+      s.row(r, ['연번', '위 치', '용 도', '구 조', '동 수', '호 수', '세대수', '준공연도', '규  모', '', '', '비 고']);
+      s.row(r + 1, ['건축면적(㎡)', '연면적(㎡)', '층수(지하/지상)'], 8);
+      s.merge(r, 8, r, 10); [0, 1, 2, 3, 4, 5, 6, 7, 11].forEach(c => s.merge(r, c, r + 1, c));
+      r += 2;
+      const B = z.buildings || [], tr = r, b1 = r + 2, b2 = r + 1 + B.length;
+      s.set(tr, 0, '계');
+      if (B.length) [['E', 4], ['F', 5], ['G', 6], ['I', 8], ['J', 9]].forEach(([L, c]) => s.set(tr, c, F(`SUM(${L}${b1}:${L}${b2})`), c >= 8 ? M2 : undefined));
+      r++;
+      B.forEach((b, i) => {
+        s.row(r++, [i + 1, `${locOf(b)}${b.bname ? ' ' + b.bname : ''}`, b.use || '', b.structure || '', +b.dongs || 1, b.units === '' || b.units == null ? '' : +b.units || 0,
+          b.households === '' || b.households == null ? '' : +b.households || 0, b.year || '', b.archArea === '' ? '' : +b.archArea || '', +b.floorArea || '', floorsLabel(b), b.note || ''],
+          0, [null, null, null, null, null, null, null, null, M2, M2]);
+      });
+      const det = B.filter(isDetached).reduce((a, b) => a + (+b.units || 1), 0);
+      const apt = B.filter(isApt), aptH = apt.reduce((a, b) => a + (+b.households || +b.units || 0), 0);
+      s.set(r++, 0, '주) 1. 호수 산정은 「인천광역시 도시 및 주거환경정비 조례」에 따름');
+      s.set(r++, 0, '    2. 비고란에 빈집(공가․폐가) 현황 등 기재');
+      s.set(r++, 0, `※ 단독주택 수 : ${det}호,  공동주택 수 : ${apt.length}개동, ${aptH}세대`);
+      r++;
+    }
     const sign = opt.sign || {};
     s.set(r++, 0, `작성자 : 직 ${sign.writerTitle || '      '}  성명 ${sign.writer || '            '}  (서명 또는 날인)`);
     s.set(r++, 0, `확인자 : 직 ${sign.checkerTitle || '      '}  성명 ${sign.checker || '            '}  (서명 또는 날인)`);
@@ -319,6 +325,30 @@ const Forms = (() => {
     if (z.req && z.req.length) XLSX.utils.book_append_sheet(wb, sheetReq(z), '별표1_요건검토');
     XLSX.utils.book_append_sheet(wb, sheet6(z, null), '제6호_동의총괄표');
     XLSX.writeFile(wb, fname || `${z.name || '정비구역'}_구역지정서류.xlsx`);
+    return wb;
+  }
+
+  // 서식 하나씩 내려받기 (생성 모드 버튼). kind: land | bldg | survey | owners | consent | req
+  const ZONE_DOCS = {
+    land: { file: '토지조서(별지제4호)', add: (wb, z) => XLSX.utils.book_append_sheet(wb, sheet4(z, { part: 'land' }).ws, '토지조서') },
+    bldg: {
+      file: '건축물조서(별지제4호)',
+      add: (wb, z) => {
+        XLSX.utils.book_append_sheet(wb, sheet4(z, { part: 'bldg' }).ws, '건축물조서');
+        if (z.units && z.units.length) XLSX.utils.book_append_sheet(wb, sheetUnits(z), '집합건축물조서');
+      },
+    },
+    survey: { file: '기초조사확인내역서(별지제5호)', add: (wb, z) => XLSX.utils.book_append_sheet(wb, sheet5({ ...z, parcels: z.parcels.map(p => ({ ...p })) }), '기초조사확인내역서') },
+    owners: { file: '토지등소유자명부(별지제9호)', add: (wb, z) => XLSX.utils.book_append_sheet(wb, sheet9Frame({ ...z, noRoster: true }), '토지등소유자명부') },
+    consent: { file: '동의총괄표(별지제6호)', add: (wb, z) => XLSX.utils.book_append_sheet(wb, sheet6(z, null), '동의총괄표') },
+    req: { file: '요건검토(별표1)', add: (wb, z) => XLSX.utils.book_append_sheet(wb, sheetReq(z), '요건검토') },
+  };
+  function exportZoneDoc(z, kind) {
+    const d = ZONE_DOCS[kind];
+    if (!d) throw new Error('알 수 없는 서식: ' + kind);
+    const wb = XLSX.utils.book_new();
+    d.add(wb, z);
+    XLSX.writeFile(wb, `${z.name || '정비구역'}_${d.file}.xlsx`);
     return wb;
   }
 
@@ -779,7 +809,7 @@ const Forms = (() => {
     return { site, infra: NS.infra, netSite: NS.net, land, pub, gfa, constr, income, ratioLow: res(0.44), ratioMid: res(0.36), ratioHigh: res(0.27) };
   }
 
-  return { exportForms, exportFrame, exportZoneDocs, sheet9Frame, feasibility, quick, autoUnits, sheet4, sheet4Review, sheet5, sheet6, sheet9, countOwners, DEFAULTS, costItems, isPublic, isInfra, netSite };
+  return { exportForms, exportFrame, exportZoneDocs, exportZoneDoc, sheet9Frame, feasibility, quick, autoUnits, sheet4, sheet4Review, sheet5, sheet6, sheet9, countOwners, DEFAULTS, costItems, isPublic, isInfra, netSite };
 })();
 
 if (typeof module !== 'undefined') module.exports = Forms;

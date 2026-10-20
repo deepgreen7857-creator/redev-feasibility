@@ -243,6 +243,12 @@ body.map-full-open { overflow: hidden; }
 .pick-box { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
 .pick-box .btn { margin: 4px 4px 0 0; }
 .docs-box { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
+.docs-box .btn { margin: 4px 4px 0 0; }
+/* 3단계 서식 내려받기 */
+.zone-docs { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 0 0 14px; }
+.zone-docs h3 { margin: 0 0 8px; }
+.zone-docs h3 small { font-weight: 400; font-size: .78rem; }
+.zone-docs .btns { display: flex; flex-wrap: wrap; gap: 6px; }
 /* 3단계 상단: 조서가 2단계 구역 기준인지 */
 .sync-box { margin: -.4rem 0 1rem; }
 .sync-bar { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--soft, rgba(127,127,127,.08)); }

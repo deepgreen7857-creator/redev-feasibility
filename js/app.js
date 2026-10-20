@@ -749,14 +749,18 @@ function zoneDocsData() {
   };
 }
 
-// 토지조서·건축물조서·토지등소유자 명부(작성 틀)·기초조사·요건검토·동의총괄표를 한 엑셀로
-function saveZoneDocs() {
+// 서식 내려받기. kind: land 토지조서 | bldg 건축물조서 | survey 기초조사·확인 내역서 | owners 토지등소유자 명부
+//   | consent 동의총괄표 | req 요건 검토 | 없으면 전부 한 엑셀로
+const ZONE_DOC_NAMES = { land: '토지조서', bldg: '건축물조서', survey: '기초조사·확인 내역서', owners: '토지등소유자 명부', consent: '동의총괄표', req: '요건 검토' };
+function saveZoneDocs(kind) {
   if (!S.lands.length) { alert('토지조서가 비어 있습니다. 2단계에서 구역을 정하고 구역 안 필지·건축물을 불러오세요.'); return; }
   if (!window.XLSX || typeof Forms === 'undefined') { alert('엑셀·서식 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'); return; }
   if (Tabs.survey.stale() && !confirm('조서가 지금 구역이 아니라 예전 구역 기준입니다. 그래도 저장할까요?\n(3단계에 들어가면 지금 구역 기준으로 다시 불러올 수 있습니다)')) return;
   const todo = Tabs.survey.ledgerTodo().length, noLedger = S.buildings.filter(b => b.auto && !b.ledger).length;
-  Forms.exportZoneDocs(zoneDocsData(), `${S.meta.name || '정비구역'}_구역지정서류.xlsx`);
-  const msg = [`구역지정 서류를 저장했습니다: 토지 ${S.lands.length}필지 · 건축물 ${S.buildings.length}동.`, '토지등소유자 명부의 소유자 칸은 등기부등본 등 열람으로 채워 주세요.'];
+  if (kind) Forms.exportZoneDoc(zoneDocsData(), kind);
+  else Forms.exportZoneDocs(zoneDocsData(), `${S.meta.name || '정비구역'}_구역지정서류.xlsx`);
+  const msg = [`${kind ? ZONE_DOC_NAMES[kind] : '구역지정 서류 전체'}를 저장했습니다 (토지 ${S.lands.length}필지 · 건축물 ${S.buildings.length}동).`];
+  if (!kind || kind === 'owners') msg.push('토지등소유자 명부의 소유자 칸은 등기부등본 등 열람으로 채워 주세요.');
   if (todo) msg.push(`토지대장 면적을 못 받은 필지 ${todo}개는 연속지적 면적입니다.`);
   if (noLedger) msg.push(`건축물 ${noLedger}동은 건축물대장 확인 전(GIS 기준)입니다. 3단계 "건축물대장으로 채우기" 후 다시 저장하면 정확해집니다.`);
   $$('.zone-docs-msg').forEach(e => { e.textContent = msg.join(' '); });
@@ -989,7 +993,8 @@ function boot() {
     App.update(true);
   };
   $('#btnSurveyXlsx').onclick = saveSurveyXlsx;
-  $$('.btn-zone-docs').forEach(b => { b.onclick = saveZoneDocs; });
+  $$('.btn-zone-docs').forEach(b => { b.onclick = () => saveZoneDocs(); });
+  $$('[data-zdoc]').forEach(b => { b.onclick = () => saveZoneDocs(b.dataset.zdoc); });
   $('#btnSurveyPrint').onclick = printSurvey;
 
   App.show((location.hash || '#overview').slice(1));
