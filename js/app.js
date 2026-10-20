@@ -118,6 +118,7 @@ const Tabs = {
       $('#siteArea').innerHTML = `${fmt(site)}㎡ <em>${fmt(site / PY)}평</em>`;
       $('#pickBox').hidden = !VWorld.enabled;
       $('#vworldOff').hidden = VWorld.enabled;
+      refreshDocButtons();
       $('#zoneSyncNote').hidden = !(S.area.geojson && VWorld.enabled && S.area.importedKey !== zoneKey(S.area.geojson));
       $('#btnPick').textContent = MapView.picking ? '필지 선택 끄기' : '필지 선택 켜기';
       $('#btnPick').classList.toggle('on', MapView.picking);
@@ -335,6 +336,7 @@ const Tabs = {
       this.lands && this.lands.refresh();
       this.buildings && this.buildings.refresh();
       this.sync();
+      refreshDocButtons();
       const sv = Calc.survey(S);
       $('#oldStats').innerHTML = `
         <div><span>건축물</span><b>${fmt(sv.count)}동</b></div>
@@ -759,10 +761,53 @@ function zoneDocsData() {
 const ZONE_DOC_NAMES = { land: '토지조서', bldg: '건축물조서', survey: '기초조사·확인 내역서', owners: '토지등소유자 명부', consent: '동의총괄표', req: '요건 검토' };
 //  서식은 공부 기준이어야 하므로, 토지대장 면적·건축물대장을 아직 안 받은 필지가 있으면 먼저 자동으로 조회한 뒤 만듦
 let zoneDocsBusy = false;
-async function saveZoneDocs(kind) {
+// 서식 버튼: 서식마다 [한글] [엑셀]. full = 3단계(요건 검토 포함), short = 2단계
+const DOC_ITEMS = [
+  { kind: 'land', label: '토지조서', form: '별지 제4호' },
+  { kind: 'bldg', label: '건축물조서', form: '별지 제4호', tip: '집합건축물 호별 내역 포함' },
+  { kind: 'survey', label: '기초조사·확인 내역서', form: '별지 제5호' },
+  { kind: 'owners', label: '토지등소유자 명부', form: '별지 제9호', tip: '소유자 칸은 등기부 열람으로 기재' },
+  { kind: 'consent', label: '동의총괄표', form: '별지 제6호', tip: '동의자 칸은 빈칸' },
+  { kind: 'req', label: '요건 검토', form: '시행령 별표 1', full: true, noHwp: true },
+];
+function renderDocButtons() {
+  $$('.doc-grid').forEach(g => {
+    const full = g.dataset.docs === 'full';
+    g.innerHTML = DOC_ITEMS.filter(d => full || !d.full).map(d => `
+      <div class="doc-item" title="${esc(d.form + (d.tip ? ' · ' + d.tip : ''))}">
+        <span class="doc-name">${esc(d.label)} <small>${esc(d.form)}</small></span>
+        ${d.noHwp ? '' : `<button type="button" class="btn small primary" data-zdoc="${d.kind}" data-fmt="hwpx">한글</button>`}
+        <button type="button" class="btn small" data-zdoc="${d.kind}" data-fmt="xlsx">엑셀</button>
+      </div>`).join('') + `<div class="doc-item"><span class="doc-name">전체 한 번에</span><button type="button" class="btn small btn-zone-docs" data-fmt="xlsx">엑셀</button></div>`;
+  });
+  refreshDocButtons();
+}
+// 지역이 바뀌면 그 지역 서식으로 (한글 서식이 없는 지역·아직 못 만드는 서식은 한글 버튼을 끔)
+function refreshDocButtons() {
+  if (typeof ZoneHwp === 'undefined') return;
+  const rp = REGION_PRESETS[S.criteria.region], form = ZoneHwp.formFor(S.criteria.region);
+  $$('.zone-docs-law').forEach(e => { e.textContent = form ? `${form.law} 서식` : `${rp ? rp.label : '이 지역'} 한글 서식 미등록 — 엑셀만`; });
+  $$('[data-zdoc][data-fmt="hwpx"]').forEach(b => {
+    const ok = !!form && ZoneHwp.has(b.dataset.zdoc);
+    b.disabled = !ok;
+    b.title = !form ? '이 지역 조례 서식이 아직 없습니다' : ok ? '' : '한글 서식 준비 중';
+  });
+}
+
+// fmt: 'hwpx' 자치단체 한글 서식(사업지 지역 조례 시행규칙) | 'xlsx' 엑셀
+//  한글 서식은 지역마다 다르므로 S.criteria.region의 서식을 씀. 그 지역 서식이 없으면 알림
+async function saveZoneDocs(kind, fmt = 'xlsx') {
   if (zoneDocsBusy) return;
   if (!S.lands.length) { alert('토지조서가 비어 있습니다. 2단계에서 구역을 정하고 구역 안 필지·건축물을 불러오세요.'); return; }
   if (!window.XLSX || typeof Forms === 'undefined') { alert('엑셀·서식 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'); return; }
+  const region = S.criteria.region, rp = REGION_PRESETS[region];
+  if (fmt === 'hwpx') {
+    if (!ZoneHwp.formFor(region)) {
+      alert(`${rp ? rp.label : '이 지역'} 조례 시행규칙의 한글 서식이 아직 등록되어 있지 않습니다.\n지금은 인천광역시 서식만 있습니다. 엑셀로 받거나, 그 지역 서식 파일을 보내 주시면 추가합니다.`);
+      return;
+    }
+    if (!ZoneHwp.has(kind)) { alert('이 서식은 아직 한글로 만들 수 없습니다. 엑셀로 받아 주세요.'); return; }
+  }
   if (Tabs.survey.stale() && !confirm('조서가 지금 구역이 아니라 예전 구역 기준입니다. 그래도 저장할까요?\n(3단계에 들어가면 지금 구역 기준으로 다시 불러올 수 있습니다)')) return;
   const say = t => $$('.zone-docs-msg').forEach(e => { e.textContent = t; });
   zoneDocsBusy = true;
@@ -783,12 +828,16 @@ async function saveZoneDocs(kind) {
     App.update(true);
   } finally { zoneDocsBusy = false; }
 
-  if (kind) Forms.exportZoneDoc(zoneDocsData(), kind);
+  const DOC_FILE = { land: '토지조서(별지제4호)', bldg: '건축물조서(별지제4호)' };
+  if (fmt === 'hwpx') {
+    try { await ZoneHwp.make(zoneDocsData(), kind, region, `${S.meta.name || '정비구역'}_${DOC_FILE[kind] || kind}.hwpx`); }
+    catch (e) { say('한글 서식을 만들지 못했습니다: ' + e.message); return; }
+  } else if (kind) Forms.exportZoneDoc(zoneDocsData(), kind);
   else Forms.exportZoneDocs(zoneDocsData(), `${S.meta.name || '정비구역'}_구역지정서류.xlsx`);
   const names = ls => ls.slice(0, 5).map(l => l.jibun).join(', ') + (ls.length > 5 ? ` 외 ${ls.length - 5}필지` : '');
   const failed = Tabs.survey.ledgerTodo();
   const gis = S.buildings.filter(b => b.auto && !b.ledger && !b.noLedger).length;
-  const msg = [`${kind ? ZONE_DOC_NAMES[kind] : '구역지정 서류 전체'}를 저장했습니다 (토지 ${S.lands.length}필지 · 건축물 ${S.buildings.length}동, 토지대장·건축물대장 기준).`];
+  const msg = [`${kind ? ZONE_DOC_NAMES[kind] : '구역지정 서류 전체'}를 ${fmt === 'hwpx' ? `한글(${ZoneHwp.formFor(region).law} 서식)` : '엑셀'}로 저장했습니다 (토지 ${S.lands.length}필지 · 건축물 ${S.buildings.length}동, 토지대장·건축물대장 기준).`];
   if (!kind || kind === 'owners') msg.push('토지등소유자 명부의 소유자 칸은 등기부등본 등 열람으로 채워 주세요.');
   if (failed.length) msg.push(`${names(failed)}: 토지대장 조회에 실패해 지도(연속지적) 면적으로 들어갔습니다. 분할·합병된 필지인지 토지대장을 확인하세요.`);
   if (gis) msg.push(`건축물 ${gis}동은 건축물대장 조회에 실패해 GIS 자료로 들어갔습니다. 잠시 뒤 다시 받아 보세요.`);
@@ -1022,8 +1071,12 @@ function boot() {
     App.update(true);
   };
   $('#btnSurveyXlsx').onclick = saveSurveyXlsx;
-  $$('.btn-zone-docs').forEach(b => { b.onclick = () => saveZoneDocs(); });
-  $$('[data-zdoc]').forEach(b => { b.onclick = () => saveZoneDocs(b.dataset.zdoc); });
+  renderDocButtons();
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-zdoc], .btn-zone-docs');
+    if (!b || b.disabled) return;
+    saveZoneDocs(b.dataset.zdoc || undefined, b.dataset.fmt || 'xlsx');
+  });
   $('#btnSurveyPrint').onclick = printSurvey;
 
   App.show((location.hash || '#overview').slice(1));

@@ -249,6 +249,13 @@ body.map-full-open { overflow: hidden; }
 .zone-docs h3 { margin: 0 0 8px; }
 .zone-docs h3 small { font-weight: 400; font-size: .78rem; }
 .zone-docs .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 서식 버튼: 서식 이름 + [한글] [엑셀] */
+.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 14px; margin: 6px 0; }
+.doc-item { display: flex; align-items: center; gap: 4px; }
+.doc-item .doc-name { flex: 1; font-size: .9rem; }
+.doc-item .doc-name small { color: var(--muted); font-size: .75rem; }
+.doc-item .btn { margin: 0; }
+.doc-item .btn:disabled { opacity: .35; cursor: not-allowed; }
 /* 3단계 상단: 조서가 2단계 구역 기준인지 */
 .sync-box { margin: -.4rem 0 1rem; }
 .sync-bar { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--soft, rgba(127,127,127,.08)); }
