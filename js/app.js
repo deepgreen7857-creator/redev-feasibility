@@ -743,6 +743,7 @@ function zoneDocsData() {
       dongs: 1, units: apt ? (num(b.hoCount) || '') : num(b.units), households: apt ? num(b.units) : '',
       year: b.year || '', archArea: num(b.archArea) || '', floorArea: num(b.floorArea), floors: num(b.floors), basement: num(b.basement),
       source: b.ledger ? '건축물대장' : b.auto ? 'GIS건물통합정보' : '직접 입력', aprDate: b.aprDate || '',
+      noLedger: !!b.noLedger, old: Calc.isOld(S, b), age: Calc.age(S, b),   // 기초조사서(허가유무·노후·경과연수)
       note: [b.noLedger ? '대장 없음 – 무허가 등 확인' : '', b.needUnits && !num(b.units) ? '세대수 확인 필요' : '', !b.ledger && b.auto ? '건축물대장 확인 전(GIS 기준)' : ''].filter(Boolean).join(' · '),
     };
   });
@@ -751,7 +752,7 @@ function zoneDocsData() {
   const years = [...new Set(S.lands.map(l => l.baseYear).filter(Boolean))];
   return {
     name: S.meta.name, location: S.meta.location, baseYear: years.join('·'), parcels, buildings, units,
-    req: Calc.requirements(S, sv), baseDate: sv.base.toLocaleDateString('sv-SE'),
+    req: Calc.requirements(S, sv), baseDate: sv.base.toLocaleDateString('sv-SE'), siteArea: Calc.siteArea(S),
     ledgerDone: S.lands.filter(l => l.ledgerEmpty === true || S.buildings.some(b => b.ledger && b.pnu === l.pnu)).map(l => l.jibun),
   };
 }
@@ -828,7 +829,7 @@ async function saveZoneDocs(kind, fmt = 'xlsx') {
     App.update(true);
   } finally { zoneDocsBusy = false; }
 
-  const DOC_FILE = { land: '토지조서(별지제4호)', bldg: '건축물조서(별지제4호)' };
+  const DOC_FILE = { land: '토지조서(별지제4호)', bldg: '건축물조서(별지제4호)', survey: '기초조사확인내역서(별지제5호)', consent: '동의총괄표(별지제6호)', owners: '토지등소유자명부(별지제9호)' };
   if (fmt === 'hwpx') {
     try { await ZoneHwp.make(zoneDocsData(), kind, region, `${S.meta.name || '정비구역'}_${DOC_FILE[kind] || kind}.hwpx`); }
     catch (e) { say('한글 서식을 만들지 못했습니다: ' + e.message); return; }

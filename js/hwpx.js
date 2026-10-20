@@ -91,6 +91,17 @@ const Hwpx = (() => {
     cells(tr).forEach(tc => { all(tc, 'p').forEach(p => p.setAttribute('paraPrIDRef', id)); kids(tc, 'subList').forEach(x => x.setAttribute('vertAlign', 'CENTER')); });
   }
 
+  // 칸에 여러 줄: 첫 문단을 틀로 줄마다 문단을 만듦 (기초조사서처럼 한 칸에 구분이 여러 줄인 표)
+  function setLines(tc, lines) {
+    const ps = all(tc, 'p');
+    if (!ps.length) return;
+    const p0 = ps[0], parent = p0.parentNode;
+    ps.slice(1).forEach(p => p.parentNode.removeChild(p));
+    setText(p0, lines[0]);
+    let prev = p0;
+    lines.slice(1).forEach(t => { const q = p0.cloneNode(true); setText(q, t); parent.insertBefore(q, prev.nextSibling); prev = q; });
+  }
+
   // 셀 주소(행 번호) 바꾸기
   function setRowAddr(tr, r) {
     cells(tr).forEach(tc => kids(tc, 'cellAddr').forEach(a => a.setAttribute('rowAddr', String(r))));
@@ -148,10 +159,48 @@ const Hwpx = (() => {
   }
 
   // 쪽을 넘어가도록: 표를 '쪽 경계에서 나눔', 제목 행(headerRows개)은 쪽마다 반복
+//   headerRows: 앞에서부터 반복할 행 수, 또는 [시작, 끝) 행 범위 (제목 행 아래의 머리 행만 반복할 때)
+  //   글자처럼 취급(treatAsChar)인 표는 쪽을 넘지 못하므로 끔
   function allowSplit(tbl, headerRows = 0) {
+    const [h0, h1] = Array.isArray(headerRows) ? headerRows : [0, headerRows];
     tbl.setAttribute('pageBreak', 'TABLE');   // 행 단위로 다음 쪽에 (CELL은 행 가운데서 잘림)
-    tbl.setAttribute('repeatHeader', headerRows ? '1' : '0');
-    rows(tbl).forEach((tr, r) => cells(tr).forEach(tc => tc.setAttribute('header', r < headerRows ? '1' : '0')));
+    tbl.setAttribute('repeatHeader', h1 > h0 ? '1' : '0');
+    rows(tbl).forEach((tr, r) => cells(tr).forEach(tc => tc.setAttribute('header', r >= h0 && r < h1 ? '1' : '0')));
+    kids(tbl, 'pos').forEach(p => p.setAttribute('treatAsChar', '0'));
+  }
+
+  // 표 나누기: at번째 행부터를 새 표로 떼어 원래 표가 든 문단 바로 다음 문단에 둠 (새 표를 돌려줌)
+  //   한글은 표 맨 위 행만 쪽마다 반복하므로, 서식 제목 행과 명부 머리 행이 한 표에 있으면 제목 아래에서 나눔
+  function splitTable(tbl, at) {
+    const run = tbl.parentNode, p = run.parentNode;
+    const np = p.cloneNode(false), nrun = run.cloneNode(false), nt = tbl.cloneNode(true);
+    nt.setAttribute('id', String(1000000000 + Math.floor(Math.random() * 900000000)));
+    nrun.appendChild(nt); np.appendChild(nrun);
+    p.parentNode.insertBefore(np, p.nextSibling);
+    rows(tbl).slice(at).forEach(tr => tbl.removeChild(tr));
+    rows(nt).slice(0, at).forEach(tr => nt.removeChild(tr));
+    [tbl, nt].forEach((t, i) => {
+      rows(t).forEach((tr, r) => setRowAddr(tr, r));
+      const n = rows(t).length;
+      t.setAttribute('rowCnt', String(n));
+      kids(t, 'cellzoneList').forEach(zl => kids(zl, 'cellzone').forEach(z => {
+        let a = +z.getAttribute('startRowAddr'), b = +z.getAttribute('endRowAddr');
+        if (i) { a -= at; b -= at; }
+        if (b < 0 || a >= n) { zl.removeChild(z); return; }
+        z.setAttribute('startRowAddr', String(Math.max(0, a))); z.setAttribute('endRowAddr', String(Math.min(n - 1, b)));
+      }));
+    });
+    kids(p, 'linesegarray').forEach(x => p.removeChild(x));
+    return nt;
+  }
+
+  // 표의 한 행 지우기 (행 번호·행 수 맞춤)
+  function removeRow(tbl, idx) {
+    const tr = rows(tbl)[idx];
+    if (!tr) return;
+    tbl.removeChild(tr);
+    rows(tbl).forEach((t, r) => setRowAddr(t, r));
+    tbl.setAttribute('rowCnt', String(rows(tbl).length));
   }
 
   // 틀 풀기: 서식 한 쪽 전체가 바깥 표(1열, 글자처럼 취급) 안에 들어 있으면, 그 칸 안의 표는 다음 쪽으로 넘어가지 못해 잘림
@@ -161,7 +210,8 @@ const Hwpx = (() => {
     const sec = doc.documentElement;
     const topPs = kids(sec, 'p');
     for (const p of topPs) {
-      const frame = kids(p, 'run').flatMap(r => kids(r, 'tbl')).find(t => t.getAttribute('colCnt') === '1');
+      // 틀 = 행 안에 다른 표를 품은 맨 위 표 (서식마다 열 수는 다름)
+      const frame = kids(p, 'run').flatMap(r => kids(r, 'tbl')).find(t => rows(t).some(tr => all(tr, 'tbl').length));
       if (!frame) continue;
       const trs = rows(frame);
       const hasTbl = tr => all(tr, 'tbl').length > 0;
@@ -217,7 +267,7 @@ const Hwpx = (() => {
     while (p && p !== to) { const n = p.nextSibling; if (p.nodeType === 1) p.parentNode.removeChild(p); p = to === null ? null : n; }
   }
 
-  return { FORMS, open, para, removeParas, alignRow, findTable, rows, cells, cell, setText, fillRows, replaceText, allowSplit, unframe, save, textOf };
+  return { FORMS, open, para, removeParas, alignRow, removeRow, splitTable, setLines, findTable, rows, cells, cell, setText, fillRows, replaceText, allowSplit, unframe, save, textOf };
 })();
 
 // =====================================================================
@@ -301,7 +351,268 @@ const ZoneHwp = (() => {
     return f;
   }
 
-  const MAKERS = { land: (form, z) => f4(form, z, 'land'), bldg: (form, z) => f4(form, z, 'bldg'), f4: (form, z) => f4(form, z) };
+  // 별지 제9호 토지등소유자 명부 — 공부 기준 작성 틀 (소유자 칸은 등기부 등 열람으로 기재)
+  //   지번마다 한 행, 집합건물은 그 아래 호마다 한 행(서식 주: 공동주택은 소재지에 호수 기재)
+  async function f9(form, z) {
+    const f = await Hwpx.open(form.dir + 'f9.hwpx');
+    const doc = f.doc;
+    const t = Hwpx.findTable(doc, ['토지등소유자', '권 리 내 역']);
+    const rowsOf = () => Hwpx.rows(t);
+    // 사업 명칭
+    const nameRow = rowsOf().findIndex(tr => /정비사업\s*명칭/.test(Hwpx.textOf(tr)));
+    if (nameRow >= 0) Hwpx.setText(Hwpx.cells(rowsOf()[nameRow])[0], `(정비사업 명칭 : ${z.name || ''})`);
+    // 용지 규격 행은 뺌
+    const paper = rowsOf().findIndex(tr => /㎜\s*×/.test(Hwpx.textOf(tr)));
+    if (paper >= 0) Hwpx.removeRow(t, paper);
+    const tmpl = rowsOf().findIndex(tr => Hwpx.cells(tr).length >= 12 && !Hwpx.textOf(tr).trim());
+    const keepAfter = rowsOf().length - tmpl - 1;
+    const P = [...z.parcels].sort((a, b) => jkey(a.jibun) - jkey(b.jibun));
+    const B = z.buildings || [], U = z.units || [];
+    const data = [];
+    let k = 0;
+    P.forEach(p => {
+      const bs = B.filter(b => b.jibun === p.jibun), us = U.filter(u => u.jibun === p.jibun);
+      const permit = !bs.length ? '' : bs.every(b => b.source === '건축물대장') ? '유' : bs.some(b => b.source === '건축물대장') ? '유·확인 필요' : '확인 필요';
+      const ratio = p.ledgerArea ? (+p.area || 0) / p.ledgerArea : 1;
+      const note = [p.ownerType === '국공유지' ? '국공유지' : '', ratio < 0.98 ? `일부 편입(공부 ${n1(p.ledgerArea)}㎡)` : '', us.length ? `집합건물 ${us.length}호(아래)` : ''].filter(Boolean).join(', ');
+      // 셀 순서: 연번, 성명, 생년월일, 주소, 전화번호, 소재지, 토지 소유면적, 편입면적, 공유여부, 건축물 동수, 허가유무, 공유여부, 지상권, 세대주 성명, 동의여부, 비고
+      data.push([++k, p.ownerName || '', '', '', '', loc(p), '', n1(p.area), '', bs.length || '', permit, '', '', '', '', note]);
+      us.sort((a, c) => String(a.dongNo || '').localeCompare(String(c.dongNo || ''), 'ko', { numeric: true }) || (+(String(a.ho).match(/\d+/) || [0])[0]) - (+(String(c.ho).match(/\d+/) || [0])[0]))
+        .forEach(u => data.push([++k, '', '', '', '', `${p.jibun} ${[u.dongNo, u.ho].filter(Boolean).join(' ')}`.trim(), '', '', '', 1, '유', '', '', '', '', u.excl == null || u.excl === '' ? '' : `전유 ${n2(u.excl)}㎡`]));
+    });
+    Hwpx.fillRows(t, tmpl, data, { rowHeight: ROW_H, keepAfter });
+    // 제목(서식 번호·이름·명칭)과 명부를 두 표로 나눠, 명부 머리 3행만 쪽마다 반복
+    const head0 = rowsOf().findIndex(tr => /연번/.test(Hwpx.textOf(tr)));
+    const body = Hwpx.splitTable(t, head0);
+    Hwpx.allowSplit(body, tmpl - head0);
+    return f;
+  }
+
+  // 필지·집합건물 호 목록 (명부·동의자 명부의 '권리의 소재지' 행)
+  function rightRows(z) {
+    const P = [...z.parcels].sort((a, b) => jkey(a.jibun) - jkey(b.jibun));
+    const U = z.units || [];
+    const out = [];
+    P.forEach(p => {
+      out.push({ p, loc: loc(p) });
+      U.filter(u => u.jibun === p.jibun)
+        .sort((a, c) => String(a.dongNo || '').localeCompare(String(c.dongNo || ''), 'ko', { numeric: true }) || (+(String(a.ho).match(/\d+/) || [0])[0]) - (+(String(c.ho).match(/\d+/) || [0])[0]))
+        .forEach(u => out.push({ p, u, loc: `${p.jibun} ${[u.dongNo, u.ho].filter(Boolean).join(' ')}`.trim() }));
+    });
+    return out;
+  }
+
+  // 별지 제6호 동의총괄표 — 동의대상 총면적(사유지·국공유지)과 동의자 명부의 권리 소재지 행
+  //   토지등소유자 수·동의자·지상권 설정 여부는 공부로 알 수 없어 빈칸
+  async function f6(form, z) {
+    const f = await Hwpx.open(form.dir + 'f6.hwpx');
+    const doc = f.doc;
+    Hwpx.unframe(doc);
+    const q = Hwpx.para(doc, /정비사업\s*명칭/);
+    if (q) Hwpx.setText(q, `1. 동의총괄내역(정비사업 명칭 : ${z.name || ''})`);
+    // 가. 토지면적: 동의대상 총면적 계
+    const ta = Hwpx.findTable(doc, ['동의대상 총면적', '지상권비설정토지']);
+    if (ta) {
+      const P = z.parcels;
+      const pub = p => p.ownerType === '국공유지';
+      const area = f => P.filter(f).reduce((a, p) => a + (+p.area || 0), 0);
+      const byLabel = { '계': () => true, '사유지': p => !pub(p), '국공유지': pub, '기타': () => false };
+      Hwpx.rows(ta).forEach(tr => {
+        const cs = Hwpx.cells(tr);
+        const lab = Hwpx.textOf(cs[0]).replace(/\s/g, '');
+        if (cs.length === 8 && byLabel[lab]) Hwpx.setText(cs[2], n1(area(byLabel[lab])));
+      });
+    }
+    // 2. 동의자 명부: 권리의 소재지마다 한 행
+    const tn = Hwpx.findTable(doc, ['조합원', '권리의소재지']);
+    if (tn) {
+      const tmpl = Hwpx.rows(tn).findIndex(tr => Hwpx.cells(tr).length >= 12 && !Hwpx.textOf(tr).trim());
+      const data = rightRows(z).map((r, i) => [i + 1, '', r.u ? '' : (r.p.ownerName || ''), '', r.loc, '', '', '', '', '', '', r.u ? '' : (r.p.ownerType === '국공유지' ? '국공유지' : '')]);
+      Hwpx.fillRows(tn, tmpl, data, { rowHeight: ROW_H });
+      Hwpx.allowSplit(tn, tmpl);
+    }
+    return f;
+  }
+
+  // 별지 제5호 기초 조사·확인 내역서 — 공부(토지대장·건축물대장·연속지적)로 알 수 있는 표만 채움
+  //   인구·세대·산업·임대차·주민의견·수목·문화유적 등 현장 조사 항목은 빈칸
+  async function f5(form, z) {
+    const f = await Hwpx.open(form.dir + 'f5.hwpx');
+    const doc = f.doc;
+    Hwpx.unframe(doc);
+    const P = z.parcels, B = z.buildings || [], U = z.units || [];
+    const T = words => Hwpx.findTable(doc, words);
+    const put = (t, r, c, v) => { const tc = t && Hwpx.cell(t, r, c); if (tc) Hwpx.setText(tc, v); };
+    const pct = (a, tot) => (tot ? (a / tot * 100).toFixed(1) : '');
+    const ha = (+z.siteArea || P.reduce((a, p) => a + (+p.area || 0), 0)) / 10000;
+    const dens = n => (ha ? (n / ha).toFixed(1) : '');
+    const areaOf = ps => ps.reduce((a, p) => a + (+p.area || 0), 0);
+    const cnt = (xs, f) => xs.filter(f).length;
+
+    // 지목 이름 (대장 전체 이름 / 연속지적 한 글자 부호)
+    const JM = { 대: '대지', 도: '도로', 구: '구거', 답: '답', 임: '임야', 전: '전', 잡: '잡종지', 차: '주차장', 학: '학교용지', 종: '종교용지', 천: '하천', 공: '공원', 제: '제방', 철: '철도용지', 수: '수도용지' };
+    const jimokName = j => { j = String(j || '').trim(); return JM[j] || (j === '대' ? '대지' : j) || '기타'; };
+    const INFRA = ['도로', '구거', '하천', '공원', '제방', '철도용지', '수도용지'];
+    const isRes = b => /주택|아파트|다가구|다세대|연립/.test(b.use || '');
+    const isDet = b => /단독|다가구|다중주택/.test(b.use || '');
+    const isApt = b => /아파트|연립|다세대/.test(b.use || '');
+    const bj = new Map(); B.forEach(b => { const a = bj.get(b.jibun) || []; a.push(b); bj.set(b.jibun, a); });
+
+    // 1. 주민: 호수밀도(동/ha)만
+    put(T(['전체인구', '호수밀도']), 2, 11, dens(B.length));
+
+    // 2. 토지 및 건축물 이용현황
+    const t2 = T(['주거용건축물', '나대지']);
+    if (t2) {
+      const isLot = p => jimokName(p.jimok) === '대지';
+      const g = {
+        res: p => isLot(p) && (bj.get(p.jibun) || []).some(isRes),
+        nonres: p => isLot(p) && (bj.get(p.jibun) || []).length && !(bj.get(p.jibun) || []).some(isRes),
+        vacant: p => isLot(p) && !(bj.get(p.jibun) || []).length,
+        infra: p => INFRA.includes(jimokName(p.jimok)),
+      };
+      const other = p => !Object.values(g).some(f => f(p));
+      [[3, () => true], [4, g.res], [5, g.nonres], [6, g.vacant], [7, g.infra], [8, other]].forEach(([c, f]) => {
+        const ps = P.filter(f);
+        put(t2, 2, c, String(ps.length)); put(t2, 3, c, n1(areaOf(ps)));
+      });
+      put(t2, 2, 9, '나대지: 건축물 없는 대지');
+      // 건축물: 구분별 — 서식의 구분 칸은 한 칸에 여러 줄(문단)이라, 값 칸도 같은 줄 구성으로 넣음
+      //   map: 구분 칸 문단마다 몇 번째 구분인지 (null은 앞 줄이 이어지는 줄·빈 줄)
+      const struct = b => { const s = b.structure || ''; return /철|콘크리트|강구조/.test(s) ? 0 : /연와|벽돌|석조|조적|블록|블럭/.test(s) ? 1 : /목/.test(s) ? 2 : 3; };
+      const use = b => (isRes(b) ? 0 : /업무/.test(b.use || '') ? 1 : /근린/.test(b.use || '') ? 2 : 3);
+      const ageC = b => (!isFinite(+b.age) ? -1 : b.age < 20 ? 0 : b.age < 30 ? 1 : b.age < 40 ? 2 : 3);
+      const SIZE = [30, 60, 85, 115, 165, 297];
+      const size = b => { const a = +b.floorArea || 0; const k = SIZE.findIndex(x => a < x); return k < 0 ? SIZE.length : k; };
+      const gb = b => !!b.aprDate && b.aprDate < '1985-06-30';   // 개발제한구역 지정('85.6.30.) 이전 사용승인
+      const groups = [
+        { r: 6, f: struct, map: [0, null, 1, 2, 3] },
+        { r: 7, f: use, map: [0, 1, 2, 3] },
+        { r: 8, f: ageC, map: [0, 1, 2, 3, 'gb', null, null] },
+        { r: 9, f: size, map: [0, 1, 2, 3, 4, 5, 6] },
+      ];
+      groups.forEach(gr => {
+        const lab = Hwpx.cell(t2, gr.r, 2);
+        const nP = lab ? lab.getElementsByTagNameNS('http://www.hancom.co.kr/hwpml/2011/paragraph', 'p').length : gr.map.length;
+        const map = gr.map.slice(0, nP);
+        const sel = k => (k === 'gb' ? B.filter(gb) : B.filter(b => gr.f(b) === k));
+        const col = (c, fn) => { const tc = Hwpx.cell(t2, gr.r, c); if (tc) Hwpx.setLines(tc, map.map(k => (k == null ? '' : fn(sel(k))))); };
+        col(4, xs => String(xs.length));
+        col(5, xs => String(cnt(xs, b => b.old)));
+        col(6, xs => pct(cnt(xs, b => b.old), xs.length));
+        col(7, xs => dens(xs.length));
+        col(8, xs => n1(xs.reduce((a, b) => a + (+b.archArea || 0), 0)));
+        col(9, xs => n1(xs.reduce((a, b) => a + (+b.floorArea || 0), 0)));
+      });
+    }
+
+    // 5. 토지 가격: 개별공시지가 × 편입면적
+    const t4 = T(['총 토지가격']);
+    const land = P.reduce((a, p) => a + (+p.area || 0) * (+p.jiga || 0), 0);
+    put(t4, 2, 0, land ? `${n0(land)}원` : '');
+    put(t4, 2, 4, '공시지가×편입면적');
+
+    // 10-가. 지목별
+    const t9 = T(['잡종지', '학교용지']);
+    if (t9) {
+      const cols = ['대지', '도로', '구거', '답', '임야', '전', '잡종지', '주차장', '학교용지', '종교용지'];
+      const totN = P.length, totA = areaOf(P);
+      const by = c => (c === '기타' ? P.filter(p => !cols.includes(jimokName(p.jimok))) : c === '총계' ? P : P.filter(p => jimokName(p.jimok) === c));
+      ['총계', ...cols, '기타'].forEach((c, i) => {
+        const ps = by(c);
+        put(t9, 1, i + 1, String(ps.length)); put(t9, 2, i + 1, pct(ps.length, totN));
+        put(t9, 3, i + 1, n1(areaOf(ps))); put(t9, 4, i + 1, pct(areaOf(ps), totA));
+      });
+    }
+
+    // 10-나. 소유별 (관리청은 공부에 없어 국공유지 소계만)
+    const t10 = T(['관리청별']);
+    if (t10) {
+      const gu = (String(z.location || '').match(/인천광역시\s+(\S+구|\S+군)/) || [])[1];
+      if (gu) put(t10, 1, 8, `인천광역시${gu}`);
+      const pub = P.filter(p => p.ownerType === '국공유지'), pri = P.filter(p => p.ownerType !== '국공유지');
+      [[1, P], [2, pub], [10, pri]].forEach(([c, ps]) => {
+        put(t10, 2, c, String(ps.length)); put(t10, 3, c, pct(ps.length, P.length));
+        put(t10, 4, c, n1(areaOf(ps))); put(t10, 5, c, pct(areaOf(ps), areaOf(P)));
+      });
+    }
+
+    // 10-다. 필지규모별 (90㎡ 기준)
+    const t11 = T(['90㎡ 미만', '대지 외 필지']);
+    if (t11) {
+      const lot = p => jimokName(p.jimok) === '대지', small = p => (+p.area || 0) < 90;
+      const sets = [P, P.filter(lot), P.filter(p => lot(p) && small(p)), P.filter(p => lot(p) && !small(p)), P.filter(p => !lot(p)), P.filter(p => !lot(p) && small(p)), P.filter(p => !lot(p) && !small(p))];
+      sets.forEach((ps, i) => {
+        put(t11, 2, i + 1, String(ps.length)); put(t11, 3, i + 1, pct(ps.length, P.length));
+        put(t11, 4, i + 1, n1(areaOf(ps))); put(t11, 5, i + 1, pct(areaOf(ps), areaOf(P)));
+      });
+    }
+
+    // 11-가. 허가유무: 건축물대장 있음 = 유허가, 대장 없음 = 무허가(확인 필요)
+    const t12 = T(['유 허 가', '무 허 가']);
+    if (t12) {
+      const yes = cnt(B, b => b.source === '건축물대장'), no = cnt(B, b => b.noLedger), unk = B.length - yes - no;
+      [[1, B.length], [2, yes], [3, no]].forEach(([c, v]) => { put(t12, 1, c, String(v)); put(t12, 2, c, pct(v, B.length)); });
+      put(t12, 1, 4, [no ? '무허가: 건축물대장 없는 건물(무허가건축물확인원으로 확인)' : '', unk ? `대장 확인 전 ${unk}동` : ''].filter(Boolean).join(', '));
+    }
+
+    // 11-나. 경과연수별
+    const t13 = T(['20～40년 미만']);
+    if (t13) {
+      const ok = B.filter(b => isFinite(+b.age));
+      [[1, ok], [2, ok.filter(b => b.age < 20)], [3, ok.filter(b => b.age >= 20 && b.age < 40)], [4, ok.filter(b => b.age >= 40)]].forEach(([c, xs]) => { put(t13, 1, c, String(xs.length)); put(t13, 2, c, pct(xs.length, ok.length)); });
+      if (ok.length < B.length) put(t13, 1, 5, `사용승인일 없음 ${B.length - ok.length}동`);
+    }
+
+    // 11-다. 용도별
+    const t14 = T(['복합용', '근린생활시설']);
+    if (t14) {
+      const det = B.filter(isDet), apt = B.filter(isApt), res = B.filter(isRes), nonres = B.filter(b => !isRes(b));
+      const near = nonres.filter(b => /근린/.test(b.use || '')), etc = nonres.filter(b => !/근린/.test(b.use || ''));
+      [[1, B], [2, res], [3, det], [4, apt], [5, nonres], [6, near], [7, etc], [8, []]].forEach(([c, xs]) => { put(t14, 2, c, String(xs.length)); put(t14, 3, c, pct(xs.length, B.length)); });
+    }
+
+    // 11-라. 구조별
+    const t15 = T(['세면벽돌']);
+    if (t15) {
+      const sc = s => (/목/.test(s) ? 2 : /연와/.test(s) ? 3 : /시멘트|세멘|세면|블록|블럭/.test(s) ? 5 : /조적|벽돌|석조/.test(s) ? 4 : /철|콘크리트|강구조/.test(s) ? 6 : 7);
+      put(t15, 1, 1, String(B.length)); put(t15, 2, 1, pct(B.length, B.length));
+      [2, 3, 4, 5, 6, 7].forEach(c => { const v = cnt(B, b => sc(b.structure || '') === c); put(t15, 1, c, String(v)); put(t15, 2, c, pct(v, B.length)); });
+    }
+
+    // 11-마. 층수별 (지상층): 1·2·3·4층, 5층 이상
+    const t16 = T(['층층층']);
+    if (t16) {
+      const heads = ['1층', '2층', '3층', '4층', '5층 이상'];
+      heads.forEach((h, i) => put(t16, 0, i + 2, h));
+      const fc = b => Math.min(4, Math.max(0, (+b.floors || 1) - 1));
+      put(t16, 1, 1, String(B.length)); put(t16, 2, 1, pct(B.length, B.length));
+      heads.forEach((_, i) => { const v = cnt(B, b => fc(b) === i); put(t16, 1, i + 2, String(v)); put(t16, 2, i + 2, pct(v, B.length)); });
+    }
+
+    // 11-바. 노후·불량
+    const t17 = T(['노후', '일반건축물']);
+    if (t17) {
+      const old = B.filter(b => b.old);
+      [[1, B], [2, old], [3, old.filter(isDet)], [4, old.filter(isApt)], [5, old.filter(b => !isRes(b))], [6, []], [7, B.filter(b => !b.old)]].forEach(([c, xs]) => { put(t17, 2, c, String(xs.length)); put(t17, 3, c, pct(xs.length, B.length)); });
+      put(t17, 2, 8, z.baseDate ? `기준일 ${z.baseDate}` : '');
+    }
+
+    // 11-사. 기존 주택 호수: 주거용 동수, 세대수(전용면적별). 공동주택은 전유부, 단독·다가구는 연면적으로 1세대
+    const t18 = T(['40㎡ 이하', '135㎡ 초과']);
+    if (t18) {
+      const band = a => (a <= 40 ? 0 : a <= 60 ? 1 : a <= 85 ? 2 : a <= 135 ? 3 : 4);
+      const n = [0, 0, 0, 0, 0];
+      B.filter(isDet).forEach(b => { n[band(+b.floorArea || 0)]++; });
+      U.forEach(u => { if (u.excl !== '' && u.excl != null) n[band(+u.excl)]++; });
+      put(t18, 2, 0, String(B.filter(isRes).length));
+      n.forEach((v, i) => put(t18, 2, i + 1, String(v)));
+    }
+
+    return f;
+  }
+
+  const MAKERS = { land: (form, z) => f4(form, z, 'land'), bldg: (form, z) => f4(form, z, 'bldg'), f4: (form, z) => f4(form, z), owners: f9, consent: f6, survey: f5 };
   const has = kind => !!MAKERS[kind];
 
   // region: S.criteria.region. 그 지역 서식이 없으면 null
