@@ -74,56 +74,99 @@ const Forms = (() => {
   // 1. 법정서식 (인천광역시 도시 및 주거환경정비 조례 시행규칙)
   // =====================================================================
 
-  // 별지 제4호 토지 및 건축물 조서 - 1. 토지조서 (+ 검토용 칸) / 2. 건축물 조서
+  // 건축물 용도 구분 (조서 각주의 단독주택 수·공동주택 수)
+  const isDetached = b => /단독|다가구|다중주택/.test(b.useStd || b.use || '');
+  const isApt = b => /아파트|연립|다세대/.test(b.useStd || b.use || '');
+  const locOf = x => `${x.dong || ''} ${x.jibun || ''}`.trim();
+  const floorsLabel = b => b.floorsLabel || (b.floors || b.basement ? `${b.basement || 0}/${b.floors || 0}` : '');
+  const fmt1 = v => (Math.round((+v || 0) * 10) / 10).toLocaleString('ko-KR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  // 대지 필지를 그 위 건축물로 단독주택 용지 / 공동주택 용지로 나눔
+  function housingLots(z) {
+    const bj = new Map(); (z.buildings || []).forEach(b => { const a = bj.get(b.jibun) || []; a.push(b); bj.set(b.jibun, a); });
+    let detached = 0, apt = 0;
+    z.parcels.forEach(p => {
+      if (!/^대/.test(p.jimok || '')) return;
+      const bs = bj.get(p.jibun) || [];
+      if (bs.some(isApt)) apt += +p.area || 0; else if (bs.length && bs.every(isDetached)) detached += +p.area || 0;
+    });
+    return { detached, apt };
+  }
+
+  // 별지 제4호 토지 및 건축물 조서 (인천광역시 도시 및 주거환경정비 조례 시행규칙 서식의 칸 그대로)
+  //   대조·판단 내용은 sheet4Review(별도 시트)에 둠
   function sheet4(z, opt = {}) {
     const s = Sheet();
-    const split = j => { const m = String(j).match(/^(\d+)(?:-(\d+))?/); return m ? [+m[1], m[2] ? +m[2] : ''] : [j, '']; };
-    s.set(0, 0, '[별지 제4호서식] 토지 및 건축물 조서');
-    s.set(1, 0, `사업명: ${z.name || ''}   위치: ${z.location || ''}`);
-    s.set(3, 0, '1. 토지조서');
-    // 실무 조서 형식: 위치(동명·본번·부번), 면적(공부·편입)
-    s.row(4, ['연번', '위치', '', '', '지목', '면적(㎡)', '', '용도지역', '용도지구', '도시계획시설', '소유자', '용도']);
-    s.row(5, ['', '동명', '본번', '부번', '', '공부면적', '편입면적']);
-    s.merge(4, 1, 4, 3).merge(4, 5, 4, 6);
-    if (opt.review !== false) s.row(4, ['제척면적(㎡)', '편입구분', '소유구분', '비고'], 13);
-    const P = sorted(z); let r = 6;
-    P.forEach((p, i) => {
-      const [bon, bu] = split(p.jibun), R = r + 1;
-      s.row(r, [i + 1, p.dong || '', bon, bu, p.jimok || ''], 0);
-      s.set(r, 5, p.ledgerArea == null || p.ledgerArea === '' ? '' : +p.ledgerArea, M2);
-      s.set(r, 6, +p.area || 0, M2);
-      s.row(r, [p.zoning || '', p.district || '', p.facility || '', ownersLabel(p), p.use || ''], 7);
-      if (opt.review !== false) {
-        s.set(r, 13, F(`IF(F${R}="","",F${R}-G${R})`), M2);
-        s.set(r, 14, F(`IF(F${R}="","",IF(ABS(F${R}-G${R})<0.05,"전체편입","일부편입"))`));
-        s.set(r, 15, p.ownerType || '');
-        s.set(r, 16, p.note || '');
-      }
-      r++;
-    });
-    s.set(r, 0, '계'); s.set(r, 5, F(`SUM(F7:F${r})`), M2); s.set(r, 6, F(`SUM(G7:G${r})`), M2);
-    if (opt.review !== false) s.set(r, 13, F(`SUM(N7:N${r})`), M2);
-    const tot = r + 1;
-    r += 1;
-    s.set(r, 0, F(`"※ 대(垈) 편입면적 : "&TEXT(SUMIF(E7:E${tot - 1},"대",G7:G${tot - 1}),"#,##0.0")&"㎡ (단독·공동주택 용지 구분은 건축물대장 확인 후 기재)"`));
-    // 2. 건축물조서 (실무 형식)
-    r += 2;
-    s.set(r, 0, '2. 건축물 조서'); r++;
-    s.row(r, ['연번', '동명', '본번', '부번', '지목', '용도', '구조', '동수', '호수', '세대수', '준공연도', '건축면적(㎡)', '연면적(㎡)', '층수(지하/지상)', '소유구분', '비고']);
-    if (opt.review !== false) s.row(r, ['사용승인일', '경과연수', '노후 기준연수', '노후·불량', '접도(4m×4m)'], 17);
+    s.set(0, 0, '[별지 제4호서식]');
+    s.set(1, 0, '토지 및 건축물 조서'); s.merge(1, 0, 1, 11);
+    s.set(2, 0, `사업명: ${z.name || ''}   위치: ${z.location || ''}`);
+    s.set(4, 0, '1. 토지조서');
+    s.row(5, ['연번', '위치', '지목', '면적(㎡)', '용도지역', '용도지구', '도시계획시설', '소유주', '용도']);
+    const P = sorted(z), first = 8, last = 7 + P.length;
+    s.set(6, 0, '계'); s.set(6, 3, F(P.length ? `SUM(D${first}:D${last})` : '0'), M2);
+    P.forEach((p, i) => s.row(7 + i, [i + 1, locOf(p), p.jimok || '', +p.area || 0, p.zoning || '', p.district || '', p.facility || '', ownersLabel(p), p.landUse || p.use || ''], 0, [null, null, null, M2]));
+    let r = 7 + P.length;
+    const HL = housingLots(z);
+    s.set(r++, 0, `※ 단독주택 용지 : ${fmt1(HL.detached)}㎡,  공동주택 용지 : ${fmt1(HL.apt)}㎡`);
+    const part = P.filter(p => p.ledgerArea && p.area != null && p.area < p.ledgerArea - 0.05);
+    if (part.length) s.set(r++, 0, `※ 일부편입 ${part.length}필지(면적은 편입면적): ` + part.map(p => `${p.jibun}(공부 ${fmt1(p.ledgerArea)}㎡ 중 ${fmt1(p.area)}㎡)`).join(', '));
     r++;
-    const B = z.buildings || []; const b0 = r;
+    s.set(r++, 0, '2. 건축물 조서');
+    s.row(r, ['연번', '위 치', '용 도', '구 조', '동 수', '호 수', '세대수', '준공연도', '규  모', '', '', '비 고']);
+    s.row(r + 1, ['건축면적(㎡)', '연면적(㎡)', '층수(지하/지상)'], 8);
+    s.merge(r, 8, r, 10); [0, 1, 2, 3, 4, 5, 6, 7, 11].forEach(c => s.merge(r, c, r + 1, c));
+    r += 2;
+    const B = z.buildings || [], tr = r, b1 = r + 2, b2 = r + 1 + B.length;
+    s.set(tr, 0, '계');
+    if (B.length) [['E', 4], ['F', 5], ['G', 6], ['I', 8], ['J', 9]].forEach(([L, c]) => s.set(tr, c, F(`SUM(${L}${b1}:${L}${b2})`), c >= 8 ? M2 : undefined));
+    r++;
     B.forEach((b, i) => {
-      const [bon, bu] = split(b.jibun);
-      s.row(r, [i + 1, b.dong || z.dong || '', bon, bu, b.jimok || '', b.use || '', b.structure || '', b.dongs || 1, b.units || '', b.households || b.units || '', b.year || '', b.archArea || '', +b.floorArea || '', b.floors || '', b.ownerType || '', b.note || '']);
-      if (opt.review !== false) s.row(r, [b.aprDate || '', isFinite(b.age) ? b.age : '', b.limit || '', b.old == null ? '' : b.old ? '노후' : '', b.road == null ? '' : b.road ? '접도' : '미접도'], 17);
+      s.row(r++, [i + 1, `${locOf(b)}${b.bname ? ' ' + b.bname : ''}`, b.use || '', b.structure || '', +b.dongs || 1, b.units === '' || b.units == null ? '' : +b.units || 0,
+        b.households === '' || b.households == null ? '' : +b.households || 0, b.year || '', b.archArea === '' ? '' : +b.archArea || '', +b.floorArea || '', floorsLabel(b), b.note || ''],
+        0, [null, null, null, null, null, null, null, null, M2, M2]);
+    });
+    const det = B.filter(isDetached).reduce((a, b) => a + (+b.units || 1), 0);
+    const apt = B.filter(isApt), aptH = apt.reduce((a, b) => a + (+b.households || +b.units || 0), 0);
+    s.set(r++, 0, '주) 1. 호수 산정은 「인천광역시 도시 및 주거환경정비 조례」에 따름');
+    s.set(r++, 0, '    2. 비고란에 빈집(공가․폐가) 현황 등 기재');
+    s.set(r++, 0, `※ 단독주택 수 : ${det}호,  공동주택 수 : ${apt.length}개동, ${aptH}세대`);
+    r++;
+    const sign = opt.sign || {};
+    s.set(r++, 0, `작성자 : 직 ${sign.writerTitle || '      '}  성명 ${sign.writer || '            '}  (서명 또는 날인)`);
+    s.set(r++, 0, `확인자 : 직 ${sign.checkerTitle || '      '}  성명 ${sign.checker || '            '}  (서명 또는 날인)`);
+    s.cols([6, 22, 12, 12, 9, 9, 9, 10, 11, 11, 13, 30]);
+    return { ws: s.done(), totalRow: 7 };
+  }
+
+  // 제4호 조서를 만들 때의 대조·판단 기록 (조서 서식에는 없는 칸)
+  function sheet4Review(z) {
+    const s = Sheet(); let r = 0;
+    s.set(r++, 0, `토지·건축물 조서 대조표 — ${z.name || ''}`);
+    s.set(r++, 0, `${z.confirm ? `${z.confirm.roleLabel} 검토 완료 ${z.confirm.at}` : '검토 완료 전(참고용)'}   공부: 브이월드 토지특성·연속지적${z.ledgerQueried ? ', 건축물대장(건축HUB)' : ' (건축물대장 미조회 — 건축물은 명부 기준)'}`);
+    r++;
+    s.set(r++, 0, '1. 토지');
+    s.row(r++, ['연번', '위치', '조서 지목', '명부 지목', '조서 공부면적(㎡)', '명부 공부면적(㎡)', '편입면적(㎡)', '제척면적(㎡)', '편입구분', '소유구분', '토지이용상황', '공시지가(원/㎡)', '비고']);
+    sorted(z).forEach((p, i) => {
+      const R1 = r + 1;
+      s.row(r, [i + 1, locOf(p), p.jimok || '', p.rosterJimok || '', p.ledgerArea === '' || p.ledgerArea == null ? '' : +p.ledgerArea, p.rosterArea == null ? '' : +p.rosterArea, +p.area || 0], 0, [null, null, null, null, M2, M2, M2]);
+      s.set(r, 7, F(`IF(E${R1}="","",E${R1}-G${R1})`), M2);
+      s.set(r, 8, F(`IF(E${R1}="","",IF(ABS(E${R1}-G${R1})<0.05,"전체편입","일부편입"))`));
+      s.row(r, [p.ownerType || '', p.landUse || '', p.jiga || '', p.note || ''], 9, [null, null, WON, null]);
       r++;
     });
-    s.set(r, 0, '계'); if (B.length) { s.set(r, 7, F(`SUM(H${b0 + 1}:H${r})`)); s.set(r, 8, F(`SUM(I${b0 + 1}:I${r})`)); s.set(r, 12, F(`SUM(M${b0 + 1}:M${r})`), M2); }
-    s.set(r + 1, 0, '주) 1. 호수 산정은 「인천광역시 도시 및 주거환경정비 조례」에 따름  2. 비고란에 빈집(공가·폐가) 현황 등 기재');
-    s.set(r + 2, 0, '작성자 : 직       성명              (서명 또는 날인)      확인자 : 직       성명              (서명 또는 날인)');
-    s.cols([6, 8, 6, 6, 6, 11, 11, 16, 8, 10, 16, 8, 2, 10, 9, 9, 36]);
-    return { ws: s.done(), totalRow: tot };
+    r++;
+    s.set(r++, 0, '2. 건축물');
+    s.row(r++, ['연번', '위치', '용도', '구조', '출처', '허가', '사용승인일', '경과연수', '노후 기준연수', '노후·불량', '접도(4m×4m)', '비고']);
+    (z.buildings || []).forEach((b, i) => s.row(r++, [i + 1, `${locOf(b)}${b.bname ? ' ' + b.bname : ''}`, b.use || '', b.structure || '', b.source || '', b.permit || '', b.aprDate || '',
+      isFinite(b.age) ? b.age : '', b.limit || '', b.old == null ? '' : b.old ? '노후' : '', b.road == null ? '' : b.road ? '접도' : '미접도', b.note || '']));
+    if (z.decisions && z.decisions.length) {
+      r++;
+      s.set(r++, 0, '3. 명부 ↔ 공부 불일치 판단 기록');
+      s.row(r++, ['구분', '위치', '항목', '명부(제출)', '공부', '판단', '판단 방식']);
+      z.decisions.forEach(d => s.row(r++, [d.kind, d.loc, d.label, d.roster, d.ledger, d.choice, d.manual ? '직접 선택' : '기본값']));
+    }
+    s.cols([6, 22, 12, 12, 14, 14, 14, 12, 12, 12, 14, 14, 40]);
+    return s.done();
   }
 
   // 집합건축물 조서 (호별) - 실무 형식
@@ -202,19 +245,78 @@ const Forms = (() => {
   // 별지 제9호 토지등소유자 명부 (개인정보 포함 - 비공개)
   function sheet9(z) {
     const s = Sheet();
-    s.set(0, 0, '[별지 제9호서식] 토 지 등 소 유 자 명 부   (비공개 - 개인정보 포함)');
-    s.set(1, 0, `(정비사업 명칭 : ${z.name || ''})`);
-    s.row(3, ['연번', '성명', '생년월일', '주소', '전화번호', '소재지', '토지 소유면적(㎡)', '토지 편입면적(㎡)', '토지 공유여부', '건축물 동수', '건축물 허가유무', '건축물 공유여부', '지상권', '세대주 성명', '동의여부', '비고']);
-    let r = 4;
+    s.set(0, 0, '[별지 제9호서식]   (비공개 - 개인정보 포함)');
+    s.set(1, 0, '토 지 등 소 유 자 명 부'); s.merge(1, 0, 1, 15);
+    s.set(2, 0, `(정비사업 명칭 : ${z.name || ''})`);
+    // 서식의 3단 머리글: 토지등소유자 / 권리내역(소재지·토지·건축물·지상권)
+    s.row(3, ['연번', '토지등소유자', '', '', '', '권 리 내 역', '', '', '', '', '', '', '', '세대주 성명', '동의여부', '비고']);
+    s.row(4, ['', '성 명', '생년월일', '주 소', '전화번호', '소재지', '토    지', '', '', '건 축 물', '', '', '지상권']);
+    s.row(5, ['소유면적(㎡)', '편입면적(㎡)', '공유여부', '동수', '허가유무', '공유여부'], 6);
+    s.merge(3, 1, 3, 4).merge(3, 5, 3, 12).merge(4, 6, 4, 8).merge(4, 9, 4, 11);
+    [0, 13, 14, 15].forEach(c => s.merge(3, c, 5, c));
+    [1, 2, 3, 4, 5, 12].forEach(c => s.merge(4, c, 5, c));
+    let r = 6;
     (z.owners || []).forEach(o => {
       (o.parcels && o.parcels.length ? o.parcels : [{}]).forEach((q, k) => {
         s.row(r++, [k === 0 ? o.no || '' : '', k === 0 ? o.name : '', k === 0 ? o.birth || '' : '', k === 0 ? o.addr || '' : '', k === 0 ? o.phone || '' : '',
-          `${q.jibun || ''}${q.ho ? ' ' + q.ho : ''}`, q.ownArea ?? '', q.inArea ?? '', q.share ? `공유(${q.share})` : '', q.bldgCount ?? '', q.permit ?? '', q.bldgShare ?? '', '', '', '', q.note || '']);
+          `${q.dong ? q.dong + ' ' : ''}${q.jibun || ''}${q.ho ? ' ' + q.ho : ''}`, q.ownArea ?? '', q.inArea ?? '', q.shared || (q.share ? `공유(${q.share})` : ''),
+          q.bldgCount ?? '', q.permit ?? '', q.bldgShare ?? '', q.superficies || '', k === 0 ? o.head || '' : '', q.consent || (k === 0 ? o.consent || '' : ''), q.note || ''], 0, [null, null, null, null, null, null, M2, M2]);
       });
     });
     s.set(r + 1, 0, '※ 공동주택의 경우 소재지에 호수를 기재');
-    s.cols([6, 12, 11, 36, 13, 16, 12, 12, 10, 8, 8, 10, 6, 10, 8, 20]);
+    s.set(r + 2, 0, '제출서류  1. 토지등소유자별 권리내역 증빙서류(지적공부, 부동산등기부, 건축물대장, 무허가건축물확인원 등) 각 1부.');
+    s.cols([6, 12, 11, 36, 13, 20, 12, 12, 10, 8, 8, 10, 8, 10, 8, 20]);
     return s.done();
+  }
+
+  // 별지 제9호 토지등소유자 명부 "작성 틀": 확정된 구역계(지번·편입면적)와 공부(토지·건축물대장)로 채우고
+  //   소유자 칸(성명·생년월일·주소·지분·공유)은 비워 둠 → 등기부 등 열람으로 기재
+  //   지번마다 한 행, 집합건물은 그 아래 호마다 한 행. 오른쪽에 공부 값·열람 확인·제출 명부 참고(번호·인원만, 이름 없음)
+  function sheet9Frame(z) {
+    const s = Sheet(), P = sorted(z), B = z.buildings || [], U = z.units || [];
+    const total = P.reduce((a, p) => a + (+p.area || 0), 0);
+    s.set(0, 0, '[별지 제9호서식] 토 지 등 소 유 자 명 부 — 작성 틀 (공부 기준, 소유자 칸은 등기부 등 열람으로 기재)');
+    s.set(1, 0, `(정비사업 명칭 : ${z.name || ''})   ${z.confirm ? `구역계 확정 ${z.confirm.at}` : '구역계 확정 전(참고)'} · 토지 ${P.length}필지 · 편입면적 합계 ${fmt1(total)}㎡ · 건축물 ${B.length}동${U.length ? ` · 집합건물 ${U.length}호` : ''}`);
+    s.row(3, ['연번', '토지등소유자', '', '', '', '권 리 내 역', '', '', '', '', '', '', '', '세대주 성명', '동의여부', '비고', '— 공부(작성 근거) —', '', '', '', '', '등기부 열람', '제출 명부 참고']);
+    s.row(4, ['', '성 명', '생년월일', '주 소', '전화번호', '소재지', '토    지', '', '', '건 축 물', '', '', '지상권']);
+    s.row(5, ['소유면적(㎡)', '편입면적(㎡)', '공유여부', '동수', '허가유무', '공유여부'], 6);
+    s.row(5, ['지목', '공부면적(㎡)', '편입비율', '건축물(대장)', '집합건물 호(전유㎡)', '확인(□)', '소유자 번호·인원'], 16);
+    s.merge(3, 1, 3, 4).merge(3, 5, 3, 12).merge(4, 6, 4, 8).merge(4, 9, 4, 11).merge(3, 16, 4, 20);
+    [0, 13, 14, 15].forEach(c => s.merge(3, c, 5, c));
+    [1, 2, 3, 4, 5, 12].forEach(c => s.merge(4, c, 5, c));
+    let r = 6;
+    const by = (arr, j) => arr.filter(x => x.jibun === j);
+    P.forEach(p => {
+      const bs = by(B, p.jibun), us = by(U, p.jibun);
+      const ratio = p.ledgerArea ? (+p.area || 0) / p.ledgerArea : 1;
+      const permit = !bs.length ? '' : bs.every(b => b.source === '건축물대장') ? '유' : bs.some(b => b.source === '건축물대장') ? '유·확인 필요' : '확인 필요(대장 없음)';
+      const bsum = bs.length ? `${bs.length}동 · ${[...new Set(bs.map(b => b.use))].join('·')}${bs.some(b => b.source !== '건축물대장') ? ' · 대장 없는 건물 있음' : ''}` : '';
+      const ref = p.rosterNos && p.rosterNos.length ? `${p.rosterNos.length}명 (번호 ${p.rosterNos.slice(0, 6).join(', ')}${p.rosterNos.length > 6 ? ' …' : ''})` : '제출 명부에 없음';
+      s.row(r, ['', '', '', '', '', `${p.dong || ''} ${p.jibun}`.trim(), '', +p.area || 0, '', bs.length || '', permit, '', '', '', '', p.note || ''], 0, [null, null, null, null, null, null, M2, M2]);
+      s.row(r, [p.jimok || '', p.ledgerArea === '' || p.ledgerArea == null ? '' : +p.ledgerArea, ratio, bsum, us.length ? `${us.length}호 (아래 행)` : '', '□', ref], 16, [null, M2, PCT]);
+      r++;
+      us.forEach(u => {
+        s.row(r, ['', '', '', '', '', `${p.dong || ''} ${p.jibun} ${[u.bldgName, u.dongNo, u.ho].filter(Boolean).join(' ')}`.trim(), '', '', '', 1, '유'], 0);
+        s.row(r, ['', '', '', u.use || '', u.excl === '' || u.excl == null ? '' : `${u.dongNo || ''} ${u.ho || ''} (${fmt1(u.excl)}㎡)`.trim(), '□', ''], 16);
+        r++;
+      });
+    });
+    s.set(r + 1, 0, '※ 소유자 칸(성명·생년월일·주소·전화·지분·공유여부)은 등기부등본 등 열람으로 기재. 공유 토지는 소유자마다 행을 늘려 소유면적(공부면적×지분)·편입면적(소유면적×편입비율)을 기재');
+    s.set(r + 2, 0, '※ 공동주택의 경우 소재지에 호수를 기재(집합건물 호별 행). 건축물 허가유무 "확인 필요"는 무허가건축물확인원으로 확인');
+    s.set(r + 3, 0, '※ "제출 명부 참고"는 제출된 명부의 토지등소유자 번호와 인원만 적음(대조용)');
+    s.cols([6, 12, 11, 30, 13, 26, 12, 12, 9, 7, 12, 9, 8, 10, 8, 30, 8, 12, 9, 30, 20, 9, 30]);
+    return s.done();
+  }
+
+  // 최종 결과 틀: 공부 기준 토지·건축물 조서 + 별지 제9호 작성 틀 + 판단 근거(대조표)
+  function exportFrame(z, fname, opt = {}) {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet4(z, opt).ws, '제4호_토지및건축물조서');
+    if (z.units && z.units.length) XLSX.utils.book_append_sheet(wb, sheetUnits(z), '집합건축물조서');
+    XLSX.utils.book_append_sheet(wb, sheet9Frame(z), '제9호_명부_작성틀');
+    XLSX.utils.book_append_sheet(wb, sheet4Review(z), '판단근거_대조표');
+    XLSX.writeFile(wb, fname || `${z.name || '정비구역'}_최종결과틀.xlsx`);
+    return wb;
   }
 
   // 시행령 제33조 기준 토지등소유자 수 (간이): 공유는 대표 1인, 1인 다수 필지 1인, 국공유 재산관리청별 1인
@@ -252,9 +354,10 @@ const Forms = (() => {
     return s.done();
   }
 
-  function exportForms(z, fname) {
+  function exportForms(z, fname, opt = {}) {
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheet4(z).ws, '제4호_토지조서');
+    XLSX.utils.book_append_sheet(wb, sheet4(z, opt).ws, '제4호_토지및건축물조서');
+    XLSX.utils.book_append_sheet(wb, sheet4Review(z), '제4호_대조표');
     if (z.units && z.units.length) XLSX.utils.book_append_sheet(wb, sheetUnits(z), '집합건축물조서');
     XLSX.utils.book_append_sheet(wb, sheet5(z), '제5호_기초조사');
     if ((z.req && z.req.length) || z.road) XLSX.utils.book_append_sheet(wb, sheetReq(z), '별표1_요건검토');
@@ -662,7 +765,7 @@ const Forms = (() => {
     return { site, infra: NS.infra, netSite: NS.net, land, pub, gfa, constr, income, ratioLow: res(0.44), ratioMid: res(0.36), ratioHigh: res(0.27) };
   }
 
-  return { exportForms, feasibility, quick, autoUnits, sheet4, sheet5, sheet6, sheet9, countOwners, DEFAULTS, costItems, isPublic, isInfra, netSite };
+  return { exportForms, exportFrame, sheet9Frame, feasibility, quick, autoUnits, sheet4, sheet4Review, sheet5, sheet6, sheet9, countOwners, DEFAULTS, costItems, isPublic, isInfra, netSite };
 })();
 
 if (typeof module !== 'undefined') module.exports = Forms;
