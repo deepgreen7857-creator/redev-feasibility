@@ -62,12 +62,14 @@ const SurveyMaps = (() => {
     // 용도지역·도시계획시설 (브이월드)
     const box = `BOX(${d.lonlatBox.join(',')})`;
     const proj = g => Export.rings(g).map(r => r.map(c => d.P.fwd(c)));
-    const get = async (layer, size = 200) => { try { return (await VWorld.dataAll(layer, box, 3)).map(f => ({ rings: proj(f), props: f.properties || {} })); } catch (e) { return []; } };
+    const get = async layer => { try { return (await VWorld.dataAll(layer, box, 3)).map(f => ({ f, rings: proj(f), props: f.properties || {} })); } catch (e) { return []; } };
+    // 도시계획시설: 구역 안에 든 부분(도형·면적)
+    const zoneIn = x => { let g = null; try { g = turf.intersect(x.f, S.area.geojson); } catch (e) { g = null; } x.inRings = g ? proj(g) : []; x.inArea = g ? turf.area(g) : 0; };
     say('용도지역·도시계획시설 자료를 불러오는 중…');
     d.zoning = await get('LT_C_UQ111');
     d.upis = {};
     const UPIS = { LT_C_UPISUQ151: '도로', LT_C_UPISUQ152: '교통시설', LT_C_UPISUQ153: '공간시설', LT_C_UPISUQ154: '유통·공급시설', LT_C_UPISUQ155: '공공·문화체육시설', LT_C_UPISUQ156: '방재시설', LT_C_UPISUQ157: '보건위생시설', LT_C_UPISUQ158: '환경기초시설', LT_C_UPISUQ159: '기타시설' };
-    for (const [k, name] of Object.entries(UPIS)) { const fs = await get(k); if (fs.length) d.upis[name] = fs; }
+    for (const [k, name] of Object.entries(UPIS)) { const fs = await get(k); fs.forEach(zoneIn); if (fs.length) d.upis[name] = fs; }
     return d;
   }
 
@@ -81,7 +83,7 @@ const SurveyMaps = (() => {
         order: ['주거용 건축물', '비주거용 건축물', '나대지', '정비기반시설 부지', '기타'],
         colors: ['#f9c74f', '#e76f51', '#e9edc9', '#adb5bd', '#cdb4db'],
         cls: p => { const bs = p.land ? bj.get(p.land.jibun) || [] : []; return INFRA.includes(p.jm) ? '정비기반시설 부지' : p.jm !== '대지' ? '기타' : !bs.length ? '나대지' : bs.some(b => isRes(b.use)) ? '주거용 건축물' : '비주거용 건축물'; } },
-      { no: '나', title: '도시계획시설 설치현황도', kind: 'upis', note: '도시계획시설(UPIS) 결정 도면. 색 채움: 설치(집행완료·부분집행), 빗금: 미집행(계획), 점선 테두리: 집행 여부 미상' },
+      { no: '나', title: '도시계획시설 설치현황도', kind: 'upis', note: '구역 안 도시계획시설(UPIS 결정 도면). 색 채움: 설치(집행완료·부분집행), 빗금: 미집행(계획), 점선: 집행 여부 미상. 면적은 구역과 겹친 부분' },
       { no: '다', title: '사업지 주변 가로망 현황도', kind: 'roads', note: '회색: 지적상 도로(지목 도로) / 색: 도시계획도로(대로·중로·소로). 도로 폭·교통량은 현장 조사 필요' },
       { no: '라', title: '용도지역 현황도', kind: 'zoning', note: '자료: 브이월드 용도지역(LT_C_UQ111)' },
       { no: '마', title: '지목 현황도', kind: 'parcel', note: '지목은 토지대장 기준', cls: p => p.jm },
@@ -119,7 +121,7 @@ const SurveyMaps = (() => {
     const fx = m, fy = m + 8, fw = W - m * 2 - side - gap, fh = H - m * 2 - 8;
     const zx = d.zone.flat().map(c => c[0]), zy = d.zone.flat().map(c => c[1]);
     let x0 = Math.min(...zx), x1 = Math.max(...zx), y0 = Math.min(...zy), y1 = Math.max(...zy);
-    const pad = Math.max(x1 - x0, y1 - y0) * (th.kind === 'roads' || th.kind === 'upis' || th.kind === 'zoning' ? 0.25 : 0.08);
+    const pad = Math.max(x1 - x0, y1 - y0) * (th.kind === 'roads' || th.kind === 'zoning' ? 0.25 : th.kind === 'upis' ? 0.12 : 0.08);
     x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
     const scale = Export.niceScale(Math.max((x1 - x0) / (fw / 1000), (y1 - y0) / (fh / 1000)));
     const k = 1000 / scale;
@@ -144,21 +146,31 @@ const SurveyMaps = (() => {
       d.zoning.forEach(z => el(`<path d="${path(z.rings)}" fill="${zoneColor(z.props.uname || '')}" fill-opacity="0.75" stroke="#666" stroke-width="0.15" fill-rule="evenodd"/>`));
       legend = names.map(n => ({ key: n, color: zoneColor(n) }));
     } else if (th.kind === 'upis') {
-      d.parcels.filter(p => p.jimok === '도').forEach(p => el(`<path d="${path(p.rings)}" fill="#f1f1f1" stroke="none"/>`));
+      // 구역 안 도시계획시설만 색으로 (구역 밖은 위치 참고용 흐린 테두리)
+      d.parcels.filter(p => p.jimok === '도').forEach(p => el(`<path d="${path(p.rings)}" fill="#f4f4f4" stroke="none"/>`));
+      let any = false;
       Object.entries(d.upis).forEach(([name, fs], i) => {
         const c = PAL[i % PAL.length];
-        // 집행 여부: 집행완료·부분집행 = 설치(채움), 미집행 = 계획(빗금), 그 밖(기타·빈칸) = 미상(테두리만)
-        fs.forEach(f => {
+        fs.forEach(f => el(`<path d="${path(f.rings)}" fill="none" stroke="#bbb" stroke-width="0.15" stroke-dasharray="0.8 0.6"/>`));
+        const inF = fs.filter(f => f.inArea >= 1);
+        // 집행 여부: 집행완료·부분집행 = 설치(채움), 미집행 = 계획(빗금), 그 밖(기타·빈칸) = 미상(점선 테두리)
+        inF.forEach(f => {
           const e = f.props.exc_nam || '', st = /미집행/.test(e) ? 'plan' : /집행/.test(e) ? 'done' : 'unk';
           const fill = st === 'done' ? c : st === 'plan' ? `url(#h${idx})` : 'none';
-          el(`<path d="${path(f.rings)}" fill="${fill}" fill-opacity="${st === 'done' ? 0.55 : 1}" stroke="${c}" stroke-width="${st === 'unk' ? 0.25 : 0.35}"${st === 'unk' ? ' stroke-dasharray="1 0.6"' : ''} fill-rule="evenodd"/>`);
+          el(`<path d="${path(f.inRings)}" fill="${fill}" fill-opacity="${st === 'done' ? 0.55 : 1}" stroke="${c}" stroke-width="${st === 'unk' ? 0.25 : 0.4}"${st === 'unk' ? ' stroke-dasharray="1 0.6"' : ''} fill-rule="evenodd"/>`);
         });
-        const names = [...new Set(fs.map(f => f.props.dgm_nm).filter(Boolean))];
-        legend.push({ key: `${name}${names.length ? ` (${names.slice(0, 3).join('·')}${names.length > 3 ? ' 등' : ''})` : ''}`, color: c, n: fs.length, unit: '건' });
+        if (!inF.length) return;
+        any = true;
+        const names = [...new Set(inF.map(f => f.props.dgm_nm).filter(Boolean))];
+        const cntBy = re => inF.filter(f => re(f.props.exc_nam || '')).length;
+        const done = cntBy(e => /집행/.test(e) && !/미집행/.test(e)), plan = cntBy(e => /미집행/.test(e));
+        legend.push({ key: `${name}${names.length ? ` (${names.slice(0, 3).join('·')}${names.length > 3 ? ' 등' : ''})` : ''} ${inF.length}건 · 구역 안 ${n1(inF.reduce((a, f) => a + f.inArea, 0))}㎡ (설치 ${done} · 미집행 ${plan})`, color: c });
       });
-      legend.push({ key: '미집행(계획)', pattern: true });
-      legend.push({ key: '집행 여부 미상(테두리만)', line: '#555', dash: true });
-      if (!Object.keys(d.upis).length) legend.push({ key: '구역 주변에 도시계획시설 자료 없음', color: '#fff' });
+      if (any) {
+        legend.push({ key: '미집행(계획)', pattern: true });
+        legend.push({ key: '집행 여부 미상(점선 테두리)', line: '#555', dash: true });
+      } else legend.push({ key: '구역 안에 도시계획시설 없음', color: '#fff' });
+      legend.push({ key: '구역 밖 도시계획시설(참고)', line: '#bbb', dash: true });
     } else if (th.kind === 'roads') {
       const roads = d.parcels.filter(p => p.jimok === '도');
       roads.forEach(p => el(`<path d="${path(p.rings)}" fill="#cfcfcf" stroke="none"/>`));
