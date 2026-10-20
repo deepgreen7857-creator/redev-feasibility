@@ -136,6 +136,21 @@ const Forms = (() => {
       s.set(r++, 0, '    2. 비고란에 빈집(공가․폐가) 현황 등 기재');
       s.set(r++, 0, `※ 단독주택 수 : ${det}호,  공동주택 수 : ${apt.length}개동, ${aptH}세대`);
       r++;
+      // opt.withUnits: 집합건축물(아파트·연립·다세대 등)의 호별 내역을 같은 조서 안에 이어서 (생성 모드)
+      const U = opt.withUnits ? (z.units || []).slice() : [];
+      if (U.length) {
+        const ho = x => +(String(x.ho || '').match(/\d+/) || [0])[0];
+        U.sort((a, b) => jibunKey(a.jibun) - jibunKey(b.jibun) || String(a.dongNo || '').localeCompare(String(b.dongNo || ''), 'ko', { numeric: true }) || ho(a) - ho(b));
+        s.set(r++, 0, `${opt.part === 'bldg' ? '' : '3. '}집합건축물 조서 (호별, 건축물대장 전유부)`);
+        s.row(r++, ['연번', '위 치', '건물명', '동', '호', '층', '용 도', '전유면적(㎡)', '', '', '', '비 고']);
+        const u1 = r + 2, u2 = r + 1 + U.length;
+        s.set(r, 0, '계'); s.set(r, 4, `${U.length}호`); s.set(r, 7, F(`SUM(H${u1}:H${u2})`), M2);
+        r++;
+        U.forEach((u, i) => s.row(r++, [i + 1, locOf(u), u.bldgName || '', u.dongNo || '', u.ho || '', u.floor || '', u.use || '', u.excl === '' || u.excl == null ? '' : +u.excl, '', '', '', u.note || ''], 0, [null, null, null, null, null, null, null, M2]));
+        const bySite = [...new Set(U.map(u => `${locOf(u)} ${u.bldgName || ''}`.trim()))];
+        s.set(r++, 0, `※ 집합건축물 ${bySite.length}곳 ${U.length}호: ${bySite.slice(0, 5).join(', ')}${bySite.length > 5 ? ' 외' : ''}`);
+        r++;
+      }
     }
     const sign = opt.sign || {};
     s.set(r++, 0, `작성자 : 직 ${sign.writerTitle || '      '}  성명 ${sign.writer || '            '}  (서명 또는 날인)`);
@@ -318,8 +333,7 @@ const Forms = (() => {
   //   + 집합건축물 조서 + 기초 조사(제5호) + 별표1 요건 검토 + 동의총괄표(제6호, 소유자 수·동의 칸 빈칸)
   function exportZoneDocs(z, fname) {
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheet4(z).ws, '제4호_토지및건축물조서');
-    if (z.units && z.units.length) XLSX.utils.book_append_sheet(wb, sheetUnits(z), '집합건축물조서');
+    XLSX.utils.book_append_sheet(wb, sheet4(z, { withUnits: true }).ws, '제4호_토지및건축물조서');
     XLSX.utils.book_append_sheet(wb, sheet9Frame({ ...z, noRoster: true }), '제9호_토지등소유자명부');
     XLSX.utils.book_append_sheet(wb, sheet5({ ...z, parcels: z.parcels.map(p => ({ ...p })) }), '제5호_기초조사');
     if (z.req && z.req.length) XLSX.utils.book_append_sheet(wb, sheetReq(z), '별표1_요건검토');
@@ -332,10 +346,9 @@ const Forms = (() => {
   const ZONE_DOCS = {
     land: { file: '토지조서(별지제4호)', add: (wb, z) => XLSX.utils.book_append_sheet(wb, sheet4(z, { part: 'land' }).ws, '토지조서') },
     bldg: {
-      file: '건축물조서(별지제4호)',
+      file: '건축물조서(별지제4호, 집합건축물 포함)',
       add: (wb, z) => {
-        XLSX.utils.book_append_sheet(wb, sheet4(z, { part: 'bldg' }).ws, '건축물조서');
-        if (z.units && z.units.length) XLSX.utils.book_append_sheet(wb, sheetUnits(z), '집합건축물조서');
+        XLSX.utils.book_append_sheet(wb, sheet4(z, { part: 'bldg', withUnits: true }).ws, '건축물조서');   // 집합건축물(호별)도 같은 조서 안에
       },
     },
     survey: { file: '기초조사확인내역서(별지제5호)', add: (wb, z) => XLSX.utils.book_append_sheet(wb, sheet5({ ...z, parcels: z.parcels.map(p => ({ ...p })) }), '기초조사확인내역서') },

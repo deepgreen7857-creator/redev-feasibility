@@ -744,7 +744,7 @@ function zoneDocsData() {
       note: [b.noLedger ? '대장 없음 – 무허가 등 확인' : '', b.needUnits && !num(b.units) ? '세대수 확인 필요' : '', !b.ledger && b.auto ? '건축물대장 확인 전(GIS 기준)' : ''].filter(Boolean).join(' · '),
     };
   });
-  const units = (S.exposUnits || []).map(u => ({ dong: dongOf(landOf(u)), jibun: u.jibun, bldgName: u.bldNm || '', use: u.purpose || '', dongNo: u.dong || '', ho: u.ho || '', excl: u.area }));
+  const units = (S.exposUnits || []).map(u => ({ dong: dongOf(landOf(u)), jibun: u.jibun, bldgName: u.bldNm || '', use: u.purpose || '', dongNo: u.dong || '', ho: u.ho || '', floor: u.floor || '', excl: u.area }));
   const sv = Calc.survey(S);
   const years = [...new Set(S.lands.map(l => l.baseYear).filter(Boolean))];
   return {
@@ -757,22 +757,42 @@ function zoneDocsData() {
 // 서식 내려받기. kind: land 토지조서 | bldg 건축물조서 | survey 기초조사·확인 내역서 | owners 토지등소유자 명부
 //   | consent 동의총괄표 | req 요건 검토 | 없으면 전부 한 엑셀로
 const ZONE_DOC_NAMES = { land: '토지조서', bldg: '건축물조서', survey: '기초조사·확인 내역서', owners: '토지등소유자 명부', consent: '동의총괄표', req: '요건 검토' };
-function saveZoneDocs(kind) {
+//  서식은 공부 기준이어야 하므로, 토지대장 면적·건축물대장을 아직 안 받은 필지가 있으면 먼저 자동으로 조회한 뒤 만듦
+let zoneDocsBusy = false;
+async function saveZoneDocs(kind) {
+  if (zoneDocsBusy) return;
   if (!S.lands.length) { alert('토지조서가 비어 있습니다. 2단계에서 구역을 정하고 구역 안 필지·건축물을 불러오세요.'); return; }
   if (!window.XLSX || typeof Forms === 'undefined') { alert('엑셀·서식 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'); return; }
   if (Tabs.survey.stale() && !confirm('조서가 지금 구역이 아니라 예전 구역 기준입니다. 그래도 저장할까요?\n(3단계에 들어가면 지금 구역 기준으로 다시 불러올 수 있습니다)')) return;
-  // 대장 면적이 없는 필지: 조회에 실패한 필지 / 아직 조회하지 않은 필지(이 기능 전에 불러와 저장된 필지)
-  const todoL = Tabs.survey.ledgerTodo(), noLedger = S.buildings.filter(b => b.auto && !b.ledger).length;
-  const names = ls => ls.slice(0, 5).map(l => l.jibun).join(', ') + (ls.length > 5 ? ` 외 ${ls.length - 5}필지` : '');
-  const failed = todoL.filter(l => l.ledgerFail), untried = todoL.filter(l => !l.ledgerFail);
+  const say = t => $$('.zone-docs-msg').forEach(e => { e.textContent = t; });
+  zoneDocsBusy = true;
+  try {
+    // 1) 토지대장 면적을 아직 안 받은 필지
+    if (VWorld.enabled && Tabs.survey.ledgerTodo().some(l => !l.ledgerFail)) {
+      await MapView.fillLedger(Tabs.survey.ledgerTodo(), say);
+    }
+    // 2) 건축물대장을 아직 조회하지 않은 필지 (조회했는데 대장이 없는 필지는 건너뜀)
+    const needBldg = S.lands.some(l => /^\d{19}$/.test(String(l.pnu || '')) && l.ledgerEmpty !== true && !S.buildings.some(b => b.ledger && b.pnu === l.pnu));
+    if (Ledger.enabled && needBldg) {
+      const src = $('#ledgerMsg');
+      const mo = new MutationObserver(() => say(src.textContent));
+      mo.observe(src, { childList: true, characterData: true, subtree: true });
+      say('건축물대장 조회 중…');
+      try { await Ledger.fill(); } finally { mo.disconnect(); }
+    }
+    App.update(true);
+  } finally { zoneDocsBusy = false; }
+
   if (kind) Forms.exportZoneDoc(zoneDocsData(), kind);
   else Forms.exportZoneDocs(zoneDocsData(), `${S.meta.name || '정비구역'}_구역지정서류.xlsx`);
-  const msg = [`${kind ? ZONE_DOC_NAMES[kind] : '구역지정 서류 전체'}를 저장했습니다 (토지 ${S.lands.length}필지 · 건축물 ${S.buildings.length}동).`];
+  const names = ls => ls.slice(0, 5).map(l => l.jibun).join(', ') + (ls.length > 5 ? ` 외 ${ls.length - 5}필지` : '');
+  const failed = Tabs.survey.ledgerTodo();
+  const gis = S.buildings.filter(b => b.auto && !b.ledger && !b.noLedger).length;
+  const msg = [`${kind ? ZONE_DOC_NAMES[kind] : '구역지정 서류 전체'}를 저장했습니다 (토지 ${S.lands.length}필지 · 건축물 ${S.buildings.length}동, 토지대장·건축물대장 기준).`];
   if (!kind || kind === 'owners') msg.push('토지등소유자 명부의 소유자 칸은 등기부등본 등 열람으로 채워 주세요.');
-  if (untried.length) msg.push(`${names(untried)}: 토지대장 면적을 아직 조회하지 않은 필지(예전에 불러와 저장된 필지)라 지도(연속지적) 면적으로 들어갔습니다. 3단계 맨 위 [토지대장 면적 다시 조회]를 누른 뒤 다시 받으세요.`);
-  if (failed.length) msg.push(`${names(failed)}: 토지대장 조회에 실패해 지도(연속지적) 면적으로 들어갔습니다. [토지대장 면적 다시 조회]로 다시 시도하고, 계속 안 되면 분할·합병된 필지인지 토지대장을 확인하세요.`);
-  if (noLedger) msg.push(`건축물 ${noLedger}동은 건축물대장 확인 전(GIS 기준)입니다. 3단계 "건축물대장으로 채우기" 후 다시 저장하면 정확해집니다.`);
-  $$('.zone-docs-msg').forEach(e => { e.textContent = msg.join(' '); });
+  if (failed.length) msg.push(`${names(failed)}: 토지대장 조회에 실패해 지도(연속지적) 면적으로 들어갔습니다. 분할·합병된 필지인지 토지대장을 확인하세요.`);
+  if (gis) msg.push(`건축물 ${gis}동은 건축물대장 조회에 실패해 GIS 자료로 들어갔습니다. 잠시 뒤 다시 받아 보세요.`);
+  say(msg.join(' '));
 }
 
 function saveSurveyXlsx() {
