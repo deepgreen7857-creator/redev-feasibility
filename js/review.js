@@ -2502,6 +2502,7 @@ ${log ? `<section><h2 style="font-size:17px">판단 변경 이력</h2><table><tr
       if (u.member) S.sales.push({ id: uid(), cat: '조합원', name: u.type, units: u.member, area: u.supply, price: Math.round(u.genPy * pp.memberRatio / 1e4) });
       if (u.general) S.sales.push({ id: uid(), cat: '일반', name: u.type, units: u.general, area: u.supply, price: Math.round(u.genPy / 1e4) });
     });
+    S.area.importedKey = zoneKey(S.area.geojson);   // 보낸 토지조서가 이 구역 기준 (3단계 자동 불러오기가 덮어쓰지 않게)
     App.update(true); App.persist && App.persist();
     msg('rvMsg6', `사업성 탭으로 보냄: 토지 ${S.lands.length}필지, 구역 ${fmtN(S.area.drawnArea, 0)}㎡, 분양 ${S.sales.reduce((a, r) => a + r.units, 0)}세대${AU.auto ? '(자동 배분)' : ''}. 3조서·요건 → 7민감도 탭에서 확인하세요(건축물은 3탭 "건축물대장 채우기"로).`);
   }

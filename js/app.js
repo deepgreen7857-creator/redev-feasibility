@@ -117,6 +117,7 @@ const Tabs = {
       $('#siteArea').innerHTML = `${fmt(site)}㎡ <em>${fmt(site / PY)}평</em>`;
       $('#pickBox').hidden = !VWorld.enabled;
       $('#vworldOff').hidden = VWorld.enabled;
+      $('#zoneSyncNote').hidden = !(S.area.geojson && VWorld.enabled && S.area.importedKey !== zoneKey(S.area.geojson));
       $('#btnPick').textContent = MapView.picking ? '필지 선택 끄기' : '필지 선택 켜기';
       $('#btnPick').classList.toggle('on', MapView.picking);
       const picked = S.lands.filter(l => l.geom);
@@ -161,6 +162,62 @@ const Tabs = {
   survey: {
     lands: null,
     buildings: null,
+    declinedKey: '',   // 자동 다시 불러오기를 거절한 구역 (이 구역이면 다시 묻지 않고 경고만)
+
+    // 지금 2단계 구역이 조서를 불러온 구역과 다르면 true
+    stale() {
+      return !!S.area.geojson && S.area.importedKey !== zoneKey(S.area.geojson);
+    },
+
+    // 3단계 진입 시: 구역이 바뀌었으면 필지·건축물을 다시 불러옴
+    //  지도에서 불러온 행이 없으면 바로, 있으면 한 번 물어봄 (직접 입력한 행은 유지)
+    async autoImport() {
+      if (!VWorld.enabled || !this.stale() || MapView.importing) return;
+      const key = zoneKey(S.area.geojson);
+      if (this.declinedKey === key) return;
+      const hasAuto = S.lands.some(l => l.pnu) || S.buildings.some(b => b.auto);
+      if (hasAuto && !confirm('구역이 바뀌었습니다. 조서를 지금 구역 기준으로 다시 불러올까요? (직접 입력한 행은 유지)')) {
+        this.declinedKey = key;
+        this.sync();
+        return;
+      }
+      await this.reimport();
+    },
+
+    async reimport() {
+      this.declinedKey = '';
+      const p = MapView.importArea({ silent: true, msg: $('#surveySyncMsg') });
+      this.sync();   // 불러오는 중 표시
+      await p;
+      this.sync();
+    },
+
+    // 상단 상태 줄
+    sync() {
+      const bar = $('#surveySync');
+      if (!bar) return;
+      let cls = '', html;
+      if (!S.area.geojson) html = '2단계에서 구역을 먼저 그리면 필지·건축물이 자동으로 들어옵니다.';
+      else if (MapView.importing) html = '구역 안 필지 불러오는 중…';
+      else if (!VWorld.enabled) html = '지적 조회를 쓸 수 없어 조서를 직접 입력하거나 CSV로 불러와야 합니다.';
+      else if (this.stale()) {
+        cls = 'warn';
+        html = '<b>2단계 구역이 조서를 불러온 구역과 다릅니다.</b> 아래 조서는 예전 구역 기준입니다. <button type="button" class="btn small" id="btnSurveyReimport">지금 구역으로 다시 불러오기</button>';
+      } else {
+        const n = S.lands.filter(l => l.pnu).length, m = S.buildings.filter(b => b.auto).length;
+        const own = S.lands.length - n + S.buildings.length - m;
+        html = n || m
+          ? `2단계 구역 기준 필지 <b>${fmt(n)}개</b> · 건축물 <b>${fmt(m)}동</b>${S.area.importedAt ? ` (${esc(S.area.importedAt)} 불러옴)` : ''}${own ? ` · 직접 입력 ${fmt(own)}행` : ''}`
+          : own
+            ? `조서 필지 <b>${fmt(S.lands.length)}개</b> · 건축물 <b>${fmt(S.buildings.length)}동</b> (직접 입력하거나 파일에서 불러온 조서)`
+            : '2단계 구역 안에서 불러온 필지가 없습니다. 필지를 추가하거나 CSV를 불러오세요.';
+      }
+      bar.className = 'sync-bar ' + cls;
+      bar.innerHTML = html;
+      const b = $('#btnSurveyReimport');
+      if (b) b.onclick = () => this.reimport();
+    },
+
     render() {
       bindInputs($('#tab-survey'));
       this.lands = makeTable($('#landsTable'), {
@@ -224,6 +281,7 @@ const Tabs = {
     refresh() {
       this.lands && this.lands.refresh();
       this.buildings && this.buildings.refresh();
+      this.sync();
       const sv = Calc.survey(S);
       $('#oldStats').innerHTML = `
         <div><span>건축물</span><b>${fmt(sv.count)}동</b></div>
@@ -429,6 +487,8 @@ const App = {
     $$('#tabs a').forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
     Tabs[tab].render();
     this.kpis();
+    // 3단계에 들어올 때 2단계 구역이 조서를 불러온 구역과 다르면 다시 불러옴
+    if (tab === 'survey') Tabs.survey.autoImport();
   },
 
   go(tab) {
@@ -477,13 +537,15 @@ const App = {
     if (MapView.roughLayer) { MapView.roughLayer.remove(); MapView.roughLayer = null; }
     if (MapView.marker) { MapView.marker.remove(); MapView.marker = null; }
     ['#jibunList', '#jibunBase', '#anchorTarget', '#ovSearchInput', '#searchInput'].forEach(s => { const e = $(s); if (e) e.value = ''; });
-    ['#jibunMsg', '#jibunReport', '#pickMsg', '#refMsg', '#exportMsg', '#ovSearchMsg', '#searchResults'].forEach(s => { const e = $(s); if (e) e.innerHTML = ''; });
+    ['#jibunMsg', '#jibunReport', '#pickMsg', '#surveySyncMsg', '#refMsg', '#exportMsg', '#ovSearchMsg', '#searchResults'].forEach(s => { const e = $(s); if (e) e.innerHTML = ''; });
     this.replaceState(defaultState());
     this.go('overview');
   },
 
   replaceState(next) {
-    S = migrate(mergeDefaults(defaultState(), next));
+    S = adoptZoneKey(next, migrate(mergeDefaults(defaultState(), next)));
+    if ($('#surveySyncMsg')) $('#surveySyncMsg').textContent = '';   // 다른 작업의 불러오기 결과 문구는 지움
+    Tabs.survey.declinedKey = '';
     saveState();
     bindInputs();
     if (MapView.map) MapView.load();

@@ -117,7 +117,9 @@ function defaultState() {
     version: 2,
     // zoningManual/locationManual: 사용자가 직접 고친 값이면 자동 입력으로 덮어쓰지 않음
     meta: { name: '새 정비사업', type: 'redevelopment', location: '', zoning: '', memo: '', zoningList: [], zoningManual: false, locationManual: false },
-    area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'drawn', center: [37.5665, 126.978], zoom: 16 },
+    // importedKey: 조서(필지·건축물)를 마지막으로 불러온 구역의 지문(zoneKey), importedAt: 그 시각
+    //  지금 구역의 지문과 다르면 3단계에 들어갈 때 다시 불러옴
+    area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'drawn', center: [37.5665, 126.978], zoom: 16, importedKey: '', importedAt: '' },
     // 연면적 = (구역면적 − 정비기반시설) × 용적률 × 연면적 배율
     // infraMode: 'auto' 토지조서 지목(도로·공원 등) 합계 | 'ratio' 구역면적의 infraRatio% | 'area' infraArea㎡ 직접 입력
     plan: { far: 250, gfaFactor: 1.45, gfaManual: 0, infraMode: 'auto', infraRatio: 20, infraArea: 0 },
@@ -160,10 +162,17 @@ function migrate(s) {
   return s;
 }
 
+// 구역 지문이 없던 예전 파일: 들어 있는 조서를 지금 구역 기준으로 보고, 3단계 자동 불러오기가 끼어들지 않게 함
+function adoptZoneKey(raw, s) {
+  const had = raw && raw.area && typeof raw.area.importedKey === 'string';
+  if (!had && s.area.geojson) s.area.importedKey = zoneKey(s.area.geojson);
+  return s;
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return migrate(mergeDefaults(defaultState(), JSON.parse(raw)));
+    if (raw) { const v = JSON.parse(raw); return adoptZoneKey(v, migrate(mergeDefaults(defaultState(), v))); }
   } catch (e) { /* 저장소를 쓸 수 없으면 새로 시작 */ }
   return defaultState();
 }
@@ -199,6 +208,7 @@ function sampleState() {
     },
   };
   s.area.drawnArea = window.turf ? turf.area(s.area.geojson) : 19800;
+  s.area.importedKey = zoneKey(s.area.geojson);   // 예시 조서는 이 구역 기준 (3단계 자동 불러오기 안 함)
 
   for (let i = 0; i < 64; i++) {
     const bon = 100 + i;

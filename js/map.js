@@ -329,13 +329,18 @@ const MapView = {
   },
 
   // 구역계 안의 필지·건축물을 한꺼번에 토지조서·건축물조서로 불러오기
-  async importArea() {
-    const msg = $('#pickMsg');
-    if (!S.area.geojson) { alert('먼저 지도에 구역계를 그려 주세요.'); return; }
+  //  opts.silent: 이미 불러온 행이 있어도 확인 창을 띄우지 않음 (3단계 자동 불러오기·buildZone처럼 앞에서 이미 물은 경우)
+  //  opts.msg: 진행 메시지를 쓸 요소 (기본은 2단계 #pickMsg). Leaflet 지도 없이도 돎 (turf·브이월드만 씀)
+  //  성공하면 true
+  async importArea(opts = {}) {
+    const msg = opts.msg || $('#pickMsg') || {};
+    if (!S.area.geojson) { alert('먼저 지도에 구역계를 그려 주세요.'); return false; }
+    if (this.importing) return false;
     const autoLands = S.lands.filter(l => l.pnu).length;
     const autoBldgs = S.buildings.filter(b => b.auto).length;
-    if ((autoLands || autoBldgs) && !confirm(`이미 지도에서 불러온 필지 ${autoLands}개, 건축물 ${autoBldgs}동이 있습니다. 구역계 기준으로 다시 불러올까요?\n(직접 입력한 행은 그대로 둡니다)`)) return;
+    if (!opts.silent && (autoLands || autoBldgs) && !confirm(`이미 지도에서 불러온 필지 ${autoLands}개, 건축물 ${autoBldgs}동이 있습니다. 구역계 기준으로 다시 불러올까요?\n(직접 입력한 행은 그대로 둡니다)`)) return false;
     const zone = S.area.geojson;
+    this.importing = true;
     const box = `BOX(${turf.bbox(zone).join(',')})`;
     const inZone = f => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), zone); } catch (e) { return false; } };
     try {
@@ -359,10 +364,16 @@ const MapView = {
       msg.textContent = `필지 ${parcels.length}개, 건축물 ${bldgs.length}동을 불러왔습니다.`
         + (need ? ` 공동주택 ${need}동은 세대수를 확인해 입력하세요.` : '')
         + (noInfo ? ` ${noInfo}동은 용도·사용승인일 정보가 없어 건축물대장 확인이 필요합니다.` : '');
+      S.area.importedKey = zoneKey(zone);
+      S.area.importedAt = new Date().toLocaleString('sv-SE').slice(0, 16);
       this.drawParcels();
       App.update(true);
+      return true;
     } catch (e) {
       msg.textContent = '불러오기에 실패했습니다: ' + e.message;
+      return false;
+    } finally {
+      this.importing = false;
     }
   },
 
@@ -736,7 +747,7 @@ const MapView = {
     // 조서: 구역 안 필지·건축물 불러오기 (확인 창 없이)
     S.lands = S.lands.filter(l => !l.pnu);
     S.buildings = S.buildings.filter(b => !b.auto);
-    await this.importArea();
+    await this.importArea({ silent: true });   // 성공하면 importedKey도 이 구역으로 맞춰짐
     // 일부만 편입된 도로는 편입 면적으로 조서에 넣음
     partial.filter(p => p.isPart).forEach(p => {
       const land = landFromFeature(p.f);

@@ -242,6 +242,12 @@ body.map-full-open { overflow: hidden; }
 .map-msg[hidden] { display: none; }
 .pick-box { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
 .pick-box .btn { margin: 4px 4px 0 0; }
+/* 3단계 상단: 조서가 2단계 구역 기준인지 */
+.sync-box { margin: -.4rem 0 1rem; }
+.sync-bar { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--soft, rgba(127,127,127,.08)); }
+.sync-bar.warn { background: var(--warn-soft); color: var(--ink); border: 1px solid var(--warn); }
+.sync-bar .btn { margin-left: 6px; }
+#surveySyncMsg:empty { display: none; }
 .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .pick-count { font-size: .85rem; font-weight: 500; margin: 8px 0 0; }
 .leaflet-control-layers { font: inherit; font-size: .8rem; }

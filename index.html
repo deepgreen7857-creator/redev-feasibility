@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=51">
+<link rel="stylesheet" href="css/style.css?v=52">
 </head>
 <body>
 
@@ -188,6 +188,7 @@
         <h3>토지·건축물 자동 입력</h3>
         <p class="note">구역계를 그린 뒤 <b>구역 안 필지·건축물 불러오기</b>를 누르면 토지조서(면적·공시지가)와 건축물조서(용도·구조·사용승인연도·연면적)가 한 번에 채워집니다. 필지를 하나씩 고르려면 필지 선택을 켜고 지도를 누르세요.</p>
         <button class="btn small primary" id="btnImportArea">구역 안 필지·건축물 불러오기</button>
+        <p class="note warn" id="zoneSyncNote" hidden>다음 단계로 가면 이 구역 기준으로 조서를 불러옵니다.</p>
         <label class="radio"><input type="checkbox" id="pickZone" checked> 필지를 누르면 구역계에도 넣고 빼기</label>
         <button class="btn small" id="btnPick">필지 선택 켜기</button>
         <button class="btn small" id="btnParcelsToArea">선택 필지 → 구역계</button>
@@ -279,6 +280,7 @@
 <section class="panel" id="tab-survey" hidden>
   <h2>토지·건축물 조서와 요건 검토</h2>
   <p class="lead">조서를 입력하거나 엑셀에서 CSV로 저장해 불러오면, 노후도와 사업 유형별 요건을 자동으로 판단합니다.</p>
+  <div class="sync-box"><p id="surveySync" class="sync-bar" aria-live="polite"></p><p class="note" id="surveySyncMsg" aria-live="polite"></p></div>
 
   <div class="results-grid">
     <div class="card"><h3>노후도 분석</h3>
@@ -445,19 +447,19 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=51"></script>
-<script src="js/util.js?v=51"></script>
-<script src="js/state.js?v=51"></script>
-<script src="js/calc.js?v=51"></script>
-<script src="js/map.js?v=51"></script>
-<script src="js/ledger.js?v=51"></script>
-<script src="js/pdfsave.js?v=51"></script>
-<script src="js/overlay.js?v=51"></script>
-<script src="js/export.js?v=51"></script>
-<script src="js/roadcut.js?v=51"></script>
-<script src="js/assume.js?v=51"></script>
-<script src="js/app.js?v=51"></script>
-<script src="js/forms.js?v=51"></script>
-<script src="js/review.js?v=51"></script>
+<script src="js/config.js?v=52"></script>
+<script src="js/util.js?v=52"></script>
+<script src="js/state.js?v=52"></script>
+<script src="js/calc.js?v=52"></script>
+<script src="js/map.js?v=52"></script>
+<script src="js/ledger.js?v=52"></script>
+<script src="js/pdfsave.js?v=52"></script>
+<script src="js/overlay.js?v=52"></script>
+<script src="js/export.js?v=52"></script>
+<script src="js/roadcut.js?v=52"></script>
+<script src="js/assume.js?v=52"></script>
+<script src="js/app.js?v=52"></script>
+<script src="js/forms.js?v=52"></script>
+<script src="js/review.js?v=52"></script>
 </body>
 </html>

@@ -230,3 +230,26 @@ function makeTable(host, cfg) {
   render();
   return { render, refresh };
 }
+
+// 구역 지문: 좌표만(소수 6자리 반올림, 링의 닫는 점 제외)으로 만든 짧은 해시
+//  Leaflet toGeoJSON도 소수 6자리로 반올림하므로 지도에 다시 그렸다 저장해도 같은 값이 나옴
+function zoneKey(gj) {
+  if (!gj) return '';
+  const g = gj.type === 'Feature' ? gj.geometry : gj;
+  if (!g || !g.coordinates) return '';
+  const r = v => Math.round(v * 1e6) / 1e6;
+  const ring = c => {
+    const pts = c.map(p => r(p[0]) + ',' + r(p[1]));
+    if (pts.length > 1 && pts[0] === pts[pts.length - 1]) pts.pop();
+    return pts.join(' ');
+  };
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+  const s = polys.map(p => p.map(ring).join('|')).join('/');
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 16777619) >>> 0;
+    h2 = Math.imul(h2 + c, 2246822519) >>> 0;
+  }
+  return h1.toString(36) + h2.toString(36);
+}
