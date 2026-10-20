@@ -121,8 +121,12 @@ const Tabs = {
       $('#zoneSyncNote').hidden = !(S.area.geojson && VWorld.enabled && S.area.importedKey !== zoneKey(S.area.geojson));
       $('#btnPick').textContent = MapView.picking ? '필지 선택 끄기' : '필지 선택 켜기';
       $('#btnPick').classList.toggle('on', MapView.picking);
-      const picked = S.lands.filter(l => l.geom);
-      $('#pickCount').textContent = `지도에서 선택한 필지 ${picked.length}개 · ${fmt(picked.reduce((a, l) => a + num(l.area), 0), 1)}㎡`;
+      MapView.updateInZone();
+      const picked = S.lands.filter(l => l.geom), sel = picked.filter(l => !l.inZone);
+      $('#pickCount').textContent = `지도 필지 ${picked.length}개 · 구역에 합쳐짐 ${picked.length - sel.length}개 · 선택만 됨 ${sel.length}개`;
+      $('#btnParcelsToArea').textContent = `선택 필지 ${sel.length}개 → 구역계로 합치기`;
+      $('#btnParcelsToArea').disabled = !sel.length;
+      $('#showParcels').checked = !!S.area.showParcels;
       this.summary();
     },
     // 토지대장 합계(조서 편입면적)와 연속지적 도형(그린 구역) 면적 차이
@@ -862,6 +866,7 @@ function boot() {
   });
   $$('.step-nav [data-goto]').forEach(b => { b.onclick = () => App.go(b.dataset.goto); });
   $('#btnParcelsToArea').onclick = () => MapView.parcelsToArea();
+  $('#showParcels').onchange = e => { S.area.showParcels = e.target.checked; MapView.drawParcels(); App.persist(); };
   $$('[data-csv]').forEach(b => { b.onclick = () => csvAction(b.dataset.csv, b.dataset.act); });
   $('#btnSortJibun').onclick = sortByJibun;
   $('#btnLedger').onclick = async () => { await Ledger.fill(); App.update(true); };

@@ -120,7 +120,7 @@ function defaultState() {
     meta: { name: '새 정비사업', type: 'redevelopment', location: '', zoning: '', memo: '', zoningList: [], zoningManual: false, locationManual: false },
     // importedKey: 조서(필지·건축물)를 마지막으로 불러온 구역의 지문(zoneKey), importedAt: 그 시각
     //  지금 구역의 지문과 다르면 3단계에 들어갈 때 다시 불러옴
-    area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'ledger', center: [37.5665, 126.978], zoom: 16, importedKey: '', importedAt: '' },
+    area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'ledger', center: [37.5665, 126.978], zoom: 16, importedKey: '', importedAt: '', showParcels: false },
     // mode: 'ledger' 토지대장 면적 합계(조서 편입면적, 조서가 없으면 그린 면적) | 'drawn' 연속지적 도형 면적(참고) | 'manual' 직접 입력
     // 연면적 = (구역면적 − 정비기반시설) × 용적률 × 연면적 배율
     // infraMode: 'auto' 토지조서 지목(도로·공원 등) 합계 | 'ratio' 구역면적의 infraRatio% | 'area' infraArea㎡ 직접 입력

@@ -44,6 +44,8 @@ const Export = {
     const ex = 40 / 88000, ey = 40 / 111000;
     const pbox = `BOX(${[minX - mx - ex, minY - my - ey, maxX + mx + ex, maxY + my + ey].join(',')})`;
     const inZone = f => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), zone); } catch (e) { return false; } };
+    // 필지는 지도와 같이 구역과 50% 이상 겹치면 구역 안 (한 점만 보면 경계가 조금 어긋난 필지를 놓침)
+    const parcelIn = f => { try { const x = turf.intersect(f, zone); return x ? turf.area(x) / turf.area(f) >= 0.5 : false; } catch (e) { return inZone(f); } };
 
     let parcels = [], bldgs = [];
     if (VWorld.enabled) {
@@ -61,7 +63,7 @@ const Export = {
       zone: proj(this.rings(zone)),
       parcels: parcels.map(f => {
         const sp = splitJibun(f.properties && f.properties.jibun);
-        return { rings: proj(this.rings(f.geometry)), jibun: sp.no, jimok: sp.jimok, inZone: inZone(f), area: turf.area(f), label: labelAt(f) };
+        return { rings: proj(this.rings(f.geometry)), jibun: sp.no, jimok: sp.jimok, inZone: parcelIn(f), area: turf.area(f), label: labelAt(f) };
       }),
       buildings: bldgs.map(f => {
         const b = buildingFromFeature(f);
@@ -242,7 +244,9 @@ const Export = {
     });
     // 필지 경계
     // 구역 밖 필지선도 건물과 구분되게 충분히 진하게
-    d.parcels.forEach(p => el(`<path d="${path(p.rings)}" fill="none" stroke="${p.inZone ? '#222' : '#777'}" stroke-width="${(p.inZone ? 0.18 : 0.14) * u}"/>`));
+    //  기본은 구역 안 필지선을 빼서 구역계 외곽선만 보이게 ('필지 경계 포함'을 켜면 모두)
+    const withParcels = $('#exportParcels') ? $('#exportParcels').checked : false;
+    d.parcels.filter(p => withParcels || !p.inZone).forEach(p => el(`<path d="${path(p.rings)}" fill="none" stroke="${p.inZone ? '#222' : '#777'}" stroke-width="${(p.inZone ? 0.18 : 0.14) * u}"/>`));
     // 구역계
     el(`<path d="${path(d.zone)}" fill="none" stroke="#d40000" stroke-width="${0.6 * u}" stroke-linejoin="round"/>`);
     // 지번 (도면에서 너무 작은 필지는 생략)
@@ -386,8 +390,9 @@ const Export = {
       const text = (layer, p, h, s) => add(0, 'TEXT', 8, layer, 10, n(p[0]), 20, n(p[1]), 30, '0.0', 40, h, 1, enc(s), 72, 1, 73, 2, 11, n(p[0]), 21, n(p[1]), 31, '0.0');
 
       d.zone.forEach(r => poly('ZONE', r));
+      const withParcels = $('#exportParcels') ? $('#exportParcels').checked : false;   // 기본은 구역 안 필지선 없이 구역계만
       d.parcels.forEach(p => {
-        p.rings.forEach(r => poly(p.inZone ? 'PARCEL' : 'PARCEL_OUTSIDE', r));
+        if (withParcels || !p.inZone) p.rings.forEach(r => poly(p.inZone ? 'PARCEL' : 'PARCEL_OUTSIDE', r));
         if (p.label && p.jibun) text('JIBUN', p.label, '1.0', p.jibun);
       });
       d.buildings.forEach(b => {

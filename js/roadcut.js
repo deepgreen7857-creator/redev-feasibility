@@ -140,7 +140,7 @@ const LotCut = {
       merged = polys.length === 1 ? turf.polygon(polys[0]) : turf.multiPolygon(polys);
     }
     MapView.items.clearLayers();
-    if (merged) L.geoJSON(merged, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => MapView.items.addLayer(l));
+    if (merged) L.geoJSON(merged, { style: ZONE_STYLE }).eachLayer(l => MapView.items.addLayer(l));
     MapView.save();
 
     // 토지조서: 편입 조각 면적으로, 건축물은 편입 조각 위에 있는 것만
@@ -459,7 +459,7 @@ const RoadCut = {
     merged = polys.length === 1 ? turf.polygon(polys[0]) : turf.multiPolygon(polys);
 
     MapView.items.clearLayers();
-    L.geoJSON(merged, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => MapView.items.addLayer(l));
+    L.geoJSON(merged, { style: ZONE_STYLE }).eachLayer(l => MapView.items.addLayer(l));
     MapView.save();
 
     // 토지조서: 일부 편입은 편입 면적으로, 뺀 필지는 조서에서 빼고, 새로 넣은 작은 필지는 건축물도

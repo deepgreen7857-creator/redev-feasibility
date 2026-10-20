@@ -200,6 +200,16 @@ function safeUnion(fs) {
   return fs[0];
 }
 
+// 구역계에 남은 10㎡ 미만 구멍(이웃 필지 경계·좌표 반올림 틈)을 메움 → 구역 안에 중간선이 생기지 않게
+function fillSmallHoles(f) {
+  if (!f || !f.geometry || !window.turf) return f;
+  const g = f.geometry;
+  const fill = p => [p[0], ...p.slice(1).filter(h => turf.area(turf.polygon([h])) >= 10)];
+  if (g.type === 'Polygon') g.coordinates = fill(g.coordinates);
+  else if (g.type === 'MultiPolygon') g.coordinates = g.coordinates.map(fill);
+  return f;
+}
+
 // 연속지적도 객체 → 토지조서 한 행. inArea: 구역에 들어간 연속지적 면적(없으면 전체 편입)
 //  면적은 우선 연속지적 기준으로 두고, MapView.fillLedger가 토지대장 면적으로 바꿈
 function landFromFeature(f, inArea) {
@@ -227,6 +237,9 @@ function splitJibun(s) {
 }
 
 // 구역계 지도 (Leaflet + Leaflet.draw)
+// 구역계 선 모양 (주황 외곽선, 옅은 채움)
+const ZONE_STYLE = { color: '#d9480f', weight: 3, fillOpacity: 0.08 };
+
 const MapView = {
   map: null,
   items: null,
@@ -316,14 +329,18 @@ const MapView = {
     }
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#map').classList.contains('map-full')) this.toggleFull(); });
 
+    // 층 순서: 선택만 된 필지(390) < 구역계(overlayPane 400) < 합쳐진 필지 마우스 영역(410, 평소 투명)
+    //  필지를 다시 그려도 필지선이 구역계를 가리지 않음 (구역계는 leaflet.draw 편집 때문에 기본 overlayPane에 둠)
+    this.map.createPane('parcelPane').style.zIndex = 390;
+    this.map.createPane('parcelHitPane').style.zIndex = 410;
     this.parcels = L.featureGroup().addTo(this.map);
     this.items = new L.FeatureGroup().addTo(this.map);
     // showArea는 leaflet.draw 1.0.4 + Leaflet 1.9 조합에서 오류가 나서 끔. 면적은 turf로 계산.
     this.map.addControl(new L.Control.Draw({
       position: 'topleft',
       draw: {
-        polygon: { allowIntersection: false, showArea: false, shapeOptions: { color: '#d9480f', weight: 3 } },
-        rectangle: { showArea: false, shapeOptions: { color: '#d9480f', weight: 3 } },
+        polygon: { allowIntersection: false, showArea: false, shapeOptions: ZONE_STYLE },
+        rectangle: { showArea: false, shapeOptions: ZONE_STYLE },
         polyline: false, circle: false, marker: false, circlemarker: false,
       },
       edit: { featureGroup: this.items },
@@ -357,7 +374,7 @@ const MapView = {
     if (!this.map) return;
     this.items.clearLayers();
     if (S.area.geojson) {
-      L.geoJSON(S.area.geojson, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => this.items.addLayer(l));
+      L.geoJSON(S.area.geojson, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l));
       this.map.fitBounds(this.items.getBounds(), { padding: [30, 30] });
     } else {
       this.map.setView(S.area.center, S.area.zoom);
@@ -366,13 +383,53 @@ const MapView = {
   },
 
   // 토지조서에 들어간 필지 중 경계가 있는 것을 지도에 표시
+  // 필지가 구역계와 50% 이상 겹치면 '구역에 합쳐짐'(inZone), 아니면 '선택만 됨'. 구역이 바뀐 필지만 다시 계산
+  updateInZone() {
+    const zone = S.area.geojson, key = zone ? zoneKey(zone) : '';
+    S.lands.forEach(l => {
+      if (!l.geom) { delete l.inZone; delete l.inZoneKey; return; }
+      if (l.inZoneKey === key && typeof l.inZone === 'boolean') return;
+      let r = 0;
+      if (zone && window.turf) {
+        const f = { type: 'Feature', properties: {}, geometry: l.geom };
+        try { const x = turf.intersect(f, zone); r = x ? turf.area(x) / turf.area(f) : 0; }
+        catch (e) { try { r = turf.booleanPointInPolygon(turf.pointOnFeature(f), zone) ? 1 : 0; } catch (e2) { r = 0; } }
+      }
+      l.inZone = r >= 0.5;
+      l.inZoneKey = key;
+    });
+  },
+
+  // 구역계 모양: 주황 외곽선 하나 (필지 사이 중간선 없음)
+  styleZone(weight = 3) {
+    if (this.items) this.items.eachLayer(l => l.setStyle && l.setStyle({ ...ZONE_STYLE, weight }));
+  },
+
+  // 합친 직후 구역계 외곽선을 0.6초 굵게 깜빡임
+  flashZone() {
+    [7, 3, 7, 3].forEach((w, i) => setTimeout(() => this.styleZone(w), i * 150));
+  },
+
+  // 토지조서 필지 그리기
+  //  선택만 됨: 파란 테두리·채움 / 구역에 합쳐짐: 선 없음(필지 경계 보기를 켜면 희미한 점선), 마우스를 올리면 그 필지만 점선 강조
   drawParcels() {
+    this.updateInZone();
     if (!this.parcels) return;
     this.parcels.clearLayers();
+    const faint = { color: '#2563eb', weight: 1, dashArray: '3 3', opacity: 0.4, fill: true, fillOpacity: 0 };
+    const hidden = { color: '#2563eb', weight: 1, opacity: 0, fill: true, fillOpacity: 0 };
+    const hover = { color: '#1d4ed8', weight: 2.5, dashArray: '5 4', opacity: 0.95, fill: true, fillOpacity: 0.12 };
     S.lands.filter(l => l.geom).forEach(l => {
-      L.geoJSON(l.geom, { style: { color: '#2563eb', weight: 2, fillOpacity: 0.18 } })
-        .bindTooltip(`${l.jibun} ${l.jimok} · ${fmt(num(l.area), 1)}㎡`)
-        .addTo(this.parcels);
+      const tip = `${esc(l.jibun)} ${esc(l.ledgerJimok || l.jimok)} · ${num(l.ledgerArea) > 0 ? `대장 ${fmt(l.ledgerArea, 1)}㎡` : `${fmt(num(l.area), 1)}㎡`}`;
+      if (!l.inZone) {
+        L.geoJSON(l.geom, { pane: 'parcelPane', style: { color: '#2563eb', weight: 2, fillOpacity: 0.18 } }).bindTooltip(tip).addTo(this.parcels);
+        return;
+      }
+      const base = S.area.showParcels ? faint : hidden;
+      const g = L.geoJSON(l.geom, { pane: 'parcelHitPane', style: base }).bindTooltip(tip, { sticky: true });
+      g.on('mouseover', () => g.setStyle(hover));
+      g.on('mouseout', () => g.setStyle(base));
+      g.addTo(this.parcels);
     });
   },
 
@@ -388,6 +445,7 @@ const MapView = {
   },
 
   save() {
+    this.styleZone();
     const layers = this.items.getLayers();
     if (!layers.length) {
       S.area.geojson = null;
@@ -544,6 +602,18 @@ const MapView = {
         msg.innerHTML = `<b class="warn">작은 필지(${esc(no)}, ${fmt(fa, 1)}㎡)라 크게 확대했습니다.</b> 빨간 점선이 맞는 필지면 다시 눌러 주세요.`;
         return;
       }
+      const zoneOn = !$('#pickZone') || $('#pickZone').checked;
+      // 구역에 넣고 빼기가 켜져 있고, 조서에는 없지만 구역(손으로 그린 구역 등) 안에 든 필지 → 구역에서 뺌
+      if (zoneOn && idx < 0 && S.area.geojson) {
+        let r = 0;
+        try { const x = turf.intersect(f, S.area.geojson); r = x ? turf.area(x) / fa : 0; } catch (e) { r = 0; }
+        if (r >= 0.5) {
+          this.toggleZoneParcel(f, false);
+          msg.textContent = `${no} 필지를 구역계에서 뺐습니다.`;
+          this.save();
+          return;
+        }
+      }
       if (idx >= 0) {
         S.lands.splice(idx, 1);
         S.buildings = S.buildings.filter(b => !(b.auto && b.pnu === p.pnu));
@@ -569,7 +639,7 @@ const MapView = {
         if (!S.meta.zoning || S.meta.zoningAuto) Auto.zoning(latlng.lat, latlng.lng);
       }
       // 구역계에도 넣고 빼기
-      if (!$('#pickZone') || $('#pickZone').checked) {
+      if (zoneOn) {
         // 조서와 구역이 함께 바뀌므로, 원래 맞아 있었으면(또는 구역이 없었으면) 계속 맞는 것으로 봄
         const inSync = !S.area.geojson || S.area.importedKey === zoneKey(S.area.geojson);
         this.toggleZoneParcel(f, idx < 0);
@@ -586,13 +656,13 @@ const MapView = {
   toggleZoneParcel(f, add) {
     const zone = S.area.geojson;
     let next = null;
-    if (add) next = zone ? safeUnion([zone, f]) : f;
+    if (add) next = zone ? fillSmallHoles(safeUnion([zone, f])) : f;
     else if (zone) {
       try { next = turf.difference(zone, f); }
       catch (e) { try { next = turf.difference(turf.truncate(zone, { precision: 7 }), turf.truncate(f, { precision: 7 })); } catch (e2) { next = zone; } }
     }
     this.items.clearLayers();
-    if (next) L.geoJSON(next, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => this.items.addLayer(l));
+    if (next) L.geoJSON(next, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l));
     const layers = this.items.getLayers();
     S.area.geojson = layers.length ? layers[0].toGeoJSON() : null;
     S.area.drawnArea = S.area.geojson ? turf.area(S.area.geojson) : 0;
@@ -617,7 +687,7 @@ const MapView = {
     const merged = safeUnion(polys);
     if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; }
     this.items.clearLayers();
-    L.geoJSON(merged, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => this.items.addLayer(l));
+    L.geoJSON(merged, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l));
     this.map.fitBounds(this.items.getBounds(), { padding: [30, 30] });
     this.save();
     $('#jibunMsg').textContent = `구역계 파일을 불러왔습니다 (${fmt(turf.area(merged))}㎡). 필지 경계에 맞추려면 "그린 구역을 필지에 맞추기"를 누르세요.`;
@@ -658,15 +728,24 @@ const MapView = {
   },
 
   // 선택한 필지들을 합쳐 구역계로
+  // 선택만 된 필지(파란 필지)를 지금 구역계에 합침 → 필지 사이 중간선 없이 주황 외곽선 하나로
   parcelsToArea() {
-    const polys = S.lands.filter(l => l.geom).map(l => ({ type: 'Feature', properties: {}, geometry: l.geom }));
-    if (!polys.length) { alert('먼저 "필지 선택"을 켜고 지도에서 필지를 눌러 추가하세요.'); return; }
-    if (S.area.geojson && !confirm('지금 그려진 구역계를 선택한 필지 경계로 바꿀까요?')) return;
-    const merged = safeUnion(polys);
+    this.updateInZone();
+    const sel = S.lands.filter(l => l.geom && !l.inZone);
+    if (!sel.length) { alert('구역계에 합칠 선택 필지가 없습니다. "필지 선택"을 켜고 지도에서 필지를 눌러 추가하세요.'); return; }
+    const polys = sel.map(l => ({ type: 'Feature', properties: {}, geometry: l.geom }));
+    const inSync = !S.area.geojson || S.area.importedKey === zoneKey(S.area.geojson);
+    const merged = fillSmallHoles(safeUnion(S.area.geojson ? [S.area.geojson, ...polys] : polys));
+    if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; }
     this.items.clearLayers();
-    L.geoJSON(merged, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => this.items.addLayer(l));
+    L.geoJSON(merged, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l));
     this.map.fitBounds(this.items.getBounds(), { padding: [30, 30] });
-    this.save();
+    this.save();   // 구역 저장 → 다시 그리면 합친 필지의 파란 선이 사라짐
+    if (inSync) { S.area.importedKey = zoneKey(S.area.geojson); App.update(true); }   // 조서는 이미 이 필지들을 담고 있음
+    this.flashZone();
+    const names = sel.map(l => l.jibun);
+    const tot = sel.reduce((a, l) => a + (num(l.ledgerArea) > 0 ? num(l.ledgerArea) : num(l.area)), 0);
+    $('#pickMsg').textContent = `${names.slice(0, 5).join(', ')}${names.length > 5 ? ` 외 ${names.length - 5}필지` : ''} → 구역계로 합침 (${names.length}필지 · 대장 합계 ${fmt(tot, 1)}㎡)`;
   },
 
   // 지번 목록 → 필지를 찾아 합쳐서 구역계를 그리고, 조서까지 불러옴
@@ -882,7 +961,7 @@ const MapView = {
     else if (g.type === 'MultiPolygon') g.coordinates = g.coordinates.map(fill);
 
     this.items.clearLayers();
-    L.geoJSON(merged, { style: { color: '#d9480f', weight: 3 } }).eachLayer(l => this.items.addLayer(l));
+    L.geoJSON(merged, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l));
     this.map.fitBounds(this.items.getBounds(), { padding: [30, 30] });
     this.save();
     // 조서: 구역 안 필지·건축물 불러오기 (확인 창 없이)

@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=53">
+<link rel="stylesheet" href="css/style.css?v=54">
 </head>
 <body>
 
@@ -190,9 +190,10 @@
         <p class="note">구역계를 그린 뒤 <b>구역 안 필지·건축물 불러오기</b>를 누르면 토지조서(면적·공시지가)와 건축물조서(용도·구조·사용승인연도·연면적)가 한 번에 채워집니다. 필지를 하나씩 고르려면 필지 선택을 켜고 지도를 누르세요.</p>
         <button class="btn small primary" id="btnImportArea">구역 안 필지·건축물 불러오기</button>
         <p class="note warn" id="zoneSyncNote" hidden>다음 단계로 가면 이 구역 기준으로 조서를 불러옵니다.</p>
-        <label class="radio"><input type="checkbox" id="pickZone" checked> 필지를 누르면 구역계에도 넣고 빼기</label>
+        <label class="radio"><input type="checkbox" id="pickZone"> 필지를 누르면 구역계에도 넣고 빼기</label>
+        <label class="radio"><input type="checkbox" id="showParcels"> 필지 경계 보기 (구역에 합쳐진 필지를 희미한 점선으로)</label>
         <button class="btn small" id="btnPick">필지 선택 켜기</button>
-        <button class="btn small" id="btnParcelsToArea">선택 필지 → 구역계</button>
+        <button class="btn small" id="btnParcelsToArea">선택 필지 → 구역계로 합치기</button>
         <button class="btn small ghost danger" id="btnClearParcels">불러온 필지·건축물 지우기</button>
         <p class="pick-count" id="pickCount"></p>
         <p class="note" id="pickMsg" aria-live="polite"></p>
@@ -242,6 +243,7 @@
         <p class="note">필지·지번·건물·구역계를 모두 선으로 그려 크게 출력해도 깨지지 않습니다. 노후 건물은 색으로 구분됩니다.</p>
         <label class="inline-field">용지 <select id="exportPaper"><option>A4</option><option>A3</option><option>A2</option></select></label>
         <label class="radio"><input type="checkbox" id="alignBldg" checked> 건물 위치를 지적 경계에 맞춰 보정</label>
+        <label class="radio"><input type="checkbox" id="exportParcels"> 필지 경계 포함 (끄면 구역 안은 구역계 외곽선만)</label>
         <button class="btn small primary" id="btnPdf">도면 PDF</button>
         <button class="btn small" id="btnDxf">CAD 도면 (DXF)</button>
         <button class="btn small" id="btnGeojson">GeoJSON 저장</button>
@@ -448,19 +450,19 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=53"></script>
-<script src="js/util.js?v=53"></script>
-<script src="js/state.js?v=53"></script>
-<script src="js/calc.js?v=53"></script>
-<script src="js/map.js?v=53"></script>
-<script src="js/ledger.js?v=53"></script>
-<script src="js/pdfsave.js?v=53"></script>
-<script src="js/overlay.js?v=53"></script>
-<script src="js/export.js?v=53"></script>
-<script src="js/roadcut.js?v=53"></script>
-<script src="js/assume.js?v=53"></script>
-<script src="js/app.js?v=53"></script>
-<script src="js/forms.js?v=53"></script>
-<script src="js/review.js?v=53"></script>
+<script src="js/config.js?v=54"></script>
+<script src="js/util.js?v=54"></script>
+<script src="js/state.js?v=54"></script>
+<script src="js/calc.js?v=54"></script>
+<script src="js/map.js?v=54"></script>
+<script src="js/ledger.js?v=54"></script>
+<script src="js/pdfsave.js?v=54"></script>
+<script src="js/overlay.js?v=54"></script>
+<script src="js/export.js?v=54"></script>
+<script src="js/roadcut.js?v=54"></script>
+<script src="js/assume.js?v=54"></script>
+<script src="js/app.js?v=54"></script>
+<script src="js/forms.js?v=54"></script>
+<script src="js/review.js?v=54"></script>
 </body>
 </html>
