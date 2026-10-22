@@ -175,7 +175,7 @@ async function fetchDetail({ cltrMngNo, pbctCdtnNo, serviceKey, quota, fetcher }
 }
 
 // 전체 수집. mode: 'daily'(어제 이후 수정분) | 'full'(전부)
-async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log = console.log, maxDetails = 300, deadline = Infinity }) {
+async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log = console.log, maxDetails = 300, deadline = Infinity, enrich }) {
   const since = mode === 'daily' ? ymd(new Date(Date.now() - 2 * 86400e3)) : null;
   const stats = { pages: 0, rows: 0, saved: 0, details: 0, errors: [] };
   const fresh = [];
@@ -209,7 +209,12 @@ async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log =
     if (Date.now() > deadline) return { ...stats, stopped: 'time' };
     try {
       const detail = await fetchDetail({ cltrMngNo: item.cltrMngNo, pbctCdtnNo: item.pbctCdtnNo, serviceKey, quota, fetcher });
-      if (detail) { await save([{ id: item.id, detail, detailAt: new Date().toISOString() }], { merge: true }); stats.details++; }
+      if (detail) {
+        const extra = {};
+        // 토지이용(정비구역 여부)·주택 공시가격을 함께 붙인다(법인 취득세 판정용)
+        if (enrich && item.pnu) { try { Object.assign(extra, await enrich({ ...item, detail })); } catch (e) { stats.errors.push(`브이월드 ${item.id}: ${e.message}`); } }
+        await save([{ id: item.id, detail, detailAt: new Date().toISOString(), ...extra }], { merge: true }); stats.details++;
+      }
     } catch (e) {
       stats.errors.push(`상세 ${item.id}: ${e.message}`);
       if (e.code === '22') break;
