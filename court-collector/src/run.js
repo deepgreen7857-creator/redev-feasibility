@@ -4,9 +4,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
 import { Pace, kstDay } from './pace.js';
 import { listCourt, readDetail, backToList, Blocked } from './site.js';
+
+// 브라우저는 AppData 가 아니라 이 폴더의 node_modules 안에 둔다(npm run setup-browser 와 같은 위치).
+// AppData 에 두면 설치한 프로그램과 작업 스케줄러가 서로 다른 곳을 볼 수 있다(MSIX 앱 안에서 설치한 경우 등).
+process.env.PLAYWRIGHT_BROWSERS_PATH ||= '0';
+const { chromium } = await import('playwright');
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -59,7 +63,10 @@ function toItem(row, detail) {
 }
 
 async function upload(items, run) {
-  if (DRY) { log(`(시험) 올리지 않음: ${items.length}건 — 첫 건: ${JSON.stringify(items[0] || {}).slice(0, 300)}`); return; }
+  if (DRY) {
+    fs.writeFileSync(path.join(STATE, 'test-run.json'), JSON.stringify(items, null, 2));
+    log(`(시험) 올리지 않음: ${items.length}건 — 전체는 state/test-run.json, 첫 건: ${JSON.stringify(items[0] || {}).slice(0, 300)}`); return;
+  }
   if (!env.INGEST_URL || !env.INGEST_TOKEN) throw new Error('.env 에 INGEST_URL, INGEST_TOKEN 이 없습니다');
   const res = await fetch(env.INGEST_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.INGEST_TOKEN}` }, body: JSON.stringify({ items, run }) });
   if (!res.ok) throw new Error(`업로드 실패 HTTP ${res.status} ${await res.text()}`);
@@ -68,6 +75,7 @@ async function upload(items, run) {
 
 async function main() {
   if (!cfg.enabled && !DRY) { log('config.json 의 enabled 가 false — 실행하지 않음'); return; }
+  if (DRY) cfg.allowedHours = [0, 24]; // 시험(--dry)은 낮에도 돌려 볼 수 있게 시간대 제한을 풂(화면 간 쉬는 시간은 그대로)
   const pace = new Pace(cfg, STATE, log);
   const browser = await chromium.launch({ headless: cfg.headless !== false });
   const page = await (await browser.newContext({ locale: 'ko-KR', viewport: { width: 1366, height: 900 } })).newPage();
@@ -119,5 +127,10 @@ async function main() {
 if (fs.existsSync(path.join(STATE, 'blocked.txt')) && !DRY) {
   log('지난 실행에서 차단이 감지되어 멈춰 있습니다. 확인 후 state/blocked.txt 를 지우면 다시 돌아갑니다.');
 } else {
-  main();
+  // 브라우저 실행 실패처럼 try 밖에서 난 오류도 로그에 남긴다(작업 스케줄러로 돌 때는 화면 출력이 안 보임)
+  main().catch((e) => {
+    log(`실행 오류: ${e.stack || e.message}`);
+    try { fs.statSync(chromium.executablePath()); } catch (e2) { log(`진단: 브라우저 파일 확인 실패 ${e2.code} ${e2.message} / LOCALAPPDATA=${process.env.LOCALAPPDATA} USERPROFILE=${process.env.USERPROFILE} PLAYWRIGHT_BROWSERS_PATH=${process.env.PLAYWRIGHT_BROWSERS_PATH || ''}`); }
+    process.exitCode = 1;
+  });
 }
