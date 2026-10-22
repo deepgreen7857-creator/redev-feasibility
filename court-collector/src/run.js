@@ -77,6 +77,7 @@ async function main() {
   if (!cfg.enabled && !DRY) { log('config.json 의 enabled 가 false — 실행하지 않음'); return; }
   if (DRY) cfg.allowedHours = [0, 24]; // 시험(--dry)은 낮에도 돌려 볼 수 있게 시간대 제한을 풂(화면 간 쉬는 시간은 그대로)
   const pace = new Pace(cfg, STATE, log);
+  if (!DRY && !pace.canContinue()) return; // 오늘 한도를 이미 채웠거나 시간대 밖이면 사이트에 접속하지 않음
   const browser = await chromium.launch({ headless: cfg.headless !== false });
   const page = await (await browser.newContext({ locale: 'ko-KR', viewport: { width: 1366, height: 900 } })).newPage();
   const stats = { listed: 0, detailed: 0, uploaded: 0, stoppedBy: null };
