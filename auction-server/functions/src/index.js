@@ -113,7 +113,9 @@ async function runOnbid({ deadline, force = false, mode } = {}) {
     serviceKey: DATA_GO_KR_KEY.value(), quota: new Quota(db), mode: m, deadline,
     save: saveListings, log: logger.info,
   });
-  if (!res.stopped) await setState('onbid', { lastDay: today, ...(m === 'full' ? { lastFullDay: today } : {}) });
+  // 오류만 나고 한 건도 못 받았으면(예: 키 오류) '오늘 수집함'으로 표시하지 않는다 → 다음 실행에서 다시 시도
+  const failedAll = res.rows === 0 && res.errors && res.errors.length > 0;
+  if (!res.stopped && !failedAll) await setState('onbid', { lastDay: today, ...(m === 'full' ? { lastFullDay: today } : {}) });
   return { mode: m, ...res };
 }
 
