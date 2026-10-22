@@ -71,17 +71,37 @@ function Status() {
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('seedSettings', {}, 'seed')}>기본 설정 넣기</button>
       </div>
       {out && (
-        <div className="mt-3 max-h-80 overflow-auto rounded-md bg-paper p-3 text-xs">
+        <div className="mt-3 max-h-[32rem] overflow-auto rounded-md bg-paper p-3 text-xs">
           {out.results ? out.results.map((r) => (
             <div key={r.name} className="border-b border-line/60 py-1.5 last:border-0">
               <span className={r.ok ? 'text-now' : 'text-hard'}>{r.ok ? '정상' : '실패'}</span> · <b>{r.name}</b>
-              {r.ok ? ` — ${r.total ?? ''}${r.sample ? ` · 예: ${typeof r.sample === 'string' ? r.sample : JSON.stringify(r.sample).slice(0, 120)}` : ''}${r.zone ? ` · ${r.zone}` : ''}` : ` — ${r.message}`}
+              {r.ok ? ` — ${r.total ?? ''}${r.sample ? ` · 예: ${typeof r.sample === 'string' ? r.sample.split(' ‖ ')[0] : JSON.stringify(r.sample).slice(0, 120)}` : ''}${r.zone ? ` · ${r.zone}` : ''}` : ` — ${r.message}`}
+              {r.ok && r.fields && <DetailFields r={r} />}
             </div>
           )) : <pre className="whitespace-pre-wrap">{JSON.stringify(out, null, 2)}</pre>}
         </div>
       )}
       <p className="mt-3 text-xs text-ink/50">자동 수집: 매일 새벽 0~6시, 20분마다 이어서 받습니다. 한도에 닿으면 다음 날 자동으로 이어 받습니다.</p>
     </Card>
+  );
+}
+
+// API 연결 시험 — 온비드 상세 원본 응답의 항목 이름·사진/지도 값 모양
+function DetailFields({ r }) {
+  return (
+    <div className="mt-2 space-y-2 rounded border border-line bg-white p-2">
+      <div className="text-ink/60">물건 {r.cltrMngNo} / 조건 {r.pbctCdtnNo}</div>
+      {r.media && (
+        <table className="w-full">
+          <thead className="text-left text-ink/50"><tr><th>사진·지도 항목</th><th>형태</th><th>구분자</th><th>예시</th></tr></thead>
+          <tbody>{Object.entries(r.media).map(([k, m]) => <tr key={k} className="border-t border-line/50 align-top"><td className="font-mono">{k}</td><td>{m.형태}</td><td>{m.구분자 || '—'}</td><td className="break-all">{m.예시 ? String(m.예시).slice(0, 140) : '—'}</td></tr>)}</tbody>
+        </table>
+      )}
+      {r.shapes && (
+        <div><b>목록형 항목</b>: {Object.entries(r.shapes).map(([k, v]) => <div key={k}><span className="font-mono">{k}</span> — {v}</div>)}</div>
+      )}
+      <div className="break-all"><b>항목 {r.fields.length}개</b>: <span className="font-mono">{r.fields.join(', ')}</span></div>
+    </div>
   );
 }
 

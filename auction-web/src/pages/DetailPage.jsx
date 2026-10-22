@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getListing, getSettings, getDeals, callFn, saveListing, getZones } from '../lib/store.js';
 import { zonesForListing, stageForAnalysis } from '../lib/redevZones.js';
-import { analyze, tradeTypeOf, courtRate, eok, won, pct, SOURCE_LABEL, typeLabel, areaText } from '../lib/analyze.js';
+import { analyze, tradeTypeOf, courtRate, eok, won, pct, SOURCE_LABEL, typeLabel } from '../lib/analyze.js';
 import { lawdOf } from '../data/defaults.js';
 import { Badge, VerdictBadge, Card, Row, Field, Empty } from '../components/ui.jsx';
 
@@ -55,7 +55,21 @@ export default function DetailPage({ admin }) {
     setBusy('');
   };
 
+  // 관리자: 이 물건 상세(사진·권리)를 지금 받기 — 온비드만
+  const fetchDetail = async () => {
+    setBusy('detail'); setMsg('');
+    try {
+      const r = await callFn('fetchDetailNow', { listingId: item.id });
+      if (r.ok && r.listing) setItem(r.listing); else setMsg(r.message || '상세를 받지 못했습니다.');
+    } catch (e) { setMsg(e.message); }
+    setBusy('');
+  };
+
   const rate = item.source === 'court' ? courtRate(item, settings) : null;
+  const d = item.detail;
+  // 상세가 없는 칸은 숨기지 않고 '수집 대기'로 표시(법원경매는 수집기가 주지 않는 값이 많아 '원문 확인')
+  const waitText = item.source === 'court' ? '원문 확인' : '수집 대기';
+  const dv = (v) => (v === null || v === undefined || v === '' ? (d ? '—' : waitText) : v);
 
   return (
     <div className="space-y-4">
@@ -74,14 +88,162 @@ export default function DetailPage({ admin }) {
           {a.excluded && <Badge>관심 제외(재직 중 분석 대상 아님)</Badge>}
         </div>
         <h1 className="text-xl font-extrabold leading-snug"><span className="mr-2 rounded bg-ink px-2 py-0.5 align-middle text-sm text-white">{typeLabel(item)}</span>{item.title}</h1>
-        <div className="mt-1 text-sm text-ink/60">{item.address}</div>
-        {(areaText(item) || item.usage) && <div className="text-sm text-ink/60">{areaText(item)}{item.usage ? ` · 용도: ${item.usage}` : ''}</div>}
         <div className="mt-1 text-xs text-ink/50">{item.court} · {item.caseNo} {item.round ? `· ${item.round}회차` : ''} {item.status ? `· ${item.status}` : ''}</div>
-        {item.url && <a href={item.url} target="_blank" rel="noreferrer" className="no-print mt-2 inline-block text-sm text-brand underline">{item.source === 'court' ? '법원경매정보 원문' : '온비드 원문'}</a>}
+        <div className="no-print mt-2 flex flex-wrap items-center gap-3 text-sm">
+          {item.url && <a href={item.url} target="_blank" rel="noreferrer" className="text-brand underline">{item.source === 'court' ? '법원경매정보 원문' : '온비드 원문'}</a>}
+          <span className="text-xs text-ink/50">{d ? `상세 수집 ${String(item.detailAt || '').slice(0, 10) || '완료'}` : item.source === 'court' ? '상세 자료 없음(원문 확인)' : '상세 수집 대기'}</span>
+          {admin && item.source === 'onbid' && <button className="btn-ghost py-1 text-xs" disabled={busy === 'detail'} onClick={fetchDetail}>{busy === 'detail' ? '받는 중…' : '이 물건 상세 지금 받기'}</button>}
+        </div>
+        {msg && <p className="mt-2 text-sm text-hard">{msg}</p>}
       </Card>
 
+      {/* ① 물건 기본현황 */}
+      <BasicSection item={item} d={d} dv={dv} waitText={waitText} />
+
+      {/* ② 권리 */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="② 권리 체크" right={<span className="text-xs text-ink/50">자동 확인은 1차 거르기용</span>}>
+          {(() => {
+            const f = d?.flags;
+            const st = (bad, known) => (bad ? 'bad' : known ? 'none' : 'unknown');
+            return (
+              <>
+                <Check state={st(f?.survivingRights, !!d)} label="말소되지 않는 권리(인수)" note={d?.survivingRights} />
+                <Check state={st(f?.superficies, !!d)} label="법정지상권" note={d?.superficies} />
+                <Check state={st(item.share, item.share !== undefined || !!d)} label="지분 물건" note={d?.shareText} />
+                <Check state={st(f?.unclaimedTenants > 0, !!d)} label={`임차인 ${f?.tenants ?? '?'}명${f?.tenantsUnknown ? ` (+ 조사 안 됨 ${f.tenantsUnknown})` : ''}`} note={f?.unclaimedTenants ? `배분요구 안 함 ${f.unclaimedTenants}명` : d?.distributionDeadline ? `배분요구 종기 ${fmtYmd(d.distributionDeadline)}` : null} />
+                <Check state={st(f?.qualification, !!d)} label="매수인 자격 제한" note={d?.buyerQualification} />
+              </>
+            );
+          })()}
+          <div className="mt-3 rounded-md bg-wait/10 p-2 text-xs text-ink/80">
+            <div className="mb-1 font-bold">자동으로 못 보는 것 — 입찰 전 꼭 직접 확인</div>
+            <ul className="list-disc space-y-0.5 pl-4">
+              <li>등기부: 말소기준권리와 그보다 앞선 권리·가처분·가등기, 토지 별도등기, 대지권 미등기</li>
+              <li>임차인 대항력: 전입일이 말소기준권리보다 빠른지(인수 보증금), 확정일자·배분요구 여부</li>
+              <li>유치권 신고, 체납 관리비, 위반건축물(건축물대장), 맹지·도로 접함</li>
+              <li>현장: 실제 점유자, 건물 상태{item.source === 'court' ? ', 매각물건명세서·현황조사서·감정평가서' : ', 온비드 공고문·감정평가서'}</li>
+            </ul>
+          </div>
+          {!d && <p className="mt-2 text-xs text-ink/50">{item.source === 'court' ? '법원경매는 자동 권리 정보가 없습니다. 위 항목은 모두 "확인 안 됨"입니다.' : '상세(권리) 정보 수집 대기 중입니다.'}</p>}
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input type="checkbox" disabled={!admin} checked={Boolean(item.manual?.hard)} onChange={(e) => updateManual({ hard: e.target.checked })} />
+            가격으로 해결 안 됨으로 직접 표시
+          </label>
+          {item.manual?.hard && <input className="input mt-2" disabled={!admin} placeholder="이유 (예: 유치권 신고, 맹지)" value={item.manual?.hardNote || ''} onChange={(e) => updateManual({ hardNote: e.target.value })} />}
+        </Card>
+        <div className="space-y-4">
+          <Card title={`임차인·점유 (${d?.leases?.length || 0}명)`}>
+            {d?.leases?.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs num">
+                  <thead className="text-left text-ink/50"><tr><th>구분</th><th>임차인</th><th className="text-right">보증금</th><th className="text-right">월세</th><th>전입</th><th>확정</th><th>배분요구</th></tr></thead>
+                  <tbody>{d.leases.map((l, i) => <tr key={i} className="border-t border-line/50"><td>{l.kind || l.part || ''}</td><td>{l.tenant || '—'}</td><td className="text-right">{l.deposit ? eok(l.deposit) : ''}</td><td className="text-right">{l.rent ? eok(l.rent) : ''}</td><td>{l.moveIn ? fmtYmd(l.moveIn) : ''}</td><td>{l.fixedDate ? fmtYmd(l.fixedDate) : ''}</td><td className={l.claimed === true ? 'text-now' : l.claimed === false ? 'text-hard' : 'text-ink/40'}>{l.claimed === true ? '함' : l.claimed === false ? '안 함' : '확인'}</td></tr>)}</tbody>
+                </table>
+              </div>
+            ) : <Empty>{d ? '임차 자료 없음' : `임차 정보 ${waitText}`}</Empty>}
+            <p className="mt-2 text-[11px] text-ink/50">전입일이 말소기준권리보다 빠르면 보증금을 인수할 수 있습니다. 등기부와 대조하세요.</p>
+          </Card>
+          <Card title="등기 주요 정보">
+            {d?.rights?.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs num">
+                  <thead className="text-left text-ink/50"><tr><th>권리</th><th>권리자</th><th>설정일</th><th className="text-right">금액</th></tr></thead>
+                  <tbody>{d.rights.map((r, i) => <tr key={i} className="border-t border-line/50"><td>{r.kind || '—'}</td><td>{r.holder || ''}</td><td>{fmtYmd(r.date)}</td><td className="text-right">{r.amount ? eok(r.amount) : ''}</td></tr>)}</tbody>
+                </table>
+              </div>
+            ) : <Empty>{d ? '등기 자료 없음(압류재산만 제공)' : `등기 정보 ${waitText}`}</Empty>}
+            {d?.baseRightDate && <p className="mt-2 text-xs text-ink/60">최선순위 설정일(말소기준): {fmtYmd(d.baseRightDate)}</p>}
+            {d?.extinguished && <p className="mt-2 text-xs text-ink/60">매각으로 소멸: {d.extinguished}</p>}
+          </Card>
+        </div>
+      </div>
+      <Card title="공고 원문 (위치·조건·유의사항)">
+        {d && (d.location || d.conditions || d.deliveryDuty || d.cautions || d.extraNotes) ? (
+          <>
+            {d.location && <Desc k="위치 및 부근 현황" v={d.location} />}
+            {d.conditions && <Desc k="부대 조건" v={d.conditions} />}
+            {d.deliveryDuty && <Desc k="인도 책임" v={d.deliveryDuty} />}
+            {d.cautions && <Desc k="유의사항" v={d.cautions} />}
+            {d.extraNotes && <Desc k="기타" v={d.extraNotes} />}
+          </>
+        ) : <Empty>{d ? '공고 원문 설명 없음' : `공고 원문 ${waitText}`}</Empty>}
+      </Card>
+
+      {/* ③ 토지이용·정비구역·분양자격 */}
+      <Card title="③ 토지이용·정비구역·분양자격" right={admin && item.pnu && <button className="btn-ghost no-print" disabled={busy === 'land'} onClick={checkLand}>{busy === 'land' ? '조회 중…' : '브이월드 조회'}</button>}>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div>
+            {item.land?.landUse ? (
+              <>
+                <Row k="용도지역" v={item.land.landUse.zone || '—'} />
+                <Row k="정비 관련" v={a.redev.length ? a.redev.join(', ') : '없음'} />
+                <Row k="농업진흥구역" v={item.land.landUse.farmPromotion ? '해당' : '아님'} />
+                <Row k="개발제한구역" v={item.land.landUse.greenbelt ? '해당' : '아님'} />
+                <Row k="도로 저촉" v={item.land.landUse.roadConflict?.length ? item.land.landUse.roadConflict.join(', ') : '없음'} />
+                <Row k="개별공시지가" v={item.land.officialPrice ? `${won(item.land.officialPrice)}/㎡${item.land.officialPriceYear ? ` (${item.land.officialPriceYear}년)` : ''}` : '—'} />
+                {item.land.officialPrice && item.landArea ? <Row k="공시지가 × 토지면적" v={won(item.land.officialPrice * item.landArea)} /> : null}
+                {item.housePrice && <Row k={`주택 공시가격(${item.housePrice.kind} ${item.housePrice.year})`} v={item.housePrice.price ? won(item.housePrice.price) : `${won(item.housePrice.min)} ~ ${won(item.housePrice.max)} (호 미확인)`} />}
+                {item.pnuSource && <p className="mt-1 text-[11px] text-ink/50">필지번호 {item.pnu} — {item.pnuSource}</p>}
+              </>
+            ) : <Empty>{item.pnu ? '아직 조회 전입니다(상세 수집 때 함께 조회).' : '필지번호(PNU)가 없습니다 — 상세 수집 때 주소로 찾아 조회합니다.'}</Empty>}
+          </div>
+          <div>
+            <div className="rounded-lg bg-paper p-3">
+              <div className="mb-1 text-sm font-bold">정비사업 현황(분기 엑셀)에서 같은 동 구역</div>
+              {item.manual?.zone ? (
+                <div className="text-sm">
+                  <div><Badge tone="brand">연결됨</Badge> {item.manual.zone.name} · <b>{item.manual.zone.stage || '단계 미상'}</b></div>
+                  <div className="mt-1 text-xs text-ink/60">{item.manual.zone.location} {Object.entries(item.manual.zone.dates || {}).map(([k, v]) => `${ZLABEL[k] || k} ${v}`).join(' · ')}</div>
+                  {admin && <button className="mt-1 text-xs text-hard underline" onClick={() => updateManual({ zone: null, redevStage: '' })}>연결 해제</button>}
+                </div>
+              ) : zones.length ? (
+                <div className="space-y-1.5">
+                  {zones.slice(0, 6).map((z) => (
+                    <div key={z.name} className="flex items-center justify-between gap-2 text-sm">
+                      <span>{z.strong && <Badge tone="now" className="mr-1">지번 일치</Badge>}{z.name} <span className="text-xs text-ink/60">· {z.stage || '단계 미상'} · {z.location}</span></span>
+                      {admin && <button className="btn-ghost shrink-0 py-1 text-xs" onClick={() => updateManual({ zone: { name: z.name, location: z.location, stage: z.stage, dates: z.dates, type: z.type || null, kind: z.kind || null, quarter: z.quarter || null }, redevStage: stageForAnalysis(z.stage) })}>이 구역으로 연결</button>}
+                    </div>
+                  ))}
+                  <p className="text-xs text-ink/50">대표지번만 적힌 자료라 구역 안인지는 토지이용계획(정비구역 표시)과 함께 확인하세요.</p>
+                </div>
+              ) : <p className="text-xs text-ink/50">같은 동의 구역이 없거나 이 시도의 엑셀을 아직 안 올렸습니다(관리자 화면).</p>}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Field label="정비사업 단계(직접 표시)" hint="엑셀 구역을 연결하면 자동">
+                <select className="input" disabled={!admin || !!item.manual?.zone} value={item.manual?.redevStage || ''} onChange={(e) => updateManual({ redevStage: e.target.value })}>
+                  {STAGES.map((s) => <option key={s} value={s}>{s || '해당 없음/모름'}</option>)}
+                </select>
+              </Field>
+              <Field label="사업 유형" hint="재건축·재개발에 따라 제한 시점이 다름">
+                <select className="input" disabled={!admin || !!item.manual?.zone?.type} value={item.manual?.zone?.type || item.manual?.projectType || ''} onChange={(e) => updateManual({ projectType: e.target.value })}>
+                  <option value="">모름</option><option>재개발</option><option>재건축</option><option>가로주택·소규모</option>
+                </select>
+              </Field>
+            </div>
+          </div>
+        </div>
+        {a.member.status !== 'none' && (
+          <div className={`mt-3 rounded-lg p-3 text-sm ${a.member.status === 'member' ? 'bg-now/5' : a.member.status === 'cash' ? 'bg-cash/5' : 'bg-wait/10'}`}>
+            <div className="font-bold">분양자격: {a.member.status === 'member' ? '조합원 가능(입주권형)' : a.member.status === 'cash' ? '현금청산형' : '확인 필요'}{a.member.overheated ? ' · 투기과열지구' : ''}</div>
+            <div className="mt-1 text-xs text-ink/70">{a.member.reason}</div>
+            <div className="mt-1 text-xs text-ink/70">근거 값: {memberBasis(item, d, waitText)}</div>
+            {a.member.overheated && a.member.status !== 'member' && item.source === 'court' && (
+              <Field label="경매 신청 채권자(등기부 확인)">
+                <select className="input mt-1" disabled={!admin} value={item.manual?.creditor || ''} onChange={(e) => updateManual({ creditor: e.target.value || undefined })}>
+                  <option value="">모름</option><option value="public">국가·지자체·금융기관(은행 등)</option><option value="other">개인·대부업체 등 그 밖</option>
+                </select>
+              </Field>
+            )}
+            <p className="mt-1 text-[11px] text-ink/50">근거: 도시정비법 제39조제2항, 시행령 제37조제3항제5호(국가·지자체·금융기관 채무 불이행 경매·공매 예외). 투기과열지구 목록은 관리자 설정에서 관리.</p>
+          </div>
+        )}
+        {a.member.status === 'member' && a.member.rank >= 3 && <RightCalc item={item} a={a} admin={admin} onSave={(econ) => updateManual({ econ })} silvDeals={silvDeals} zoneName={item.manual?.zone?.name} />}
+      </Card>
+
+      {/* ④ 판정·돈 계산·회차별 최저가 */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title="판정" className="lg:col-span-1">
+        <Card title="④ 판정·돈 계산" className="lg:col-span-1">
           <Row k="감정가" v={won(item.appraisal)} />
           <Row k="현재 최저가" v={`${won(item.minBid)} (${pct(a.ratio)})`} strong />
           <Row k="예상 가치" v={won(a.value)} />
@@ -125,242 +287,132 @@ export default function DetailPage({ admin }) {
           {a.warnings.length > 0 && <ul className="mt-3 space-y-1 text-sm text-wait">{a.warnings.map((w) => <li key={w}>• {w}</li>)}</ul>}
         </Card>
 
-        <Card title="회차별 최저가 vs 매수상한" className="lg:col-span-2" right={<span className="text-xs text-ink/50">{rate ? `${rate.name} 저감률 ${Math.round(rate.rate * 100)}%${rate.verified ? '' : ' (확인 전)'}` : '공매: 최초가의 10%씩, 50% 하한'}</span>}>
-          <div className="space-y-1.5">
-            {a.rounds.map((r) => {
-              const ok = a.cap !== null && r.price <= a.cap;
-              const w = Math.max(4, Math.min(100, (r.price / (item.appraisal || r.price)) * 100));
-              return (
-                <div key={r.step} className="grid grid-cols-[88px_1fr_120px] items-center gap-2 text-sm">
-                  <span className="text-ink/60">{r.label}</span>
-                  <div className="h-5 rounded bg-paper"><div className={`h-5 rounded ${ok ? 'bg-now/70' : 'bg-ink/20'}`} style={{ width: `${w}%` }} /></div>
-                  <span className={`num text-right ${ok ? 'font-bold text-now' : ''}`}>{eok(r.price)}{r.floor ? ' (하한)' : ''}</span>
-                </div>
-              );
-            })}
-            {a.cap !== null && <div className="pt-1 text-xs text-ink/50">초록 막대 = 매수상한 {eok(a.cap)} 이하로 내려온 회차</div>}
-          </div>
-          {Array.isArray(item.history) && item.history.length > 0 && (
-            <div className="mt-4 text-xs text-ink/60">
-              <div className="mb-1 font-medium">지난 회차 기록</div>
-              {item.history.slice(-6).map((h) => <div key={h.at}>{h.at.slice(0, 10)} · {h.round}회차 · {eok(h.minBid)} · {h.status}</div>)}
-            </div>
-          )}
-        </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="시세 근거" right={<span className="text-xs text-ink/50">{TYPE_NAME[a.market.type]} · 최근 12개월</span>}>
-          {a.market.value ? (
-            <>
-              <Row k="비교 면적" v={`${a.market.area}㎡`} />
-              <Row k="㎡당 중앙값" v={won(a.market.unit)} />
-              <Row k="추정 시세" v={won(a.market.value)} strong />
-              <p className="mt-2 text-xs text-ink/50">{a.market.basis}</p>
-              <div className="mt-3 max-h-56 overflow-auto text-xs">
-                <table className="w-full num">
-                  <thead className="text-ink/50"><tr><th className="text-left">계약</th><th className="text-left">이름/동</th><th className="text-right">면적</th><th className="text-right">가격</th></tr></thead>
-                  <tbody>{a.market.samples.map((d, i) => <tr key={i} className="border-t border-line/50"><td>{String(d[11] || '').slice(2, 4)}.{String(d[11] || '').slice(4)}.{d[3]}</td><td>{d[5]} {d[9]}</td><td className="text-right">{d[1]}</td><td className="text-right">{eok(d[0])}</td></tr>)}</tbody>
-                </table>
-              </div>
-            </>
-          ) : <Empty>{a.market.basis}. 실거래 수집이 끝나면 자동으로 채워집니다.</Empty>}
-        </Card>
-
-        <Card title="토지이용·정비구역" right={admin && item.pnu && <button className="btn-ghost no-print" disabled={busy === 'land'} onClick={checkLand}>{busy === 'land' ? '조회 중…' : '브이월드 조회'}</button>}>
-          {item.land?.landUse ? (
-            <>
-              <Row k="용도지역" v={item.land.landUse.zone || '—'} />
-              <Row k="정비 관련" v={a.redev.length ? a.redev.join(', ') : '없음'} />
-              <Row k="농업진흥구역" v={item.land.landUse.farmPromotion ? '해당' : '아님'} />
-              <Row k="개발제한구역" v={item.land.landUse.greenbelt ? '해당' : '아님'} />
-              <Row k="도로 저촉" v={item.land.landUse.roadConflict?.length ? item.land.landUse.roadConflict.join(', ') : '없음'} />
-              <Row k="개별공시지가" v={item.land.officialPrice ? `${won(item.land.officialPrice)}/㎡${item.land.officialPriceYear ? ` (${item.land.officialPriceYear}년)` : ''}` : '—'} />
-              {item.land.officialPrice && item.landArea ? <Row k="공시지가 × 토지면적" v={won(item.land.officialPrice * item.landArea)} /> : null}
-              {item.housePrice && <Row k={`주택 공시가격(${item.housePrice.kind} ${item.housePrice.year})`} v={item.housePrice.price ? won(item.housePrice.price) : `${won(item.housePrice.min)} ~ ${won(item.housePrice.max)} (호 미확인)`} />}
-            </>
-          ) : <Empty>{item.pnu ? '아직 조회 전입니다.' : '필지번호(PNU)가 없어 조회할 수 없습니다.'}</Empty>}
-          {msg && <p className="mt-2 text-sm text-hard">{msg}</p>}
-          <div className="mt-3 rounded-lg bg-paper p-3">
-            <div className="mb-1 text-sm font-bold">정비사업 현황(분기 엑셀)에서 같은 동 구역</div>
-            {item.manual?.zone ? (
-              <div className="text-sm">
-                <div><Badge tone="brand">연결됨</Badge> {item.manual.zone.name} · <b>{item.manual.zone.stage || '단계 미상'}</b></div>
-                <div className="mt-1 text-xs text-ink/60">{item.manual.zone.location} {Object.entries(item.manual.zone.dates || {}).map(([k, v]) => `${ZLABEL[k] || k} ${v}`).join(' · ')}</div>
-                {admin && <button className="mt-1 text-xs text-hard underline" onClick={() => updateManual({ zone: null, redevStage: '' })}>연결 해제</button>}
-              </div>
-            ) : zones.length ? (
-              <div className="space-y-1.5">
-                {zones.slice(0, 6).map((z) => (
-                  <div key={z.name} className="flex items-center justify-between gap-2 text-sm">
-                    <span>{z.strong && <Badge tone="now" className="mr-1">지번 일치</Badge>}{z.name} <span className="text-xs text-ink/60">· {z.stage || '단계 미상'} · {z.location}</span></span>
-                    {admin && <button className="btn-ghost shrink-0 py-1 text-xs" onClick={() => updateManual({ zone: { name: z.name, location: z.location, stage: z.stage, dates: z.dates, type: z.type || null, kind: z.kind || null, quarter: z.quarter || null }, redevStage: stageForAnalysis(z.stage) })}>이 구역으로 연결</button>}
+        <div className="space-y-4 lg:col-span-2">
+          <Card title="회차별 최저가 vs 매수상한" right={<span className="text-xs text-ink/50">{rate ? `${rate.name} 저감률 ${Math.round(rate.rate * 100)}%${rate.verified ? '' : ' (확인 전)'}` : '공매: 최초가의 10%씩, 50% 하한'}</span>}>
+            <div className="space-y-1.5">
+              {a.rounds.map((r) => {
+                const ok = a.cap !== null && r.price <= a.cap;
+                const w = Math.max(4, Math.min(100, (r.price / (item.appraisal || r.price)) * 100));
+                return (
+                  <div key={r.step} className="grid grid-cols-[88px_1fr_120px] items-center gap-2 text-sm">
+                    <span className="text-ink/60">{r.label}</span>
+                    <div className="h-5 rounded bg-paper"><div className={`h-5 rounded ${ok ? 'bg-now/70' : 'bg-ink/20'}`} style={{ width: `${w}%` }} /></div>
+                    <span className={`num text-right ${ok ? 'font-bold text-now' : ''}`}>{eok(r.price)}{r.floor ? ' (하한)' : ''}</span>
                   </div>
-                ))}
-                <p className="text-xs text-ink/50">대표지번만 적힌 자료라 구역 안인지는 토지이용계획(정비구역 표시)과 함께 확인하세요.</p>
+                );
+              })}
+              {a.cap !== null && <div className="pt-1 text-xs text-ink/50">초록 막대 = 매수상한 {eok(a.cap)} 이하로 내려온 회차</div>}
+            </div>
+            {d?.rounds?.length > 0 && (
+              <table className="mt-4 w-full text-sm num">
+                <thead className="text-left text-xs text-ink/50"><tr><th>회차</th><th>입찰 기간</th><th>개찰</th><th className="text-right">최저가</th></tr></thead>
+                <tbody>{d.rounds.map((r, i) => <tr key={i} className={`border-t border-line/50 ${String(r.round) === String(item.round) ? 'font-bold text-brand' : ''}`}><td>{r.round}</td><td>{r.start ? `${r.start.slice(5, 10)}~${(r.end || '').slice(5, 10)}` : '—'}</td><td>{fmtYmd(r.open)}</td><td className="text-right">{eok(r.minBid)}</td></tr>)}</tbody>
+              </table>
+            )}
+            {Array.isArray(item.history) && item.history.length > 0 && (
+              <div className="mt-4 text-xs text-ink/60">
+                <div className="mb-1 font-medium">지난 회차 기록</div>
+                {item.history.slice(-6).map((h) => <div key={h.at}>{h.at.slice(0, 10)} · {h.round}회차 · {eok(h.minBid)} · {h.status}</div>)}
               </div>
-            ) : <p className="text-xs text-ink/50">같은 동의 구역이 없거나 이 시도의 엑셀을 아직 안 올렸습니다(관리자 화면).</p>}
-          </div>
-          <div className="mt-3">
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="정비사업 단계(직접 표시)" hint="엑셀 구역을 연결하면 자동">
-                <select className="input" disabled={!admin || !!item.manual?.zone} value={item.manual?.redevStage || ''} onChange={(e) => updateManual({ redevStage: e.target.value })}>
-                  {STAGES.map((s) => <option key={s} value={s}>{s || '해당 없음/모름'}</option>)}
-                </select>
-              </Field>
-              <Field label="사업 유형" hint="재건축·재개발에 따라 제한 시점이 다름">
-                <select className="input" disabled={!admin || !!item.manual?.zone?.type} value={item.manual?.zone?.type || item.manual?.projectType || ''} onChange={(e) => updateManual({ projectType: e.target.value })}>
-                  <option value="">모름</option><option>재개발</option><option>재건축</option><option>가로주택·소규모</option>
-                </select>
-              </Field>
-            </div>
-          </div>
-          {a.member.status !== 'none' && (
-            <div className={`mt-3 rounded-lg p-3 text-sm ${a.member.status === 'member' ? 'bg-now/5' : a.member.status === 'cash' ? 'bg-cash/5' : 'bg-wait/10'}`}>
-              <div className="font-bold">분양자격: {a.member.status === 'member' ? '조합원 가능(입주권형)' : a.member.status === 'cash' ? '현금청산형' : '확인 필요'}{a.member.overheated ? ' · 투기과열지구' : ''}</div>
-              <div className="mt-1 text-xs text-ink/70">{a.member.reason}</div>
-              {a.member.overheated && a.member.status !== 'member' && item.source === 'court' && (
-                <Field label="경매 신청 채권자(등기부 확인)">
-                  <select className="input mt-1" disabled={!admin} value={item.manual?.creditor || ''} onChange={(e) => updateManual({ creditor: e.target.value || undefined })}>
-                    <option value="">모름</option><option value="public">국가·지자체·금융기관(은행 등)</option><option value="other">개인·대부업체 등 그 밖</option>
-                  </select>
-                </Field>
-              )}
-              <p className="mt-1 text-[11px] text-ink/50">근거: 도시정비법 제39조제2항, 시행령 제37조제3항제5호(국가·지자체·금융기관 채무 불이행 경매·공매 예외). 투기과열지구 목록은 관리자 설정에서 관리.</p>
-            </div>
-          )}
-          {a.member.status === 'member' && a.member.rank >= 3 && <RightCalc item={item} a={a} admin={admin} onSave={(econ) => updateManual({ econ })} silvDeals={silvDeals} zoneName={item.manual?.zone?.name} />}
-        </Card>
+            )}
+          </Card>
+          <FundCalc item={item} a={a} />
+        </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="권리 체크" right={<span className="text-xs text-ink/50">자동 확인은 1차 거르기용</span>}>
-          {(() => {
-            const d = item.detail; const f = d?.flags;
-            const st = (bad, known) => (bad ? 'bad' : known ? 'none' : 'unknown');
-            return (
-              <>
-                <Check state={st(f?.superficies, !!d)} label="법정지상권" note={d?.superficies} />
-                <Check state={st(f?.survivingRights, !!d)} label="말소되지 않는 권리(인수)" note={d?.survivingRights} />
-                <Check state={st(item.share, item.share !== undefined || !!d)} label="지분 물건" note={d?.shareText} />
-                <Check state={st(f?.unclaimedTenants > 0, !!d)} label={`임차인 ${f?.tenants ?? '?'}명`} note={f?.unclaimedTenants ? `배분요구 안 함 ${f.unclaimedTenants}명` : null} />
-                <Check state={st(f?.qualification, !!d)} label="매수인 자격 제한" note={d?.buyerQualification} />
-              </>
-            );
-          })()}
-          <div className="mt-3 rounded-md bg-wait/10 p-2 text-xs text-ink/80">
-            <div className="mb-1 font-bold">자동으로 못 보는 것 — 입찰 전 꼭 직접 확인</div>
-            <ul className="list-disc space-y-0.5 pl-4">
-              <li>등기부: 말소기준권리와 그보다 앞선 권리·가처분·가등기, 토지 별도등기, 대지권 미등기</li>
-              <li>임차인 대항력: 전입일이 말소기준권리보다 빠른지(인수 보증금), 확정일자·배분요구 여부</li>
-              <li>유치권 신고, 체납 관리비, 위반건축물(건축물대장), 맹지·도로 접함</li>
-              <li>현장: 실제 점유자, 건물 상태{item.source === 'court' ? ', 매각물건명세서·현황조사서·감정평가서' : ', 온비드 공고문·감정평가서'}</li>
-            </ul>
-          </div>
-          {item.detail?.deliveryDuty && <p className="mt-2 text-xs text-ink/60">인도 책임: {item.detail.deliveryDuty}</p>}
-          {item.detail?.cautions && <p className="mt-1 text-xs text-ink/60">유의사항: {item.detail.cautions}</p>}
-          {!item.detail && <p className="mt-2 text-xs text-ink/50">{item.source === 'court' ? '법원경매는 자동 권리 정보가 없습니다. 위 항목은 모두 "확인 안 됨"입니다.' : '상세(권리) 정보 수집 전입니다.'}</p>}
-          <label className="mt-3 flex items-center gap-2 text-sm">
-            <input type="checkbox" disabled={!admin} checked={Boolean(item.manual?.hard)} onChange={(e) => updateManual({ hard: e.target.checked })} />
-            가격으로 해결 안 됨으로 직접 표시
-          </label>
-          {item.manual?.hard && <input className="input mt-2" disabled={!admin} placeholder="이유 (예: 유치권 신고, 맹지)" value={item.manual?.hardNote || ''} onChange={(e) => updateManual({ hardNote: e.target.value })} />}
-        </Card>
-
-        <FundCalc item={item} a={a} />
-      </div>
-
-      <InfoSection item={item} />
+      {/* ⑤ 시세 근거 */}
+      <Card title="⑤ 시세 근거" right={<span className="text-xs text-ink/50">{TYPE_NAME[a.market.type]} · 최근 12개월</span>}>
+        {a.market.value ? (
+          <>
+            <Row k="비교 면적" v={`${a.market.area}㎡`} />
+            <Row k="㎡당 중앙값" v={won(a.market.unit)} />
+            <Row k="추정 시세" v={won(a.market.value)} strong />
+            <p className="mt-2 text-xs text-ink/50">{a.market.basis}</p>
+            <div className="mt-3 max-h-56 overflow-auto text-xs">
+              <table className="w-full num">
+                <thead className="text-ink/50"><tr><th className="text-left">계약</th><th className="text-left">이름/동</th><th className="text-right">면적</th><th className="text-right">가격</th></tr></thead>
+                <tbody>{a.market.samples.map((x, i) => <tr key={i} className="border-t border-line/50"><td>{String(x[11] || '').slice(2, 4)}.{String(x[11] || '').slice(4)}.{x[3]}</td><td>{x[5]} {x[9]}</td><td className="text-right">{x[1]}</td><td className="text-right">{eok(x[0])}</td></tr>)}</tbody>
+              </table>
+            </div>
+          </>
+        ) : <Empty>{a.market.basis}. 실거래 수집이 끝나면 자동으로 채워집니다.</Empty>}
+      </Card>
     </div>
   );
 }
 
 const fmtYmd = (v) => { const t = String(v || '').replace(/\D/g, ''); return t.length >= 8 ? `${t.slice(0, 4)}.${t.slice(4, 6)}.${t.slice(6, 8)}` : v || '—'; };
+// 온비드 사진 주소의 downloadImageKind(썸네일)를 빼면 원본 크기
+const fullImg = (u) => String(u).replace(/&downloadImageKind=[A-Z_]+/, '');
+const sqm = (n) => (n ? `${Math.round(n * 100) / 100}㎡ (${Math.round((n / 3.3058) * 10) / 10}평)` : null);
 
-// 온비드 상세에서 받아 둔 원자료 — 사진·공고 정보·회차 일정·임차인·등기·현황 설명
-function InfoSection({ item }) {
-  const d = item.detail;
+// 분양자격 판단에 쓴 값: 토지면적 · 용도 · 지분 여부
+function memberBasis(item, d, waitText) {
+  const landRow = (d?.areas || []).find((x) => /^토지/.test(x.kind || ''));
+  const land = item.landArea ? sqm(item.landArea) : landRow ? landRow.area : null;
+  const usage = item.usageSmall || item.usage || d?.landCategory || null;
+  const shareFlag = item.share ?? d?.flags?.share;
+  const share = shareFlag ? '지분 매각' : shareFlag === false ? '전부 매각' : '모름';
+  const landShare = landRow?.share && /분의/.test(landRow.share) ? ` (대지권 ${landRow.share.replace(/^지분\(|\)$/g, '')})` : '';
+  return `토지면적 ${land || (d ? '—' : waitText)}${landShare} · 용도 ${usage || '—'} · 지분 여부 ${share}`;
+}
+
+// ① 물건 기본현황 — 사진 칸은 항상, 상세가 없는 값은 '수집 대기'
+function BasicSection({ item, d, dv, waitText }) {
   const photos = (d?.photos || []).filter(Boolean);
+  const shown = photos.length ? photos : item.thumbnail ? [item.thumbnail] : [];
+  const maps = (d?.mapUrls || []).filter(Boolean);
   return (
-    <>
-      {(photos.length > 0 || item.thumbnail) && (
-        <Card title="사진">
-          <div className="flex gap-2 overflow-x-auto">
-            {(photos.length ? photos : [item.thumbnail]).map((u, i) => (
-              <a key={i} href={u} target="_blank" rel="noreferrer" className="shrink-0"><img src={u} alt={`물건 사진 ${i + 1}`} loading="lazy" className="h-40 w-56 rounded-lg border border-line object-cover" /></a>
-            ))}
-          </div>
-          {d?.mapUrls?.length > 0 && <div className="mt-2 flex gap-3 text-sm">{d.mapUrls.map((u, i) => <a key={i} href={u} target="_blank" rel="noreferrer" className="text-brand underline">위치도·지적도 {i + 1}</a>)}</div>}
-        </Card>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="공고·입찰 정보">
-          <Row k="재산 종류" v={item.propertyTypeName || (item.source === 'court' ? '법원경매' : '—')} />
-          <Row k="용도" v={item.usage || '—'} />
-          <Row k="지번 주소" v={d?.addressFull || item.address || '—'} />
-          {d?.roadAddress && <Row k="도로명 주소" v={d.roadAddress} />}
-          {d?.landCategory && <Row k="지목" v={d.landCategory} />}
-          <Row k="감정가 / 감정 시점" v={`${won(item.appraisal)}${d?.appraisalDate ? ` (${fmtYmd(d.appraisalDate)})` : ''}`} />
-          {d?.plannedPrice ? <Row k="매각 예정가격" v={won(d.plannedPrice)} /> : null}
-          <Row k="현재 최저가" v={item.minBidText && !item.minBid ? item.minBidText : won(item.minBid)} />
-          <Row k="유찰 / 입찰 진행" v={`${item.failCount ?? '—'}회 / ${item.bidCount ?? '—'}회`} />
-          <Row k="입찰 기간" v={item.bidStart || item.bidEnd ? `${item.bidStart || ''} ~ ${item.bidEnd || ''}` : '—'} />
-          {d?.openDate && <Row k="개찰일" v={fmtYmd(d.openDate)} />}
-          {d?.firstNoticeDate && <Row k="최초 공고일" v={fmtYmd(d.firstNoticeDate)} />}
-          {d?.deposit && <Row k="입찰 보증금" v={d.deposit} />}
-          <Row k="입찰 방식" v={[item.bidMethod, item.privateContract ? '수의계약 가능' : null, item.bulk ? '일괄입찰' : null].filter(Boolean).join(' · ') || '—'} />
-          <Row k="공고 기관" v={item.court || '—'} />
-          {d?.baseRightDate && <Row k="최선순위 설정일(말소기준)" v={fmtYmd(d.baseRightDate)} />}
-          <div className="mt-2 flex flex-wrap gap-3 text-sm">
-            {d?.appraisalFile && <a href={d.appraisalFile} target="_blank" rel="noreferrer" className="text-brand underline">감정평가서 보기</a>}
-            {(d?.documents || []).map((doc, i) => <a key={i} href={doc.url} target="_blank" rel="noreferrer" className="text-brand underline">{doc.name}</a>)}
-          </div>
-        </Card>
-
-        <Card title="회차별 일정">
-          {d?.rounds?.length ? (
-            <table className="w-full text-sm num">
-              <thead className="text-left text-xs text-ink/50"><tr><th>회차</th><th>입찰 기간</th><th>개찰</th><th className="text-right">최저가</th></tr></thead>
-              <tbody>{d.rounds.map((r, i) => <tr key={i} className={`border-t border-line/50 ${String(r.round) === String(item.round) ? 'font-bold text-brand' : ''}`}><td>{r.round}</td><td>{r.start ? `${r.start.slice(5, 10)}~${(r.end || '').slice(5, 10)}` : '—'}</td><td>{fmtYmd(r.open)}</td><td className="text-right">{eok(r.minBid)}</td></tr>)}</tbody>
-            </table>
-          ) : <Empty>회차 일정 자료가 없습니다{item.source === 'court' ? '(법원경매는 원문 확인)' : '(상세 수집 후 표시)'}.</Empty>}
-        </Card>
-      </div>
-
-      {(d?.leases?.length > 0 || d?.rights?.length > 0) && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card title={`임차인·점유 (${d?.leases?.length || 0}명)`}>
-            {d?.leases?.length ? (
-              <table className="w-full text-xs num">
-                <thead className="text-left text-ink/50"><tr><th>임차인</th><th>부분</th><th className="text-right">보증금</th><th className="text-right">월세</th><th>전입</th><th>확정</th><th>배분요구</th></tr></thead>
-                <tbody>{d.leases.map((l, i) => <tr key={i} className="border-t border-line/50"><td>{l.tenant || '—'}</td><td>{l.part || ''}</td><td className="text-right">{eok(l.deposit)}</td><td className="text-right">{l.rent ? eok(l.rent) : ''}</td><td>{fmtYmd(l.moveIn)}</td><td>{fmtYmd(l.fixedDate)}</td><td className={l.claimed ? 'text-now' : 'text-hard'}>{l.claimed ? '함' : '안 함'}</td></tr>)}</tbody>
-              </table>
-            ) : <Empty>임차 자료 없음</Empty>}
-            <p className="mt-2 text-[11px] text-ink/50">전입일이 말소기준권리보다 빠르면 보증금을 인수할 수 있습니다. 등기부와 대조하세요.</p>
-          </Card>
-          <Card title="등기 주요 정보">
-            {d?.rights?.length ? (
-              <table className="w-full text-xs num">
-                <thead className="text-left text-ink/50"><tr><th>권리</th><th>권리자</th><th>설정일</th><th className="text-right">금액</th></tr></thead>
-                <tbody>{d.rights.map((r, i) => <tr key={i} className="border-t border-line/50"><td>{r.kind || '—'}</td><td>{r.holder || ''}</td><td>{fmtYmd(r.date)}</td><td className="text-right">{r.amount ? eok(r.amount) : ''}</td></tr>)}</tbody>
-              </table>
-            ) : <Empty>등기 자료 없음(압류재산만 제공)</Empty>}
-            {d?.extinguished && <p className="mt-2 text-xs text-ink/60">매각으로 소멸: {d.extinguished}</p>}
-          </Card>
+    <Card title="① 물건 기본현황">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <div className="min-w-0">
+          {shown.length ? (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {shown.map((u, i) => (
+                <a key={i} href={fullImg(u)} target="_blank" rel="noreferrer" className="shrink-0"><img src={u} alt={`물건 사진 ${i + 1}`} loading="lazy" className="h-44 w-60 rounded-lg border border-line bg-paper object-cover" /></a>
+              ))}
+            </div>
+          ) : (
+            <div className="flex h-44 items-center justify-center rounded-lg border border-dashed border-line bg-paper text-sm text-ink/50">
+              {d ? '사진 없음' : `사진 없음(${item.source === 'court' ? '원문 확인' : '상세 수집 대기'})`}
+            </div>
+          )}
+          {maps.length > 0 && (
+            <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+              {maps.map((u, i) => <a key={i} href={fullImg(u)} target="_blank" rel="noreferrer" className="shrink-0" title={`위치도·지적도 ${i + 1}`}><img src={u} alt={`위치도·지적도 ${i + 1}`} loading="lazy" className="h-20 w-28 rounded-md border border-line bg-paper object-cover" /></a>)}
+            </div>
+          )}
+          {!photos.length && item.thumbnail && <p className="mt-1 text-[11px] text-ink/50">목록 썸네일입니다. 상세 사진은 {d ? '제공되지 않았습니다' : item.source === 'court' ? '원문에서 확인하세요' : '상세 수집 대기 중입니다'}.</p>}
         </div>
-      )}
-
-      {(d?.usageStatus || d?.location || d?.conditions) && (
-        <Card title="현황 설명 (공고 원문)">
-          {d.location && <Desc k="위치 및 부근 현황" v={d.location} />}
-          {d.usageStatus && <Desc k="이용 현황" v={d.usageStatus} />}
-          {d.conditions && <Desc k="부대 조건" v={d.conditions} />}
-          {d.deliveryDuty && <Desc k="인도 책임" v={d.deliveryDuty} />}
-          {d.cautions && <Desc k="유의사항" v={d.cautions} />}
-        </Card>
-      )}
-    </>
+        <div className="min-w-0">
+          <Row k="지번 주소" v={d?.addressFull || item.address || '—'} />
+          <Row k="도로명 주소" v={dv(d?.roadAddress)} />
+          <Row k="지목" v={dv(d?.landCategory || item.land?.jimok)} />
+          <Row k="용도" v={item.usage || '—'} />
+          <Row k="토지 면적" v={sqm(item.landArea) || dv(null)} />
+          <Row k="건물 면적" v={sqm(item.buildingArea) || (item.landArea ? '— (토지만)' : dv(null))} />
+          <Row k="감정가" v={`${won(item.appraisal)}${d?.appraisalDate ? ` (${fmtYmd(d.appraisalDate)} 감정)` : ''}`} />
+          <Row k="최저가" v={item.minBidText && !item.minBid ? item.minBidText : `${won(item.minBid)}${item.appraisal && item.minBid ? ` (${Math.round((item.minBid / item.appraisal) * 100)}%)` : ''}`} strong />
+          <Row k="유찰" v={`${item.failCount ?? '—'}회${item.bidCount !== null && item.bidCount !== undefined ? ` · 입찰 진행 ${item.bidCount}회` : ''}`} />
+          <Row k="매각기일(입찰 기간)" v={item.bidStart || item.bidEnd ? `${item.bidStart || ''} ~ ${item.bidEnd || ''}` : '—'} />
+          <Row k="이용현황" v={<span className="whitespace-pre-line">{dv(d?.usageStatus)}</span>} />
+        </div>
+      </div>
+      <div className="mt-3 grid gap-x-6 border-t border-line/60 pt-2 sm:grid-cols-2">
+        <Row k="재산 종류" v={item.propertyTypeName || (item.source === 'court' ? '법원경매' : '—')} />
+        <Row k="입찰 방식" v={[d?.bidMethod || item.bidMethod, item.privateContract ? '수의계약 가능' : null, item.bulk ? '일괄입찰' : null].filter(Boolean).join(' · ') || '—'} />
+        <Row k="공고 기관" v={`${item.court || '—'}${d?.requestOrg ? ` (위임 ${d.requestOrg})` : ''}`} />
+        <Row k="최초 공고일" v={d?.firstNoticeDate ? fmtYmd(d.firstNoticeDate) : dv(null)} />
+        {d?.openDate && <Row k="개찰일" v={fmtYmd(d.openDate)} />}
+        {d?.deposit && <Row k="입찰 보증금" v={d.deposit} />}
+        {d?.plannedPrice ? <Row k="매각 예정가격" v={won(d.plannedPrice)} /> : null}
+        <Row k="배분요구 종기" v={d?.distributionDeadline ? fmtYmd(d.distributionDeadline) : dv(null)} />
+      </div>
+      <div className="mt-2 flex flex-wrap gap-3 text-sm">
+        {d?.appraisalFile && <a href={d.appraisalFile} target="_blank" rel="noreferrer" className="text-brand underline">감정평가서 보기{d.appraisalOrg ? ` (${d.appraisalOrg})` : ''}</a>}
+        {(d?.documents || []).map((doc, i) => <a key={i} href={doc.url} target="_blank" rel="noreferrer" className="text-brand underline">{doc.name}</a>)}
+      </div>
+    </Card>
   );
 }
 
