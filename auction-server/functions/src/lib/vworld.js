@@ -84,4 +84,29 @@ async function lookup({ pnu, key, fetcher = fetch, year }) {
   };
 }
 
-module.exports = { lookup, analyzeLandUse, firstArray };
+// 주택 공시가격(시가표준액): 공동주택가격(호별) → 없으면 개별주택가격
+// address 에서 '제205호', '205호' 같은 호수를 찾아 맞는 호를 고르고, 못 찾으면 그 필지 호들의 최솟값·최댓값만 돌려준다.
+async function housingPrice({ pnu, address, key, fetcher = fetch, year }) {
+  if (!key || !/^\d{19}$/.test(String(pnu || ''))) return null;
+  const y = Number(year || new Date().getFullYear());
+  const ho = (String(address || '').match(/제?\s*(\d{1,5})\s*호/) || [])[1];
+  const dong = (String(address || '').match(/제?\s*(\d{1,4})\s*동(?=\s|제|\d|$)/) || [])[1];
+  for (const yr of [y, y - 1]) {
+    let rows = [];
+    try { rows = await get('getApartHousingPriceAttr', { pnu, stdrYear: String(yr), numOfRows: '1000' }, key, fetcher); } catch { rows = []; }
+    if (rows.length) {
+      const prices = rows.map((r) => ({ price: Number(r.pblntfPc || r.pblntfPrc || 0), ho: String(r.hoNm || '').replace(/\D/g, ''), dong: String(r.dongNm || '').replace(/\D/g, '') })).filter((r) => r.price > 0);
+      if (prices.length) {
+        const hit = ho ? prices.find((r) => r.ho === ho && (!dong || !r.dong || r.dong === dong)) : null;
+        const sorted = prices.map((r) => r.price).sort((a, b) => a - b);
+        return { kind: '공동주택', year: yr, price: hit ? hit.price : null, min: sorted[0], max: sorted[sorted.length - 1], matched: Boolean(hit), units: prices.length };
+      }
+    }
+    try { rows = await get('getIndvdHousingPriceAttr', { pnu, stdrYear: String(yr) }, key, fetcher); } catch { rows = []; }
+    const r = rows.find((x) => Number(x.housePc || x.housePrc || 0) > 0);
+    if (r) { const v = Number(r.housePc || r.housePrc); return { kind: '개별주택', year: yr, price: v, min: v, max: v, matched: true, units: 1 }; }
+  }
+  return null;
+}
+
+module.exports = { lookup, housingPrice, analyzeLandUse, firstArray };

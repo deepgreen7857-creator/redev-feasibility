@@ -80,7 +80,7 @@ async function runBankrupt({ force = false } = {}) {
   const first = !st.maxSeq;
   const res = await bankrupt.collect({
     knownMaxSeq: st.maxSeq || 0,
-    maxPages: first ? 45 : 5,
+    maxPages: first ? 12 : 5, // 첫 수집은 최근 약 120건(오래된 공고는 이미 만료) — 함수 제한시간(9분) 안에 끝나게
     save: (item) => db.collection('bankruptNotices').doc(item.id).set({ ...item, savedAt: new Date().toISOString() }, { merge: true }),
     log: logger.info,
   });
@@ -103,6 +103,22 @@ async function runIncheonZones({ force = false } = {}) {
   return res;
 }
 
+// 필지별 토지이용·공시지가(30일 캐시) + 주택 공시가격
+async function enrichLand(item) {
+  const key = VWORLD_KEY.value();
+  if (!key || !item.pnu) return {};
+  const ref = db.collection('landCache').doc(String(item.pnu));
+  const c = await ref.get();
+  let land = c.exists && Date.now() - new Date(c.data().checkedAt).getTime() < 30 * 86400e3 ? c.data() : null;
+  if (!land) { land = await vworld.lookup({ pnu: item.pnu, key }); await ref.set(land); }
+  const out = { land };
+  if (!/토지|대지|임야|전|답|잡종지/.test(item.usageSmall || '') || item.buildingArea) {
+    const hp = await vworld.housingPrice({ pnu: item.pnu, address: `${item.address || ''} ${item.title || ''} ${item.detail?.addressFull || ''}`, key });
+    if (hp) out.housePrice = hp;
+  }
+  return out;
+}
+
 async function runOnbid({ deadline, force = false, mode } = {}) {
   const st = await getState('onbid');
   const today = kstDay();
@@ -111,9 +127,11 @@ async function runOnbid({ deadline, force = false, mode } = {}) {
   const m = mode || (!st.lastFullDay || isSunday ? 'full' : 'daily');
   const res = await onbid.collect({
     serviceKey: DATA_GO_KR_KEY.value(), quota: new Quota(db), mode: m, deadline,
-    save: saveListings, log: logger.info,
+    save: saveListings, log: logger.info, enrich: enrichLand,
   });
-  if (!res.stopped) await setState('onbid', { lastDay: today, ...(m === 'full' ? { lastFullDay: today } : {}) });
+  // 오류만 나고 한 건도 못 받았으면(예: 키 오류) '오늘 수집함'으로 표시하지 않는다 → 다음 실행에서 다시 시도
+  const failedAll = res.rows === 0 && res.errors && res.errors.length > 0;
+  if (!res.stopped && !failedAll) await setState('onbid', { lastDay: today, ...(m === 'full' ? { lastFullDay: today } : {}) });
   return { mode: m, ...res };
 }
 
@@ -157,7 +175,7 @@ async function tick({ only, force } = {}) {
 
 // ---------- 공개 함수 ----------
 exports.collectTick = onSchedule(
-  { schedule: '*/20 0-6 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_GO_KR_KEY] },
+  { schedule: '*/20 0-6 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_GO_KR_KEY, VWORLD_KEY] },
   async () => { await tick(); },
 );
 
@@ -168,7 +186,7 @@ function requireAdmin(request) {
 }
 
 // 관리자: 지금 수집 (job: zones | bankrupt | onbid | trades)
-exports.runNow = onCall({ timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_GO_KR_KEY] }, async (request) => {
+exports.runNow = onCall({ timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_GO_KR_KEY, VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
   const job = request.data && request.data.job;
   if (!['zones', 'bankrupt', 'onbid', 'trades'].includes(job)) throw new HttpsError('invalid-argument', 'job 값이 잘못되었습니다.');
@@ -225,8 +243,13 @@ exports.landCheck = onCall({ timeoutSeconds: 60, secrets: [VWORLD_KEY] }, async 
   const fresh = cached.exists && Date.now() - new Date(cached.data().checkedAt).getTime() < 30 * 86400e3;
   const land = fresh ? cached.data() : await vworld.lookup({ pnu, key: VWORLD_KEY.value() });
   if (!fresh) await cacheRef.set(land);
-  if (listingId) await db.collection('listings').doc(listingId).set({ land, pnu }, { merge: true });
-  return land;
+  let housePrice = null;
+  if (listingId) {
+    const it = (await db.collection('listings').doc(listingId).get()).data() || {};
+    housePrice = await vworld.housingPrice({ pnu, address: `${it.address || ''} ${it.title || ''} ${it.detail?.addressFull || ''}`, key: VWORLD_KEY.value() }).catch(() => null);
+    await db.collection('listings').doc(listingId).set({ land, pnu, ...(housePrice ? { housePrice } : {}) }, { merge: true });
+  }
+  return { ...land, housePrice };
 });
 
 // 첫 설치 때 기본 설정 넣기(관리자 화면의 "기본값 넣기" 버튼)
