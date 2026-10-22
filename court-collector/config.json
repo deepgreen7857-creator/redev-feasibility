@@ -6,7 +6,8 @@
     "수원지방법원", "수원지방법원 성남지원", "수원지방법원 여주지원", "수원지방법원 평택지원", "수원지방법원 안산지원", "수원지방법원 안양지원",
     "의정부지방법원", "의정부지방법원 고양지원", "의정부지방법원 남양주지원"
   ],
-  "pace": { "minSeconds": 20, "maxSeconds": 45, "longBreakEvery": 30, "longBreakSeconds": [240, 600] },
+  "pace": { "spread": true, "workShare": 0.65, "minSeconds": 20, "maxSeconds": 45, "maxSpreadSeconds": 180, "longBreakEvery": 30, "longBreakSeconds": [240, 600] },
+  "session": { "workMinutes": [45, 90], "restMinutes": [30, 90] },
   "dailyMaxPages": 1000,
   "allowedHours": [1, 22],
   "refreshDetailAfterDays": 7,

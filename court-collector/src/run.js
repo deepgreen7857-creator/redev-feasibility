@@ -78,8 +78,12 @@ async function main() {
   if (DRY) cfg.allowedHours = [0, 24]; // 시험(--dry)은 낮에도 돌려 볼 수 있게 시간대 제한을 풂(화면 간 쉬는 시간은 그대로)
   const pace = new Pace(cfg, STATE, log);
   if (!DRY && !pace.canContinue()) return; // 오늘 한도를 이미 채웠거나 시간대 밖이면 사이트에 접속하지 않음
-  const browser = await chromium.launch({ headless: cfg.headless !== false });
-  const page = await (await browser.newContext({ locale: 'ko-KR', viewport: { width: 1366, height: 900 } })).newPage();
+  let browser = null; let page = null;
+  const open = async () => {
+    browser = await chromium.launch({ headless: cfg.headless !== false });
+    page = await (await browser.newContext({ locale: 'ko-KR', viewport: { width: 1366, height: 900 } })).newPage();
+  };
+  await open();
   const stats = { listed: 0, detailed: 0, uploaded: 0, stoppedBy: null };
   let buffer = [];
   const flush = async () => { if (buffer.length) { await upload(buffer, { ...stats, at: new Date().toISOString() }); stats.uploaded += buffer.length; buffer = []; } };
@@ -87,10 +91,18 @@ async function main() {
     // 지난번에 멈춘 법원부터 이어서
     const start = Math.max(0, cfg.courts.indexOf(progress.court || ''));
     const courts = [...cfg.courts.slice(start), ...cfg.courts.slice(0, start)];
-    outer: for (const court of courts) {
+    outer: for (let ci = 0; ci < courts.length; ci++) {
+      const court = courts[ci];
       progress.court = court; saveProgress();
       log(`법원: ${court}`);
       for await (const row of listCourt(page, court, pace)) {
+        // 한동안 봤으면 끊고 쉰다: 올릴 것 올리고, 브라우저 닫고, 쉬었다가 같은 법원 처음부터 다시(이미 본 물건은 상세를 안 엶)
+        if (!DRY && pace.sessionOver()) {
+          await flush(); await browser.close(); browser = null;
+          await pace.restBetweenSessions();
+          if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
+          await open(); ci--; continue outer;
+        }
         if (!row) continue;
         stats.listed++;
         const key = `${row.court}_${row.caseNo}_${row.itemNo || 1}`;
@@ -120,7 +132,7 @@ async function main() {
     try { await flush(); } catch (e2) { log(`업로드 오류: ${e2.message}`); }
     if (e instanceof Blocked) fs.writeFileSync(path.join(STATE, 'blocked.txt'), `${new Date().toISOString()} ${e.message}\n`);
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
     log(`끝: ${JSON.stringify(stats)} / 오늘 연 화면 ${pace.count}`);
   }
 }
