@@ -11,6 +11,7 @@ const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '
 
 export default function ListPage({ mode }) {
   const opp = mode === 'opportunity';
+  const done = mode === 'done';
   const [items, setItems] = useState(null);
   const [settings, setSettings] = useState(null);
   const [dealsMap, setDealsMap] = useState({});
@@ -47,16 +48,17 @@ export default function ListPage({ mode }) {
       if (f.verdict === 'special' ? !a.special : f.verdict !== 'all' && a.verdict !== f.verdict) return false;
       if (!f.showExcluded && a.excluded) return false;
       if (opp && !a.opportunity) return false;
+      if (done !== isEnded(it)) return false;
       if (f.sgg && !(it.sgg || '').includes(f.sgg)) return false;
       if (f.maxPrice && (it.minBid || 0) > Number(f.maxPrice) * 1e4) return false;
       const ownOf = opp ? a.opportunity?.own : a.money?.own;
       if (f.maxOwn && (!ownOf || ownOf > Number(f.maxOwn) * 1e4)) return false;
       if (f.corpOnly && !['A', 'B'].includes(fitOf(it, a))) return false;
-      if (f.onlyOpen && /(낙찰|취소|종결|매각)/.test(it.status || '') && !/진행/.test(it.status || '')) return false;
+      if (!done && f.onlyOpen && /(낙찰|취소|종결|매각)/.test(it.status || '') && !/진행/.test(it.status || '')) return false;
       if (f.q && !`${it.title} ${it.address} ${it.caseNo}`.includes(f.q)) return false;
       return true;
-    }).sort((x, y) => (opp && f.sort === 'verdict' ? NUM(y.a.opportunity?.profit) - NUM(x.a.opportunity?.profit) : 0) || sorter(f.sort)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
-  }, [items, settings, dealsMap, f, opp]);
+    }).sort((x, y) => (done && f.sort === 'verdict' ? endOf(y.it).localeCompare(endOf(x.it)) : 0) || (opp && f.sort === 'verdict' ? NUM(y.a.opportunity?.profit) - NUM(x.a.opportunity?.profit) : 0) || sorter(f.sort)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
+  }, [items, settings, dealsMap, f, opp, done]);
 
   const counts = useMemo(() => {
     const c = { now: 0, wait: 0, check: 0, hard: 0, unknown: 0, special: 0, suspect: 0 };
@@ -68,6 +70,7 @@ export default function ListPage({ mode }) {
 
   return (
     <div className="space-y-4">
+      {done && <DoneSummary rows={rows} />}
       {opp && (
         <div className="card border-now/30 bg-now/5 text-sm">
           <div className="text-base font-extrabold">기회 찾기 — 지금 값보다 손을 대면 오르는 물건</div>
@@ -103,7 +106,7 @@ export default function ListPage({ mode }) {
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink/70">
           <label className="flex items-center gap-1.5 font-bold text-brand"><input type="checkbox" checked={f.corpOnly} onChange={set('corpOnly')} /> 법인 단타 적합만(A·B)</label>
-          <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>
+          {!done && <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>}
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.showExcluded} onChange={set('showExcluded')} /> 관심 제외 물건도 보기</label>
           <span className="ml-auto flex gap-1.5">
             <Badge tone="now">지금 {counts.now}</Badge><Badge tone="wait">대기 {counts.wait}</Badge><Badge tone="cash">특수 {counts.special}</Badge><Badge tone="hard">가격 안 맞음 {counts.hard}</Badge>{counts.suspect > 0 && <Badge tone="hard">오류 의심 {counts.suspect}</Badge>}
@@ -148,6 +151,7 @@ export default function ListPage({ mode }) {
                 <div><div className="text-xs text-ink/50">확실성</div><div className="font-bold">{a.certainty ? `${a.certainty.grade} (${a.certainty.value})` : '—'}</div></div>
               </div>
             )}
+            {done && <ResultRow it={it} a={a} />}
             {a.opportunity && (
               <div className="mt-2 rounded-lg border border-now/30 bg-now/5 p-2 text-sm">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -198,6 +202,65 @@ function sorter(key) {
 function fitOf(it, a) {
   if (a.money?.fit) return a.money.fit.grade;
   return corpFit(it, propertyKind(it, tradeTypeOf(it), a.farm)).grade;
+}
+
+// ── 완료 물건 ──────────────────────────────────────────────
+// 입찰(매각)기일이 지났거나 상태가 낙찰·매각·유찰·종결·취소인 물건
+const endOf = (it) => String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10);
+function isEnded(it) {
+  const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  if (it.result) return true;
+  if (/(낙찰|매각|유찰|종결|취소|기각|변경)/.test(it.status || '') && !/진행/.test(it.status || '')) return true;
+  const e = endOf(it);
+  return Boolean(e) && e < today;
+}
+function resultOf(it) {
+  const r = it.result || {};
+  if (r.soldPrice) return { kind: 'sold', label: '낙찰', price: r.soldPrice, rate: it.appraisal ? r.soldPrice / it.appraisal : null, bidders: r.bidders, second: r.second };
+  if (/유찰/.test(r.status || it.status || '')) return { kind: 'fail', label: '유찰' };
+  if (/(낙찰|매각)/.test(r.status || it.status || '')) return { kind: 'sold', label: '낙찰(금액 미확인)' };
+  if (/(취소|기각|변경|종결)/.test(r.status || it.status || '')) return { kind: 'other', label: r.status || it.status };
+  return { kind: 'unknown', label: '결과 확인 전' };
+}
+function ResultRow({ it, a }) {
+  const r = resultOf(it);
+  const cap = a?.cap;
+  const vs = r.price && cap ? (r.price <= cap ? `우리 매수상한 ${eok(cap)} 안에서 낙찰 — 우리 기준으로도 살 만했음` : `우리 매수상한 ${eok(cap)}보다 ${eok(r.price - cap)} 높게 낙찰 — 시장이 더 높게 봄`) : null;
+  return (
+    <>
+    {vs && <div className={`mt-2 text-xs font-bold ${r.price <= cap ? 'text-now' : 'text-wait'}`}>{vs}</div>}
+    <div className={`mt-2 grid grid-cols-4 gap-2 rounded-lg p-2 text-sm ${r.kind === 'sold' ? 'bg-now/5' : r.kind === 'fail' ? 'bg-wait/5' : 'bg-ink/5'}`}>
+      <div><div className="text-xs text-ink/50">결과</div><div className="font-bold">{r.label}</div></div>
+      <div><div className="text-xs text-ink/50">낙찰가</div><div className="num font-bold">{r.price ? eok(r.price) : '—'}</div></div>
+      <div><div className="text-xs text-ink/50">감정가 대비</div><div className="num font-bold">{r.rate ? pct(r.rate) : '—'}</div></div>
+      <div><div className="text-xs text-ink/50">응찰자</div><div className="num font-bold">{r.bidders ? `${r.bidders}명` : '—'}</div></div>
+    </div>
+    </>
+  );
+}
+// 우리 판정별로 실제 결과가 어땠는지(채점)
+function DoneSummary({ rows }) {
+  const by = {};
+  rows.forEach(({ it, a }) => {
+    const k = a.verdict; const r = resultOf(it);
+    by[k] ||= { n: 0, sold: 0, fail: 0, unknown: 0, rates: [] };
+    by[k].n++;
+    if (r.kind === 'sold') { by[k].sold++; if (r.rate) by[k].rates.push(r.rate); } else if (r.kind === 'fail') by[k].fail++; else by[k].unknown++;
+  });
+  const avg = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
+  const LABEL = { now: '지금 매력', wait: '유찰 대기', check: '권리 확인 후 판단', suspect: '오류 의심', hard: '가격 안 맞음', unknown: '시세 부족' };
+  return (
+    <div className="card text-sm">
+      <div className="text-base font-extrabold">완료 물건 — 시장이 내린 답으로 우리 판단을 채점합니다</div>
+      <p className="mt-1 text-ink/70">입찰이 끝난 물건을 지금 규칙으로 다시 판정해 실제 결과와 맞춰 봅니다. 낙찰가는 법원은 수집기가 기일 지난 사건을 다시 읽을 때, 공매는 온비드 입찰결과 연결 뒤 채워집니다.</p>
+      <table className="mt-3 w-full text-xs">
+        <thead className="text-ink/50"><tr><th className="text-left">우리 판정</th><th className="text-right">물건</th><th className="text-right">낙찰</th><th className="text-right">유찰</th><th className="text-right">결과 확인 전</th><th className="text-right">평균 낙찰가율</th></tr></thead>
+        <tbody>{Object.entries(by).map(([k, v]) => (
+          <tr key={k} className="border-t border-line/50"><td>{LABEL[k] || k}</td><td className="text-right">{v.n}</td><td className="text-right">{v.sold}</td><td className="text-right">{v.fail}</td><td className="text-right">{v.unknown}</td><td className="text-right">{v.rates.length ? `${pct(avg(v.rates))} (${v.rates.length}건)` : '—'}</td></tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
 }
 
 // 특수물건은 같은 판정 안에서 일반 물건 뒤로(섞여서 위로 튀지 않게). 특수물건 필터에서는 자기들끼리 순위

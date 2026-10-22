@@ -361,7 +361,7 @@ exports.seedSettings = onCall({}, async (request) => {
 // POST /ingestCourt  머리글 Authorization: Bearer <COURT_INGEST_TOKEN>
 // 본문 { items: [ {caseNo, court, itemNo, ...} ], run: { ... } }
 const COURT_FIELDS = ['caseNo', 'itemNo', 'court', 'title', 'usage', 'usageSmall', 'address', 'sido', 'sgg', 'emd', 'pnu', 'appraisal', 'minBid', 'failCount', 'round',
-  'bidEnd', 'status', 'landArea', 'buildingArea', 'share', 'bulk', 'thumbnail', 'url', 'detail', 'history'];
+  'bidEnd', 'status', 'landArea', 'buildingArea', 'share', 'bulk', 'thumbnail', 'url', 'detail', 'history', 'result'];
 
 function cleanCourtItem(raw) {
   if (!raw || typeof raw !== 'object') return null;

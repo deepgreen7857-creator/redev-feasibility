@@ -106,3 +106,10 @@ SAMPLE_LISTINGS.push({
   detail: { landCategory: '대', usageStatus: '현황 도로로 이용 중(포장)', flags: { superficies: false, survivingRights: false, tenants: 0, unclaimedTenants: 0 } },
   land: { jimok: '대', landUse: { zone: '제2종일반주거지역', redevelopment: [], farmPromotion: false, greenbelt: false, roadConflict: [] }, officialPrice: 1350000 },
 });
+
+SAMPLE_LISTINGS.push({
+  id: 'demo-10', source: 'court', category: 'court', caseNo: '2026타경1111', court: '인천지방법원', title: '[샘플] 산곡동 다세대 49㎡ (완료 예시)',
+  usage: '다세대', address: '인천광역시 부평구 산곡동 ○○빌라 2층', sido: '인천광역시', sgg: '부평구', emd: '산곡동',
+  appraisal: 180000000, minBid: 126000000, failCount: 1, round: '2', bidEnd: '2026.10.15', status: '매각', buildingArea: 49, landArea: 20,
+  result: { soldPrice: 151200000, bidders: 7, second: 148000000, status: '매각' },
+});

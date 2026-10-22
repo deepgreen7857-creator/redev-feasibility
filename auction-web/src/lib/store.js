@@ -49,7 +49,7 @@ export async function listListings({ sido } = {}) {
   const f = await firebase();
   if (!f) return demoListings().filter((x) => !sido || x.sido === sido);
   const { collection, query, where, limit, getDocs } = f.fs;
-  const q = sido ? query(collection(f.db, 'listings'), where('sido', '==', sido), limit(2000)) : query(collection(f.db, 'listings'), limit(2000));
+  const q = sido ? query(collection(f.db, 'listings'), where('sido', '==', sido), limit(5000)) : query(collection(f.db, 'listings'), limit(5000));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
