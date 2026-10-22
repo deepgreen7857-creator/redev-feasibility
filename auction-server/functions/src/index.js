@@ -210,7 +210,7 @@ exports.testApis = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORL
   });
   await tryOne('대법원 회생·파산 게시판', async () => {
     const res = await fetch(`${bankrupt.LIST}?pageIndex=1`, { signal: AbortSignal.timeout(20000) });
-    const parsed = bankrupt.parseList(await res.text());
+    const parsed = bankrupt.parseList(await bankrupt.decodeHtml(res));
     return { total: parsed.rows.length, sample: parsed.rows[0] ? parsed.rows[0].title : null };
   });
   return { results };

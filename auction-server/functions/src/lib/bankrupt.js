@@ -83,10 +83,22 @@ function parseView(html) {
   };
 }
 
+// 대법원 사이트는 EUC-KR(한글 완성형)로 내려오는 쪽이 있어 문자셋을 보고 풀어 읽는다
+async function decodeHtml(res) {
+  if (!res.arrayBuffer) return res.text();
+  const buf = Buffer.from(await res.arrayBuffer());
+  const type = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
+  let charset = (type.match(/charset=([\w-]+)/i) || [])[1];
+  if (!charset) charset = (buf.subarray(0, 2000).toString('latin1').match(/charset=["']?([\w-]+)/i) || [])[1];
+  charset = (charset || 'utf-8').toLowerCase();
+  if (/euc-?kr|ks_c_5601|cp949|ms949/.test(charset)) return new TextDecoder('euc-kr').decode(buf);
+  return buf.toString('utf8');
+}
+
 async function get(url, fetcher) {
   const res = await fetcher(url, { headers: { 'User-Agent': 'Mozilla/5.0 (jbslab auction collector)' }, signal: AbortSignal.timeout(25000) });
   if (!res.ok) throw new Error(`HTTP_${res.status}`);
-  return res.text();
+  return decodeHtml(res);
 }
 
 // knownMaxSeq: 지난번까지 받은 가장 큰 글번호. 그보다 작은 글이 나오면 멈춘다.
@@ -121,4 +133,4 @@ async function collect({ fetcher = fetch, knownMaxSeq = 0, maxPages = 5, save, l
   return stats;
 }
 
-module.exports = { parseList, parseView, classify, sidoOfCourt, collect, LIST, VIEW };
+module.exports = { parseList, parseView, classify, sidoOfCourt, collect, decodeHtml, LIST, VIEW };

@@ -5,3 +5,4 @@
 _비공개/
 
 node_modules/
+auction-server/functions/.env*
