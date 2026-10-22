@@ -175,7 +175,7 @@ async function fetchDetail({ cltrMngNo, pbctCdtnNo, serviceKey, quota, fetcher }
 }
 
 // 전체 수집. mode: 'daily'(어제 이후 수정분) | 'full'(전부)
-async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log = console.log, maxDetails = 300, deadline = Infinity, enrich }) {
+async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log = console.log, maxDetails = 600, deadline = Infinity, enrich }) {
   const since = mode === 'daily' ? ymd(new Date(Date.now() - 2 * 86400e3)) : null;
   const stats = { pages: 0, rows: 0, saved: 0, details: 0, errors: [] };
   const fresh = [];
