@@ -1,5 +1,6 @@
-// 최대한 천천히: 하루 1,000화면을 허용 시간대 전체에 고르게 펴고(화면마다 대략 1분 안팎, 무작위),
-// 30화면마다 4~10분 쉬고, 1시간 안팎 보면 브라우저를 닫고 30~90분 끊었다가 다시 접속한다(config.json). 하루 화면 수·시간대 제한.
+// 최대한 천천히: 5시간 돌고 3시간 쉬는 구간을 하루 세 번(01~06, 09~14, 17~22시),
+// 하루 1,000화면을 그 시간 전체에 고르게 펴고(화면마다 대략 1분 안팎, 무작위), 30화면마다 4~10분 쉰다.
+// 1,000화면을 채우면 그날은 끝(config.json). 하루 화면 수·시간대 제한.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -15,24 +16,31 @@ export class Pace {
     this.count = fs.existsSync(this.file) ? JSON.parse(fs.readFileSync(this.file, 'utf8')).count || 0 : 0;
     this.sinceBreak = 0;
   }
+  // allowedHours: [1, 6] 하나 또는 [[1, 6], [9, 14], [17, 22]] 여러 구간(5시간 돌고 3시간 쉼)
+  windows() {
+    const w = this.cfg.allowedHours || [0, 24];
+    return Array.isArray(w[0]) ? w : [w];
+  }
   inHours() {
-    const [from, to] = this.cfg.allowedHours || [0, 24];
     const h = kstNow().getUTCHours();
-    return h >= from && h < to;
+    return this.windows().some(([from, to]) => h >= from && h < to);
   }
   canContinue() {
     if (this.count >= this.cfg.dailyMaxPages) { this.log(`오늘 화면 수 한도(${this.cfg.dailyMaxPages}) 도달 — 내일 이어서`); return false; }
-    if (!this.inHours()) { this.log('허용 시간대가 끝남 — 내일 이어서'); return false; }
+    if (!this.inHours()) { this.log('도는 시간 구간이 끝남 — 다음 구간(또는 내일)에 이어서'); return false; }
     return true;
   }
   // 오늘 남은 시간에 남은 화면 수를 고르게 펴서 한 화면당 쉬는 시간을 정한다(최대한 천천히).
   //  남은 시간의 workShare(기본 65%)만 화면 사이에 쓰고 나머지는 '끊고 쉬는' 시간으로 남겨 둔다.
   spreadSeconds() {
     const p = this.cfg.pace;
-    const [, to] = this.cfg.allowedHours || [0, 24];
+    // 오늘 남은 '도는 시간'(지금 구간의 남은 시간 + 뒤에 남은 구간들)
     const now = kstNow();
-    const end = new Date(now); end.setUTCHours(to, 0, 0, 0);
-    const leftSec = Math.max(0, (end - now) / 1000);
+    const at = (h) => { const d = new Date(now); d.setUTCHours(h, 0, 0, 0); return d; };
+    const leftSec = this.windows().reduce((sum, [from, to]) => {
+      const a = Math.max(now, at(from)); const b = at(to);
+      return sum + Math.max(0, (b - a) / 1000);
+    }, 0);
     const leftPages = Math.max(1, this.cfg.dailyMaxPages - this.count);
     const even = (leftSec * (p.workShare ?? 0.65)) / leftPages;
     const base = Math.min(p.maxSpreadSeconds ?? 180, Math.max(p.minSeconds, even));
