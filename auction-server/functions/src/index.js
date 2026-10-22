@@ -80,7 +80,7 @@ async function runBankrupt({ force = false } = {}) {
   const first = !st.maxSeq;
   const res = await bankrupt.collect({
     knownMaxSeq: st.maxSeq || 0,
-    maxPages: first ? 45 : 5,
+    maxPages: first ? 12 : 5, // 첫 수집은 최근 약 120건(오래된 공고는 이미 만료) — 함수 제한시간(9분) 안에 끝나게
     save: (item) => db.collection('bankruptNotices').doc(item.id).set({ ...item, savedAt: new Date().toISOString() }, { merge: true }),
     log: logger.info,
   });
