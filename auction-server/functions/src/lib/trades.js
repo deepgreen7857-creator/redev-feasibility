@@ -12,7 +12,20 @@ const TYPES = {
   land: { name: '토지', api: 'rt-land', url: `${BASE}/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade` },
   // 분양권·입주권(활용신청: 국토교통부_아파트 분양권전매 신고 자료) — 정비구역 입주권 가치 비교용
   silv: { name: '분양권·입주권', api: 'rt-silv', url: `${BASE}/RTMSDataSvcSilvTrade/getRTMSDataSvcSilvTrade` },
+  // 전월세 — 임차인 보증금이 시세에 맞는지(가장 임차인·깡통 의심), 세 놓을 때 수익 계산용
+  aptRent: { name: '아파트 전월세', api: 'rt-apt-rent', url: `${BASE}/RTMSDataSvcAptRent/getRTMSDataSvcAptRent`, rent: true },
+  rhRent: { name: '연립다세대 전월세', api: 'rt-rh-rent', url: `${BASE}/RTMSDataSvcRHRent/getRTMSDataSvcRHRent`, rent: true },
+  shRent: { name: '단독/다가구 전월세', api: 'rt-sh-rent', url: `${BASE}/RTMSDataSvcSHRent/getRTMSDataSvcSHRent`, rent: true },
+  offiRent: { name: '오피스텔 전월세', api: 'rt-offi-rent', url: `${BASE}/RTMSDataSvcOffiRent/getRTMSDataSvcOffiRent`, rent: true },
 };
+
+// 전월세 한 건 → [보증금(원), 면적㎡, 층, 일, 지번, 이름, 건축년도, false, 계약구분(신규/갱신), 읍면동, 월세(원)]
+function compactRent(type, r) {
+  const man = (v) => { const n = num(String(v ?? '').replace(/,/g, '')); return n === null ? null : n * 10000; };
+  const area = type === 'shRent' ? num(r.totalFloorAr) : num(r.excluUseAr);
+  const name = text(r.aptNm) || text(r.mhouseNm) || text(r.offiNm) || text(r.houseType) || null;
+  return [man(r.deposit), area, num(r.floor), num(r.dealDay), text(r.jibun), name, num(r.buildYear), false, text(r.contractType), text(r.umdNm), man(r.monthlyRent)];
+}
 
 // 한 건 → 압축 형식 [가격(원), 면적㎡, 층, 일, 지번, 이름, 건축년도, 해제여부, 거래유형, 읍면동, 추가]
 function compact(type, r) {
@@ -48,7 +61,7 @@ async function fetchMonth({ type, lawd, ym, serviceKey, quota, fetcher }) {
   for (;;) {
     const page = await call({ api: t.api, url: t.url, serviceKey, quota, fetcher, params: { LAWD_CD: lawd, DEAL_YMD: ym, pageNo, numOfRows: 1000 } });
     total = page.total;
-    deals.push(...page.rows.map((r) => compact(type, r)));
+    deals.push(...page.rows.map((r) => (t.rent ? compactRent(type, r) : compact(type, r))));
     if (!page.rows.length || pageNo * 1000 >= total) break;
     pageNo++;
   }

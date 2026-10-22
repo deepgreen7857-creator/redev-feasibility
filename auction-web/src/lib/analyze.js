@@ -223,7 +223,19 @@ export function rightValue(item, aptDeals) {
   return { ratio, newPrice, newPriceAuto: !e.newPrice && auto ? auto : null, memberPrice: e.memberPrice || null, rightPrice, contribution, value, area: e.area || 84 };
 }
 
-export function analyze(item, { settings, deals, aptDeals } = {}) {
+// 전세 시세(같은 동/시군구·비슷한 면적, 월세 없는 계약의 ㎡당 보증금 중앙값) → 임차인 보증금이 시세에 맞는지
+export function jeonseEstimate(item, rentDeals) {
+  const area = item.buildingArea;
+  if (!area || !rentDeals?.length) return null;
+  let pool = rentDeals.filter((d) => d[0] && d[1] && !d[10]); // 월세 0 = 전세
+  const same = pool.filter((d) => item.emd && d[9] === item.emd);
+  if (same.length >= 5) pool = same;
+  pool = pool.filter((d) => d[1] >= area * 0.8 && d[1] <= area * 1.2);
+  if (pool.length < 3) return null;
+  return { value: Math.round(median(pool.map((d) => d[0] / d[1])) * area), count: pool.length, basis: `${same.length >= 5 ? '같은 동' : '같은 시군구'} 비슷한 면적 전세 ${pool.length}건 ㎡당 중앙값` };
+}
+
+export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   const margin = settings?.marginRate ?? 0.1;
   const market = marketEstimate(item, deals, { excludeDirect: settings?.excludeDirect !== false });
   const rounds = projectRounds(item, settings);
@@ -305,12 +317,21 @@ export function analyze(item, { settings, deals, aptDeals } = {}) {
   if (member.status === 'member' && /임박/.test(member.reason || '')) warnings.push(member.reason);
   if (member.status === 'member' && member.rank >= 3 && !rightType) warnings.push('입주권형 — 구역의 비례율·조합원분양가를 넣으면 입주권 가치로 계산합니다');
   if (member.status !== 'none') warnings.push('권리산정기준일 이후 신축·지분분할 물건이거나 한 세대가 여러 채를 가지면 분양자격이 달라질 수 있음');
+  const jeonse = jeonseEstimate(item, rentDeals);
+  if (jeonse) {
+    (item.detail?.leases || []).forEach((l) => {
+      if (!l.deposit || l.rent) return;
+      const r = l.deposit / jeonse.value;
+      if (r > 1.3) warnings.push(`임차인 보증금 ${eok(l.deposit)} — 주변 전세(${eok(jeonse.value)})보다 ${Math.round(r * 100)}% 높음: 과다·허위 임차 의심`);
+      else if (r < 0.3) warnings.push(`임차인 보증금 ${eok(l.deposit)} — 주변 전세(${eok(jeonse.value)})의 ${Math.round(r * 100)}%뿐: 가장 임차인(가족 등) 의심`);
+    });
+  }
   if (item.detail?.flags?.unclaimedTenants) warnings.push(`배분요구 안 한 임차인 ${item.detail.flags.unclaimedTenants}명 — 인수 여부 확인`);
   if (item.source === 'court' && !courtRate(item, settings).verified) warnings.push('이 법원 저감률은 확인 전 기본값');
   if (market.count && market.count < 5 && !cashType && !rightType) warnings.push('비교 거래가 적음 — 시세 신뢰도 낮음');
 
   const result = {
-    verdict, market, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special, anomalies,
+    verdict, market, jeonse, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special, anomalies,
     farm, redev, cashType, rightType, right, member, stage, excluded: isExcluded(item, settings),
     ratio: item.appraisal && item.minBid ? item.minBid / item.appraisal : null,
   };

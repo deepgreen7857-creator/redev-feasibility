@@ -17,6 +17,7 @@ export default function DetailPage({ admin }) {
   const [deals, setDeals] = useState([]);
   const [aptDeals, setAptDeals] = useState([]);
   const [silvDeals, setSilvDeals] = useState([]);
+  const [rentDeals, setRentDeals] = useState([]);
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
   const [zones, setZones] = useState([]);
@@ -32,11 +33,12 @@ export default function DetailPage({ admin }) {
         setDeals(own);
         setAptDeals(t === 'apt' ? own : await getDeals('apt', lawd, 12));
         getDeals('silv', lawd, 12).then(setSilvDeals).catch(() => {});
+        if (['apt', 'rh', 'sh', 'offi'].includes(t)) getDeals(`${t}Rent`, lawd, 12).then(setRentDeals).catch(() => {});
       }
     });
   }, [id]);
 
-  const a = useMemo(() => (item && settings ? analyze(item, { settings, deals, aptDeals }) : null), [item, settings, deals, aptDeals]);
+  const a = useMemo(() => (item && settings ? analyze(item, { settings, deals, aptDeals, rentDeals }) : null), [item, settings, deals, aptDeals, rentDeals]);
   if (item === null && settings) return <Empty>물건을 찾을 수 없습니다. <Link className="text-brand underline" to="/">목록으로</Link></Empty>;
   if (!item || !a) return <div className="card text-sm text-ink/50">불러오는 중…</div>;
 
@@ -261,6 +263,7 @@ export default function DetailPage({ admin }) {
           <Row k="감정가" v={won(item.appraisal)} />
           <Row k="현재 최저가" v={`${won(item.minBid)} (${pct(a.ratio)})`} strong />
           {a.special && <Row k="하자 없을 때 가치" v={won(a.full)} />}
+          {a.jeonse && <Row k="주변 전세 시세" v={`${won(a.jeonse.value)} (${a.jeonse.count}건)`} />}
           <Row k={a.special ? '바닥 가치(최악)' : '예상 가치'} v={won(a.value)} />
           <Row k="비용(세금·명도·수리)" v={won(a.costs?.total)} />
           <Row k={`매수상한 (마진 ${Math.round((settings.marginRate ?? 0.1) * 100)}%)`} v={won(a.cap)} strong />
