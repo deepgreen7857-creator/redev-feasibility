@@ -260,3 +260,31 @@ test('주변 필지 맹지 확인: 지적도 경계 → 주변 필지 → 도로
   assert.equal(nb.landlocked, 1);
   assert.equal(nb.list.find((x) => x.jimok === '도').roadSide, null);
 });
+
+test('입찰 전 예측: 기일 전 물건만 판정하고, 기일이 된 물건은 굳힘', async () => {
+  const forecast = require('../src/lib/forecast');
+  const now = { day: '2026-10-23', stamp: '2026-10-23 08:00' };
+  assert.equal(forecast.beforeBid({ bidEnd: '2026.10.24', status: '진행' }, now), true);
+  assert.equal(forecast.beforeBid({ bidEnd: '2026.10.23', status: '진행' }, now), false); // 매각기일 당일은 굳힘
+  assert.equal(forecast.beforeBid({ bidEnd: '2026-10-23 17:00', status: '입찰진행중' }, now), true);
+  assert.equal(forecast.beforeBid({ bidEnd: '2026-11-01', status: '낙찰' }, now), false);
+  // 가짜 Firestore로 실행
+  const docs = [
+    { id: 'a', data: { source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 6e8, minBid: 3e8, bidEnd: '2099.01.01', status: '진행' } },
+    { id: 'b', data: { source: 'court', sido: '인천광역시', sgg: '부평구', usage: '아파트', buildingArea: 84, appraisal: 6e8, minBid: 3e8, bidEnd: '2000.01.01', status: '매각' } },
+  ];
+  const written = {};
+  const deals = JSON.stringify(Array.from({ length: 20 }, (_, i) => [5e8 + i * 1e6, 84, 5, 1, '1', 'A', 2000, false, '중개거래', '부평동']));
+  const db = {
+    collection: (name) => ({
+      doc: (id) => ({ id, get: async () => ({ exists: name === 'settings' ? false : true, data: () => ({ d: deals }) }), _name: name }),
+      get: async () => ({ size: docs.length, docs: docs.map((d) => ({ id: d.id, ref: { id: d.id }, data: () => d.data })) }),
+    }),
+    getAll: async (...refs) => refs.map(() => ({ exists: true, data: () => ({ d: deals }) })),
+    batch: () => ({ set: (ref, v) => { written[ref.id] = v; }, commit: async () => {} }),
+  };
+  const st = await forecast.run({ db, log: () => {} });
+  assert.equal(st.forecast, 1); assert.equal(st.frozen, 1);
+  assert.ok(written.a.forecast.verdict && written.a.forecastFirst);
+  assert.equal(written.b, undefined);
+});

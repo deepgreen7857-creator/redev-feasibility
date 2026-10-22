@@ -205,6 +205,7 @@ function fitOf(it, a) {
 }
 
 // ── 완료 물건 ──────────────────────────────────────────────
+const VERDICT_LABEL = { now: '지금 매력', wait: '유찰 대기', check: '권리 확인 후 판단', suspect: '오류 의심', hard: '가격 안 맞음', unknown: '시세 부족' };
 // 입찰(매각)기일이 지났거나 상태가 낙찰·매각·유찰·종결·취소인 물건
 const endOf = (it) => String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10);
 function isEnded(it) {
@@ -224,11 +225,16 @@ function resultOf(it) {
 }
 function ResultRow({ it, a }) {
   const r = resultOf(it);
-  const cap = a?.cap;
+  const fc = it.forecast; // 입찰 전에 서버가 기록해 둔 우리 예측
+  const cap = fc ? fc.cap : a?.cap;
   const vs = r.price && cap ? (r.price <= cap ? `우리 매수상한 ${eok(cap)} 안에서 낙찰 — 우리 기준으로도 살 만했음` : `우리 매수상한 ${eok(cap)}보다 ${eok(r.price - cap)} 높게 낙찰 — 시장이 더 높게 봄`) : null;
   return (
     <>
-    {vs && <div className={`mt-2 text-xs font-bold ${r.price <= cap ? 'text-now' : 'text-wait'}`}>{vs}</div>}
+    <div className="mt-2 rounded-md border border-line px-2 py-1 text-xs">
+      {fc ? <><b>입찰 전 예측</b>({fc.at}): {VERDICT_LABEL[fc.verdict] || fc.verdict}{fc.grade ? ` · ${fc.grade} ${fc.score}점` : ''}{fc.cap ? ` · 매수상한 ${eok(fc.cap)}` : ''}{fc.opportunity ? ` · 기회(${fc.opportunity.kind}) ${eok(fc.opportunity.profit)}` : ''}</>
+        : <span className="text-ink/50">입찰 전 예측 기록 없음 — 아래는 지금 규칙으로 다시 판정한 값</span>}
+    </div>
+    {vs && <div className={`mt-1 text-xs font-bold ${r.price <= cap ? 'text-now' : 'text-wait'}`}>{vs}</div>}
     <div className={`mt-2 grid grid-cols-4 gap-2 rounded-lg p-2 text-sm ${r.kind === 'sold' ? 'bg-now/5' : r.kind === 'fail' ? 'bg-wait/5' : 'bg-ink/5'}`}>
       <div><div className="text-xs text-ink/50">결과</div><div className="font-bold">{r.label}</div></div>
       <div><div className="text-xs text-ink/50">낙찰가</div><div className="num font-bold">{r.price ? eok(r.price) : '—'}</div></div>
@@ -241,22 +247,24 @@ function ResultRow({ it, a }) {
 // 우리 판정별로 실제 결과가 어땠는지(채점)
 function DoneSummary({ rows }) {
   const by = {};
+  let recorded = 0;
   rows.forEach(({ it, a }) => {
-    const k = a.verdict; const r = resultOf(it);
+    if (it.forecast) recorded++;
+    const k = it.forecast ? it.forecast.verdict : `now:${a.verdict}`; const r = resultOf(it);
     by[k] ||= { n: 0, sold: 0, fail: 0, unknown: 0, rates: [] };
     by[k].n++;
     if (r.kind === 'sold') { by[k].sold++; if (r.rate) by[k].rates.push(r.rate); } else if (r.kind === 'fail') by[k].fail++; else by[k].unknown++;
   });
   const avg = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
-  const LABEL = { now: '지금 매력', wait: '유찰 대기', check: '권리 확인 후 판단', suspect: '오류 의심', hard: '가격 안 맞음', unknown: '시세 부족' };
+  const LABEL = (k) => (k.startsWith('now:') ? `${VERDICT_LABEL[k.slice(4)] || k.slice(4)} (예측 기록 없음·지금 규칙)` : VERDICT_LABEL[k] || k);
   return (
     <div className="card text-sm">
       <div className="text-base font-extrabold">완료 물건 — 시장이 내린 답으로 우리 판단을 채점합니다</div>
-      <p className="mt-1 text-ink/70">입찰이 끝난 물건을 지금 규칙으로 다시 판정해 실제 결과와 맞춰 봅니다. 낙찰가는 법원은 수집기가 기일 지난 사건을 다시 읽을 때, 공매는 온비드 입찰결과 연결 뒤 채워집니다.</p>
+      <p className="mt-1 text-ink/70">서버가 매일 밤 진행 물건을 판정해 <b>입찰 전 예측</b>을 기록하고, 기일이 되면 그 예측을 굳혀 실제 결과와 맞춰 봅니다(결과를 보고 예측을 고치지 않음). 예측 기록이 있는 물건 {recorded}건 / 전체 {rows.length}건. 낙찰가는 법원은 수집기가 기일 지난 사건을 다시 읽을 때, 공매는 온비드 입찰결과 연결 뒤 채워집니다.</p>
       <table className="mt-3 w-full text-xs">
         <thead className="text-ink/50"><tr><th className="text-left">우리 판정</th><th className="text-right">물건</th><th className="text-right">낙찰</th><th className="text-right">유찰</th><th className="text-right">결과 확인 전</th><th className="text-right">평균 낙찰가율</th></tr></thead>
         <tbody>{Object.entries(by).map(([k, v]) => (
-          <tr key={k} className="border-t border-line/50"><td>{LABEL[k] || k}</td><td className="text-right">{v.n}</td><td className="text-right">{v.sold}</td><td className="text-right">{v.fail}</td><td className="text-right">{v.unknown}</td><td className="text-right">{v.rates.length ? `${pct(avg(v.rates))} (${v.rates.length}건)` : '—'}</td></tr>
+          <tr key={k} className="border-t border-line/50"><td>{LABEL(k)}</td><td className="text-right">{v.n}</td><td className="text-right">{v.sold}</td><td className="text-right">{v.fail}</td><td className="text-right">{v.unknown}</td><td className="text-right">{v.rates.length ? `${pct(avg(v.rates))} (${v.rates.length}건)` : '—'}</td></tr>
         ))}</tbody>
       </table>
     </div>

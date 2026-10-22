@@ -112,4 +112,5 @@ SAMPLE_LISTINGS.push({
   usage: '다세대', address: '인천광역시 부평구 산곡동 ○○빌라 2층', sido: '인천광역시', sgg: '부평구', emd: '산곡동',
   appraisal: 180000000, minBid: 126000000, failCount: 1, round: '2', bidEnd: '2026.10.15', status: '매각', buildingArea: 49, landArea: 20,
   result: { soldPrice: 151200000, bidders: 7, second: 148000000, status: '매각' },
+  forecast: { at: '2026-10-14', verdict: 'now', cap: 141370000, grade: 'B', score: 66, minBid: 126000000 },
 });

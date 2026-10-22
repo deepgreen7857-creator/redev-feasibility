@@ -1,4 +1,4 @@
 {
-  "functions": [{ "source": "functions", "codebase": "auction", "runtime": "nodejs22", "ignore": ["node_modules", "test", "*.log"] }],
+  "functions": [{ "source": "functions", "codebase": "auction", "runtime": "nodejs22", "ignore": ["node_modules", "test", "*.log"], "predeploy": ["node \"$RESOURCE_DIR/../scripts/sync-shared.mjs\""] }],
   "firestore": { "rules": "firestore.rules", "indexes": "firestore.indexes.json" }
 }

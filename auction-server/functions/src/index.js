@@ -14,6 +14,7 @@ const trades = require('./lib/trades');
 const bankrupt = require('./lib/bankrupt');
 const vworld = require('./lib/vworld');
 const incheonZones = require('./lib/incheonZones');
+const forecast = require('./lib/forecast');
 const { COURTS } = require('./data/courts');
 
 initializeApp();
@@ -207,6 +208,12 @@ exports.collectTick = onSchedule(
   async () => { await tick(); },
 );
 
+// 매일 밤 11시 40분: 진행 중인 물건을 판정해 '입찰 전 예측'을 저장(기일이 된 물건은 그대로 굳힘)
+exports.forecastTick = onSchedule(
+  { schedule: '40 23 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '1GiB' },
+  async () => { await forecast.run({ db, log: logger.info, deadline: Date.now() + TICK_BUDGET_MS }); },
+);
+
 function requireAdmin(request) {
   const email = request.auth && request.auth.token && request.auth.token.email;
   const admins = ADMIN_EMAILS.value().split(',').map((s) => s.trim().toLowerCase());
@@ -219,6 +226,12 @@ exports.runNow = onCall({ timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_
   const job = request.data && request.data.job;
   if (!['zones', 'bankrupt', 'onbid', 'trades'].includes(job)) throw new HttpsError('invalid-argument', 'job 값이 잘못되었습니다.');
   return tick({ only: job, force: true });
+});
+
+// 관리자: 예측 기록 지금 실행
+exports.forecastNow = onCall({ timeoutSeconds: 540, memory: '1GiB' }, async (request) => {
+  requireAdmin(request);
+  return forecast.run({ db, log: logger.info, deadline: Date.now() + TICK_BUDGET_MS });
 });
 
 // 관리자: API 연결 시험 — 각 API를 한 번씩 불러 결과코드와 첫 줄의 항목 이름을 돌려준다
