@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "courts": [
+    "서울중앙지방법원", "서울동부지방법원", "서울남부지방법원", "서울북부지방법원", "서울서부지방법원",
+    "인천지방법원", "인천지방법원 부천지원",
+    "수원지방법원", "수원지방법원 성남지원", "수원지방법원 여주지원", "수원지방법원 평택지원", "수원지방법원 안산지원", "수원지방법원 안양지원",
+    "의정부지방법원", "의정부지방법원 고양지원", "의정부지방법원 남양주지원"
+  ],
+  "pace": { "minSeconds": 10, "maxSeconds": 30, "longBreakEvery": 40, "longBreakSeconds": [120, 300] },
+  "dailyMaxPages": 1000,
+  "allowedHours": [1, 6],
+  "refreshDetailAfterDays": 7,
+  "uploadBatch": 20,
+  "headless": true
+}
