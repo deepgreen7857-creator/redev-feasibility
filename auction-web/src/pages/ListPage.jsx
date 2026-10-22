@@ -211,15 +211,15 @@ const endOf = (it) => String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10);
 function isEnded(it) {
   const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   if (it.result) return true;
-  if (/(낙찰|매각|유찰|종결|취소|기각|변경)/.test(it.status || '') && !/진행/.test(it.status || '')) return true;
+  if (/(낙찰|매각|유찰|종결|취소|기각|변경|마감)/.test(it.status || '') && !/진행/.test(it.status || '')) return true;
   const e = endOf(it);
   return Boolean(e) && e < today;
 }
 function resultOf(it) {
   const r = it.result || {};
   if (r.soldPrice) return { kind: 'sold', label: '낙찰', price: r.soldPrice, rate: it.appraisal ? r.soldPrice / it.appraisal : null, bidders: r.bidders, second: r.second };
-  if (/유찰/.test(r.status || it.status || '')) return { kind: 'fail', label: '유찰' };
-  if (/(낙찰|매각)/.test(r.status || it.status || '')) return { kind: 'sold', label: '낙찰(금액 미확인)' };
+  if (/유찰/.test(r.status || it.status || '')) return { kind: 'fail', label: '유찰 — 이 가격에 아무도 안 삼' };
+  if (/(낙찰|매각)/.test(r.status || it.status || '')) return { kind: 'sold', label: '낙찰 — 최저가 이상에 팔림(금액 미확인)' };
   if (/(취소|기각|변경|종결)/.test(r.status || it.status || '')) return { kind: 'other', label: r.status || it.status };
   return { kind: 'unknown', label: '결과 확인 전' };
 }
@@ -256,6 +256,16 @@ function DoneSummary({ rows }) {
     if (r.kind === 'sold') { by[k].sold++; if (r.rate) by[k].rates.push(r.rate); } else if (r.kind === 'fail') by[k].fail++; else by[k].unknown++;
   });
   const avg = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
+  // 우리 매수상한 vs 그 회차 최저가 → '샀을까' / 실제로 팔렸나
+  const m = { agreeBuy: 0, agreePass: 0, weOptimistic: 0, marketOptimistic: 0 };
+  rows.forEach(({ it, a }) => {
+    const r = resultOf(it); const cap = it.forecast ? it.forecast.cap : a.cap; const price = it.minBid;
+    if (!cap || !price || !['sold', 'fail'].includes(r.kind)) return;
+    const buy = cap >= price;
+    if (buy && r.kind === 'sold') m.agreeBuy++; else if (!buy && r.kind === 'fail') m.agreePass++;
+    else if (buy) m.weOptimistic++; else m.marketOptimistic++;
+  });
+  const judged = m.agreeBuy + m.agreePass + m.weOptimistic + m.marketOptimistic;
   const LABEL = (k) => (k.startsWith('now:') ? `${VERDICT_LABEL[k.slice(4)] || k.slice(4)} (예측 기록 없음·지금 규칙)` : VERDICT_LABEL[k] || k);
   return (
     <div className="card text-sm">
@@ -267,6 +277,16 @@ function DoneSummary({ rows }) {
           <tr key={k} className="border-t border-line/50"><td>{LABEL(k)}</td><td className="text-right">{v.n}</td><td className="text-right">{v.sold}</td><td className="text-right">{v.fail}</td><td className="text-right">{v.unknown}</td><td className="text-right">{v.rates.length ? `${pct(avg(v.rates))} (${v.rates.length}건)` : '—'}</td></tr>
         ))}</tbody>
       </table>
+      <div className="mt-3 rounded-md bg-paper p-2 text-xs">
+        <b>우리 매수상한 vs 그 회차 최저가</b> (결과가 낙찰·유찰로 나온 {judged}건)
+        <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-4">
+          <div>✔ 산다 → 팔림 <b>{m.agreeBuy}</b></div>
+          <div>✔ 안 산다 → 유찰 <b>{m.agreePass}</b></div>
+          <div className="text-wait">✘ 산다 → 유찰(우리가 낙관) <b>{m.weOptimistic}</b></div>
+          <div className="text-wait">✘ 안 산다 → 팔림(시장이 낙관) <b>{m.marketOptimistic}</b></div>
+        </div>
+        {judged > 0 && <div className="mt-1">일치율 <b>{pct((m.agreeBuy + m.agreePass) / judged)}</b> — 틀린 쪽 물건을 열어 왜 어긋났는지 보면 규칙을 고칠 곳이 보입니다.</div>}
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 // 입찰(매각)기일이 되면 더 이상 고치지 않는다(결과를 보고 예측을 바꾸지 않도록). 완료 물건 화면에서 실제 결과와 비교한다.
 const RULES_VERSION = '2026-10-23';
 
-const ENDED = /(낙찰|매각|유찰|종결|취소|기각|변경)/;
+const ENDED = /(낙찰|매각|유찰|종결|취소|기각|변경|마감)/;
 
 function kstNow() {
   const d = new Date(Date.now() + 9 * 3600e3);
