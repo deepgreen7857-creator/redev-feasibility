@@ -142,6 +142,8 @@ const num = (v) => {
   const n = Number(String(v).replace(/,/g, ''));
   return Number.isFinite(n) ? n : null;
 };
-const text = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim());
+// 공공데이터 응답에 섞여 오는 &amp; 같은 HTML 표기를 글자로 바꾼다
+const unescape = (s) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'");
+const text = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : unescape(String(v).trim()));
 
 module.exports = { normalizeKey, call, decode, rowsOf, Quota, ApiError, kstDay, won, num, text, DAILY_LIMIT, SAFETY_MARGIN };
