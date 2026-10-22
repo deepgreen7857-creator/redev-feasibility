@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+body { @apply bg-paper text-ink font-sans antialiased; }
+.input { @apply w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/15; }
+.btn { @apply inline-flex items-center justify-center gap-1 rounded-md px-3 py-2 text-sm font-medium transition disabled:opacity-50; }
+.btn-primary { @apply btn bg-brand text-white hover:bg-brand/90; }
+.btn-ghost { @apply btn border border-line bg-white text-ink hover:bg-paper; }
+.btn-danger { @apply btn border border-hard/30 bg-white text-hard hover:bg-hard/5; }
+.card { @apply rounded-xl border border-line bg-white p-4 sm:p-5; }
+.num { font-variant-numeric: tabular-nums; }
+@media print {
+  header, nav, .no-print { display: none !important; }
+  body { background: #fff; }
+  .card { border: 1px solid #ccc; break-inside: avoid; }
+}

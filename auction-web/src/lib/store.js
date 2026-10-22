@@ -1,0 +1,170 @@
+// 데이터 창구 — Firebase 설정이 있으면 Firestore, 없으면 샘플(데모 모드)
+import { SAMPLE_LISTINGS, SAMPLE_BANKRUPT, SAMPLE_TRADES } from '../data/sample.js';
+import { DEFAULT_SETTINGS } from '../data/defaults.js';
+
+const env = import.meta.env || {};
+export const DEMO = env.VITE_DEMO === '1' || !env.VITE_FIREBASE_PROJECT_ID;
+const ADMINS = (env.VITE_ADMIN_EMAILS || 'deepgreen7857@gmail.com').split(',').map((s) => s.trim().toLowerCase());
+
+let fb = null; // { db, auth, functions, mod }
+async function firebase() {
+  if (DEMO) return null;
+  if (fb) return fb;
+  const [{ initializeApp }, fs, au, fn] = await Promise.all([
+    import('firebase/app'), import('firebase/firestore'), import('firebase/auth'), import('firebase/functions'),
+  ]);
+  const app = initializeApp({
+    apiKey: env.VITE_FIREBASE_API_KEY, authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: env.VITE_FIREBASE_PROJECT_ID, appId: env.VITE_FIREBASE_APP_ID,
+  });
+  fb = { db: fs.getFirestore(app), auth: au.getAuth(app), functions: fn.getFunctions(app, env.VITE_FUNCTIONS_REGION || 'asia-northeast3'), fs, au, fn };
+  return fb;
+}
+
+// 데모 모드에서 관리자 화면 변경을 이 브라우저에만 잠시 기억
+const mem = { settings: null, listings: null, user: null };
+const userListeners = new Set();
+function local(key, fallback) { try { const v = localStorage.getItem(`jbs-auction:${key}`); return v ? JSON.parse(v) : fallback; } catch { return fallback; } }
+function setLocal(key, v) { try { localStorage.setItem(`jbs-auction:${key}`, JSON.stringify(v)); } catch { /* 저장 안 돼도 화면은 동작 */ } }
+
+export async function getSettings() {
+  const f = await firebase();
+  if (!f) return mem.settings || (mem.settings = { ...DEFAULT_SETTINGS, ...local('settings', {}) });
+  const snap = await f.fs.getDoc(f.fs.doc(f.db, 'settings', 'main'));
+  return { ...DEFAULT_SETTINGS, ...(snap.exists() ? snap.data() : {}) };
+}
+
+export async function saveSettings(s) {
+  const f = await firebase();
+  if (!f) { mem.settings = s; setLocal('settings', s); return; }
+  await f.fs.setDoc(f.fs.doc(f.db, 'settings', 'main'), { ...s, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+function demoListings() {
+  if (!mem.listings) mem.listings = [...SAMPLE_LISTINGS, ...local('manualListings', [])];
+  return mem.listings;
+}
+
+export async function listListings({ sido } = {}) {
+  const f = await firebase();
+  if (!f) return demoListings().filter((x) => !sido || x.sido === sido);
+  const { collection, query, where, limit, getDocs } = f.fs;
+  const q = sido ? query(collection(f.db, 'listings'), where('sido', '==', sido), limit(2000)) : query(collection(f.db, 'listings'), limit(2000));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function getListing(id) {
+  const f = await firebase();
+  if (!f) return demoListings().find((x) => x.id === id) || null;
+  const snap = await f.fs.getDoc(f.fs.doc(f.db, 'listings', id));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function saveListing(item) {
+  const f = await firebase();
+  const doc = { ...item, updatedAt: new Date().toISOString() };
+  if (!f) {
+    const list = demoListings();
+    const i = list.findIndex((x) => x.id === item.id);
+    if (i >= 0) list[i] = { ...list[i], ...doc }; else list.unshift(doc);
+    setLocal('manualListings', list.filter((x) => x.source === 'court' && String(x.id).startsWith('court_')));
+    return;
+  }
+  await f.fs.setDoc(f.fs.doc(f.db, 'listings', item.id), doc, { merge: true });
+}
+
+export async function listBankrupt() {
+  const f = await firebase();
+  if (!f) return SAMPLE_BANKRUPT;
+  const { collection, query, orderBy, limit, getDocs } = f.fs;
+  const snap = await getDocs(query(collection(f.db, 'bankruptNotices'), orderBy('seq', 'desc'), limit(500)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// 실거래가: (종류·시군구) 최근 n개월 → 거래 배열
+export async function getDeals(type, lawd, months = 12) {
+  if (!type || !lawd) return [];
+  const yms = [];
+  const now = new Date();
+  for (let i = 0; i < months; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); yms.push(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`); }
+  const f = await firebase();
+  if (!f) return yms.flatMap((ym) => (SAMPLE_TRADES[`${type}_${lawd}_${ym}`] || []).map((d) => [...d, ym]));
+  const snaps = await Promise.all(yms.map((ym) => f.fs.getDoc(f.fs.doc(f.db, 'tradeMonths', `${type}_${lawd}_${ym}`))));
+  return snaps.flatMap((s, i) => {
+    if (!s.exists()) return [];
+    try { return JSON.parse(s.data().d || '[]').map((d) => [...d, yms[i]]); } catch { return []; }
+  });
+}
+
+export async function getStatus() {
+  const f = await firebase();
+  if (!f) {
+    return {
+      demo: true,
+      state: { onbid: { lastDay: '샘플', lastFullDay: '샘플' }, bankrupt: { lastDay: '샘플', maxSeq: 99001 }, zones: { lastDay: '샘플', lastResult: { title: '(2026.9월말 기준)' } } },
+      progress: { apt: { remaining: 0, updatedAt: '샘플' }, rh: { remaining: 0 }, sh: { remaining: 0 }, offi: { remaining: 0 }, land: { remaining: 0 } },
+      quota: [], runs: [],
+    };
+  }
+  const { collection, query, orderBy, limit, getDocs, getDoc, doc } = f.fs;
+  const [onbidS, bankS, zonesS, runs, quota, ...prog] = await Promise.all([
+    getDoc(doc(f.db, 'state', 'onbid')), getDoc(doc(f.db, 'state', 'bankrupt')), getDoc(doc(f.db, 'state', 'incheonZones')),
+    getDocs(query(collection(f.db, 'runs'), orderBy('at', 'desc'), limit(10))),
+    getDocs(query(collection(f.db, 'quota'), orderBy('updatedAt', 'desc'), limit(30))),
+    ...['apt', 'rh', 'sh', 'offi', 'land'].map((t) => getDoc(doc(f.db, 'tradeProgress', t))),
+  ]);
+  const progress = {};
+  ['apt', 'rh', 'sh', 'offi', 'land'].forEach((t, i) => { const d = prog[i].exists() ? prog[i].data() : null; progress[t] = d ? { remaining: d.remaining, updatedAt: d.updatedAt, done: Object.keys(d.done || {}).length } : null; });
+  return {
+    state: { onbid: onbidS.data() || {}, bankrupt: bankS.data() || {}, zones: zonesS.data() || {} },
+    progress,
+    quota: quota.docs.map((d) => d.data()),
+    runs: runs.docs.map((d) => d.data()),
+  };
+}
+
+// 서버 함수 호출(관리자)
+export async function callFn(name, data = {}) {
+  const f = await firebase();
+  if (!f) {
+    if (name === 'landCheck') return { demo: true, landUse: { zone: '제2종일반주거지역', redevelopment: [], farmPromotion: false, greenbelt: false, roadConflict: [] }, officialPrice: 3000000, officialPriceYear: '2026' };
+    if (name === 'testApis') return { results: [{ name: '데모 모드', ok: false, message: 'Firebase 연결 후 실제 API를 시험할 수 있습니다.' }] };
+    return { demo: true, message: '데모 모드에서는 실제 수집을 하지 않습니다.' };
+  }
+  const res = await f.fn.httpsCallable(f.functions, name, { timeout: 540000 })(data);
+  return res.data;
+}
+
+// 로그인
+export async function onUser(cb) {
+  const f = await firebase();
+  if (!f) { cb(mem.user); userListeners.add(cb); return () => userListeners.delete(cb); }
+  return f.au.onAuthStateChanged(f.auth, (u) => cb(u ? { email: u.email, name: u.displayName } : null));
+}
+export async function signIn() {
+  const f = await firebase();
+  if (!f) { mem.user = { email: '데모 관리자', demo: true }; userListeners.forEach((cb) => cb(mem.user)); return mem.user; }
+  const r = await f.au.signInWithPopup(f.auth, new f.au.GoogleAuthProvider());
+  return { email: r.user.email };
+}
+export async function signOut() { const f = await firebase(); if (!f) { mem.user = null; userListeners.forEach((cb) => cb(null)); return; } await f.au.signOut(f.auth); }
+export const isAdmin = (u) => Boolean(u && (u.demo || ADMINS.includes(String(u.email).toLowerCase())));
+
+// 정비사업 현황(분기 엑셀) — 시도마다 문서 1개
+const demoZones = {};
+export async function saveZones(sido, payload) {
+  const f = await firebase();
+  const doc = { sido, quarter: payload.quarter || null, fileName: payload.fileName || null, count: payload.zones.length, uploadedAt: new Date().toISOString(), z: JSON.stringify(payload.zones) };
+  if (!f) { demoZones[sido] = doc; return; }
+  await f.fs.setDoc(f.fs.doc(f.db, 'redevZones', sido), doc);
+}
+export async function getZones(sido) {
+  if (!sido) return { zones: [] };
+  const f = await firebase();
+  let doc;
+  if (!f) doc = demoZones[sido] || (await import('../data/sampleZones.js')).SAMPLE_ZONES[sido];
+  else { const s = await f.fs.getDoc(f.fs.doc(f.db, 'redevZones', sido)); doc = s.exists() ? s.data() : null; }
+  if (!doc) return { zones: [] };
+  try { return { ...doc, zones: doc.zones || JSON.parse(doc.z || '[]') }; } catch { return { ...doc, zones: [] }; }
+}
