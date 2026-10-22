@@ -299,6 +299,7 @@ export default function DetailPage({ admin }) {
           )}
           <p className="mt-2 text-xs text-ink/50">{a.valueBasis}</p>
           {a.reasons.length > 0 && <div className="mt-3 rounded-md bg-hard/5 p-2 text-sm text-hard">제외 이유: {a.reasons.join(', ')}</div>}
+          {a.anomalies?.length > 0 && <div className="mt-3 rounded-md bg-hard/5 p-2 text-sm text-hard"><b>오류 의심 — 계산 보류.</b> {a.anomalies.join(' · ')} 법원 원문(매각물건명세서·감정평가서)을 확인하세요.</div>}
           {a.warnings.length > 0 && <ul className="mt-3 space-y-1 text-sm text-wait">{a.warnings.map((w) => <li key={w}>• {w}</li>)}</ul>}
         </Card>
 

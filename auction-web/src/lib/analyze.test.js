@@ -33,7 +33,7 @@ test('판정: 지금 매력 / 유찰 대기 / 해결 안 됨 (개인 기준)', (
 });
 test('현황도로 토지: 같은 구 토지 시세를 그대로 쓰지 않고 1/3 바닥 + 상승 시나리오', () => {
   const landDeals = Array.from({ length: 10 }, (_, i) => [30000000 + i * 100000, 100, 0, 1, '', '', 0, false, '중개거래', '구월동', '대']);
-  const it = { source: 'onbid', sido: '인천광역시', sgg: '남동구', emd: '구월동', usage: '토지', landArea: 100, appraisal: 1e8, minBid: 6e7, land: { jimok: '도로' } };
+  const it = { source: 'onbid', sido: '인천광역시', sgg: '남동구', emd: '구월동', usage: '토지', landArea: 100, appraisal: 4e7, minBid: 1e7, land: { jimok: '도로' } };
   const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: landDeals });
   assert.ok(a.special.types.some((t) => t.key === 'road'));
   assert.ok(a.value < a.full * 0.34);
@@ -139,4 +139,21 @@ test('올수리 후 매도: 같은 동 비슷한 면적 상위 25% 가격, 수�
   assert.ok(a.renovation.after > a.market.value);
   assert.equal(a.renovation.cost, Math.round((50 / 3.3058) * 1200000));
   assert.ok(a.renoMoney && a.renoMoney.months === 5);
+});
+
+test('오류 의심: 시세 가치가 감정가의 2배를 넘으면 계산 보류, 지분이면 비율을 곱함', () => {
+  const big = Array.from({ length: 10 }, (_, i) => [3e9 + i * 1e7, 138, 30, 1, '40', 'G', 2005, false, '중개거래', '잠실동']);
+  const base = { source: 'court', court: '서울중앙지방법원', sido: '서울특별시', sgg: '송파구', emd: '잠실동', usage: '아파트', buildingArea: 138.6, appraisal: 3.97e8, minBid: 3.176e8 };
+  const a = analyze(base, { settings: DEFAULT_SETTINGS, deals: big });
+  assert.equal(a.verdict, 'suspect');
+  assert.equal(a.money, null);
+  assert.equal(a.opportunity, null);
+  const s = analyze({ ...base, share: true, detail: { shareText: '10분의 1 지분 매각', flags: {} } }, { settings: DEFAULT_SETTINGS, deals: big });
+  assert.notEqual(s.verdict, 'suspect');
+  assert.ok(s.full < 4e8);
+});
+test('비슷한 면적 거래가 3건 미만이면 시세 부족', () => {
+  const d = Array.from({ length: 10 }, (_, i) => [3e8 + i * 1e6, 40, 3, 1, '1', 'O', 2015, false, '중개거래', '봉천동']);
+  const m = marketEstimate({ emd: '봉천동', buildingArea: 13.2, usage: '오피스텔' }, d);
+  assert.equal(m.value, null);
 });

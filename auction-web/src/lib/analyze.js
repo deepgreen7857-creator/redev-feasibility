@@ -3,12 +3,13 @@
 // + 현금청산형(조합설립인가 전후 분양권 없는 물건), 농지(농취증), 관심 제외 표시
 
 import { TAX_DEFAULTS, propertyKind, flipTax, corpFit, acquisitionTax } from './tax.js';
-import { specialAnalysis, detectSpecial } from './special.js';
+import { specialAnalysis, detectSpecial, parseShare } from './special.js';
 
 export const VERDICT = {
   now: { label: '지금 매력', tone: 'now' },
   wait: { label: '유찰 대기', tone: 'wait' },
   check: { label: '권리 확인 후 판단', tone: 'cash' },
+  suspect: { label: '오류 의심 — 원문 확인', tone: 'hard' },
   hard: { label: '가격 안 맞음', tone: 'hard' },
   unknown: { label: '시세 부족', tone: 'muted' },
 };
@@ -87,8 +88,10 @@ export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
   let scope = '같은 시군구';
   if (sameDong.length >= 5) { pool = sameDong; scope = `같은 동(${item.emd})`; }
   if (type !== 'land') {
+    // 비슷한 면적(±20%) 거래가 3건 미만이면 큰·작은 평형 가격을 끌어다 쓰지 않고 '시세 부족'
     const near = pool.filter((d) => d[1] >= area * 0.8 && d[1] <= area * 1.2);
-    if (near.length >= 3) pool = near;
+    if (near.length < 3) return { type, area, value: null, count: near.length, basis: `비슷한 면적(${Math.round(area)}㎡ ±20%) 거래가 ${near.length}건뿐 — 시세 부족` };
+    pool = near;
   }
   if (!pool.length) return { type, area, value: null, count: 0, basis: '조건에 맞는 거래 없음' };
   const unit = median(pool.map((d) => d[0] / d[1]));
@@ -252,6 +255,24 @@ export function analyze(item, { settings, deals, aptDeals } = {}) {
     value = item.appraisal;
     valueBasis = '거래 사례·공시지가 없음 → 감정가 기준';
   }
+  // 지분 물건: 시세는 집 전체 값이므로 지분 비율을 곱한다. 비율을 못 읽었고 감정가보다 훨씬 크면 감정가를 기준으로
+  if (item.share && value && !cashType && !rightType) {
+    const sr = parseShare(item);
+    if (sr) { value = Math.round(value * sr); valueBasis += ` × 지분 ${Math.round(sr * 1000) / 10}%`; }
+    else if (item.appraisal && value > item.appraisal * 1.5) { value = item.appraisal; valueBasis = '지분 물건(비율 미확인) — 감정가 기준'; }
+  }
+  // ── 오류 의심 걸러내기: 원본(감정가·공시가격)과 크게 어긋나면 계산을 믿지 않는다 ──
+  const anomalies = [];
+  const mixed = /,/.test(item.usage || '') || /,/.test(item.title || '') && /(상가|근린|오피스텔|아파트|다세대|주택).*,.*(상가|근린|오피스텔|아파트|다세대|주택)/.test(item.title || '');
+  if (item.bulk || mixed) anomalies.push('여러 물건·용도 일괄 매각 — 시세 하나로 계산할 수 없음');
+  if (value && item.appraisal && !cashType && !rightType) {
+    const r = value / item.appraisal;
+    if (r > 2) anomalies.push(`시세로 계산한 가치(${eok(value)})가 감정가(${eok(item.appraisal)})의 ${r.toFixed(1)}배 — 지분·일부 매각이거나 자료를 잘못 읽었을 수 있음`);
+    if (r < 0.5) anomalies.push(`시세로 계산한 가치(${eok(value)})가 감정가(${eok(item.appraisal)})의 절반 미만 — 자료 확인 필요`);
+  }
+  const hp = item.housePrice?.matched ? item.housePrice.price : null;
+  if (hp && item.appraisal && item.appraisal < hp * 0.6 && !item.share) anomalies.push(`감정가(${eok(item.appraisal)})가 공시가격(${eok(hp)})보다 훨씬 낮음 — 지분 매각 의심`);
+  if (anomalies.length) { value = null; valueBasis = '오류 의심으로 계산 보류'; }
   const full = value;
   const special = specialAnalysis(item, { full, settings, member, rightValue: right?.value, redev, rounds });
   if (special) {
@@ -269,6 +290,7 @@ export function analyze(item, { settings, deals, aptDeals } = {}) {
 
   let verdict = 'unknown';
   if (reasons.length) verdict = 'hard';
+  else if (anomalies.length) verdict = 'suspect';
   else if (special && !special.floorKnown) verdict = full ? 'check' : 'unknown';
   // 특수물건: 마진을 따로 두지 않고 '바닥 가치 이하로 살 수 있느냐'로 판정(수익은 상승 시나리오에서)
   else if (special) verdict = !special.floorEntry ? 'hard' : special.floorEntry.step === 0 ? 'now' : 'wait';
@@ -288,15 +310,15 @@ export function analyze(item, { settings, deals, aptDeals } = {}) {
   if (market.count && market.count < 5 && !cashType && !rightType) warnings.push('비교 거래가 적음 — 시세 신뢰도 낮음');
 
   const result = {
-    verdict, market, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special,
+    verdict, market, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special, anomalies,
     farm, redev, cashType, rightType, right, member, stage, excluded: isExcluded(item, settings),
     ratio: item.appraisal && item.minBid ? item.minBid / item.appraisal : null,
   };
-  result.score = special ? special.score : scoreOf(item, result);
+  result.score = anomalies.length ? null : special ? special.score : scoreOf(item, result);
   result.money = moneyOf(item, result, settings);
   // 특수물건의 '지금 매력'은 최악(바닥 가치에 팔 때)에도 세금·비용 빼고 남을 때만
   if (special && result.verdict === 'now' && !(result.money?.profit > 0)) result.verdict = 'check';
-  result.certainty = special ? specialCertainty(special) : certaintyOf(result.score);
+  result.certainty = anomalies.length ? null : special ? specialCertainty(special) : certaintyOf(result.score);
   // 상승 시나리오가 성공했을 때의 돈 계산(지금 최저가로 샀다고 보고, 시나리오 기간만큼 보유)
   if (special?.best?.value && item.minBid) {
     result.upMoney = moneyOf(item, { ...result, value: special.best.value, verdict: 'now', costs: costEstimate(item, special.best.value, settings) }, { ...settings, holdMonths: special.best.months || 12 });
@@ -304,7 +326,7 @@ export function analyze(item, { settings, deals, aptDeals } = {}) {
   if (!result.money && result.upMoney) result.money = { ...result.upMoney, profit: null, roi: null, upside: true };
 
   // 올수리 후 매도
-  if (!special && !reasons.length) {
+  if (!special && !reasons.length && !anomalies.length) {
     const reno = renovation(item, deals, settings, market);
     if (reno) {
       result.renovation = reno;

@@ -232,7 +232,9 @@ export async function readDetail(page) {
     address,
     landArea,
     buildingArea: bArea ? Number(bArea[1].replace(/,/g, '')) : undefined,
-    share: /지분/.test(remarks) || /매각지분/.test(items),
+    // 지분: 비고·목록내역·상세 칸 어디든 '지분' 또는 '공유자 우선매수'가 있으면(대지권 비율 '○분의 ○'은 제외)
+    share: /지분|공유자\s*우선매수/.test(`${remarks} ${items} ${Object.values(f).join(' ')}`),
+    shareText: (`${remarks} ${items} ${Object.values(f).join(' ')}`.match(/[^\n]{0,40}(?:지분|공유자\s*우선매수)[^\n]{0,40}/) || [])[0]?.trim() || undefined,
     bulk: addrKeys.length > 1 || /일괄매각/.test(remarks),
     photos: [],
     appraisalSummary: raw.appraisal || undefined,

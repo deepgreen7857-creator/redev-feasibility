@@ -7,7 +7,7 @@ import { corpFit, propertyKind } from '../lib/tax.js';
 import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
 
 const SOURCES = [['all', '전체'], ['court', '법원경매'], ['public', '공매'], ['bankrupt', '파산자산']];
-const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '유찰 대기'], ['check', '권리 확인 후 판단'], ['special', '특수물건 전체'], ['hard', '가격 안 맞음'], ['unknown', '시세 부족']];
+const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '유찰 대기'], ['check', '권리 확인 후 판단'], ['suspect', '오류 의심'], ['special', '특수물건 전체'], ['hard', '가격 안 맞음'], ['unknown', '시세 부족']];
 
 export default function ListPage({ mode }) {
   const opp = mode === 'opportunity';
@@ -59,7 +59,7 @@ export default function ListPage({ mode }) {
   }, [items, settings, dealsMap, f, opp]);
 
   const counts = useMemo(() => {
-    const c = { now: 0, wait: 0, check: 0, hard: 0, unknown: 0, special: 0 };
+    const c = { now: 0, wait: 0, check: 0, hard: 0, unknown: 0, special: 0, suspect: 0 };
     rows.forEach(({ a }) => { c[a.verdict] = (c[a.verdict] || 0) + 1; if (a.special) c.special++; });
     return c;
   }, [rows]);
@@ -106,7 +106,7 @@ export default function ListPage({ mode }) {
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.showExcluded} onChange={set('showExcluded')} /> 관심 제외 물건도 보기</label>
           <span className="ml-auto flex gap-1.5">
-            <Badge tone="now">지금 {counts.now}</Badge><Badge tone="wait">대기 {counts.wait}</Badge><Badge tone="cash">특수 {counts.special}</Badge><Badge tone="hard">가격 안 맞음 {counts.hard}</Badge>
+            <Badge tone="now">지금 {counts.now}</Badge><Badge tone="wait">대기 {counts.wait}</Badge><Badge tone="cash">특수 {counts.special}</Badge><Badge tone="hard">가격 안 맞음 {counts.hard}</Badge>{counts.suspect > 0 && <Badge tone="hard">오류 의심 {counts.suspect}</Badge>}
           </span>
         </div>
       </div>
@@ -174,6 +174,7 @@ export default function ListPage({ mode }) {
               <div><div className="text-xs text-ink/50">진입 시점</div><div className="font-bold">{a.reasons.length || a.verdict === 'check' ? '—' : a.entry ? a.entry.label : '—'}</div><div className="text-xs text-ink/50">마감 {String(it.bidEnd || '').slice(5, 10) || '—'}</div></div>
             </div>
             {a.reasons.length > 0 && <div className="mt-2 text-xs text-hard">{a.reasons.join(' · ')}</div>}
+            {a.anomalies?.length > 0 && <div className="mt-2 rounded-md bg-hard/5 p-2 text-xs text-hard">{a.anomalies.join(' · ')}</div>}
           </Link>
         ))}
       </div>
@@ -220,4 +221,4 @@ function dedupeRounds(items) {
   });
 }
 
-function order(v) { return { now: 0, wait: 1, check: 2, unknown: 3, hard: 4 }[v] ?? 5; }
+function order(v) { return { now: 0, wait: 1, check: 2, unknown: 3, hard: 4, suspect: 5 }[v] ?? 6; }
