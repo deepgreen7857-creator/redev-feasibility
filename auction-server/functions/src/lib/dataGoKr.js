@@ -89,13 +89,20 @@ class Quota {
   }
 }
 
+// 인증키 정리: 앞뒤 빈칸·줄바꿈·따옴표 제거, Encoding 키(%2B 같은 글자 포함)를 넣었으면 풀어서 Decoding 키로 바꾼다.
+// (URLSearchParams가 한 번 인코딩하므로 Decoding 키가 들어가야 정확히 한 번만 인코딩된다)
+function normalizeKey(key) {
+  let k = String(key || '').replace(/[\s"'`]/g, '');
+  if (/%[0-9A-Fa-f]{2}/.test(k)) { try { k = decodeURIComponent(k); } catch { /* 그대로 둔다 */ } }
+  return k;
+}
+
 // api: 한도 장부 이름(예: 'onbid-list'), url: 요청 주소, params: 질의 변수
 async function call({ api, url, params, serviceKey, quota, fetcher = fetch, retries = 3 }) {
   if (!serviceKey) throw new ApiError('NO_KEY', '공공데이터포털 인증키가 설정되지 않았습니다.');
   if (quota && (await quota.remaining(api)) <= 0) throw new ApiError('22', `오늘 ${api} 호출 한도를 다 썼습니다.`);
   const u = new URL(url);
-  // 인증키는 Decoding 키를 넣고 URLSearchParams가 한 번만 인코딩하게 둔다.
-  u.searchParams.set('serviceKey', serviceKey);
+  u.searchParams.set('serviceKey', normalizeKey(serviceKey));
   for (const [k, v] of Object.entries(params || {})) if (v !== undefined && v !== null && v !== '') u.searchParams.set(k, String(v));
   let lastErr;
   for (let i = 0; i < retries; i++) {
@@ -137,4 +144,4 @@ const num = (v) => {
 };
 const text = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim());
 
-module.exports = { call, decode, rowsOf, Quota, ApiError, kstDay, won, num, text, DAILY_LIMIT, SAFETY_MARGIN };
+module.exports = { normalizeKey, call, decode, rowsOf, Quota, ApiError, kstDay, won, num, text, DAILY_LIMIT, SAFETY_MARGIN };
