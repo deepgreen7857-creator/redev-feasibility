@@ -96,14 +96,15 @@ aside.rail{position:sticky;top:80px;align-self:start;display:flex;flex-direction
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 </head>
 <body>
 <header class="top">
   <a class="mark" href="../" title="jbslab 첫 화면으로" style="text-decoration:none;color:inherit"><b><span aria-hidden="true">▦</span> JBS LAB</b><span>Safety Plan Desk</span></a>
   <div class="sub">한 번 입력 → 산안법 유해위험방지계획서 + 건진법 안전관리계획서</div>
   <div class="sp"></div>
-  <button class="btn" id="wsave">작업 저장</button>
-  <label class="btn" style="display:inline-block">작업 불러오기<input type="file" id="wload" accept=".json,application/json" hidden></label>
+  <label class="btn" style="display:inline-block" title="이 사이트에서 저장한 PDF로 이어서 작업합니다. 승인본 계획서(PDF·HWPX·DOCX·XLSX)를 고르면 변경 작성으로 읽어 들입니다">파일 열기<input type="file" id="wload" accept=".pdf,.json,.hwpx,.docx,.xlsx,.hwp" hidden></label>
+  <button class="btn" id="wsave" title="요약이 담긴 PDF로 저장합니다. 이 PDF를 [파일 열기]로 열면 이어서 작업할 수 있습니다">파일 저장(PDF)</button>
   <button class="btn" id="sample">가상 예시 불러오기</button>
   <button class="btn" id="reset">비우기</button>
   <button class="btn primary" onclick="window.print()">인쇄</button>
@@ -691,9 +692,60 @@ async function onFile(file){
 function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
 const today=()=>new Date().toISOString().slice(0,10).replace(/-/g,'');
 const safeName=()=>(S.name||'현장').replace(/[\\/:*?"<>|()（）]/g,'').replace(/\s+/g,'_').slice(0,30);
-$('#wsave').onclick=()=>dl(new Blob([JSON.stringify({app:'jbslab-safety',ver:3,saved:new Date().toISOString(),data:S},null,1)],{type:'application/json'}),`안전계획_작업파일_${safeName()}_${today()}.json`);
-$('#wload').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const j=JSON.parse(await f.text());if(j.app!=='jbslab-safety')throw 0;S=j.data||{};save();bindAll();render();alert('작업 파일을 불러왔습니다.')}catch(_){alert('이 사이트에서 저장한 작업 파일이 아닙니다.')}e.target.value=''};
-
+/* 작업 파일 = 요약 1쪽 PDF + 숨긴 작업 데이터 (jbslab 첫 화면과 같은 방식). 예전 JSON도 열림 */
+const PKEY='JBSSafetyData';
+async function pack(text){const bytes=new TextEncoder().encode(text);let out=bytes,z=0;
+  if(window.CompressionStream){out=new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());z=1}
+  let bin='';for(let i=0;i<out.length;i+=0x8000)bin+=String.fromCharCode.apply(null,out.subarray(i,i+0x8000));return (z?'gz:':'raw:')+btoa(bin)}
+async function unpack(t){const z=t.startsWith('gz:');const bytes=Uint8Array.from(atob(t.slice(z?3:4)),c=>c.charCodeAt(0));
+  if(!z)return new TextDecoder().decode(bytes);return new TextDecoder().decode(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer())}
+function wrap(t,n){const out=[];String(t||'').split('\n').forEach(l=>{while(l.length>n){out.push(l.slice(0,n));l=l.slice(n)}out.push(l)});return out}
+function summarySVG(){
+  const isha=judgeISHA(), ctpa=judgeCTPA(), L=[]; const add=(t,o={})=>wrap(t,o.n||46).forEach((x,i)=>L.push({t:x,b:o.b&&i===0,s:o.s||4.2,c:o.c}));
+  add('안전관리계획 작업 요약',{b:1,s:7,n:30}); add(`저장 ${new Date().toLocaleString('ko-KR')} · www.jbslab.co.kr/safety`,{s:3.2,c:'#666'}); L.push({t:'',s:3});
+  add('공사 개요',{b:1,s:5});
+  [['공사명',S.name],['현장 소재지',S.addr],['발주자',S.owner],['시공자',S.builder],['공사기간',S.start||S.end?`${S.start||''} ~ ${S.end||''}`:''],
+   ['규모',[S.basement&&`지하 ${S.basement}층`,S.floors&&`지상 ${S.floors}층`,S.area&&`연면적 ${Number(S.area).toLocaleString()}㎡`,S.height&&`높이 ${S.height}m`,S.dig&&`굴착 ${S.dig}m`].filter(Boolean).join(', ')],['안전관리자',S.safety_mgr]]
+   .forEach(([k,v])=>add(`· ${k}: ${v||'—'}`)); L.push({t:'',s:3});
+  add(`산업안전보건법: ${isha.length?'제출 대상':'비대상'}`,{b:1,s:5}); isha.forEach(x=>add(`· ${x.c} ${x.t}`,{s:3.8,n:52}));
+  add(`건설기술 진흥법: ${ctpa.length?'수립 대상':'비대상'}`,{b:1,s:5}); ctpa.forEach(x=>add(`· ${x.c} ${x.t}`,{s:3.8,n:52})); L.push({t:'',s:3});
+  if(S.base){const ks=diffKeys();add(`변경 내용 (승인본 대비 ${ks.length}개 항목)`,{b:1,s:5});ks.slice(0,12).forEach(k=>add(`· ${LABEL[k]}: ${fmt(k,S.base[k])} → ${fmt(k,S[k])}`,{s:3.8,n:52}));
+    if(S.chg_reason)add('· 사유: '+S.chg_reason,{s:3.8,n:52});L.push({t:'',s:3})}
+  if((S.hist||[]).length){add('개정이력',{b:1,s:5});S.hist.forEach(h=>add(`· ${h.n} ${h.d} ${h.c}`,{s:3.8,n:52}));L.push({t:'',s:3})}
+  const risk=[...document.querySelectorAll('#r-risk-why li')].map(li=>li.textContent);
+  if(risk.length){add('CSI 반려 위험',{b:1,s:5});risk.forEach(t=>add('· '+t,{s:3.8,n:52,c:'#b8481e'}))}
+  let y=20, body=''; L.forEach(l=>{y+=l.s*1.55; if(y>270)return; body+=`<text x="18" y="${y.toFixed(1)}" font-size="${l.s}" ${l.b?'font-weight="700"':''} fill="${l.c||'#1d2433'}">${xe(l.t)}</text>`});
+  body+=`<line x1="18" y1="279" x2="192" y2="279" stroke="#c9c1ae" stroke-width=".3"/><text x="18" y="285" font-size="3" fill="#666">이 PDF를 www.jbslab.co.kr/safety 의 [파일 열기]로 열면 이어서 작업할 수 있습니다.</text>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 210 297" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',sans-serif"><rect width="210" height="297" fill="#fff"/><text x="18" y="12" font-size="4" font-weight="700" fill="#b8481e">▦ JBS LAB · Safety Plan Desk</text>${body}</svg>`;
+}
+async function svgToPng(svg,w,h){const img=new Image();await new Promise((ok,bad)=>{img.onload=ok;img.onerror=()=>bad(new Error('요약 그림 변환 실패'));img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)});
+  const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,w,h);g.drawImage(img,0,0,w,h);
+  return new Uint8Array(await (await new Promise(r=>c.toBlob(r,'image/png'))).arrayBuffer())}
+$('#wsave').onclick=async()=>{
+  try{
+    if(!window.PDFLib) throw new Error('PDF 라이브러리를 불러오지 못했습니다(인터넷 연결 확인).');
+    const {PDFDocument,PDFName,PDFString}=PDFLib; const doc=await PDFDocument.create();
+    doc.setTitle(S.name||'안전관리계획 작업'); doc.setProducer('안전관리계획 작성 (www.jbslab.co.kr/safety)');
+    const mm=v=>v*72/25.4; const png=await doc.embedPng(await svgToPng(summarySVG(),1654,2339));
+    doc.addPage([mm(210),mm(297)]).drawImage(png,{x:0,y:0,width:mm(210),height:mm(297)});
+    doc.getInfoDict().set(PDFName.of(PKEY),PDFString.of(await pack(JSON.stringify({app:'jbslab-safety',ver:4,data:S}))));
+    dl(new Blob([await doc.save()],{type:'application/pdf'}),`안전계획_작업_${safeName()}_${today()}.pdf`);
+  }catch(e){alert('PDF 저장에 실패했습니다: '+e.message)}
+};
+function restore(j){if(!j||j.app!=='jbslab-safety')throw new Error('형식 아님');S=j.data||{};save();bindAll();render()}
+$('#wload').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+  const ext=(f.name.split('.').pop()||'').toLowerCase();
+  const asPlan=()=>{$('#tabs [data-t="e"]').click();onFile(f)};
+  try{
+    if(ext==='json'){restore(JSON.parse(await f.text()));alert('작업을 불러왔습니다.');return}
+    if(ext==='pdf'){
+      let v=null;
+      if(window.PDFLib){try{const doc=await PDFLib.PDFDocument.load(await f.arrayBuffer(),{updateMetadata:false,ignoreEncryption:true});v=doc.getInfoDict().lookup(PDFLib.PDFName.of(PKEY))}catch(_){}}
+      if(v){restore(JSON.parse(await unpack(v.decodeText?v.decodeText():v.asString())));alert(`"${S.name||f.name}" 작업을 불러왔습니다.`);return}
+      if(confirm('이 PDF에는 이 사이트의 작업 데이터가 없습니다.\n승인받은 계획서로 보고 [변경 작성]에서 읽어 들일까요?'))asPlan();return}
+    asPlan();
+  }catch(err){alert('파일을 열지 못했습니다: '+err.message)}
+};
 /* ---------- 변경 제출 자료 내려받기 ---------- */
 function reportData(){
   const ov=[['공사명','name'],['현장 소재지','addr'],['발주자','owner'],['인·허가기관','permit'],['시공자','builder'],['공사기간',null],['규모',null],['안전관리자','safety_mgr']].map(([l,k])=>[l,k?(S[k]||''):l==='공사기간'?`${S.start||''} ~ ${S.end||''}`:[S.basement&&`지하 ${S.basement}층`,S.floors&&`지상 ${S.floors}층`,S.area&&`연면적 ${Number(S.area).toLocaleString()}㎡`,S.height&&`높이 ${S.height}m`,S.dig&&`최대 굴착 ${S.dig}m`].filter(Boolean).join(', ')]);
