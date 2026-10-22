@@ -32,7 +32,7 @@ test('판정: 지금 매력 / 유찰 대기 / 해결 안 됨 (개인 기준)', (
   assert.ok(sh.special.best.value > sh.value);
 });
 test('현황도로 토지: 같은 구 토지 시세를 그대로 쓰지 않고 1/3 바닥 + 상승 시나리오', () => {
-  const landDeals = Array.from({ length: 10 }, (_, i) => [30000 + i * 100, 100, 0, 1, '', '', 0, false, '중개거래', '구월동', '대']);
+  const landDeals = Array.from({ length: 10 }, (_, i) => [30000000 + i * 100000, 100, 0, 1, '', '', 0, false, '중개거래', '구월동', '대']);
   const it = { source: 'onbid', sido: '인천광역시', sgg: '남동구', emd: '구월동', usage: '토지', landArea: 100, appraisal: 1e8, minBid: 6e7, land: { jimok: '도로' } };
   const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: landDeals });
   assert.ok(a.special.types.some((t) => t.key === 'road'));
@@ -40,7 +40,7 @@ test('현황도로 토지: 같은 구 토지 시세를 그대로 쓰지 않고 1
   assert.ok(a.special.scenarios.length >= 3);
 });
 test('공고 용도가 \'토지 > 도로\'면 도로 부지로 판별, 최악 수익이 없으면 지금 매력 아님', () => {
-  const landDeals = Array.from({ length: 10 }, (_, i) => [30000 + i * 100, 100, 0, 1, '', '', 0, false, '중개거래', '대부남동', '대']);
+  const landDeals = Array.from({ length: 10 }, (_, i) => [30000000 + i * 100000, 100, 0, 1, '', '', 0, false, '중개거래', '대부남동', '대']);
   const it = { source: 'onbid', sido: '경기도', sgg: '안산시 단원구', emd: '대부남동', usage: '토지 > 도로', usageSmall: '도로', landArea: 873, appraisal: 1.46e8, minBid: 8.8e7, detail: { flags: {} } };
   const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: landDeals });
   assert.ok(a.special?.types.some((t) => t.key === 'road'));
@@ -129,4 +129,14 @@ test('법인: 농지는 X, 상가는 B(부가세)', () => {
   const t = (await_ => 0);
   const farm = analyze({ source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '강화군', usage: '답', landArea: 900, appraisal: 1e8, minBid: 5e7, land: { jimok: '답' } }, { settings: DEFAULT_SETTINGS, deals: [] });
   assert.equal(farm.farm, true);
+});
+
+test('올수리 후 매도: 같은 동 비슷한 면적 상위 25% 가격, 수리비는 평당 단가', () => {
+  const vd = Array.from({ length: 12 }, (_, i) => [150000000 + i * 10000000, 50, 2, 1, '1', 'B', 1995, false, '중개거래', '십정동']);
+  const it = { source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '십정동', usage: '다세대', buildingArea: 50, appraisal: 2e8, minBid: 1.4e8, detail: { flags: {} } };
+  const a = analyze(it, { settings: { ...DEFAULT_SETTINGS, owner: 'person' }, deals: vd });
+  assert.ok(a.renovation);
+  assert.ok(a.renovation.after > a.market.value);
+  assert.equal(a.renovation.cost, Math.round((50 / 3.3058) * 1200000));
+  assert.ok(a.renoMoney && a.renoMoney.months === 5);
 });

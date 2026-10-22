@@ -102,9 +102,9 @@ function build(key, item, full, ctx) {
         conditions: ['원소유자가 배타적 사용수익권을 포기한 사정이 없는지(대법원 2019. 1. 24. 2016다264556 전원합의체)', '지자체가 실제 점유·관리하는지'],
       });
       sc.push({
-        name: '통행이 필요한 인접 필지에 매도', value: v(0.7), months: 12, prob: '보통',
+        name: '통행이 필요한 인접 필지에 매도', value: v(0.7), months: 12, prob: nbProb(item),
         basis: '이 길 외에 진입로가 없는 필지·신축 예정지가 있으면 협상력 생김',
-        conditions: ['인접 필지가 이 도로로만 건축법상 접도 가능한지', '주변 신축·개발 움직임'],
+        conditions: [nbText(item), '인접 필지가 이 도로로만 건축법상 접도 가능한지', '주변 신축·개발 움직임'],
       });
       if (ctx.roadPlan) sc.push({ name: '도시계획도로 개설 보상', value: v(1), months: 48, prob: '보통', basis: '계획도로 집행 시 보상', conditions: ['도로 사업 집행계획·예산 여부', '실효 시점'] });
       return { floor: s.roadFloor, floorBasis: `인근 같은 구 토지 시세의 ${Math.round(s.roadFloor * 100)}%(사실상 사도 기준)`, scenarios: sc,
@@ -164,6 +164,21 @@ function build(key, item, full, ctx) {
   }
 }
 
+// 주변 필지 맹지 자동 확인 결과(서버가 브이월드 지적도·토지특성으로 조사)
+function nbProb(item) {
+  const nb = item.neighbors;
+  if (!nb || nb.error || !nb.checked) return '보통';
+  return nb.landlocked > 0 ? '높음' : '낮음';
+}
+function nbText(item) {
+  const nb = item.neighbors;
+  if (!nb) return '주변에 맹지 필지가 있는지(자동 확인 전)';
+  if (nb.error) return `주변 맹지 자동 확인 실패: ${nb.error}`;
+  if (!nb.landlocked) return `✔ 확인됨: 주변 ${nb.checked}필지 중 맹지 없음 — 이 시나리오는 약함`;
+  const names = nb.list.filter((x) => x.landlocked).slice(0, 5).map((x) => x.jibun).join(', ');
+  return `✔ 확인됨: 주변 ${nb.checked}필지 중 맹지 ${nb.landlocked}필지 (${names}) — 이 땅 주인들이 매수 후보`;
+}
+
 const PROB_PT = { 높음: 20, 보통: 13, '확인 필요': 9, 낮음: 5 };
 
 // 하자 없는 가치(full)를 받아 특수물건 분석 결과를 만든다. 특수 사정이 없으면 null
@@ -196,7 +211,8 @@ export function specialAnalysis(item, { full, settings, member, rightValue, rede
   const floorEntry = floorKnown && floor > 0 ? (rounds || []).find((r) => r.price <= floor) || null : null;
   // 기대 가치: 바닥에서 최고 시나리오까지 오른 폭을 가능성만큼만 인정
   const P = { 높음: 0.8, 보통: 0.5, '확인 필요': 0.3, 낮음: 0.2 };
-  const base = floorKnown ? floor : full ? full * factor : null;
+  // 바닥을 모를 때(인수 금액 미확인)는 하자 없는 가치의 일정 비율(기본 60%)을 임시 바닥으로 본다
+  const base = floorKnown ? floor : full ? full * (s.unknownFloor ?? 0.6) : null;
   const expected = best && base !== null ? Math.round(base + Math.max(0, best.value - base) * (P[best.prob] ?? 0.3)) : base;
   const score = (() => {
     if (!price) return null;

@@ -122,6 +122,9 @@ function Settings() {
         <Field label="실거래 과거 수집 개월" hint="처음 채울 기간(최근 2개월은 매일 갱신)"><input className="input num" value={s.backfillMonths ?? 12} onChange={(e) => setS({ ...s, backfillMonths: Number(e.target.value) || 12 })} /></Field>
         <Field label="명도비 기본(원)"><input className="input num" value={s.evictionCost ?? 3000000} onChange={(e) => setS({ ...s, evictionCost: Number(e.target.value) || 0 })} /></Field>
         <Field label="수리비 기본(원)"><input className="input num" value={s.repairCost ?? 5000000} onChange={(e) => setS({ ...s, repairCost: Number(e.target.value) || 0 })} /></Field>
+        <Field label="올수리 평당 비용(원)" hint="전용면적 평당"><input className="input num" value={s.renoPerPyeong ?? 1200000} onChange={(e) => setS({ ...s, renoPerPyeong: Number(e.target.value) || 0 })} /></Field>
+        <Field label="올수리 기간(개월)" hint="사서 수리하고 팔기까지"><input className="input num" value={s.renoMonths ?? 5} onChange={(e) => setS({ ...s, renoMonths: Number(e.target.value) || 5 })} /></Field>
+        <Field label="수리 후 가격 기준(분위)" hint="0.75 = 같은 동 거래 상위 25%"><input className="input num" value={s.renoQuantile ?? 0.75} onChange={(e) => setS({ ...s, renoQuantile: Number(e.target.value) || 0.75 })} /></Field>
         <Field label="명의" hint="법인이면 취득세 중과·법인세·부가세로 계산">
           <select className="input" value={s.owner || 'corp'} onChange={(e) => setS({ ...s, owner: e.target.value })}><option value="corp">법인 (단기매매)</option><option value="person">개인</option></select>
         </Field>

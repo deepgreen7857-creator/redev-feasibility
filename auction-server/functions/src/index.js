@@ -121,6 +121,15 @@ async function enrichLand(item) {
   let land = c.exists && Date.now() - new Date(c.data().checkedAt).getTime() < 30 * 86400e3 ? c.data() : null;
   if (!land) { land = await vworld.lookup({ pnu, key }); await ref.set(land); }
   const out = { ...found, land };
+  // 도로·구거·맹지 물건은 주변 필지가 맹지인지 확인(30일 캐시)
+  const roadish = /도로|구거|맹지/.test(`${item.usage || ''} ${item.usageSmall || ''} ${land.jimok || ''} ${(item.detail && item.detail.usageStatus) || ''}`);
+  if (roadish) {
+    const nref = db.collection('landCache').doc(`nb_${pnu}`);
+    const n = await nref.get();
+    let nb = n.exists && Date.now() - new Date(n.data().checkedAt).getTime() < 30 * 86400e3 ? n.data() : null;
+    if (!nb) { try { nb = await vworld.neighbors({ pnu, key }); if (nb) await nref.set(nb); } catch (e) { nb = { error: e.message, checkedAt: new Date().toISOString() }; } }
+    if (nb) out.neighbors = nb;
+  }
   if (!/토지|대지|임야|전|답|잡종지/.test(item.usageSmall || '') || item.buildingArea) {
     const hp = await vworld.housingPrice({ pnu, address: `${item.address || ''} ${item.title || ''} ${item.detail?.addressFull || ''}`, key });
     if (hp) out.housePrice = hp;
@@ -296,7 +305,16 @@ exports.landCheck = onCall({ timeoutSeconds: 60, secrets: [VWORLD_KEY] }, async 
     housePrice = await vworld.housingPrice({ pnu, address: `${it.address || ''} ${it.title || ''} ${it.detail?.addressFull || ''}`, key: VWORLD_KEY.value() }).catch(() => null);
     await db.collection('listings').doc(listingId).set({ land, pnu, ...(housePrice ? { housePrice } : {}) }, { merge: true });
   }
-  return { ...land, housePrice };
+  // 주변 필지 맹지 확인(요청 시)
+  let neighbors = null;
+  if (request.data && request.data.neighbors) {
+    neighbors = await vworld.neighbors({ pnu, key: VWORLD_KEY.value() }).catch((e) => ({ error: e.message, checkedAt: new Date().toISOString() }));
+    if (neighbors) {
+      await db.collection('landCache').doc(`nb_${pnu}`).set(neighbors);
+      if (listingId) await db.collection('listings').doc(listingId).set({ neighbors }, { merge: true });
+    }
+  }
+  return { ...land, housePrice, neighbors };
 });
 
 // 관리자: 이 물건 상세 지금 받기(온비드) — 상세·사진·권리를 받고 토지이용까지 붙여 갱신된 물건을 돌려준다

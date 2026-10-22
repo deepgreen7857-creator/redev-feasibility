@@ -8,7 +8,7 @@ import AdminPage from './pages/AdminPage.jsx';
 import { JbsMark } from './components/ui.jsx';
 import { DEMO, onUser, isAdmin, signOut } from './lib/store.js';
 
-const NAV = [['/', '물건 찾기'], ['/bankrupt', '파산 공고'], ['/market', '시세'], ['/admin', '관리자']];
+const NAV = [['/', '물건 찾기'], ['/opportunity', '기회 찾기'], ['/bankrupt', '파산 공고'], ['/market', '시세'], ['/admin', '관리자']];
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -38,6 +38,7 @@ export default function App() {
       <main className="mx-auto max-w-6xl px-4 py-5">
         <Routes>
           <Route path="/" element={<ListPage />} />
+          <Route path="/opportunity" element={<ListPage mode="opportunity" />} />
           <Route path="/item/:id" element={<DetailPage admin={admin} />} />
           <Route path="/bankrupt" element={<BankruptPage />} />
           <Route path="/market" element={<MarketPage />} />

@@ -237,3 +237,26 @@ test('인천 정비사업 현황: 새 글의 엑셀 2개를 받아 구역으로 
   const again = await incheon.collect({ fetcher, knownNtt: 1309, save: async () => { throw new Error('저장하면 안 됨'); }, log: () => {} });
   assert.equal(again.skipped, '새 글 없음');
 });
+
+test('주변 필지 맹지 확인: 지적도 경계 → 주변 필지 → 도로접면', async () => {
+  const sq = (x, y) => ({ type: 'MultiPolygon', coordinates: [[[[x, y], [x + 0.0001, y], [x + 0.0001, y + 0.0001], [x, y + 0.0001], [x, y]]]] });
+  const fetcher = fakeFetch((u) => {
+    if (u.pathname === '/req/data') {
+      const feats = u.searchParams.get('attrFilter')
+        ? [{ properties: { pnu: '4127310500100280060', jibun: '28-60 도' }, geometry: sq(126.6, 37.2) }]
+        : [
+          { properties: { pnu: '4127310500100280060', jibun: '28-60 도' }, geometry: sq(126.6, 37.2) },
+          { properties: { pnu: '4127310500100280061', jibun: '28-61 전' }, geometry: sq(126.6001, 37.2) },
+          { properties: { pnu: '4127310500100280062', jibun: '28-62 대' }, geometry: sq(126.5999, 37.2) },
+          { properties: { pnu: '4127310500100280063', jibun: '28-63 도' }, geometry: sq(126.6, 37.2001) },
+        ];
+      return JSON.stringify({ response: { status: 'OK', result: { featureCollection: { features: feats } } } });
+    }
+    const pnu = u.searchParams.get('pnu');
+    return JSON.stringify({ landCharacteristicss: { field: [{ pnu, roadSideCodeNm: pnu.endsWith('61') ? '맹지' : '세로한면(가)' }] } });
+  });
+  const nb = await vworld.neighbors({ pnu: '4127310500100280060', key: 'k', fetcher, year: 2026 });
+  assert.equal(nb.total, 3);
+  assert.equal(nb.landlocked, 1);
+  assert.equal(nb.list.find((x) => x.jimok === '도').roadSide, null);
+});

@@ -136,4 +136,60 @@ async function findPnu({ address, key, fetcher = fetch }) {
   return hit ? { pnu: String(hit.id), parcel: hit.address.parcel, query: q } : null;
 }
 
-module.exports = { lookup, housingPrice, analyzeLandUse, firstArray, parcelAddress, findPnu };
+// ── 주변 필지 맹지 확인 ─────────────────────────────────────────────
+// 도로 부지·맹지 물건의 가치는 '이 땅이 아니면 길이 없는 이웃 필지'가 있느냐에 달려 있다.
+// ① 연속지적도(LP_PA_CBND_BUBUN)에서 이 필지의 경계를 받아 ② 경계상자를 약간 넓혀 주변 필지를 찾고
+// ③ 각 필지의 토지특성 '도로접면'이 맹지인지 본다. (경계상자 기준이라 실제로 붙어 있지 않은 필지가 섞일 수 있음)
+async function cadastral(params, key, fetcher) {
+  const u = new URL('https://api.vworld.kr/req/data');
+  const base = { service: 'data', request: 'GetFeature', data: 'LP_PA_CBND_BUBUN', format: 'json', errorformat: 'json', crs: 'EPSG:4326', geometry: 'true', size: '200', page: '1', key, domain: DOMAIN };
+  for (const [k, v] of Object.entries({ ...base, ...params })) u.searchParams.set(k, v);
+  const res = await fetcher(u, { signal: AbortSignal.timeout(20000) });
+  if (!res.ok) throw new Error(`브이월드 지적도 HTTP_${res.status}`);
+  const data = await res.json();
+  const r = data && data.response;
+  if (r && r.status && r.status !== 'OK' && r.status !== 'NOT_FOUND') throw new Error(`브이월드 지적도 오류: ${(r.error && (r.error.text || r.error.code)) || r.status}`);
+  return (r && r.result && r.result.featureCollection && r.result.featureCollection.features) || [];
+}
+
+function bboxOf(geom) {
+  let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+  const walk = (c) => {
+    if (typeof c[0] === 'number') { minX = Math.min(minX, c[0]); maxX = Math.max(maxX, c[0]); minY = Math.min(minY, c[1]); maxY = Math.max(maxY, c[1]); } else c.forEach(walk);
+  };
+  walk((geom && geom.coordinates) || []);
+  return Number.isFinite(minX) ? [minX, minY, maxX, maxY] : null;
+}
+
+const JIMOK_SUFFIX = /\s*([가-힣]{1,3})$/;
+async function neighbors({ pnu, key, fetcher = fetch, year, max = 25 }) {
+  if (!key || !/^\d{19}$/.test(String(pnu || ''))) return null;
+  const self = await cadastral({ attrFilter: `pnu:=:${pnu}` }, key, fetcher);
+  if (!self.length) return { pnu, error: '지적도에서 필지를 찾지 못함', checkedAt: new Date().toISOString() };
+  const bb = bboxOf(self[0].geometry);
+  if (!bb) return { pnu, error: '필지 경계 없음', checkedAt: new Date().toISOString() };
+  const pad = 0.00006; // 약 5~6m
+  const box = `BOX(${bb[0] - pad},${bb[1] - pad},${bb[2] + pad},${bb[3] + pad})`;
+  const around = (await cadastral({ geomFilter: box }, key, fetcher)).filter((f) => f.properties && String(f.properties.pnu) !== String(pnu));
+  const y = Number(year || new Date().getFullYear()) - 1;
+  const list = [];
+  for (const f of around.slice(0, max)) {
+    const p = f.properties;
+    const jibun = String(p.jibun || '');
+    const jimok = (jibun.match(JIMOK_SUFFIX) || [])[1] || null;
+    let roadSide = null;
+    // 도로·구거·하천 필지는 맹지 판단 대상이 아님
+    if (!/^(도|구|천|제|철)$/.test(jimok || '')) {
+      try { const c = (await get('getLandCharacteristics', { pnu: p.pnu, stdrYear: String(y) }, key, fetcher))[0] || {}; roadSide = c.roadSideCodeNm || null; } catch { roadSide = null; }
+    }
+    list.push({ pnu: String(p.pnu), jibun, jimok, roadSide, landlocked: /맹지/.test(roadSide || '') });
+  }
+  return {
+    pnu, checkedAt: new Date().toISOString(), total: around.length, checked: list.length,
+    landlocked: list.filter((x) => x.landlocked).length, list,
+    note: '경계상자 기준 주변 필지(실제 인접 여부는 지적도로 확인)',
+  };
+}
+
+module.exports = { lookup, housingPrice, analyzeLandUse, firstArray, parcelAddress, findPnu, neighbors, bboxOf };
+

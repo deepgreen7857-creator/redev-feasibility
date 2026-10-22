@@ -55,6 +55,16 @@ export default function DetailPage({ admin }) {
     setBusy('');
   };
 
+  // 관리자: 주변 필지가 맹지인지 브이월드로 확인(도로·맹지 물건)
+  const checkNeighbors = async () => {
+    setBusy('nb'); setMsg('');
+    try {
+      const r = await callFn('landCheck', { pnu: item.pnu, listingId: item.id, neighbors: true });
+      setItem({ ...item, neighbors: r.neighbors });
+    } catch (e) { setMsg(e.message); }
+    setBusy('');
+  };
+
   // 관리자: 이 물건 상세(사진·권리)를 지금 받기 — 온비드만
   const fetchDetail = async () => {
     setBusy('detail'); setMsg('');
@@ -241,7 +251,9 @@ export default function DetailPage({ admin }) {
         {a.member.status === 'member' && a.member.rank >= 3 && <RightCalc item={item} a={a} admin={admin} onSave={(econ) => updateManual({ econ })} silvDeals={silvDeals} zoneName={item.manual?.zone?.name} />}
       </Card>
 
-      {a.special && <SpecialCard item={item} a={a} admin={admin} onSave={updateManual} />}
+      {a.special && <SpecialCard item={item} a={a} admin={admin} onSave={updateManual} onNeighbors={checkNeighbors} busy={busy === 'nb'} />}
+
+      {a.renovation && <RenoCard a={a} />}
 
       {/* ④ 판정·돈 계산·회차별 최저가 */}
       <div className="grid gap-4 lg:grid-cols-3">
@@ -504,7 +516,7 @@ function RightCalc({ item, a, admin, onSave, silvDeals, zoneName }) {
 }
 
 // 특수물건: 바닥 가치 / 상승 시나리오 / 확인할 것
-function SpecialCard({ item, a, admin, onSave }) {
+function SpecialCard({ item, a, admin, onSave, onNeighbors, busy }) {
   const sp = a.special;
   const sv = item.manual?.special || {};
   const save = (k) => (e) => onSave({ special: { ...sv, [k]: Number(String(e.target.value).replace(/\D/g, '')) * 1e4 || 0 } });
@@ -542,10 +554,26 @@ function SpecialCard({ item, a, admin, onSave }) {
               <Badge tone={{ 높음: 'now', 보통: 'wait', 낮음: 'hard' }[sc.prob] || 'muted'}>{sc.prob}</Badge>
             </div>
             <div className="mt-1 text-xs text-ink/60">{sc.basis}{sc.months ? ` · 약 ${sc.months}개월` : ''}</div>
-            {sc.conditions?.length > 0 && <ul className="mt-1 space-y-0.5 text-xs text-ink/80">{sc.conditions.map((c) => <li key={c}>☐ {c}</li>)}</ul>}
+            {sc.conditions?.length > 0 && <ul className="mt-1 space-y-0.5 text-xs text-ink/80">{sc.conditions.map((c) => <li key={c} className={c.startsWith('✔') ? 'font-bold text-now' : ''}>{c.startsWith('✔') ? c : `☐ ${c}`}</li>)}</ul>}
           </div>
         ))}
       </div>
+      {sp.types.some((t) => ['road', 'landlocked'].includes(t.key)) && (
+        <div className="mt-4 rounded-lg border border-line p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold">주변 필지 맹지 확인</span>
+            <span className="text-xs text-ink/50">{item.neighbors?.checkedAt ? `${String(item.neighbors.checkedAt).slice(0, 10)} 확인 · ${item.neighbors.note || ''}` : '아직 확인 안 함(수집 때 자동, 또는 버튼)'}</span>
+            {admin && item.pnu && <button className="btn ml-auto border border-line bg-white" disabled={busy} onClick={onNeighbors}>{busy ? '확인 중…' : '지금 확인'}</button>}
+          </div>
+          {item.neighbors?.list?.length > 0 && (
+            <table className="mt-2 w-full text-xs">
+              <thead className="text-ink/50"><tr><th className="text-left">지번</th><th className="text-left">지목</th><th className="text-left">도로접면</th></tr></thead>
+              <tbody>{item.neighbors.list.map((n) => <tr key={n.pnu} className={`border-t border-line/50 ${n.landlocked ? 'font-bold text-now' : ''}`}><td>{n.jibun}</td><td>{n.jimok || '—'}</td><td>{n.roadSide || (/(도|구|천)/.test(n.jimok || '') ? '도로·하천 필지' : '—')}{n.landlocked ? ' ← 매수 후보' : ''}</td></tr>)}</tbody>
+            </table>
+          )}
+          {item.neighbors?.error && <p className="mt-1 text-xs text-hard">{item.neighbors.error}</p>}
+        </div>
+      )}
       <div className="mt-4 rounded-lg bg-wait/5 p-3 text-sm">
         <div className="mb-1 font-bold text-wait">정확히 판단하려면 확인할 것</div>
         <ul className="grid gap-0.5 text-xs sm:grid-cols-2">{sp.checks.map((c) => <li key={c}>• {c}</li>)}</ul>
@@ -556,6 +584,25 @@ function SpecialCard({ item, a, admin, onSave }) {
           <label>내가 본 바닥 가치(만원, 직접 입력 시 우선)<input className="input mt-1" inputMode="numeric" defaultValue={sv.floor ? sv.floor / 1e4 : ''} onBlur={save('floor')} /></label>
         </div>
       )}
+    </Card>
+  );
+}
+
+// 올수리 후 매도
+function RenoCard({ a }) {
+  const r = a.renovation; const m = a.renoMoney; const base = a.money;
+  return (
+    <Card title="올수리하고 팔면" right={<span className="text-xs text-ink/50">평당 {Math.round(r.perPyeong / 1e4)}만 원 · {r.months}개월 기준 (관리자 설정)</span>}>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <div className="rounded-lg bg-paper p-3"><div className="text-xs text-ink/50">지금 상태 시세</div><div className="num text-lg font-extrabold">{eok(a.market.value)}</div></div>
+        <div className="rounded-lg bg-paper p-3"><div className="text-xs text-ink/50">올수리 비용</div><div className="num text-lg font-extrabold">{eok(r.cost)}</div><div className="text-xs text-ink/60">전용 {Math.round(r.area / 3.3058)}평</div></div>
+        <div className="rounded-lg bg-paper p-3"><div className="text-xs text-ink/50">수리 후 예상 매도가</div><div className="num text-lg font-extrabold text-now">{eok(r.after)}</div><div className="text-xs text-ink/60">시세보다 {eok(Math.abs(r.uplift))} {r.uplift >= 0 ? "↑" : "↓"}</div></div>
+        <div className="rounded-lg bg-paper p-3"><div className="text-xs text-ink/50">{m?.owner === 'corp' ? '세후 수익' : '예상 수익'}</div>
+          <div className={`num text-lg font-extrabold ${m && m.profit < 0 ? 'text-hard' : 'text-now'}`}>{m ? eok(m.profit) : '—'}</div>
+          <div className="text-xs text-ink/60">{m ? `내 돈 ${eok(m.own)} · 수익률 ${m.roi === null ? '—' : Math.round(m.roi * 100) + '%'}` : ''}{base?.profit != null ? ` · 수리 안 하면 ${eok(base.profit)}` : ''}</div>
+        </div>
+      </div>
+      <p className="mt-2 text-xs text-ink/50">수리 후 가격 근거: {r.basis}. {r.worth ? '수리비보다 오르는 폭이 커서 해볼 만합니다.' : '오르는 폭이 수리비에 비해 크지 않습니다.'} 실제 내부 상태·누수·구조는 현장 확인이 필요합니다.</p>
     </Card>
   );
 }

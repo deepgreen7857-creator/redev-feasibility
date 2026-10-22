@@ -9,7 +9,8 @@ import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
 const SOURCES = [['all', '전체'], ['court', '법원경매'], ['public', '공매'], ['bankrupt', '파산자산']];
 const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '유찰 대기'], ['check', '권리 확인 후 판단'], ['special', '특수물건 전체'], ['hard', '가격 안 맞음'], ['unknown', '시세 부족']];
 
-export default function ListPage() {
+export default function ListPage({ mode }) {
+  const opp = mode === 'opportunity';
   const [items, setItems] = useState(null);
   const [settings, setSettings] = useState(null);
   const [dealsMap, setDealsMap] = useState({});
@@ -45,15 +46,17 @@ export default function ListPage() {
       if (f.source !== 'all' && cat !== f.source) return false;
       if (f.verdict === 'special' ? !a.special : f.verdict !== 'all' && a.verdict !== f.verdict) return false;
       if (!f.showExcluded && a.excluded) return false;
+      if (opp && !a.opportunity) return false;
       if (f.sgg && !(it.sgg || '').includes(f.sgg)) return false;
       if (f.maxPrice && (it.minBid || 0) > Number(f.maxPrice) * 1e4) return false;
-      if (f.maxOwn && (!a.money || a.money.own > Number(f.maxOwn) * 1e4)) return false;
+      const ownOf = opp ? a.opportunity?.own : a.money?.own;
+      if (f.maxOwn && (!ownOf || ownOf > Number(f.maxOwn) * 1e4)) return false;
       if (f.corpOnly && !['A', 'B'].includes(fitOf(it, a))) return false;
       if (f.onlyOpen && /(낙찰|취소|종결|매각)/.test(it.status || '') && !/진행/.test(it.status || '')) return false;
       if (f.q && !`${it.title} ${it.address} ${it.caseNo}`.includes(f.q)) return false;
       return true;
-    }).sort((x, y) => sorter(f.sort)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
-  }, [items, settings, dealsMap, f]);
+    }).sort((x, y) => (opp && f.sort === 'verdict' ? NUM(y.a.opportunity?.profit) - NUM(x.a.opportunity?.profit) : 0) || sorter(f.sort)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
+  }, [items, settings, dealsMap, f, opp]);
 
   const counts = useMemo(() => {
     const c = { now: 0, wait: 0, check: 0, hard: 0, unknown: 0, special: 0 };
@@ -65,6 +68,12 @@ export default function ListPage() {
 
   return (
     <div className="space-y-4">
+      {opp && (
+        <div className="card border-now/30 bg-now/5 text-sm">
+          <div className="text-base font-extrabold">기회 찾기 — 지금 값보다 손을 대면 오르는 물건</div>
+          <p className="mt-1 text-ink/70"><b>권리 풀기</b>: 도로·지분·법정지상권 등 권리가 복잡한 물건을 풀었을 때(가능성만큼 할인한 기대 가치) 남는 돈. <b>올수리</b>: 빌라·아파트를 올수리해서 팔 때 수리 안 할 때보다 1천만 원 이상 더 남는 물건. 기대 수익 큰 순입니다.</p>
+        </div>
+      )}
       <div className="card space-y-3">
         <div className="flex flex-wrap gap-1.5">
           {SOURCES.map(([v, l]) => (
@@ -137,6 +146,20 @@ export default function ListPage() {
                 <div><div className="text-xs text-ink/50">수익률</div><div className="num font-bold">{a.money.roi === null ? '—' : `${Math.round(a.money.roi * 100)}%`}</div></div>
                 <div><div className="text-xs text-ink/50">내 돈</div><div className="num font-bold">{eok(a.money.own)}</div>{a.money.later > 0 && <div className="text-[10px] text-wait">+분담금 {eok(a.money.later)}</div>}</div>
                 <div><div className="text-xs text-ink/50">확실성</div><div className="font-bold">{a.certainty ? `${a.certainty.grade} (${a.certainty.value})` : '—'}</div></div>
+              </div>
+            )}
+            {a.opportunity && (
+              <div className="mt-2 rounded-lg border border-now/30 bg-now/5 p-2 text-sm">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {a.opportunities.map((o) => <Badge key={o.kind} tone="now">기회 · {o.kind}</Badge>)}
+                  <span className="ml-auto text-xs text-ink/50">{a.opportunity.months}개월 기준</span>
+                </div>
+                <div className="mt-1 grid grid-cols-3 gap-2">
+                  <div><div className="text-xs text-ink/50">기대 수익</div><div className={`num font-bold ${a.opportunity.profit < 0 ? 'text-hard' : 'text-now'}`}>{eok(a.opportunity.profit)}</div></div>
+                  <div><div className="text-xs text-ink/50">내 돈</div><div className="num font-bold">{eok(a.opportunity.own)}</div></div>
+                  <div><div className="text-xs text-ink/50">수익률</div><div className="num font-bold">{a.opportunity.roi === null ? '—' : `${Math.round(a.opportunity.roi * 100)}%`}</div></div>
+                </div>
+                {a.opportunity.note && <div className="mt-0.5 truncate text-[11px] text-ink/60">{a.opportunity.note}</div>}
               </div>
             )}
             {a.special && (

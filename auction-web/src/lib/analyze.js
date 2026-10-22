@@ -39,6 +39,44 @@ function median(arr) {
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
 }
 
+function quantile(arr, q) {
+  if (!arr.length) return null;
+  const a = [...arr].sort((x, y) => x - y);
+  const i = (a.length - 1) * q; const lo = Math.floor(i); const hi = Math.ceil(i);
+  return a[lo] + (a[hi] - a[lo]) * (i - lo);
+}
+
+// ── 올수리 후 매도 시나리오(빌라·아파트·단독) ───────────────────────────
+// 수리 후 가격 = 같은 동(또는 시군구)·비슷한 면적 거래의 ㎡당 상위 25% 가격(수리된 집 수준).
+// 다만 10년 이내 지은 집 거래가 3건 이상이면 그 중앙값을 넘지 않게(올수리해도 신축보다 비싸지 않음).
+// 수리비 = 전용면적(평) × 평당 올수리 비용(관리자 설정, 기본 120만 원).
+export function renovation(item, deals, settings, market) {
+  const type = tradeTypeOf(item);
+  if (!['rh', 'apt', 'sh'].includes(type) || !item.buildingArea || !market?.value) return null;
+  const year = new Date().getFullYear();
+  if (item.buildYear && year - item.buildYear < 10) return null; // 새 집은 대상 아님
+  const area = item.buildingArea;
+  let pool = (deals || []).filter((d) => d[0] && d[1] && !d[7] && d[8] !== '직거래');
+  const sameDong = pool.filter((d) => item.emd && d[9] === item.emd);
+  if (sameDong.length >= 5) pool = sameDong;
+  const near = pool.filter((d) => d[1] >= area * 0.8 && d[1] <= area * 1.2);
+  if (near.length >= 3) pool = near;
+  if (pool.length < 5) return null;
+  const units = pool.map((d) => d[0] / d[1]);
+  let unit = quantile(units, settings?.renoQuantile ?? 0.75);
+  let basis = `${sameDong.length >= 5 ? '같은 동' : '같은 시군구'} 비슷한 면적 거래 ${pool.length}건의 ㎡당 상위 ${Math.round((1 - (settings?.renoQuantile ?? 0.75)) * 100)}%`;
+  const newer = pool.filter((d) => d[6] && year - Number(d[6]) <= 10);
+  if (newer.length >= 3) {
+    const cap = median(newer.map((d) => d[0] / d[1]));
+    if (cap < unit) { unit = cap; basis += ` — 10년 이내 신축 ${newer.length}건 중앙값으로 상한`; }
+  }
+  const after = Math.round(unit * area);
+  const perPyeong = settings?.renoPerPyeong ?? 1200000;
+  const cost = Math.round((area / 3.3058) * perPyeong);
+  const uplift = after - market.value;
+  return { after, cost, uplift, months: settings?.renoMonths ?? 5, basis, perPyeong, area, worth: uplift > cost * 1.3 };
+}
+
 // deals: 압축 거래 [가격, 면적, 층, 일, 지번, 이름, 건축년도, 해제, 거래유형, 읍면동, 추가]
 export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
   const type = tradeTypeOf(item);
@@ -264,6 +302,31 @@ export function analyze(item, { settings, deals, aptDeals } = {}) {
     result.upMoney = moneyOf(item, { ...result, value: special.best.value, verdict: 'now', costs: costEstimate(item, special.best.value, settings) }, { ...settings, holdMonths: special.best.months || 12 });
   }
   if (!result.money && result.upMoney) result.money = { ...result.upMoney, profit: null, roi: null, upside: true };
+
+  // 올수리 후 매도
+  if (!special && !reasons.length) {
+    const reno = renovation(item, deals, settings, market);
+    if (reno) {
+      result.renovation = reno;
+      const price = result.verdict === 'wait' && entry ? entry.price : item.minBid;
+      if (price) {
+        const c = costEstimate(item, reno.after, settings);
+        result.renoMoney = moneyOf(item, { ...result, value: reno.after, verdict: 'now', costs: { ...c, repair: reno.cost } }, { ...settings, holdMonths: reno.months });
+      }
+    }
+  }
+
+  // 기회: 권리를 풀면(가능성 반영 기대 가치) 또는 올수리하면 지금 계산보다 돈이 더 되는 물건
+  const opp = [];
+  if (special?.expected && item.minBid) {
+    const exp = moneyOf(item, { ...result, value: special.expected, verdict: 'now', costs: costEstimate(item, special.expected, settings) }, { ...settings, holdMonths: special.best?.months || 12 });
+    if (exp?.profit > 0) opp.push({ kind: '권리 풀기', profit: exp.profit, own: exp.own, roi: exp.roi, months: exp.months, note: special.best ? `${special.best.name} (가능성 ${special.best.prob} 반영)` : '' });
+  }
+  if (result.renoMoney?.profit > Math.max(0, result.money?.profit || 0) + 10000000) {
+    opp.push({ kind: '올수리', profit: result.renoMoney.profit, own: result.renoMoney.own, roi: result.renoMoney.roi, months: result.renoMoney.months, note: `수리비 ${eok(result.renovation.cost)} → 수리 후 ${eok(result.renovation.after)}` });
+  }
+  result.opportunity = opp.length ? opp.sort((x, y) => y.profit - x.profit)[0] : null;
+  result.opportunities = opp;
   return result;
 }
 
