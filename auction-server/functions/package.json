@@ -1,0 +1,21 @@
+{
+  "name": "jbslab-auction-functions",
+  "private": true,
+  "description": "jbslab 경공매·파산 수집 서버",
+  "main": "src/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "fast-xml-parser": "^4.5.0",
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.1.0",
+    "xlsx": "^0.18.5"
+  }
+}

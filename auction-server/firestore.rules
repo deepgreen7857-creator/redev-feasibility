@@ -1,0 +1,19 @@
+rules_version = '2';
+// 공개 자료(물건·공고·시세)는 누구나 읽기, 쓰기는 수집 서버(관리자 SDK)와 관리자만.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email in ['deepgreen7857@gmail.com'];
+    }
+    match /listings/{id}        { allow read: if true; allow write: if isAdmin(); }
+    match /bankruptNotices/{id} { allow read: if true; allow write: if false; }
+    match /tradeMonths/{id}     { allow read: if true; allow write: if false; }
+    match /landCache/{id}       { allow read: if true; allow write: if false; }
+    match /settings/{id}        { allow read: if true; allow write: if isAdmin(); }
+    match /redevZones/{id}      { allow read: if true; allow write: if isAdmin(); }
+    match /state/{id}           { allow read: if isAdmin(); allow write: if false; }
+    match /tradeProgress/{id}   { allow read: if isAdmin(); allow write: if false; }
+    match /quota/{id}           { allow read: if isAdmin(); allow write: if false; }
+    match /runs/{id}            { allow read: if isAdmin(); allow write: if false; }
+  }
+}
