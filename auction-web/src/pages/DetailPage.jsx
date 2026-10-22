@@ -342,6 +342,7 @@ export default function DetailPage({ admin }) {
 }
 
 const fmtYmd = (v) => { const t = String(v || '').replace(/\D/g, ''); return t.length >= 8 ? `${t.slice(0, 4)}.${t.slice(4, 6)}.${t.slice(6, 8)}` : v || '—'; };
+const isUrl = (u) => /^https?:\/\//.test(String(u || ''));
 // 온비드 사진 주소의 downloadImageKind(썸네일)를 빼면 원본 크기
 const fullImg = (u) => String(u).replace(/&downloadImageKind=[A-Z_]+/, '');
 const sqm = (n) => (n ? `${Math.round(n * 100) / 100}㎡ (${Math.round((n / 3.3058) * 10) / 10}평)` : null);
@@ -359,9 +360,10 @@ function memberBasis(item, d, waitText) {
 
 // ① 물건 기본현황 — 사진 칸은 항상, 상세가 없는 값은 '수집 대기'
 function BasicSection({ item, d, dv, waitText }) {
-  const photos = (d?.photos || []).filter(Boolean);
+  // 예전 해석기로 받은 상세에는 '[object Object]' 같은 깨진 값이 있어 http 주소만 쓴다(밤 수집 때 다시 받음)
+  const photos = (d?.photos || []).filter(isUrl);
   const shown = photos.length ? photos : item.thumbnail ? [item.thumbnail] : [];
-  const maps = (d?.mapUrls || []).filter(Boolean);
+  const maps = (d?.mapUrls || []).filter(isUrl);
   return (
     <Card title="① 물건 기본현황">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">

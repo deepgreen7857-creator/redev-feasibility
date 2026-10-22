@@ -123,7 +123,7 @@ export default function ListPage() {
               <span className="ml-auto text-xs text-ink/50">{it.caseNo}</span>
             </div>
             <div className="flex items-start gap-2">
-              {(it.thumbnail || it.detail?.photos?.[0]) && <img src={it.thumbnail || it.detail.photos[0]} alt="" loading="lazy" className="h-14 w-20 shrink-0 rounded-md border border-line object-cover" />}
+              {thumbOf(it) && <img src={thumbOf(it)} alt="" loading="lazy" className="h-14 w-20 shrink-0 rounded-md border border-line object-cover" />}
               <span className="mt-0.5 shrink-0 rounded bg-ink px-1.5 py-0.5 text-xs font-bold text-white">{typeLabel(it)}</span>
               <div className="font-bold leading-snug">{it.title}</div>
             </div>
@@ -150,6 +150,8 @@ export default function ListPage() {
   );
 }
 
+// 목록 썸네일: 온비드 썸네일 → 상세 첫 사진(http 주소만 — 예전 상세의 깨진 값 제외)
+const thumbOf = (it) => [it.thumbnail, ...(it.detail?.photos || [])].find((u) => /^https?:\/\//.test(String(u || ''))) || null;
 const NUM = (v, dir = -1) => (v === null || v === undefined || Number.isNaN(v) ? (dir < 0 ? -Infinity : Infinity) : v);
 function sorter(key) {
   if (key === 'profit') return (x, y) => NUM(y.a.money?.profit) - NUM(x.a.money?.profit);
