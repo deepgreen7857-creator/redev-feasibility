@@ -2,7 +2,7 @@
 // 예약 작업은 하나(collectTick)만 둔다 — 새벽 0~6시 20분마다 깨어나 정해진 순서로 이어서 수집.
 // (Cloud Scheduler 작업은 계정당 3개까지 무료)
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const { setGlobalOptions, logger } = require('firebase-functions/v2');
 const { initializeApp } = require('firebase-admin/app');
@@ -24,6 +24,7 @@ setGlobalOptions({ region: 'asia-northeast3', maxInstances: 2 }); // 서울 리�
 
 const DATA_GO_KR_KEY = defineSecret('DATA_GO_KR_KEY');
 const VWORLD_KEY = defineSecret('VWORLD_KEY');
+const COURT_INGEST_TOKEN = defineSecret('COURT_INGEST_TOKEN');
 const ADMIN_EMAILS = defineString('ADMIN_EMAILS', { default: 'deepgreen7857@gmail.com' });
 
 const TICK_BUDGET_MS = 470 * 1000; // 함수 제한 540초 안에서 여유를 둔다
@@ -271,4 +272,40 @@ exports.seedSettings = onCall({}, async (request) => {
     updatedAt: new Date().toISOString(),
   });
   return { ok: true };
+});
+
+// ---------- 법원경매 수집기(전용 PC)가 보내는 자료 받기 ----------
+// POST /ingestCourt  머리글 Authorization: Bearer <COURT_INGEST_TOKEN>
+// 본문 { items: [ {caseNo, court, itemNo, ...} ], run: { ... } }
+const COURT_FIELDS = ['caseNo', 'itemNo', 'court', 'title', 'usage', 'usageSmall', 'address', 'sido', 'sgg', 'emd', 'pnu', 'appraisal', 'minBid', 'failCount', 'round',
+  'bidEnd', 'status', 'landArea', 'buildingArea', 'share', 'bulk', 'thumbnail', 'url', 'detail', 'history'];
+
+function cleanCourtItem(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const caseNo = String(raw.caseNo || '').replace(/\s/g, '');
+  const court = String(raw.court || '').trim();
+  if (!/^\d{4}타경\d+$/.test(caseNo) || !court) return null;
+  const item = { source: 'court', category: 'court' };
+  for (const k of COURT_FIELDS) if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') item[k] = raw[k];
+  for (const k of ['appraisal', 'minBid', 'failCount', 'landArea', 'buildingArea']) if (item[k] !== undefined) item[k] = Number(String(item[k]).replace(/[^\d.]/g, '')) || null;
+  const itemNo = String(raw.itemNo || '1').replace(/\D/g, '') || '1';
+  item.itemNo = itemNo;
+  item.id = `court_${court.replace(/\s/g, '')}_${caseNo}_${itemNo}`;
+  if (item.detail && JSON.stringify(item.detail).length > 60000) delete item.detail.raw;
+  return item;
+}
+
+exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY], timeoutSeconds: 300, memory: '512MiB', cors: false }, async (req, res) => {
+  if (req.method !== 'POST') { res.status(405).send('POST만 받습니다'); return; }
+  const auth = String(req.get('authorization') || '');
+  if (!COURT_INGEST_TOKEN.value() || auth !== `Bearer ${COURT_INGEST_TOKEN.value()}`) { res.status(401).send('토큰이 맞지 않습니다'); return; }
+  const body = req.body || {};
+  const items = (Array.isArray(body.items) ? body.items : []).slice(0, 200).map(cleanCourtItem).filter(Boolean);
+  const { needDetail } = await saveListings(items);
+  let enriched = 0;
+  for (const it of items.filter((x) => x.pnu).slice(0, 50)) {
+    try { const extra = await enrichLand(it); if (Object.keys(extra).length) { await db.collection('listings').doc(it.id).set(extra, { merge: true }); enriched++; } } catch (e) { logger.warn('court enrich', it.id, e.message); }
+  }
+  if (body.run) await setState('court', { lastRun: new Date().toISOString(), lastDay: kstDay(), ...JSON.parse(JSON.stringify(body.run)) });
+  res.json({ ok: true, received: Array.isArray(body.items) ? body.items.length : 0, saved: items.length, changed: needDetail.length, enriched });
 });

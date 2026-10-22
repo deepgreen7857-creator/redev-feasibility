@@ -1,0 +1,15 @@
+{
+  "name": "jbslab-court-collector",
+  "private": true,
+  "description": "정비경매 리포트 — 법원경매 수집기(전용 PC에서 사람 조회 속도로 실행)",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test-run": "node src/run.js --limit 3 --dry",
+    "run": "node src/run.js",
+    "setup-browser": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}
