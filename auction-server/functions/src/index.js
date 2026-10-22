@@ -104,20 +104,38 @@ async function runIncheonZones({ force = false } = {}) {
   return res;
 }
 
-// 필지별 토지이용·공시지가(30일 캐시) + 주택 공시가격
+// 필지별 토지이용·공시지가(30일 캐시) + 주택 공시가격. 필지번호(PNU)가 없으면 지번 주소로 브이월드 주소검색을 해서 찾는다.
 async function enrichLand(item) {
   const key = VWORLD_KEY.value();
-  if (!key || !item.pnu) return {};
-  const ref = db.collection('landCache').doc(String(item.pnu));
+  if (!key) return {};
+  const found = {};
+  let pnu = item.pnu;
+  if (!pnu) {
+    const hit = await vworld.findPnu({ address: (item.detail && item.detail.addressFull) || item.address || item.title, key });
+    if (!hit) return {};
+    pnu = hit.pnu;
+    Object.assign(found, { pnu, pnuSource: `주소검색: ${hit.parcel}` });
+  }
+  const ref = db.collection('landCache').doc(String(pnu));
   const c = await ref.get();
   let land = c.exists && Date.now() - new Date(c.data().checkedAt).getTime() < 30 * 86400e3 ? c.data() : null;
-  if (!land) { land = await vworld.lookup({ pnu: item.pnu, key }); await ref.set(land); }
-  const out = { land };
+  if (!land) { land = await vworld.lookup({ pnu, key }); await ref.set(land); }
+  const out = { ...found, land };
   if (!/토지|대지|임야|전|답|잡종지/.test(item.usageSmall || '') || item.buildingArea) {
-    const hp = await vworld.housingPrice({ pnu: item.pnu, address: `${item.address || ''} ${item.title || ''} ${item.detail?.addressFull || ''}`, key });
+    const hp = await vworld.housingPrice({ pnu, address: `${item.address || ''} ${item.title || ''} ${item.detail?.addressFull || ''}`, key });
     if (hp) out.housePrice = hp;
   }
   return out;
+}
+
+// 상세를 다시 받을 온비드 물건: 상세가 없거나 예전 판으로 받은 것. 응답이 비었던 물건은 7일 동안 건너뛴다.
+async function onbidDetailBacklog() {
+  const snap = await db.collection('listings').where('source', '==', 'onbid')
+    .select('cltrMngNo', 'pbctCdtnNo', 'sgg', 'category', 'land', 'pnu', 'address', 'title', 'usageSmall', 'buildingArea', 'detailAt', 'detailVer', 'detailEmptyAt').get();
+  const weekAgo = Date.now() - 7 * 86400e3;
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .filter((it) => it.cltrMngNo && (!it.detailAt || it.detailVer !== onbid.DETAIL_VERSION))
+    .filter((it) => !it.detailEmptyAt || new Date(it.detailEmptyAt).getTime() < weekAgo);
 }
 
 async function runOnbid({ deadline, force = false, mode } = {}) {
@@ -128,7 +146,7 @@ async function runOnbid({ deadline, force = false, mode } = {}) {
   const m = mode || (!st.lastFullDay || isSunday ? 'full' : 'daily');
   const res = await onbid.collect({
     serviceKey: DATA_GO_KR_KEY.value(), quota: new Quota(db), mode: m, deadline,
-    save: saveListings, log: logger.info, enrich: enrichLand,
+    save: saveListings, log: logger.info, enrich: enrichLand, backfill: onbidDetailBacklog,
   });
   // 오류만 나고 한 건도 못 받았으면(예: 키 오류) '오늘 수집함'으로 표시하지 않는다 → 다음 실행에서 다시 시도
   const failedAll = res.rows === 0 && res.errors && res.errors.length > 0;
@@ -207,6 +225,34 @@ exports.testApis = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORL
     const r = await onbid.fetchListPage({ part: { sido: '인천광역시', prptDivCd: onbid.PROPERTY_CODES, pvctTrgtYn: 'N' }, pageNo: 1, serviceKey: key, quota });
     return { total: r.total, fields: Object.keys(r.rows[0] || {}).slice(0, 40) };
   });
+  await tryOne('온비드 상세', async () => {
+    const list = await onbid.fetchListPage({ part: { sido: '인천광역시', prptDivCd: onbid.PROPERTY_CODES, pvctTrgtYn: 'N' }, pageNo: 1, serviceKey: key, quota });
+    const first = list.rows.find((r) => r.cltrMngNo);
+    if (!first) return { total: 0, message: '목록에 물건이 없어 상세를 시험하지 못했습니다.' };
+    const row = await onbid.fetchDetail({ cltrMngNo: first.cltrMngNo, pbctCdtnNo: first.pbctCdtnNo, serviceKey: key, quota, raw: true });
+    if (!row) return { total: 0, cltrMngNo: first.cltrMngNo, message: '상세 응답이 비어 있습니다.' };
+    // 항목 이름 전체와 형태(배열이면 첫 줄의 항목 이름), 사진·지도 값 예시
+    const shape = (v) => (Array.isArray(v) ? `배열 ${v.length}건 [${Object.keys(v[0] || {}).join(',')}]` : v === null || v === undefined ? '비어 있음' : typeof v === 'object' ? `객체 {${Object.keys(v).join(',')}}` : `글자 ${String(v).length}자`);
+    const media = {};
+    for (const k of Object.keys(row).filter((k) => /poto|Url|lmap|lrm|vdo|urlAdr/i.test(k))) {
+      const v = row[k];
+      media[k] = { 형태: shape(v), 예시: Array.isArray(v) ? (v[0] && (v[0].urlAdr || JSON.stringify(v[0]))) || null : v ? String(v).slice(0, 300) : null, 구분자: typeof v === 'string' ? (v.includes('|') ? '|' : v.includes(',http') ? ',' : '없음(한 건)') : null };
+    }
+    const mapped = onbid.mapDetail(row);
+    // 관리자 화면은 sample 글자를 그대로 보여 주므로 확인할 내용을 여기에 모은다
+    const mediaText = Object.entries(media).map(([k, m]) => `${k}=${m.형태}${m.구분자 ? `(구분자 ${m.구분자})` : ''}`).join(', ');
+    return {
+      total: Object.keys(row).length,
+      cltrMngNo: first.cltrMngNo, pbctCdtnNo: first.pbctCdtnNo,
+      fields: Object.keys(row),
+      shapes: Object.fromEntries(Object.entries(row).filter(([, v]) => v && typeof v === 'object').map(([k, v]) => [k, shape(v)])),
+      media,
+      sample: `${first.cltrMngNo} → 해석: 사진 ${mapped.photos.length}장 · 지도 ${mapped.mapUrls.length}장 · 등기 ${mapped.rights.length}건 · 임차 ${mapped.leases.length}건 · 지목 ${mapped.landCategory || '—'}`
+        + ` ‖ 사진·지도 항목: ${mediaText}`
+        + ` ‖ 목록형 항목: ${Object.entries(row).filter(([, v]) => v && typeof v === 'object').map(([k, v]) => `${k}=${shape(v)}`).join(', ')}`
+        + ` ‖ 항목 ${Object.keys(row).length}개: ${Object.keys(row).join(', ')}`,
+    };
+  });
   await tryOne('온비드 파산자산(전국)', async () => {
     const r = await onbid.fetchListPage({ part: { sido: null, prptDivCd: onbid.BANKRUPT_CODE, pvctTrgtYn: 'N' }, pageNo: 1, serviceKey: key, quota });
     return { total: r.total, sample: r.rows[0] ? onbid.mapListRow(r.rows[0]).title : null };
@@ -251,6 +297,25 @@ exports.landCheck = onCall({ timeoutSeconds: 60, secrets: [VWORLD_KEY] }, async 
     await db.collection('listings').doc(listingId).set({ land, pnu, ...(housePrice ? { housePrice } : {}) }, { merge: true });
   }
   return { ...land, housePrice };
+});
+
+// 관리자: 이 물건 상세 지금 받기(온비드) — 상세·사진·권리를 받고 토지이용까지 붙여 갱신된 물건을 돌려준다
+exports.fetchDetailNow = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORLD_KEY] }, async (request) => {
+  requireAdmin(request);
+  const listingId = request.data && request.data.listingId;
+  if (!listingId) throw new HttpsError('invalid-argument', 'listingId 가 없습니다.');
+  const ref = db.collection('listings').doc(String(listingId));
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', '물건을 찾을 수 없습니다.');
+  const item = { id: snap.id, ...snap.data() };
+  if (item.source !== 'onbid' || !item.cltrMngNo) throw new HttpsError('failed-precondition', '온비드 물건만 상세를 받을 수 있습니다.');
+  const stats = { details: 0, errors: [] };
+  await onbid.fetchDetails([item], {
+    serviceKey: DATA_GO_KR_KEY.value(), quota: new Quota(db), save: saveListings, enrich: enrichLand, deadline: Date.now() + 100e3, stats,
+  }, new Set());
+  if (!stats.details) return { ok: false, message: stats.errors[0] || '온비드 상세 응답이 비어 있습니다.' };
+  const fresh = (await ref.get()).data();
+  return { ok: true, listing: { id: listingId, ...fresh }, errors: stats.errors };
 });
 
 // 첫 설치 때 기본 설정 넣기(관리자 화면의 "기본값 넣기" 버튼)
@@ -303,7 +368,7 @@ exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY], tim
   const items = (Array.isArray(body.items) ? body.items : []).slice(0, 200).map(cleanCourtItem).filter(Boolean);
   const { needDetail } = await saveListings(items);
   let enriched = 0;
-  for (const it of items.filter((x) => x.pnu).slice(0, 50)) {
+  for (const it of items.filter((x) => x.pnu || x.address).slice(0, 50)) {
     try { const extra = await enrichLand(it); if (Object.keys(extra).length) { await db.collection('listings').doc(it.id).set(extra, { merge: true }); enriched++; } } catch (e) { logger.warn('court enrich', it.id, e.message); }
   }
   if (body.run) await setState('court', { lastRun: new Date().toISOString(), lastDay: kstDay(), ...JSON.parse(JSON.stringify(body.run)) });

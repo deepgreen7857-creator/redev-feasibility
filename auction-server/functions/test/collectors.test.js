@@ -43,17 +43,99 @@ test('온비드 수집 구간: 수도권 3개 시도 + 파산자산 전국', () 
 test('온비드 수집 흐름(가짜 서버): 목록 저장 → 상세 조회', async () => {
   const saved = [];
   const fetcher = fakeFetch((u) => {
-    if (u.pathname.includes('Dtl')) return onbidJson([{ cltrMngNo: sampleRow.cltrMngNo, sttyEbrVldCont: '법정지상권 성립 여지 있음', ersrExclRgtCont: '없음', leasInfList: { item: [{ acpmPrptOcpyIrpsFlnm: '홍길동', acpmGrteeAmt: '50000000', dtbtRqrYn: 'N' }] } }]);
+    if (u.pathname.includes('Dtl')) return onbidJson([{ cltrMngNo: sampleRow.cltrMngNo, pytnMtrsCont: '토지만 매각 — 법정지상권 성립 여지 있음', leasInfList: [{ irstDivNm: '임차인', cltrInprNm: '홍**', bidGrteeAmt: 50000000, mvinYmd: '20230105' }] }]);
     if (u.searchParams.get('lctnSdnm') === '인천광역시' && u.searchParams.get('pvctTrgtYn') === 'N') return onbidJson([sampleRow]);
     return onbidJson([], 0);
   });
   const res = await onbid.collect({ serviceKey: 'k', quota: new Quota(null), fetcher, mode: 'full', save: async (items) => { saved.push(...items); return {}; } });
   assert.equal(res.rows, 1);
   assert.equal(res.details, 1);
-  const detail = saved.find((s) => s.detail).detail;
-  assert.equal(detail.flags.superficies, true);
-  assert.equal(detail.flags.survivingRights, false);
-  assert.equal(detail.flags.unclaimedTenants, 1);
+  const row = saved.find((s) => s.detail);
+  assert.equal(row.detailVer, onbid.DETAIL_VERSION);
+  assert.equal(row.detail.flags.superficies, true);
+  assert.equal(row.detail.flags.survivingRights, false);
+  assert.equal(row.detail.flags.tenants, 1);
+});
+
+// 실제 상세 응답(2026.10, 이름·파일 해시는 지움)
+const realDetail = require('./fixtures/onbid-detail.json');
+
+test('온비드 상세 해석: 실제 응답의 항목 이름(사진 배열, 지도 | 구분, 등기·임차·면적·감정)', () => {
+  assert.ok(Array.isArray(realDetail.potoUrlList), 'potoUrlList 는 [{urlAdr}] 배열');
+  assert.ok(realDetail.lrmUrlAdrList.includes('|'), 'lrmUrlAdrList 는 | 로 이은 글자');
+  const d = onbid.mapDetail(realDetail);
+  assert.equal(d.photos.length, realDetail.potoUrlList.length);
+  assert.ok(d.photos.every((u) => u.startsWith('https://www.onbid.co.kr/')));
+  assert.equal(d.mapUrls.length, realDetail.lrmUrlAdrList.split('|').length);
+  assert.ok(d.mapUrls.every((u) => u.startsWith('https://')));
+  assert.equal(d.addressFull, realDetail.zadrNm);
+  assert.equal(d.roadAddress, realDetail.cltrRadr);
+  assert.equal(d.pnu, realDetail.ltnoPnu);
+  assert.equal(d.landCategory, '대');
+  assert.equal(d.appraisalDate, '20260825');
+  assert.ok(d.appraisalFile.startsWith('https://'));
+  assert.equal(d.distributionDeadline, '20260914');
+  assert.equal(d.rights.length, realDetail.rgstPrmrInfList.length);
+  const mortgage = d.rights.find((r) => r.kind === '근저당권');
+  assert.equal(mortgage.amount, 36000000);
+  assert.equal(mortgage.date, '20240411');
+  assert.equal(d.leases.length, realDetail.leasInfList.length);
+  assert.equal(d.leases[0].deposit, 220000000);
+  assert.equal(d.leases[0].moveIn, '20240405');
+  assert.ok(d.flags.tenants >= 1);
+  assert.equal(d.flags.survivingRights, true); // 유의사항에 '인수' 문구
+  assert.equal(d.flags.superficies, false);
+  assert.match(d.shareText, /지분/);
+  assert.equal(d.usageStatus, realDetail.utlzPscdCont);
+});
+
+test('온비드 PNU: 지번이 0인 값은 버린다', () => {
+  assert.equal(onbid.validPnu('4145010100000000000'), null);
+  assert.equal(onbid.validPnu('1174010700005150007'), '1174010700005150007');
+  assert.equal(onbid.mapListRow({ ...sampleRow, ltnoPnu: '4145010100000000000' }).pnu, null);
+});
+
+test('상세 우선순위: 정비구역 +3, 부평·계양 +2, 파산자산 +1', () => {
+  assert.equal(onbid.score({ land: { landUse: { redevelopment: ['정비구역'] } }, sgg: '부평구', category: 'bankrupt' }), 6);
+  assert.equal(onbid.score({ sgg: '계양구' }), 2);
+  assert.equal(onbid.score({ category: 'bankrupt', land: { landUse: { redevelopment: [] } } }), 1);
+});
+
+test('평일 수집 뒤 상세 빠진 물건 다시 받기: 우선순위 순서, 남은 한도 안에서', async () => {
+  const asked = [];
+  const fetcher = fakeFetch((u) => {
+    if (u.pathname.includes('Dtl')) { asked.push(u.searchParams.get('cltrMngNo')); return onbidJson([{ cltrMngNo: u.searchParams.get('cltrMngNo') }]); }
+    return onbidJson([], 0);
+  });
+  const backlog = [
+    { id: 'a', cltrMngNo: 'A', sgg: '남동구' },
+    { id: 'b', cltrMngNo: 'B', sgg: '부평구' },
+    { id: 'c', cltrMngNo: 'C', sgg: '서구', land: { landUse: { redevelopment: ['재개발'] } } },
+    { id: 'd', cltrMngNo: 'D', sgg: '계양구', detailAt: '2026-10-01', detailVer: 1 },
+  ];
+  const saved = [];
+  const res = await onbid.collect({ serviceKey: 'k', quota: new Quota(null), fetcher, mode: 'daily', maxBackfill: 3, save: async (items) => { saved.push(...items); return {}; }, backfill: async () => backlog });
+  assert.deepEqual(asked, ['C', 'B', 'A']); // 상세 없는 것 먼저(정비구역 > 부평 > 기타), 한도 3건
+  assert.equal(res.backfilled, 3);
+  assert.equal(res.backfillPending, 4);
+  // full(일요일) 수집에서는 다시 받기를 하지 않는다
+  asked.length = 0;
+  await onbid.collect({ serviceKey: 'k', quota: new Quota(null), fetcher, mode: 'full', save: async () => ({}), backfill: async () => backlog });
+  assert.equal(asked.length, 0);
+});
+
+test('브이월드 주소검색으로 PNU 찾기: 지번 주소만 떼고, 산/일반 지번 구분', async () => {
+  assert.equal(vworld.parcelAddress('서울특별시 강동구 암사동 515-7 제3층 제301호'), '서울특별시 강동구 암사동 515-7');
+  assert.equal(vworld.parcelAddress('경기도 의정부시 낙양동 산 104-1'), '경기도 의정부시 낙양동 산 104-1');
+  assert.equal(vworld.parcelAddress('인천광역시 옹진군 영흥면 내리 1349-119 외 소재 부동산'), '인천광역시 옹진군 영흥면 내리 1349-119');
+  const items = [
+    { id: '4115010700101040001', address: { parcel: '경기도 의정부시 낙양동 104-1' } },
+    { id: '4115010700201040001', address: { parcel: '경기도 의정부시 낙양동 산 104-1' } },
+  ];
+  const fetcher = async () => ({ ok: true, json: async () => ({ response: { status: 'OK', result: { items } } }) });
+  assert.equal((await vworld.findPnu({ address: '경기도 의정부시 낙양동 산 104-1', key: 'k', fetcher })).pnu, '4115010700201040001');
+  assert.equal((await vworld.findPnu({ address: '경기도 의정부시 낙양동 104-1 제2층', key: 'k', fetcher })).pnu, '4115010700101040001');
+  assert.equal(await vworld.findPnu({ address: '경기도 의정부시 낙양동 104-2', key: 'k', fetcher }), null);
 });
 
 test('실거래가 압축: 만원→원, 해제·거래유형', () => {

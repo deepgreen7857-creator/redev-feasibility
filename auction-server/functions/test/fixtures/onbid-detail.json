@@ -1,0 +1,216 @@
+{
+ "cltrMngNo": "2024-04678-008",
+ "pbctCdtnNo": 6240880,
+ "onbidCltrno": 2045543,
+ "onbidPbancNo": 909258,
+ "pbctNo": 10105178,
+ "pbctNsq": "004",
+ "pbctsn": null,
+ "prptDivCd": "0007",
+ "prptDivNm": "압류재산",
+ "dspsMthodCd": "0001",
+ "dspsMthodNm": "매각",
+ "bidDivCd": "0001",
+ "bidDivNm": "전자입찰",
+ "bidMthodCd": "0001",
+ "bidMthodNm": "최고가방식",
+ "cptnMthodCd": "0001",
+ "cptnMthodNm": "일반경쟁",
+ "totalamtUnpcDivCd": "0001",
+ "totalamtUnpcDivNm": "총액",
+ "cltrUsgLclsCtgrId": "10000",
+ "cltrUsgMclsCtgrId": "10200",
+ "cltrUsgSclsCtgrId": "10219",
+ "cltrUsgLclsCtgrNm": "부동산",
+ "cltrUsgMclsCtgrNm": "주거용건물",
+ "cltrUsgSclsCtgrNm": "기타주거용건물",
+ "onbidCltrNm": "서울특별시 강동구 암사동 515-7 제3층 제301호",
+ "usbdNft": 1,
+ "bidPrgnNft": 0,
+ "pvctTrgtYn": "N",
+ "batcBidYn": null,
+ "cltrBidBgngDt": "202701251400",
+ "cltrBidEndDt": "202701271700",
+ "apslEvlAmt": 303000000,
+ "lowstBidPrcIndctCont": "90900000",
+ "frstBidPrc": 0,
+ "apslPrcCtrsLowstBidRto": null,
+ "frstCtrsLowstBidPrcRto": null,
+ "feeRate": null,
+ "ltnoPnu": "1174010700005150007",
+ "rdnmPnu": "1174041723020100003400004",
+ "lctnSdnm": "서울특별시",
+ "lctnSggnm": "강동구",
+ "lctnEmdNm": "암사동",
+ "rqstOrgNm": "서인천세무서",
+ "orgNm": "한국자산관리공사",
+ "eltrGrprUseYn": "N",
+ "collbBidPsblYn": "Y",
+ "twtmGthrBidPsblYn": "Y",
+ "subtBidPsblYn": "Y",
+ "evcRsbyTrgtCont": "매수인",
+ "landSqms": 21.57,
+ "bldSqms": 44.87,
+ "alcYn": "N",
+ "dtbtRqrEdtmCont": "2026/09/14",
+ "rentMthodNm": null,
+ "rentPerdCont": "-",
+ "mdfcnDt": "20261014165148",
+ "crtnYn": "N",
+ "zadrNm": "서울특별시 강동구 암사동 515-7 제3층 제301호",
+ "cltrRadr": "서울특별시 강동구 올림픽로93길 34-4, 제3층 제301호 (암사동)",
+ "cltrEtcCont": null,
+ "icdlCdtnCont": null,
+ "locVntyPscdCont": "본건은 서울특별시 강동구 암사동 소재 신암초등학교 북동측 인근에 위치하며, 본건까지 차량 접근이 가능하며, 인근에 버스정류장 및 지하철8호선 암사역이 소재하여 대중교통수단 이용은 용이함.",
+ "utlzPscdCont": "다세대 주택으로 이용 중임.",
+ "dsplVldCont": null,
+ "purrQlfcCont": null,
+ "pytnMtrsCont": "- 본건은 권리신고 및 배분요구한 임차인이 임차보증금 전부를 배분 받지 못하는 경우 매수인이 인수부담할 수 있으므로 사전조사 후 입찰 바람\n\n- 전세권자가 배분요구의 종기까지 배분요구 하지 않는 경우 전세권은 매각으로 소멸되지 않고, 매수인이 인수되는 조건이니 전세권자의 배분요구 여부를 사전조사 후 입찰바람\n\n- 전세권자 ○○의 신고는 전세권자로서가 아닌 임차인으로서 신고한 것임을 참고하시어 유의사항 확인 바람 \n",
+ "frstPbancYmd": "20260827",
+ "potoUrlList": [
+  {
+   "urlAdr": "https://www.onbid.co.kr/op/cm/syc/filemng/filemngprcs/FileMngPrcsController/dnldFile.do?atchFileLstNo=1&atchSn=2&hashCrpsNo=XXXX&downloadImageKind=THNL_NM"
+  },
+  {
+   "urlAdr": "https://www.onbid.co.kr/op/cm/syc/filemng/filemngprcs/FileMngPrcsController/dnldFile.do?atchFileLstNo=1&atchSn=3&hashCrpsNo=XXXX&downloadImageKind=THNL_NM"
+  },
+  {
+   "urlAdr": "https://www.onbid.co.kr/op/cm/syc/filemng/filemngprcs/FileMngPrcsController/dnldFile.do?atchFileLstNo=1&atchSn=4&hashCrpsNo=XXXX&downloadImageKind=THNL_NM"
+  },
+  {
+   "urlAdr": "https://www.onbid.co.kr/op/cm/syc/filemng/filemngprcs/FileMngPrcsController/dnldFile.do?atchFileLstNo=1&atchSn=5&hashCrpsNo=XXXX&downloadImageKind=THNL_NM"
+  }
+ ],
+ "poto360DgrUrlList": null,
+ "vdoUrlAdrList": null,
+ "lrmUrlAdrList": "https://www.onbid.co.kr/op/cm/syc/filemng/filemngprcs/FileMngPrcsController/dnldFile.do?atchFileLstNo=1&atchSn=4&hashCrpsNo=XXXX&downloadImageKind=THNL_NM|https://www.onbid.co.kr/op/cm/syc/filemng/filemngprcs/FileMngPrcsController/dnldFile.do?atchFileLstNo=1&atchSn=5&hashCrpsNo=XXXX&downloadImageKind=THNL_NM",
+ "lmapUrlAdrList": null,
+ "batcBidCltrClgList": [],
+ "crtnLstClgList": [],
+ "sqmsList": [
+  {
+   "clandCont": "토지>대",
+   "sqmsCont": "21.57㎡",
+   "pursAlcCont": null,
+   "dtlCltrNm": "지분(총면적 171.5㎡ 171.5분의21.57 지분)"
+  },
+  {
+   "clandCont": "건물>건물",
+   "sqmsCont": "44.87㎡",
+   "pursAlcCont": null,
+   "dtlCltrNm": null
+  }
+ ],
+ "apslEvlClgList": [
+  {
+   "apslEvlYmd": "20260825",
+   "apslEvlOrgNm": "WD감정평가사사무소",
+   "apslApprNm": null,
+   "apslEvlAmt": 303000000,
+   "urlAdr": "https://www.onbid.co.kr/op/cm/syc/filemng/filemngprcs/FileMngPrcsController/dnldFile.do?atchFileLstNo=1&atchSn=1&hashCrpsNo=XXXX"
+  },
+  {
+   "apslEvlYmd": "20260825",
+   "apslEvlOrgNm": "WD감정평가사사무소",
+   "apslApprNm": null,
+   "apslEvlAmt": 303000000,
+   "urlAdr": "https://www.onbid.co.kr/op/cm/syc/filemng/filemngprcs/FileMngPrcsController/dnldFile.do?atchFileLstNo=1&atchSn=1&hashCrpsNo=XXXX"
+  }
+ ],
+ "leasInfList": [
+  {
+   "irstDivNm": "임차인",
+   "cltrInprNm": "홍**",
+   "bidGrteeAmt": 220000000,
+   "mthrAmt": null,
+   "convGrteeAmt": null,
+   "cfmtnYmd": "20240405",
+   "mvinYmd": "20240405"
+  },
+  {
+   "irstDivNm": "전세권",
+   "cltrInprNm": "김**",
+   "bidGrteeAmt": 220000000,
+   "mthrAmt": null,
+   "convGrteeAmt": null,
+   "cfmtnYmd": "20240405",
+   "mvinYmd": "20240405"
+  },
+  {
+   "irstDivNm": "전세권",
+   "cltrInprNm": "이**",
+   "bidGrteeAmt": null,
+   "mthrAmt": null,
+   "convGrteeAmt": null,
+   "cfmtnYmd": null,
+   "mvinYmd": null
+  },
+  {
+   "irstDivNm": "전입세대주",
+   "cltrInprNm": "박**",
+   "bidGrteeAmt": null,
+   "mthrAmt": null,
+   "convGrteeAmt": null,
+   "cfmtnYmd": null,
+   "mvinYmd": "20240405"
+  },
+  {
+   "irstDivNm": "임차인",
+   "cltrInprNm": "최**",
+   "bidGrteeAmt": null,
+   "mthrAmt": null,
+   "convGrteeAmt": null,
+   "cfmtnYmd": null,
+   "mvinYmd": null
+  }
+ ],
+ "rgstPrmrInfList": [
+  {
+   "irstDivNm": "위임기관",
+   "cltrInprNm": "정**",
+   "rgstYmd": "20241129",
+   "inprStngAmt": null
+  },
+  {
+   "irstDivNm": "전세권",
+   "cltrInprNm": "강**",
+   "rgstYmd": "20240405",
+   "inprStngAmt": 0
+  },
+  {
+   "irstDivNm": "전세권",
+   "cltrInprNm": "조**",
+   "rgstYmd": "20240405",
+   "inprStngAmt": 220000000
+  },
+  {
+   "irstDivNm": "압류",
+   "cltrInprNm": "홍**",
+   "rgstYmd": "20240411",
+   "inprStngAmt": 0
+  },
+  {
+   "irstDivNm": "근저당권",
+   "cltrInprNm": "김**",
+   "rgstYmd": "20240411",
+   "inprStngAmt": 36000000
+  },
+  {
+   "irstDivNm": "압류",
+   "cltrInprNm": "이**",
+   "rgstYmd": "20250217",
+   "inprStngAmt": 0
+  },
+  {
+   "irstDivNm": "압류",
+   "cltrInprNm": "박**",
+   "rgstYmd": "20250624",
+   "inprStngAmt": 0
+  }
+ ],
+ "dtbtRqrMtrsList": [],
+ "ocpyRelList": [],
+ "papsInf": [],
+ "pbctStatCd": "0001",
+ "pbctStatNm": "0001"
+}

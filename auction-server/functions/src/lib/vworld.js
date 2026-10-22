@@ -109,4 +109,31 @@ async function housingPrice({ pnu, address, key, fetcher = fetch, year }) {
   return null;
 }
 
-module.exports = { lookup, housingPrice, analyzeLandUse, firstArray };
+// 주소 글에서 지번 주소 부분만 떼어 낸다: '… 암사동 515-7 제3층 제301호' → '… 암사동 515-7', '… 낙양동 산 104-1' 그대로
+function parcelAddress(address) {
+  const s = String(address || '').replace(/\s+/g, ' ').trim();
+  const m = s.match(/^(.+?\s(?:산\s?)?\d+(?:-\d+)?)(?=\s|,|$)/);
+  return m ? m[1].replace(/\s산(\d)/, ' 산 $1') : null;
+}
+
+// 지번 주소 → PNU(19자리). 브이월드 주소검색(지번)에서 지번이 정확히 같은 결과만 쓴다.
+async function findPnu({ address, key, fetcher = fetch }) {
+  const q = parcelAddress(address);
+  if (!key || !q) return null;
+  const u = new URL('https://api.vworld.kr/req/search');
+  const params = { service: 'search', request: 'search', version: '2.0', size: '10', page: '1', query: q, type: 'address', category: 'parcel', format: 'json', errorformat: 'json', key, domain: DOMAIN };
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  const res = await fetcher(u, { signal: AbortSignal.timeout(20000) });
+  if (!res.ok) throw new Error(`브이월드 주소검색 HTTP_${res.status}`);
+  const data = await res.json();
+  const items = (data && data.response && data.response.result && data.response.result.items) || [];
+  const lastToken = (s) => String(s || '').trim().split(/\s+/).pop();
+  const isMountain = (s) => /\s산\s?\d/.test(s);
+  const hit = items.find((it) => {
+    const p = String((it.address && it.address.parcel) || '');
+    return /^\d{19}$/.test(String(it.id)) && lastToken(p) === lastToken(q) && isMountain(p) === isMountain(q);
+  });
+  return hit ? { pnu: String(hit.id), parcel: hit.address.parcel, query: q } : null;
+}
+
+module.exports = { lookup, housingPrice, analyzeLandUse, firstArray, parcelAddress, findPnu };
