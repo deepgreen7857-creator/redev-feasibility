@@ -1,0 +1,10 @@
+// 데모용 가상 구역(실제 구역 아님)
+export const SAMPLE_ZONES = {
+  '인천광역시': {
+    sido: '인천광역시', quarter: '샘플', count: 2,
+    zones: [
+      { sido: '인천광역시', sgg: '부평구', name: '[샘플] 십정○구역 주택재개발', location: '부평구 십정동 123번지 일원', emd: '십정동', lots: ['123'], type: '재개발', stage: '추진위원회 승인', dates: { designated: '2024-05-10', committee: '2025-03-02' } },
+      { sido: '인천광역시', sgg: '계양구', name: '[샘플] 작전○구역 재건축', location: '계양구 작전동 45번지 일원', emd: '작전동', lots: ['45'], type: '재건축', stage: '조합설립인가 후', dates: { designated: '2021-11-01', committee: '2022-06-15', union: '2024-02-20' } },
+    ],
+  },
+};
