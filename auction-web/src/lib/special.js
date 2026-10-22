@@ -46,10 +46,12 @@ export function riskyTenants(item) {
 export function detectSpecial(item) {
   const t = corpus(item);
   const f = item.detail?.flags || {};
-  const jimok = `${item.land?.jimok || ''} ${item.detail?.landCategory || ''}`;
+  // 지목·공고 용도(예: '토지 > 도로')·이용현황 어디에든 '도로/구거'가 단어로 있으면 도로 부지
+  const jimok = `${item.land?.jimok || ''} ${item.detail?.landCategory || ''} ${item.usage || ''} ${item.usageSmall || ''} ${item.detail?.usageStatus || ''}`;
   const out = [];
   const add = (key, evidence) => { if (!out.some((o) => o.key === key)) out.push({ key, evidence }); };
-  if (/(^|\s)(도로|구거)(\s|$)/.test(jimok)) add('road', `지목 ${jimok.trim()}`);
+  const jm = jimok.match(/(^|[\s>/·,()])(도로|구거)($|[\s>/·,()])/);
+  if (jm) add('road', item.land?.jimok && /도로|구거/.test(item.land.jimok) ? `지목 ${item.land.jimok}` : `공고상 ${jm[2]}`);
   else if (/현황\s*도로|도로로\s*(이용|사용)|사실상\s*(의\s*)?도로|통행로|도로\s*부지/.test(t)) add('road', '현황 도로로 이용');
   if (/맹지|진입\s*도로\s*(없|미확보)|도로에\s*접하지/.test(t)) add('landlocked', '맹지 표시');
   if (f.superficies || /법정지상권|제시\s*외\s*건물|건물\s*(은|은\s*)?매각\s*제외|토지만\s*매각/.test(t)) add('superficies', f.superficies ? '법정지상권 기재' : '지상 건물 매각 제외');
@@ -192,17 +194,21 @@ export function specialAnalysis(item, { full, settings, member, rightValue, rede
   const best = scenarios.filter((x) => x.value).sort((a, b) => b.value - a.value)[0] || null;
   const price = item.minBid || null;
   const floorEntry = floorKnown && floor > 0 ? (rounds || []).find((r) => r.price <= floor) || null : null;
+  // 기대 가치: 바닥에서 최고 시나리오까지 오른 폭을 가능성만큼만 인정
+  const P = { 높음: 0.8, 보통: 0.5, '확인 필요': 0.3, 낮음: 0.2 };
+  const base = floorKnown ? floor : full ? full * factor : null;
+  const expected = best && base !== null ? Math.round(base + Math.max(0, best.value - base) * (P[best.prob] ?? 0.3)) : base;
   const score = (() => {
     if (!price) return null;
     const fr = floorKnown ? floor / price : null;
     const pFloor = fr === null ? 12 : Math.round(Math.max(0, Math.min(1, (fr - 0.5) / 0.6)) * 40); // 바닥/입찰가 1.1 이상 만점
-    const up = best ? best.value / price - 1 : 0;
-    const pUp = Math.round(Math.max(0, Math.min(1, up / 1.0)) * 30); // 상승 시 2배면 만점
+    const up = expected ? expected / price - 1 : 0;
+    const pUp = Math.round(Math.max(0, Math.min(1, up / 1.0)) * 30); // 기대 가치가 입찰가의 2배면 만점
     const pProb = best ? PROB_PT[best.prob] ?? 9 : 0;
     const pInfo = item.detail ? 10 : 4;
     const total = pFloor + pUp + pProb + pInfo;
     return { total, grade: total >= 70 ? 'A' : total >= 50 ? 'B' : 'C', parts: { 바닥안전: pFloor, 상승폭: pUp, 실현가능성: pProb, 정보: pInfo } };
   })();
   const checks = [...new Set(types.flatMap((t) => t.checks))];
-  return { types, factor, floor, floorKnown, assume, best, scenarios, floorEntry, score, checks };
+  return { types, factor, floor, floorKnown, assume, best, expected, scenarios, floorEntry, score, checks };
 }

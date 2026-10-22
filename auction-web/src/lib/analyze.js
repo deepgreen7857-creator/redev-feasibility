@@ -256,6 +256,8 @@ export function analyze(item, { settings, deals, aptDeals } = {}) {
   };
   result.score = special ? special.score : scoreOf(item, result);
   result.money = moneyOf(item, result, settings);
+  // 특수물건의 '지금 매력'은 최악(바닥 가치에 팔 때)에도 세금·비용 빼고 남을 때만
+  if (special && result.verdict === 'now' && !(result.money?.profit > 0)) result.verdict = 'check';
   result.certainty = special ? specialCertainty(special) : certaintyOf(result.score);
   // 상승 시나리오가 성공했을 때의 돈 계산(지금 최저가로 샀다고 보고, 시나리오 기간만큼 보유)
   if (special?.best?.value && item.minBid) {

@@ -39,6 +39,14 @@ test('현황도로 토지: 같은 구 토지 시세를 그대로 쓰지 않고 1
   assert.ok(a.value < a.full * 0.34);
   assert.ok(a.special.scenarios.length >= 3);
 });
+test('공고 용도가 \'토지 > 도로\'면 도로 부지로 판별, 최악 수익이 없으면 지금 매력 아님', () => {
+  const landDeals = Array.from({ length: 10 }, (_, i) => [30000 + i * 100, 100, 0, 1, '', '', 0, false, '중개거래', '대부남동', '대']);
+  const it = { source: 'onbid', sido: '경기도', sgg: '안산시 단원구', emd: '대부남동', usage: '토지 > 도로', usageSmall: '도로', landArea: 873, appraisal: 1.46e8, minBid: 8.8e7, detail: { flags: {} } };
+  const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: landDeals });
+  assert.ok(a.special?.types.some((t) => t.key === 'road'));
+  assert.notEqual(a.verdict, 'now');
+  assert.ok(a.special.expected < a.special.best.value);
+});
 test('인수 권리 금액 미확인 → 권리 확인 후 판단', () => {
   const base = { source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000, minBid: 300000000 };
   const a = analyze({ ...base, detail: { flags: { survivingRights: true }, survivingRights: '선순위 가처분' } }, { settings: DEFAULT_SETTINGS, deals });

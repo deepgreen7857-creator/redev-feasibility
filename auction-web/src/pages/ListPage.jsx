@@ -36,7 +36,7 @@ export default function ListPage() {
 
   const rows = useMemo(() => {
     if (!items || !settings) return [];
-    return items.map((it) => {
+    return dedupeRounds(items).map((it) => {
       const l = lawdOf(it.sido, it.sgg);
       const a = analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${l}`] });
       return { it, a };
@@ -52,7 +52,7 @@ export default function ListPage() {
       if (f.onlyOpen && /(낙찰|취소|종결|매각)/.test(it.status || '') && !/진행/.test(it.status || '')) return false;
       if (f.q && !`${it.title} ${it.address} ${it.caseNo}`.includes(f.q)) return false;
       return true;
-    }).sort((x, y) => sorter(f.sort)(x, y) || order(x.a.verdict) - order(y.a.verdict) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
+    }).sort((x, y) => sorter(f.sort)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
   }, [items, settings, dealsMap, f]);
 
   const counts = useMemo(() => {
@@ -121,6 +121,7 @@ export default function ListPage() {
               {it.manual?.zone ? <Badge tone="brand">{it.manual.zone.stage || '정비구역'}</Badge> : a.redev.length > 0 && !a.cashType && <Badge tone="brand">정비구역</Badge>}
               {a.farm && <Badge tone="wait">농지</Badge>}
               {a.excluded && <Badge>관심 제외</Badge>}
+              {it.otherRounds > 0 && <Badge>다른 회차 {it.otherRounds}건</Badge>}
               <span className="ml-auto text-xs text-ink/50">{it.caseNo}</span>
             </div>
             <div className="flex items-start gap-2">
@@ -173,6 +174,27 @@ function sorter(key) {
 function fitOf(it, a) {
   if (a.money?.fit) return a.money.fit.grade;
   return corpFit(it, propertyKind(it, tradeTypeOf(it), a.farm)).grade;
+}
+
+// 특수물건은 같은 판정 안에서 일반 물건 뒤로(섞여서 위로 튀지 않게). 특수물건 필터에서는 자기들끼리 순위
+function rank(a) { return order(a.verdict) + (a.special ? 0.5 : 0); }
+
+// 공매는 같은 물건이 회차(공고)마다 따로 올라온다 → 물건번호·주소가 같으면 가장 가까운 진행 회차 하나만
+function dedupeRounds(items) {
+  const today = new Date().toISOString().slice(0, 10);
+  const groups = new Map();
+  items.forEach((it) => {
+    const key = `${it.source}|${it.caseNo}|${it.address || it.title}`;
+    const g = groups.get(key);
+    if (g) g.push(it); else groups.set(key, [it]);
+  });
+  return [...groups.values()].map((g) => {
+    if (g.length === 1) return g[0];
+    const end = (x) => String(x.bidEnd || '');
+    const upcoming = g.filter((x) => end(x) >= today).sort((p, q) => end(p).localeCompare(end(q)));
+    const pick = upcoming[0] || g.sort((p, q) => end(q).localeCompare(end(p)))[0];
+    return { ...pick, otherRounds: g.length - 1 };
+  });
 }
 
 function order(v) { return { now: 0, wait: 1, check: 2, unknown: 3, hard: 4 }[v] ?? 5; }

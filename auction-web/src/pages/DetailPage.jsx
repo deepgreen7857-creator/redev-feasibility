@@ -522,6 +522,7 @@ function SpecialCard({ item, a, admin, onSave }) {
           <div className="text-xs text-ink/50">가장 좋은 시나리오</div>
           <div className="num text-lg font-extrabold text-now">{sp.best ? eok(sp.best.value) : '—'}</div>
           <div className="text-xs text-ink/60">{sp.best ? `${sp.best.name} · 약 ${sp.best.months}개월 · 가능성 ${sp.best.prob}` : '금액을 낼 수 있는 시나리오 없음'}</div>
+          {sp.expected && <div className="mt-1 text-xs font-bold text-ink/70">가능성 반영 기대 가치 {eok(sp.expected)} <span className="font-normal text-ink/50">(점수는 이 값으로)</span></div>}
         </div>
         <div className="rounded-lg bg-paper p-3">
           <div className="text-xs text-ink/50">지금 최저가로 사서 잘 풀리면</div>
