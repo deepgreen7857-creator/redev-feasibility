@@ -10,9 +10,11 @@ const Hwpx = (() => {
   const HP = 'http://www.hancom.co.kr/hwpml/2011/paragraph';
   const JSZIP = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
 
-  // 자치단체별 서식 원본. 지역 키는 REGION_PRESETS와 같음
+  // 자치단체·근거법별 서식 원본. 지역 키는 REGION_PRESETS, 근거법 키는 TYPES[].act
+  //   urban: 도시정비법 사업(재개발·재건축) — 시·도 도시 및 주거환경정비 조례 시행규칙 별지
+  //   small: 빈집법 사업(가로주택 등) — 아직 등록된 서식 없음
   const FORMS = {
-    incheon: {
+    incheon: { urban: {
       law: '「인천광역시 도시 및 주거환경정비 조례 시행규칙」',
       dir: 'forms/incheon/',
       files: {
@@ -26,7 +28,7 @@ const Hwpx = (() => {
         f9: '별지 제9호서식 토지등소유자 명부',
         f11: '별지 제11호서식 조합원 명부',
       },
-    },
+    } },
   };
 
   function loadZipLib() {
@@ -615,12 +617,12 @@ const ZoneHwp = (() => {
   const MAKERS = { land: (form, z) => f4(form, z, 'land'), bldg: (form, z) => f4(form, z, 'bldg'), f4: (form, z) => f4(form, z), owners: f9, consent: f6, survey: f5 };
   const has = kind => !!MAKERS[kind];
 
-  // region: S.criteria.region. 그 지역 서식이 없으면 null
-  function formFor(region) { return Hwpx.FORMS[region] || null; }
+  // region: S.criteria.region, act: TYPES[사업 유형].act. 그 지역·근거법 서식이 없으면 null
+  function formFor(region, act = 'urban') { return (Hwpx.FORMS[region] || {})[act] || null; }
 
   async function make(z, kind, region, fname) {
-    const form = formFor(region);
-    if (!form) throw new Error('이 지역 조례의 한글 서식이 아직 등록되지 않았습니다.');
+    const form = formFor(region, z.act || 'urban');
+    if (!form) throw new Error('이 지역·사업 유형의 한글 서식이 아직 등록되지 않았습니다.');
     if (!MAKERS[kind]) throw new Error('이 서식은 아직 한글로 만들 수 없습니다.');
     const f = await MAKERS[kind](form, z);
     return Hwpx.save(f, fname);

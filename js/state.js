@@ -2,10 +2,12 @@
 
 const STORAGE_KEY = 'jbsc.project.v1';
 
+// act: 근거법 구분 — 'urban' 도시정비법(정비구역 지정·기초조사) / 'small' 빈집법(소규모주택정비, 정비구역 지정 없음)
+//   서식(조례 시행규칙 별지)과 내려받는 서류가 근거법마다 다름
 const TYPES = {
-  redevelopment: { label: '재개발', law: '도시 및 주거환경정비법' },
-  reconstruction: { label: '재건축', law: '도시 및 주거환경정비법' },
-  garo: { label: '가로주택정비사업', law: '빈집 및 소규모주택 정비에 관한 특례법' },
+  redevelopment: { label: '재개발', law: '도시 및 주거환경정비법', act: 'urban' },
+  reconstruction: { label: '재건축', law: '도시 및 주거환경정비법', act: 'urban' },
+  garo: { label: '가로주택정비사업', law: '빈집 및 소규모주택 정비에 관한 특례법', act: 'small' },
 };
 
 const SALE_CATS = ['조합원', '일반', '임대', '상가'];

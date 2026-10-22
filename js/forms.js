@@ -98,7 +98,8 @@ const Forms = (() => {
   //   opt.part: 'land' 토지조서만 / 'bldg' 건축물조서만 (생성 모드의 서식별 내려받기)
   function sheet4(z, opt = {}) {
     const s = Sheet();
-    s.set(0, 0, '[별지 제4호서식]');
+    // 빈집법 사업(z.act === 'small')은 도시정비 조례 별지 번호 대신 참고 양식으로
+    s.set(0, 0, z.act === 'small' ? `(참고 양식) ${z.typeLabel || ''} — 「${z.lawName || '빈집 및 소규모주택 정비에 관한 특례법'}」` : '[별지 제4호서식]');
     s.set(1, 0, opt.part === 'land' ? '토지 및 건축물 조서 — 토지조서' : opt.part === 'bldg' ? '토지 및 건축물 조서 — 건축물조서' : '토지 및 건축물 조서'); s.merge(1, 0, 1, 11);
     s.set(2, 0, `사업명: ${z.name || ''}   위치: ${z.location || ''}`);
     let r = 4;
@@ -132,7 +133,7 @@ const Forms = (() => {
       });
       const det = B.filter(isDetached).reduce((a, b) => a + (+b.units || 1), 0);
       const apt = B.filter(isApt), aptH = apt.reduce((a, b) => a + (+b.households || +b.units || 0), 0);
-      s.set(r++, 0, '주) 1. 호수 산정은 「인천광역시 도시 및 주거환경정비 조례」에 따름');
+      s.set(r++, 0, z.act === 'small' ? '주) 1. 주택 수 산정은 「빈집 및 소규모주택 정비에 관한 특례법 시행령」에 따름' : '주) 1. 호수 산정은 「인천광역시 도시 및 주거환경정비 조례」에 따름');
       s.set(r++, 0, '    2. 비고란에 빈집(공가․폐가) 현황 등 기재');
       s.set(r++, 0, `※ 단독주택 수 : ${det}호,  공동주택 수 : ${apt.length}개동, ${aptH}세대`);
       r++;
@@ -296,7 +297,7 @@ const Forms = (() => {
   function sheet9Frame(z) {
     const s = Sheet(), P = sorted(z), B = z.buildings || [], U = z.units || [];
     const total = P.reduce((a, p) => a + (+p.area || 0), 0);
-    s.set(0, 0, '[별지 제9호서식] 토 지 등 소 유 자 명 부 — 작성 틀 (공부 기준, 소유자 칸은 등기부 등 열람으로 기재)');
+    s.set(0, 0, `${z.act === 'small' ? `(참고 양식 — 「${z.lawName || '빈집 및 소규모주택 정비에 관한 특례법'}」)` : '[별지 제9호서식]'} 토 지 등 소 유 자 명 부 — 작성 틀 (공부 기준, 소유자 칸은 등기부 등 열람으로 기재)`);
     s.set(1, 0, `(정비사업 명칭 : ${z.name || ''})   ${z.confirm ? `구역계 확정 ${z.confirm.at}` : '구역계 확정 전(참고)'} · 토지 ${P.length}필지 · 편입면적 합계 ${fmt1(total)}㎡ · 건축물 ${B.length}동${U.length ? ` · 집합건물 ${U.length}호` : ''}`);
     s.row(3, ['연번', '토지등소유자', '', '', '', '권 리 내 역', '', '', '', '', '', '', '', '세대주 성명', '동의여부', '비고', '— 공부(작성 근거) —', '', '', '', '', '등기부 열람', z.noRoster ? '' : '제출 명부 참고']);
     s.row(4, ['', '성 명', '생년월일', '주 소', '전화번호', '소재지', '토    지', '', '', '건 축 물', '', '', '지상권']);
@@ -333,12 +334,14 @@ const Forms = (() => {
   //   + 집합건축물 조서 + 기초 조사(제5호) + 별표1 요건 검토 + 동의총괄표(제6호, 소유자 수·동의 칸 빈칸)
   function exportZoneDocs(z, fname) {
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheet4(z, { withUnits: true }).ws, '제4호_토지및건축물조서');
-    XLSX.utils.book_append_sheet(wb, sheet9Frame({ ...z, noRoster: true }), '제9호_토지등소유자명부');
-    XLSX.utils.book_append_sheet(wb, sheet5({ ...z, parcels: z.parcels.map(p => ({ ...p })) }), '제5호_기초조사');
-    if (z.req && z.req.length) XLSX.utils.book_append_sheet(wb, sheetReq(z), '별표1_요건검토');
-    XLSX.utils.book_append_sheet(wb, sheet6(z, null), '제6호_동의총괄표');
-    XLSX.writeFile(wb, fname || `${z.name || '정비구역'}_구역지정서류.xlsx`);
+    // 빈집법 사업(가로주택 등)은 정비구역 지정 서류(기초조사서·동의총괄표)가 없어 조서·명부·요건 검토만
+    const small = z.act === 'small';
+    XLSX.utils.book_append_sheet(wb, sheet4(z, { withUnits: true }).ws, small ? '토지및건축물조서' : '제4호_토지및건축물조서');
+    XLSX.utils.book_append_sheet(wb, sheet9Frame({ ...z, noRoster: true }), small ? '토지등소유자명부' : '제9호_토지등소유자명부');
+    if (!small) XLSX.utils.book_append_sheet(wb, sheet5({ ...z, parcels: z.parcels.map(p => ({ ...p })) }), '제5호_기초조사');
+    if (z.req && z.req.length) XLSX.utils.book_append_sheet(wb, sheetReq(z), small ? '가로구역_요건검토' : '별표1_요건검토');
+    if (!small) XLSX.utils.book_append_sheet(wb, sheet6(z, null), '제6호_동의총괄표');
+    XLSX.writeFile(wb, fname || `${z.name || '정비구역'}_${small ? '사업서류' : '구역지정서류'}.xlsx`);
     return wb;
   }
 
@@ -361,7 +364,9 @@ const Forms = (() => {
     if (!d) throw new Error('알 수 없는 서식: ' + kind);
     const wb = XLSX.utils.book_new();
     d.add(wb, z);
-    XLSX.writeFile(wb, `${z.name || '정비구역'}_${d.file}.xlsx`);
+    // 빈집법 사업은 도시정비 조례 별지 번호 대신 참고 양식
+    const file = z.act === 'small' ? d.file.replace(/별지제\d+호/, '참고양식').replace('요건검토(별표1)', '가로구역요건검토') : d.file;
+    XLSX.writeFile(wb, `${z.name || '정비구역'}_${file}.xlsx`);
     return wb;
   }
 
@@ -388,9 +393,9 @@ const Forms = (() => {
   // 별표 1(정비계획 입안대상지역 요건) 검토 - 노후도·과소필지·호수밀도·주택접도율
   function sheetReq(z) {
     const s = Sheet(); let r = 0;
-    s.set(r++, 0, '「도시정비법 시행령」 별표 1 정비계획 입안대상지역 요건 검토 (재개발)');
+    s.set(r++, 0, z.reqTitle || '「도시정비법 시행령」 별표 1 정비계획 입안대상지역 요건 검토 (재개발)');
     s.set(r++, 0, `정비구역: ${z.name || ''}   기준일: ${z.baseDate || ''}`);
-    s.set(r++, 0, '※ 지정 전 추진위원회 구성(법 제31조제2항제2호가목·시행령 제25조제2항)에도 이 요건이 적용됨');
+    if (z.act !== 'small') s.set(r++, 0, '※ 지정 전 추진위원회 구성(법 제31조제2항제2호가목·시행령 제25조제2항)에도 이 요건이 적용됨');
     r++;
     s.row(r++, ['요건', '현황', '기준', '판정']);
     (z.req || []).forEach(q => s.row(r++, [q.label, q.value, q.need, q.pass == null ? '확인 필요' : q.pass ? '충족' : '미충족']));
