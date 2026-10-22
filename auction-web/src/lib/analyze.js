@@ -1,13 +1,15 @@
 // 물건 판정 — 정민 님 기준: 모든 물건을 볼 필요 없이
-//  ① 지금 매력  ② 유찰 대기(몇 회차에 들어가면 되는지)  ③ 가격으로 해결 안 됨
+//  ① 지금 매력  ② 유찰 대기  ③ 권리 확인 후 판단(특수물건) — 권리가 복잡해도 버리지 않고 바닥 가치·상승 시나리오로 계산
 // + 현금청산형(조합설립인가 전후 분양권 없는 물건), 농지(농취증), 관심 제외 표시
 
 import { TAX_DEFAULTS, propertyKind, flipTax, corpFit, acquisitionTax } from './tax.js';
+import { specialAnalysis, detectSpecial } from './special.js';
 
 export const VERDICT = {
   now: { label: '지금 매력', tone: 'now' },
   wait: { label: '유찰 대기', tone: 'wait' },
-  hard: { label: '가격으로 해결 안 됨', tone: 'hard' },
+  check: { label: '권리 확인 후 판단', tone: 'cash' },
+  hard: { label: '가격 안 맞음', tone: 'hard' },
   unknown: { label: '시세 부족', tone: 'muted' },
 };
 
@@ -94,20 +96,16 @@ export function costEstimate(item, value, settings) {
   const taxRate = acquisitionTax(item, { price: value, kind, settings: { ...TAX_DEFAULTS, ...settings } }).rate;
   const tenants = item.detail?.flags?.tenants || 0;
   const eviction = (settings?.evictionCost ?? 3000000) * (tenants ? 1 : 0.3);
-  const repair = settings?.repairCost ?? (type === 'land' ? 0 : 5000000);
+  const repair = type === 'land' ? (settings?.landRepairCost ?? 0) : (settings?.repairCost ?? 5000000);
   return { taxRate, tax: Math.round(value * taxRate), eviction: Math.round(eviction), repair, total: Math.round(value * taxRate + eviction + repair) };
 }
 
 export function hardReasons(item) {
   const r = [];
   const f = item.detail?.flags || {};
-  if (f.superficies) r.push('법정지상권 성립 여지');
-  if (f.survivingRights) r.push('말소되지 않는 권리(인수)');
-  if (item.share) r.push('지분 물건');
+  // 법정지상권·지분·인수권리·도로 등은 버리지 않고 special.js 에서 바닥 가치·상승 시나리오로 계산한다
   if (f.qualification) r.push('매수인 자격 제한');
-  if (item.land?.landUse?.greenbelt) r.push('개발제한구역');
-  if (item.land?.landUse?.roadConflict?.length) r.push('도시계획도로 저촉');
-  if (item.manual?.hard) r.push(item.manual.hardNote || '수동 표시: 가격으로 해결 안 됨');
+  if (item.manual?.hard) r.push(item.manual.hardNote || '수동 표시: 제외');
   return r;
 }
 
@@ -206,12 +204,36 @@ export function analyze(item, { settings, deals, aptDeals } = {}) {
     value = right.value;
     valueBasis = `입주권형: 신축 ${right.area}㎡ 시세 ${Math.round(right.newPrice / 1e4).toLocaleString('ko-KR')}만 − 추가분담금 ${Math.round(right.contribution / 1e4).toLocaleString('ko-KR')}만 (비례율 ${Math.round(right.ratio * 100)}%)`;
   }
+  // 토지 거래가 없으면 개별공시지가 × 면적을 대신 쓴다(보수적인 기준)
+  if (!value && tradeTypeOf(item) === 'land' && item.land?.officialPrice && item.landArea && !cashType && !rightType) {
+    value = Math.round(item.land.officialPrice * item.landArea);
+    valueBasis = `거래 사례 부족 → 개별공시지가 ${item.land.officialPrice.toLocaleString('ko-KR')}원/㎡ × ${Math.round(item.landArea)}㎡`;
+  }
+  // 특수물건은 시세가 없어도 버리지 않고 감정가를 기준으로 계산
+  if (!value && item.appraisal && !cashType && !rightType && detectSpecial(item).length) {
+    value = item.appraisal;
+    valueBasis = '거래 사례·공시지가 없음 → 감정가 기준';
+  }
+  const full = value;
+  const special = specialAnalysis(item, { full, settings, member, rightValue: right?.value, redev, rounds });
+  if (special) {
+    if (special.floorKnown) {
+      value = special.floor;
+      valueBasis = `바닥 가치(최악): ${special.types.map((t) => t.floorBasis).join(' × ')} — 하자 없을 때 ${eok(full)} (${valueBasis})`;
+    } else {
+      value = null;
+      valueBasis = full ? `인수 금액을 확인해야 바닥 가치가 나옵니다 (하자 없을 때 ${eok(full)})` : '시세 자료가 없어 바닥 가치를 계산하지 못했습니다';
+    }
+  }
   const costs = value ? costEstimate(item, value, settings) : null;
   const cap = value ? Math.round(value * (1 - margin) - costs.total) : null;
-  const entry = cap ? rounds.find((r) => r.price <= cap) : null;
+  const entry = special?.floorKnown ? special.floorEntry : cap ? rounds.find((r) => r.price <= cap) : null;
 
   let verdict = 'unknown';
   if (reasons.length) verdict = 'hard';
+  else if (special && !special.floorKnown) verdict = full ? 'check' : 'unknown';
+  // 특수물건: 마진을 따로 두지 않고 '바닥 가치 이하로 살 수 있느냐'로 판정(수익은 상승 시나리오에서)
+  else if (special) verdict = !special.floorEntry ? 'hard' : special.floorEntry.step === 0 ? 'now' : 'wait';
   else if (cap !== null && cap <= 0) verdict = 'hard';
   else if (entry && entry.step === 0) verdict = 'now';
   else if (entry) verdict = 'wait';
@@ -228,13 +250,18 @@ export function analyze(item, { settings, deals, aptDeals } = {}) {
   if (market.count && market.count < 5 && !cashType && !rightType) warnings.push('비교 거래가 적음 — 시세 신뢰도 낮음');
 
   const result = {
-    verdict, market, value, valueBasis, costs, cap, rounds, entry, reasons, warnings,
+    verdict, market, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special,
     farm, redev, cashType, rightType, right, member, stage, excluded: isExcluded(item, settings),
     ratio: item.appraisal && item.minBid ? item.minBid / item.appraisal : null,
   };
-  result.score = scoreOf(item, result);
+  result.score = special ? special.score : scoreOf(item, result);
   result.money = moneyOf(item, result, settings);
-  result.certainty = certaintyOf(result.score);
+  result.certainty = special ? specialCertainty(special) : certaintyOf(result.score);
+  // 상승 시나리오가 성공했을 때의 돈 계산(지금 최저가로 샀다고 보고, 시나리오 기간만큼 보유)
+  if (special?.best?.value && item.minBid) {
+    result.upMoney = moneyOf(item, { ...result, value: special.best.value, verdict: 'now', costs: costEstimate(item, special.best.value, settings) }, { ...settings, holdMonths: special.best.months || 12 });
+  }
+  if (!result.money && result.upMoney) result.money = { ...result.upMoney, profit: null, roi: null, upside: true };
   return result;
 }
 
@@ -243,8 +270,9 @@ export function analyze(item, { settings, deals, aptDeals } = {}) {
 //  예상 수익 = 예상 가치 − 입찰가 − 취득세 − 명도·수리비 − 보유기간 이자
 //  수익률 = 예상 수익 ÷ 필요 자기자본
 export function moneyOf(item, a, settings) {
-  if (!a.value || a.verdict === 'hard') return null;
-  const price = a.verdict === 'now' ? item.minBid || a.entry?.price : a.entry?.price;
+  if (!a.value || (a.verdict === 'hard' && a.reasons?.length)) return null;
+  // 가격이 안 맞는 물건도 지금 최저가로 샀을 때 얼마나 손해인지 보여 준다
+  const price = a.verdict === 'wait' ? a.entry?.price : item.minBid || a.entry?.price;
   if (!price) return null;
   const s = { ...TAX_DEFAULTS, ...settings };
   const kind = propertyKind(item, tradeTypeOf(item), a.farm);
@@ -260,6 +288,13 @@ export function moneyOf(item, a, settings) {
   const profit = t.afterTax;
   const later = a.rightType && a.right?.contribution > 0 ? a.right.contribution : 0;
   return { price, loan, loanRatio, tax: t.acqTax, other, interest, own, profit, preTax: t.preTax, roi: own > 0 ? profit / own : null, months, rate, later, t, kind, fit: corpFit(item, kind), owner: s.owner };
+}
+
+function specialCertainty(sp) {
+  if (!sp?.score) return null;
+  const p = sp.score.parts;
+  const v = Math.round(((p.실현가능성 + p.정보 + (sp.floorKnown ? 10 : 0)) / 40) * 100);
+  return { value: v, grade: v >= 75 ? 'A' : v >= 55 ? 'B' : 'C' };
 }
 
 // 확실성 등급: 매력도 중 시세 신뢰도·권리·정비사업만(55점 → 100점 환산)

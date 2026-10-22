@@ -98,3 +98,11 @@ SAMPLE_LISTINGS.push({
   },
   land: { landUse: { zone: '제2종일반주거지역', redevelopment: [], farmPromotion: false, greenbelt: false, roadConflict: [] } },
 });
+
+SAMPLE_LISTINGS.push({
+  id: 'demo-9', source: 'onbid', category: 'public', caseNo: '2026-0812-001', court: '한국자산관리공사', title: '[샘플] 구월동 토지 — 현황도로',
+  usage: '토지', address: '인천광역시 남동구 구월동 ○○', sido: '인천광역시', sgg: '남동구', emd: '구월동',
+  appraisal: 95000000, minBid: 47500000, firstPrice: 95000000, failCount: 5, round: '6', status: '입찰진행중', statusCode: '0002', landArea: 132,
+  detail: { landCategory: '대', usageStatus: '현황 도로로 이용 중(포장)', flags: { superficies: false, survivingRights: false, tenants: 0, unclaimedTenants: 0 } },
+  land: { jimok: '대', landUse: { zone: '제2종일반주거지역', redevelopment: [], farmPromotion: false, greenbelt: false, roadConflict: [] }, officialPrice: 1350000 },
+});

@@ -7,7 +7,7 @@ import { corpFit, propertyKind } from '../lib/tax.js';
 import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
 
 const SOURCES = [['all', '전체'], ['court', '법원경매'], ['public', '공매'], ['bankrupt', '파산자산']];
-const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '유찰 대기'], ['hard', '가격으로 해결 안 됨'], ['unknown', '시세 부족']];
+const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '유찰 대기'], ['check', '권리 확인 후 판단'], ['special', '특수물건 전체'], ['hard', '가격 안 맞음'], ['unknown', '시세 부족']];
 
 export default function ListPage() {
   const [items, setItems] = useState(null);
@@ -43,7 +43,7 @@ export default function ListPage() {
     }).filter(({ it, a }) => {
       const cat = it.source === 'court' ? 'court' : it.category;
       if (f.source !== 'all' && cat !== f.source) return false;
-      if (f.verdict !== 'all' && a.verdict !== f.verdict) return false;
+      if (f.verdict === 'special' ? !a.special : f.verdict !== 'all' && a.verdict !== f.verdict) return false;
       if (!f.showExcluded && a.excluded) return false;
       if (f.sgg && !(it.sgg || '').includes(f.sgg)) return false;
       if (f.maxPrice && (it.minBid || 0) > Number(f.maxPrice) * 1e4) return false;
@@ -56,8 +56,8 @@ export default function ListPage() {
   }, [items, settings, dealsMap, f]);
 
   const counts = useMemo(() => {
-    const c = { now: 0, wait: 0, hard: 0, unknown: 0 };
-    rows.forEach(({ a }) => { c[a.verdict] = (c[a.verdict] || 0) + 1; });
+    const c = { now: 0, wait: 0, check: 0, hard: 0, unknown: 0, special: 0 };
+    rows.forEach(({ a }) => { c[a.verdict] = (c[a.verdict] || 0) + 1; if (a.special) c.special++; });
     return c;
   }, [rows]);
 
@@ -97,7 +97,7 @@ export default function ListPage() {
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.showExcluded} onChange={set('showExcluded')} /> 관심 제외 물건도 보기</label>
           <span className="ml-auto flex gap-1.5">
-            <Badge tone="now">지금 {counts.now}</Badge><Badge tone="wait">대기 {counts.wait}</Badge><Badge tone="hard">해결불가 {counts.hard}</Badge>
+            <Badge tone="now">지금 {counts.now}</Badge><Badge tone="wait">대기 {counts.wait}</Badge><Badge tone="cash">특수 {counts.special}</Badge><Badge tone="hard">가격 안 맞음 {counts.hard}</Badge>
           </span>
         </div>
       </div>
@@ -114,6 +114,7 @@ export default function ListPage() {
               {fitOf(it, a) && <Badge tone={{ A: 'now', B: 'wait', X: 'hard' }[fitOf(it, a)] || 'muted'}>법인 {fitOf(it, a)}</Badge>}
               {a.score && <Badge tone={a.score.grade === 'A' ? 'now' : a.score.grade === 'B' ? 'wait' : 'muted'}>{a.score.grade} · {a.score.total}점</Badge>}
               <Badge tone={it.category === 'bankrupt' ? 'cash' : 'muted'}>{SOURCE_LABEL[it.source === 'court' ? 'court' : it.category]}</Badge>
+              {a.special?.types.map((t) => <Badge key={t.key} tone="cash">{t.label}</Badge>)}
               {a.cashType && <Badge tone="cash">현금청산형</Badge>}
               {a.member.status === 'member' && a.member.rank >= 3 && <Badge tone="now">입주권형</Badge>}
               {a.member.status === 'check' && <Badge tone="wait">분양자격 확인</Badge>}
@@ -129,18 +130,24 @@ export default function ListPage() {
             </div>
             <div className="mt-0.5 truncate text-xs text-ink/60">{it.address}</div>
             {areaText(it) && <div className="text-xs text-ink/60">{areaText(it)}</div>}
-            {a.money && (
+            {a.money && !a.money.upside && (
               <div className="mt-3 grid grid-cols-4 gap-2 rounded-lg bg-paper p-2 text-sm">
-                <div><div className="text-xs text-ink/50">{a.money.owner === 'corp' ? '세후 수익' : '예상 수익'}</div><div className={`num font-bold ${a.money.profit < 0 ? 'text-hard' : 'text-now'}`}>{eok(a.money.profit)}</div></div>
+                <div><div className="text-xs text-ink/50">{a.special ? '최악일 때 수익' : a.money.owner === 'corp' ? '세후 수익' : '예상 수익'}</div><div className={`num font-bold ${a.money.profit < 0 ? 'text-hard' : 'text-now'}`}>{eok(a.money.profit)}</div></div>
                 <div><div className="text-xs text-ink/50">수익률</div><div className="num font-bold">{a.money.roi === null ? '—' : `${Math.round(a.money.roi * 100)}%`}</div></div>
                 <div><div className="text-xs text-ink/50">내 돈</div><div className="num font-bold">{eok(a.money.own)}</div>{a.money.later > 0 && <div className="text-[10px] text-wait">+분담금 {eok(a.money.later)}</div>}</div>
                 <div><div className="text-xs text-ink/50">확실성</div><div className="font-bold">{a.certainty ? `${a.certainty.grade} (${a.certainty.value})` : '—'}</div></div>
               </div>
             )}
+            {a.special && (
+              <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg border border-cash/20 bg-cash/5 p-2 text-sm">
+                <div><div className="text-xs text-ink/50">바닥 가치(최악)</div><div className="num font-bold">{a.special.floorKnown ? eok(a.special.floor) : a.full ? '인수액 확인' : '시세 부족'}</div></div>
+                <div><div className="text-xs text-ink/50">잘 풀리면 ({a.special.scenarios.length}개 시나리오)</div><div className="num font-bold text-now">{a.upMoney ? `${eok(a.upMoney.profit)} 수익` : a.special.best ? eok(a.special.best.value) : '—'}</div>{a.special.best && <div className="truncate text-[11px] text-ink/50">{a.special.best.name}</div>}</div>
+              </div>
+            )}
             <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
               <div><div className="text-xs text-ink/50">최저가</div><div className="num font-bold">{eok(it.minBid)}</div><div className="text-xs text-ink/50">감정가의 {pct(a.ratio)}</div></div>
-              <div><div className="text-xs text-ink/50">매수상한</div><div className="num font-bold">{eok(a.cap)}</div><div className="text-xs text-ink/50">유찰 {it.failCount ?? '—'}회</div></div>
-              <div><div className="text-xs text-ink/50">진입 시점</div><div className="font-bold">{a.verdict === 'hard' ? '—' : a.entry ? a.entry.label : '—'}</div><div className="text-xs text-ink/50">마감 {String(it.bidEnd || '').slice(5, 10) || '—'}</div></div>
+              <div><div className="text-xs text-ink/50">{a.special ? "매수상한(바닥 기준)" : "매수상한"}</div><div className="num font-bold">{eok(a.cap)}</div><div className="text-xs text-ink/50">유찰 {it.failCount ?? '—'}회</div></div>
+              <div><div className="text-xs text-ink/50">진입 시점</div><div className="font-bold">{a.reasons.length || a.verdict === 'check' ? '—' : a.entry ? a.entry.label : '—'}</div><div className="text-xs text-ink/50">마감 {String(it.bidEnd || '').slice(5, 10) || '—'}</div></div>
             </div>
             {a.reasons.length > 0 && <div className="mt-2 text-xs text-hard">{a.reasons.join(' · ')}</div>}
           </Link>
@@ -168,4 +175,4 @@ function fitOf(it, a) {
   return corpFit(it, propertyKind(it, tradeTypeOf(it), a.farm)).grade;
 }
 
-function order(v) { return { now: 0, wait: 1, unknown: 2, hard: 3 }[v] ?? 4; }
+function order(v) { return { now: 0, wait: 1, check: 2, unknown: 3, hard: 4 }[v] ?? 5; }

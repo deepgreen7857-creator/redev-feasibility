@@ -128,7 +128,7 @@ export default function DetailPage({ admin }) {
           {!d && <p className="mt-2 text-xs text-ink/50">{item.source === 'court' ? '법원경매는 자동 권리 정보가 없습니다. 위 항목은 모두 "확인 안 됨"입니다.' : '상세(권리) 정보 수집 대기 중입니다.'}</p>}
           <label className="mt-3 flex items-center gap-2 text-sm">
             <input type="checkbox" disabled={!admin} checked={Boolean(item.manual?.hard)} onChange={(e) => updateManual({ hard: e.target.checked })} />
-            가격으로 해결 안 됨으로 직접 표시
+            분석 대상에서 직접 제외
           </label>
           {item.manual?.hard && <input className="input mt-2" disabled={!admin} placeholder="이유 (예: 유치권 신고, 맹지)" value={item.manual?.hardNote || ''} onChange={(e) => updateManual({ hardNote: e.target.value })} />}
         </Card>
@@ -241,18 +241,21 @@ export default function DetailPage({ admin }) {
         {a.member.status === 'member' && a.member.rank >= 3 && <RightCalc item={item} a={a} admin={admin} onSave={(econ) => updateManual({ econ })} silvDeals={silvDeals} zoneName={item.manual?.zone?.name} />}
       </Card>
 
+      {a.special && <SpecialCard item={item} a={a} admin={admin} onSave={updateManual} />}
+
       {/* ④ 판정·돈 계산·회차별 최저가 */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="④ 판정·돈 계산" className="lg:col-span-1">
           <Row k="감정가" v={won(item.appraisal)} />
           <Row k="현재 최저가" v={`${won(item.minBid)} (${pct(a.ratio)})`} strong />
-          <Row k="예상 가치" v={won(a.value)} />
+          {a.special && <Row k="하자 없을 때 가치" v={won(a.full)} />}
+          <Row k={a.special ? '바닥 가치(최악)' : '예상 가치'} v={won(a.value)} />
           <Row k="비용(세금·명도·수리)" v={won(a.costs?.total)} />
           <Row k={`매수상한 (마진 ${Math.round((settings.marginRate ?? 0.1) * 100)}%)`} v={won(a.cap)} strong />
-          <Row k="진입 시점" v={a.verdict === 'hard' ? '가격으로 해결 안 됨' : a.entry ? a.entry.label : '하한까지도 상한 초과'} strong />
-          {a.money && (
+          <Row k="진입 시점" v={a.reasons.length ? '제외' : a.verdict === 'check' ? '권리 확인 후' : a.entry ? a.entry.label : '하한까지도 상한 초과'} strong />
+          {a.money && !a.money.upside && (
             <div className="mt-3 rounded-md border border-line p-2 text-sm">
-              <div className="mb-1 font-bold">돈 계산 ({a.verdict === 'now' ? '지금 최저가' : `${a.entry.label} 가격`}에 사서 {a.money.months}개월 뒤 예상 가치에 팔 때)</div>
+              <div className="mb-1 font-bold">돈 계산 ({a.verdict === 'wait' && a.entry ? `${a.entry.label} 가격` : '지금 최저가'}에 사서 {a.money.months}개월 뒤 {a.special ? '바닥 가치' : '예상 가치'}에 팔 때){a.verdict === 'hard' && <span className="ml-1 text-hard">— 가격이 안 맞아 손해 예상</span>}</div>
               {a.money.owner === 'corp' && <div className={`mb-2 rounded px-2 py-1 text-xs ${{ A: 'bg-now/10 text-now', B: 'bg-wait/10 text-wait', X: 'bg-hard/10 text-hard' }[a.money.fit.grade] || 'bg-ink/5'}`}>법인 단타 {a.money.fit.grade} — {a.money.fit.reason}</div>}
               <Row k="입찰가" v={won(a.money.price)} />
               <Row k={`대출 (${Math.round(a.money.loanRatio * 100)}%)`} v={won(a.money.loan)} />
@@ -278,12 +281,12 @@ export default function DetailPage({ admin }) {
           )}
           {a.score && (
             <div className="mt-2 rounded-md bg-paper p-2 text-sm">
-              <div className="font-bold">매력도 {a.score.grade} · {a.score.total}점 <span className="text-xs font-normal text-ink/60">(안전마진 {Math.round(a.score.margin * 100)}%{a.verdict === 'wait' ? ', 진입 회차 기준' : ''})</span></div>
-              <div className="mt-1 text-xs text-ink/60">{Object.entries(a.score.parts).map(([k, v]) => `${k} ${v}`).join(' · ')} / 만점 45·20·25·10</div>
+              <div className="font-bold">매력도 {a.score.grade} · {a.score.total}점 {a.score.margin !== undefined && <span className="text-xs font-normal text-ink/60">(안전마진 {Math.round(a.score.margin * 100)}%{a.verdict === 'wait' ? ', 진입 회차 기준' : ''})</span>}</div>
+              <div className="mt-1 text-xs text-ink/60">{Object.entries(a.score.parts).map(([k, v]) => `${k} ${v}`).join(' · ')} / 만점 {a.special ? '40·30·20·10' : '45·20·25·10'}</div>
             </div>
           )}
           <p className="mt-2 text-xs text-ink/50">{a.valueBasis}</p>
-          {a.reasons.length > 0 && <div className="mt-3 rounded-md bg-hard/5 p-2 text-sm text-hard">해결 안 되는 이유: {a.reasons.join(', ')}</div>}
+          {a.reasons.length > 0 && <div className="mt-3 rounded-md bg-hard/5 p-2 text-sm text-hard">제외 이유: {a.reasons.join(', ')}</div>}
           {a.warnings.length > 0 && <ul className="mt-3 space-y-1 text-sm text-wait">{a.warnings.map((w) => <li key={w}>• {w}</li>)}</ul>}
         </Card>
 
@@ -497,5 +500,61 @@ function RightCalc({ item, a, admin, onSave, silvDeals, zoneName }) {
         </div>
       )}
     </div>
+  );
+}
+
+// 특수물건: 바닥 가치 / 상승 시나리오 / 확인할 것
+function SpecialCard({ item, a, admin, onSave }) {
+  const sp = a.special;
+  const sv = item.manual?.special || {};
+  const save = (k) => (e) => onSave({ special: { ...sv, [k]: Number(String(e.target.value).replace(/\D/g, '')) * 1e4 || 0 } });
+  return (
+    <Card title="권리 분석으로 보는 가치" right={<span className="text-xs text-ink/50">버리지 않고 계산합니다 — 최악과 잘 풀릴 때를 함께</span>}>
+      <div className="mb-3 flex flex-wrap gap-1.5">{sp.types.map((t) => <Badge key={t.key} tone="cash">{t.label}<span className="ml-1 font-normal opacity-70">({String(t.evidence).slice(0, 30)})</span></Badge>)}</div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg bg-paper p-3">
+          <div className="text-xs text-ink/50">바닥 가치 (아무 일도 안 풀릴 때)</div>
+          <div className="num text-lg font-extrabold">{sp.floorKnown ? eok(sp.floor) : a.full ? '인수 금액 확인 필요' : '시세 자료 부족'}</div>
+          <div className="text-xs text-ink/60">{sp.types.map((t) => t.floorBasis).join(' × ')}</div>
+          {sp.floorEntry && <div className="mt-1 text-xs font-bold text-now">바닥 이하로 사는 시점: {sp.floorEntry.label} ({eok(sp.floorEntry.price)})</div>}
+        </div>
+        <div className="rounded-lg bg-paper p-3">
+          <div className="text-xs text-ink/50">가장 좋은 시나리오</div>
+          <div className="num text-lg font-extrabold text-now">{sp.best ? eok(sp.best.value) : '—'}</div>
+          <div className="text-xs text-ink/60">{sp.best ? `${sp.best.name} · 약 ${sp.best.months}개월 · 가능성 ${sp.best.prob}` : '금액을 낼 수 있는 시나리오 없음'}</div>
+        </div>
+        <div className="rounded-lg bg-paper p-3">
+          <div className="text-xs text-ink/50">지금 최저가로 사서 잘 풀리면</div>
+          {a.upMoney ? <>
+            <div className={`num text-lg font-extrabold ${a.upMoney.profit < 0 ? 'text-hard' : 'text-now'}`}>{eok(a.upMoney.profit)}</div>
+            <div className="text-xs text-ink/60">내 돈 {eok(a.upMoney.own)} · 수익률 {a.upMoney.roi === null ? '—' : `${Math.round(a.upMoney.roi * 100)}%`} · {a.upMoney.months}개월 보유</div>
+          </> : <div className="text-sm text-ink/50">—</div>}
+        </div>
+      </div>
+      <div className="mt-4 space-y-2">
+        {sp.scenarios.map((sc, i) => (
+          <div key={i} className="rounded-lg border border-line p-3 text-sm">
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="font-bold">{sc.name}</span>
+              <span className="text-xs text-ink/50">{sc.type}</span>
+              <span className="ml-auto num font-bold">{sc.value ? eok(sc.value) : sc.annual ? `연 ${eok(sc.annual)}` : '금액 계산 불가'}</span>
+              <Badge tone={{ 높음: 'now', 보통: 'wait', 낮음: 'hard' }[sc.prob] || 'muted'}>{sc.prob}</Badge>
+            </div>
+            <div className="mt-1 text-xs text-ink/60">{sc.basis}{sc.months ? ` · 약 ${sc.months}개월` : ''}</div>
+            {sc.conditions?.length > 0 && <ul className="mt-1 space-y-0.5 text-xs text-ink/80">{sc.conditions.map((c) => <li key={c}>☐ {c}</li>)}</ul>}
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-lg bg-wait/5 p-3 text-sm">
+        <div className="mb-1 font-bold text-wait">정확히 판단하려면 확인할 것</div>
+        <ul className="grid gap-0.5 text-xs sm:grid-cols-2">{sp.checks.map((c) => <li key={c}>• {c}</li>)}</ul>
+      </div>
+      {admin && (
+        <div className="no-print mt-3 grid gap-2 text-sm sm:grid-cols-2">
+          <label>확인한 인수 금액(만원)<input className="input mt-1" inputMode="numeric" defaultValue={sv.assume ? sv.assume / 1e4 : ''} onBlur={save('assume')} placeholder="예: 선순위 보증금 5000" /></label>
+          <label>내가 본 바닥 가치(만원, 직접 입력 시 우선)<input className="input mt-1" inputMode="numeric" defaultValue={sv.floor ? sv.floor / 1e4 : ''} onBlur={save('floor')} /></label>
+        </div>
+      )}
+    </Card>
   );
 }

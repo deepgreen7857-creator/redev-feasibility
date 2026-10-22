@@ -25,7 +25,25 @@ test('판정: 지금 매력 / 유찰 대기 / 해결 안 됨 (개인 기준)', (
   assert.equal(analyze({ ...base, minBid: 300000000 }, { settings: DEFAULT_SETTINGS_P, deals }).verdict, 'now');
   const w = analyze({ ...base, minBid: 600000000 }, { settings: DEFAULT_SETTINGS_P, deals });
   assert.equal(w.verdict, 'wait'); assert.equal(w.entry.step, 1);
-  assert.equal(analyze({ ...base, minBid: 300000000, share: true }, { settings: DEFAULT_SETTINGS_P, deals }).verdict, 'hard');
+  // 지분 물건도 버리지 않음: 바닥 가치(지분 할인)로 판정하고 상승 시나리오를 붙인다
+  const sh = analyze({ ...base, minBid: 250000000, share: true }, { settings: DEFAULT_SETTINGS_P, deals });
+  assert.ok(sh.special && sh.special.types[0].key === 'share');
+  assert.ok(['now', 'wait'].includes(sh.verdict));
+  assert.ok(sh.special.best.value > sh.value);
+});
+test('현황도로 토지: 같은 구 토지 시세를 그대로 쓰지 않고 1/3 바닥 + 상승 시나리오', () => {
+  const landDeals = Array.from({ length: 10 }, (_, i) => [30000 + i * 100, 100, 0, 1, '', '', 0, false, '중개거래', '구월동', '대']);
+  const it = { source: 'onbid', sido: '인천광역시', sgg: '남동구', emd: '구월동', usage: '토지', landArea: 100, appraisal: 1e8, minBid: 6e7, land: { jimok: '도로' } };
+  const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: landDeals });
+  assert.ok(a.special.types.some((t) => t.key === 'road'));
+  assert.ok(a.value < a.full * 0.34);
+  assert.ok(a.special.scenarios.length >= 3);
+});
+test('인수 권리 금액 미확인 → 권리 확인 후 판단', () => {
+  const base = { source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000, minBid: 300000000 };
+  const a = analyze({ ...base, detail: { flags: { survivingRights: true }, survivingRights: '선순위 가처분' } }, { settings: DEFAULT_SETTINGS, deals });
+  assert.equal(a.verdict, 'check');
+  assert.ok(a.upMoney);
 });
 test('관심 제외: 미추홀구 정비구역 물건(조회 전 포함), 부평은 제외 안 함', () => {
   assert.equal(isExcluded({ sido: '인천광역시', sgg: '미추홀구' }, DEFAULT_SETTINGS), true);
@@ -72,7 +90,7 @@ test('매력도: 지금 매력 물건에 점수, 지역 가산 없음', () => {
   const a2 = analyze({ ...base, sgg: '남동구' }, { settings: DEFAULT_SETTINGS, deals });
   assert.ok(a1.score && a1.score.total > 0);
   assert.equal(a1.score.total, a2.score.total);
-  assert.equal(analyze({ ...base, sgg: '부평구', share: true }, { settings: DEFAULT_SETTINGS, deals }).score, null);
+  assert.ok(analyze({ ...base, sgg: '부평구', share: true }, { settings: DEFAULT_SETTINGS, deals }).score.parts.상승폭 >= 0);
 });
 
 test('돈 계산(개인): 내 돈 = 입찰가 − 대출 + 세금·명도·수리, 수익률 = 수익 ÷ 내 돈', () => {
