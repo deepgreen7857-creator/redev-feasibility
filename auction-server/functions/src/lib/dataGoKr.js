@@ -53,6 +53,9 @@ function rowsOf(body) {
   return Array.isArray(v) ? v : [v];
 }
 
+// 브라우저처럼 보이는 머리글(User-Agent 없는 요청을 막는 방화벽 대비)
+const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'application/json, application/xml, text/xml, */*' };
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const kstDay = (d = new Date()) => new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '');
 
@@ -98,8 +101,18 @@ async function call({ api, url, params, serviceKey, quota, fetcher = fetch, retr
   for (let i = 0; i < retries; i++) {
     try {
       if (quota) await quota.add(api, 1);
-      const res = await fetcher(u, { signal: AbortSignal.timeout(25000) });
-      if (!res.ok) throw new ApiError(`HTTP_${res.status}`);
+      let res = await fetcher(u, { headers: HEADERS, signal: AbortSignal.timeout(25000) });
+      // 일부 환경에서 https 요청이 403으로 막히면 http로 한 번 더 시도
+      if (res.status === 403 && u.protocol === 'https:') {
+        const alt = new URL(u); alt.protocol = 'http:';
+        const r2 = await fetcher(alt, { headers: HEADERS, signal: AbortSignal.timeout(25000) }).catch(() => null);
+        if (r2 && r2.ok) res = r2;
+      }
+      if (!res.ok) {
+        let body = '';
+        try { body = (await res.text()).replace(/\s+/g, ' ').slice(0, 160); } catch { /* 무시 */ }
+        throw new ApiError(`HTTP_${res.status}`, `공공데이터 API 오류(HTTP_${res.status})${body ? ` ${body}` : ''}`);
+      }
       return decode(await res.text());
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(e && (e.name === 'TimeoutError' || e.name === 'AbortError' || e instanceof TypeError) ? 'NETWORK' : 'UNKNOWN', e && e.message);
