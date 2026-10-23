@@ -182,6 +182,8 @@ export default function DetailPage({ admin }) {
         ) : <Empty>{d ? '공고 원문 설명 없음' : `공고 원문 ${waitText}`}</Empty>}
       </Card>
 
+      {item.bidInfo?.history?.length > 0 && <BidHistory info={item.bidInfo} appraisal={item.appraisal} />}
+
       {/* ③ 토지이용·정비구역·분양자격 */}
       <Card title="③ 토지이용·정비구역·분양자격" right={admin && item.pnu && <button className="btn-ghost no-print" disabled={busy === 'land'} onClick={checkLand}>{busy === 'land' ? '조회 중…' : '브이월드 조회'}</button>}>
         <div className="grid gap-4 lg:grid-cols-2">
@@ -607,6 +609,22 @@ function RenoCard({ a }) {
         </div>
       </div>
       <p className="mt-2 text-xs text-ink/50">수리 후 가격 근거: {r.basis}. {r.worth ? '수리비보다 오르는 폭이 커서 해볼 만합니다.' : '오르는 폭이 수리비에 비해 크지 않습니다.'} 실제 내부 상태·누수·구조는 현장 확인이 필요합니다.</p>
+    </Card>
+  );
+}
+
+// 온비드 회차별 입찰 결과(물건상세 입찰정보)
+function BidHistory({ info, appraisal }) {
+  return (
+    <Card title="회차별 입찰 결과" right={<span className="text-xs text-ink/50">온비드 물건상세 입찰정보 · 보증금 {info.deposit || '—'}</span>}>
+      <table className="w-full text-sm">
+        <thead className="text-xs text-ink/50"><tr><th className="text-left">회차</th><th className="text-left">개찰</th><th className="text-left">결과</th><th className="text-right">최저가</th><th className="text-right">낙찰가</th><th className="text-right">감정가 대비</th></tr></thead>
+        <tbody>{info.history.map((h, i) => (
+          <tr key={i} className="border-t border-line/50"><td>{h.round}회</td><td>{h.openAt || '—'}</td><td className={/낙찰/.test(h.status || '') ? 'font-bold text-now' : ''}>{h.status || '—'}</td>
+            <td className="text-right num">{h.minBid ? eok(h.minBid) : '—'}</td><td className="text-right num">{h.soldPrice ? eok(h.soldPrice) : '—'}</td>
+            <td className="text-right num">{h.rateToAppraisal ? `${Math.round(h.rateToAppraisal)}%` : h.soldPrice && appraisal ? pct(h.soldPrice / appraisal) : '—'}</td></tr>
+        ))}</tbody>
+      </table>
     </Card>
   );
 }
