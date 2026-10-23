@@ -18,8 +18,9 @@ export const VERDICT = {
 };
 
 // 분석기 버전 — 계산식을 바꿀 때마다 올리고 수정일·내용을 남긴다(예측 기록에 함께 저장)
-export const ANALYZER_VERSION = '2026-10-23c';
+export const ANALYZER_VERSION = '2026-10-23d';
 export const ANALYZER_CHANGES = [
+  { version: '2026-10-23d', date: '2026-10-23', note: '성적표 보정: ① 유찰 상한 — 같은 단지 실거래(A·B)가 없으면 판단 가치가 직전 회차 유찰가(아무도 안 산 값)를 넘지 않게, 2회 이상 유찰이면 지금 최저가와 직전 유찰가의 가운데로 ② 감정가 하나뿐인 물건은 감정가 대신 경매 시장가(감정가 × 낙찰가율) ③ 토지는 같은 단지 실거래가 없으면 \'지금 매력·유찰 대기\' 대신 \'권리 확인 후 판단\'(물건별 검토 대상) — 상가 적중률 34%·낙찰가÷우리 가치 60%, 대지 오차 F 대응' },
   { version: '2026-10-23c', date: '2026-10-23', note: '지분비율 미반영 수정(비율 미확인이면 금액 계산 안 함) · 감정가 없는 물건 확실성 최대 C · 계산 이상(수익률 1,000% 초과·바닥가치 최저가 100배 초과) 경고 · 임야·농지 지분 공유자 매도 가능성 낮춤 · 정비구역 목록 연계·권리산정기준일 판정' },
 ];
 
@@ -160,6 +161,23 @@ export function projectRounds(item, settings, count = 5) {
     }
   }
   return out;
+}
+
+// 직전 회차 유찰가: 이 값에는 공개 입찰에서 아무도 안 샀다(시장이 확인한 상한). 모르면 null
+export function lastFailedPrice(item, settings) {
+  if (!item.minBid) return null;
+  const known = typeof item.failCount === 'number';
+  const failed = known ? item.failCount >= 1 : Boolean(item.appraisal && item.minBid / item.appraisal <= 0.9);
+  if (!failed) return null;
+  if (item.source === 'court') {
+    const { rate } = courtRate(item, settings);
+    return Math.round(item.minBid / (1 - rate));
+  }
+  const prev = item.bidInfo?.prevMinBid;
+  if (prev && prev > item.minBid && /유찰/.test(item.bidInfo?.prevResult || '유찰')) return prev;
+  const first = item.firstPrice || item.appraisal;
+  if (!first) return null;
+  return Math.round(Math.min(first, item.minBid + first * 0.1));
 }
 
 export function costEstimate(item, value, settings) {
@@ -370,6 +388,20 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
     val = valuation(item, { type: tradeTypeOf(item), market, marketValue: market.value ? value : null, jeonse, settings, stats: settings?.saleRates, shareRatio: sh.share ? sh.ratio : 1, landShare: sh.share ? (sh.areaIsShare ? 1 : sh.ratio) : 1 });
     if (val.value) { value = val.value; valueBasis = val.summary; }
   }
+  // 유찰 상한: 직전 회차 유찰가에 아무도 안 샀는데, 같은 단지 실거래(A·B) 없이 그보다 높게 볼 근거는 약하다
+  const strongTrade = Boolean(market.value && ['A', 'B'].includes(market.grade));
+  const failedPrice = lastFailedPrice(item, settings);
+  let failCap = null;
+  if (value && failedPrice && !strongTrade && !cashType && !rightType && !shareUnknown && !anomalies.length && value > failedPrice) {
+    // 두 번 넘게 유찰: 시장 가치는 '지금 최저가 ~ 직전 유찰가' 사이로 본다(가운데 값). 한 번 유찰: 직전 유찰가가 상한
+    const repeated = (item.failCount || 0) >= 2;
+    const capped = repeated ? Math.round((item.minBid + failedPrice) / 2) : failedPrice;
+    failCap = { before: value, price: capped, failedPrice, repeated };
+    value = Math.min(value, capped);
+    valueBasis = repeated
+      ? `유찰 ${item.failCount}회 — 직전 회차 ${eok(failedPrice)}에도 아무도 안 삼 → 지금 최저가와의 가운데 ${eok(capped)}로 봄(같은 단지 실거래 없음) · 원래 계산 ${eok(failCap.before)} (${valueBasis})`
+      : `유찰 상한 ${eok(failedPrice)} — 직전 회차 이 가격에 아무도 안 삼(같은 단지 실거래 없어 그 이상은 믿지 않음) · 원래 계산 ${eok(failCap.before)} (${valueBasis})`;
+  }
   const full = value;
   const special = specialAnalysis(item, { full, settings, member, rightValue: right?.value, redev, rounds });
   if (special) {
@@ -398,8 +430,13 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   else if (entry && entry.step === 0) verdict = 'now';
   else if (entry) verdict = 'wait';
   else if (cap !== null) verdict = 'hard';
+  // 토지: 성적표상 가치 오차가 커서(대지 F) 같은 단지 수준 실거래가 없으면 자동 '매력' 판정을 하지 않고 물건별 검토로
+  const landReview = tradeTypeOf(item) === 'land' && !special && !cashType && !rightType && !strongTrade && ['now', 'wait'].includes(verdict);
+  if (landReview) verdict = 'check';
 
   const warnings = [];
+  if (landReview) warnings.push('토지 — 사이트 가치 계산의 오차가 커서 자동 판정하지 않음: 물건별 검토(Claude 검토) 후 판단');
+  if (failCap) warnings.push(`유찰 상한 적용 — 가치 ${eok(failCap.before)} → ${eok(failCap.price)}${failCap.repeated ? '(지금 최저가와 직전 유찰가의 가운데)' : '(직전 회차 유찰가)'}`);
   if (farm) warnings.push(item.land?.landUse?.farmPromotion ? '농업진흥구역 농지 — 농취증·용도 제한 확인' : '농지 — 농지취득자격증명 필요');
   if (member.status === 'check') warnings.push(`분양자격 확인 필요: ${member.reason}`);
   if (member.status === 'member' && /임박/.test(member.reason || '')) warnings.push(member.reason);
@@ -430,7 +467,7 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
 
   const result = {
     verdict, market, jeonse, valuation: val, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special, anomalies,
-    farm, redev, cashType, rightType, right, member, stage, excluded: isExcluded(item, settings), share: sh, shareUnknown,
+    farm, redev, cashType, rightType, right, member, stage, failCap, landReview, excluded: isExcluded(item, settings), share: sh, shareUnknown,
     ratio: item.appraisal && item.minBid ? item.minBid / item.appraisal : null,
   };
   result.score = anomalies.length ? null : special ? special.score : scoreOf(item, result);

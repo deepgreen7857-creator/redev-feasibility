@@ -235,3 +235,21 @@ test('상식 검사: 수익률 1,000% 초과·가치가 최저가 100배 초과 
   assert.equal(a.verdict, 'suspect');
   assert.notEqual(a.score?.grade, 'A'); assert.equal(a.opportunity, null);
 });
+
+// 2026-10-23d 성적표 보정
+test('유찰 상한: 감정가뿐인 상가가 5회 유찰이면 지금 최저가와 직전 유찰가 사이로 보고 지금 매력이 아님', async () => {
+  const { analyze: an, lastFailedPrice } = await import('./analyze.js');
+  const it = { source: 'onbid', category: 'public', title: '경기도 수원시 영통구 이의동 1-1, 126호 근린생활시설', usage: '상가용및업무용건물 > 근린생활시설', sido: '경기도', sgg: '수원시 영통구', appraisal: 656900000, minBid: 348150000, failCount: 5, buildingArea: 50.6, landArea: 8.4, bidEnd: '2099-01-01 10:00' };
+  const fp = lastFailedPrice(it, {});
+  assert.equal(fp, 348150000 + 65690000);
+  const a = an(it, { settings: {}, deals: [] });
+  assert.ok(a.value <= Math.round((it.minBid + fp) / 2));
+  assert.notEqual(a.verdict, 'now');
+});
+test('토지: 같은 단지 수준 실거래가 없으면 권리 확인 후 판단(물건별 검토)', async () => {
+  const { analyze: an } = await import('./analyze.js');
+  const it = { source: 'court', title: '대지', usage: '대지', sido: '경기도', sgg: '화성시', appraisal: 100000000, minBid: 49000000, failCount: 2, landArea: 300, bidEnd: '2099-01-01' };
+  const a = an(it, { settings: {}, deals: [] });
+  assert.equal(a.verdict, 'check');
+  assert.ok(a.landReview);
+});

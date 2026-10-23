@@ -100,8 +100,13 @@ export function valuation(item, { type, market, marketValue, jeonse, settings, s
   let confidence = used.length >= 3 && spread <= 0.25 ? '높음' : used.length >= 2 && spread <= 0.4 ? '보통' : '낮음';
   if (trade && ['A', 'B'].includes(trade.grade)) confidence = spread <= 0.4 ? '높음' : '보통';
   if (used.length === 1) confidence = '낮음';
-  const decision = spread <= 0.2 ? center : Math.round((low + center) / 2);
-  const how = spread <= 0.2 ? '기준들이 잘 맞아 가운데 값' : '기준들이 엇갈려 아래쪽과 가운데의 중간(보수적)';
+  let decision = spread <= 0.2 ? center : Math.round((low + center) / 2);
+  let how = spread <= 0.2 ? '기준들이 잘 맞아 가운데 값' : '기준들이 엇갈려 아래쪽과 가운데의 중간(보수적)';
+  // 감정가 하나뿐: 감정가는 시세가 아니라 첫 회차 출발값이라 그대로 쓰면 가치를 높게 본다(상가 낙찰가÷우리 가치 60%) → 경매 시장가로
+  if (used.length === 1 && used[0].key === 'appraisal' && auction?.value && auction.value < decision) {
+    decision = auction.value;
+    how = `감정가 하나뿐이라 경매 시장가(감정가 × ${Math.round(auction.rate * 100)}%)`;
+  }
   return {
     anchors, auction, used: used.length, center, low, high, spread, confidence, value: decision,
     summary: `기준 ${used.length}개 범위 ${eok(low)}~${eok(high)}, 가운데 ${eok(center)} → 판단용 ${eok(decision)}(${how}) · 신뢰도 ${confidence}`,

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listListings, listPastResults, getSettings, getDeals } from '../lib/store.js';
-import { analyze, tradeTypeOf, eok, pct, SOURCE_LABEL, typeLabel, areaText } from '../lib/analyze.js';
+import { analyze, tradeTypeOf, eok, pct, SOURCE_LABEL, typeLabel, areaText, ANALYZER_VERSION } from '../lib/analyze.js';
 import { lawdOf, SIDO } from '../data/defaults.js';
 import { corpFit, propertyKind } from '../lib/tax.js';
 import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
@@ -297,8 +297,27 @@ function ResultRow({ it, a, table }) {
     </>
   );
 }
+// 물건 단위 채점: 공매는 같은 물건이 매주 회차마다 다시 올라와 유찰 10번이면 '틀림'이 10번 세진다.
+// 같은 물건의 회차를 묶어 한 번만 센다 — 우리가 처음 '산다'(상한 ≥ 최저가)였던 회차, 없으면 마지막 회차의 결과로.
+const itemKey = (it) => `${it.source}|${it.cltrMngNo || it.caseNo || ''}|${it.itemNo || ''}|${it.address || it.title || ''}`;
+function perItem(rows) {
+  const g = new Map();
+  rows.forEach((x) => { const k = itemKey(x.it); (g.get(k) || g.set(k, []).get(k)).push(x); });
+  return [...g.values()].map((list) => {
+    if (list.length === 1) return list[0];
+    const done = list.filter(({ it }) => ['sold', 'fail'].includes(resultOf(it).kind))
+      .sort((p, q) => endOf(p.it).localeCompare(endOf(q.it)) || Number(p.it.round || 0) - Number(q.it.round || 0));
+    if (!done.length) return { ...list[0], rounds: list.length };
+    const buyAt = done.find(({ it, a }) => { const cap = it.forecast ? it.forecast.cap : a.cap; return cap && it.minBid && cap >= it.minBid; });
+    return { ...(buyAt || done[done.length - 1]), rounds: list.length };
+  });
+}
+
 // 우리 판정별로 실제 결과가 어땠는지(채점)
-function DoneSummary({ rows, table }) {
+function DoneSummary({ rows: roundRows, table }) {
+  const [unit, setUnit] = useState('item');
+  const items = useMemo(() => perItem(roundRows), [roundRows]);
+  const rows = unit === 'item' ? items : roundRows;
   const by = {};
   let recorded = 0;
   rows.forEach(({ it, a }) => {
@@ -323,6 +342,13 @@ function DoneSummary({ rows, table }) {
   return (
     <div className="card text-sm">
       <div className="text-base font-extrabold">완료 물건 — 시장이 내린 답으로 우리 판단을 채점합니다</div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="text-ink/60">세는 단위</span>
+        {[['item', `물건 단위 ${items.length}건`], ['round', `회차 단위 ${roundRows.length}건`]].map(([k, l]) => (
+          <button key={k} type="button" onClick={() => setUnit(k)} className={`rounded-full border px-2.5 py-1 ${unit === k ? 'border-brand bg-brand text-white' : 'border-line bg-white'}`}>{l}</button>
+        ))}
+        <span className="text-ink/50">물건 단위: 같은 물건의 여러 회차를 한 번만(처음 '산다'였던 회차, 없으면 마지막 회차) — 유찰이 반복된 물건이 점수를 부풀리지 않게</span>
+      </div>
       <p className="mt-1 text-ink/70">서버가 매일 밤 진행 물건을 판정해 <b>입찰 전 예측</b>을 기록하고, 기일이 되면 그 예측을 굳혀 실제 결과와 맞춰 봅니다(결과를 보고 예측을 고치지 않음). 예측 기록이 있는 물건 {recorded}건 / 전체 {rows.length}건. 낙찰가는 법원은 수집기가 기일 지난 사건을 다시 읽을 때, 공매는 온비드 입찰결과 연결 뒤 채워집니다.</p>
       <table className="mt-3 w-full text-xs">
         <thead className="text-ink/50"><tr><th className="text-left">우리 판정</th><th className="text-right">물건</th><th className="text-right">낙찰</th><th className="text-right">유찰</th><th className="text-right">결과 확인 전</th><th className="text-right">평균 낙찰가율</th></tr></thead>
@@ -390,7 +416,7 @@ function ScoreBreakdown({ rows: allRows }) {
   const month = (it) => String(it.result?.openAt || it.bidEnd || '').replace(/\./g, '-').slice(0, 7) || '날짜 없음';
   return (
     <div className="mt-4 rounded-md border border-line p-2 text-sm">
-      <div className="font-extrabold">성적표 — 규칙 고정(판단 기준 2026-10-23판) 상태의 채점</div>
+      <div className="font-extrabold">성적표 — 규칙 고정(분석기 {ANALYZER_VERSION}) 상태의 채점</div>
       <p className="text-xs text-ink/60">규칙은 고치지 않고 성적부터 봅니다. 적중률은 10건 이상일 때만 색을 칠합니다(70%↑ 초록, 60%↓ 빨강). <b>1회차 바로 낙찰</b>은 첫 회차(유찰 0회, 또는 최저가 = 감정가) 물건 중 팔린 건수이고(?는 유찰 횟수·감정가가 없어 판단 불가), <b>놓침</b>은 그중 우리가 '안 산다'(상한 &lt; 최저가)였던 건수 — 시장이 우리보다 높게 본 기회입니다. 낙찰가는 과열·실수·특수 사정으로 어이없게 나오는 경우가 많아, 평균이 아니라 <b>중앙값</b>을 쓰고 감정가 150% 초과·우리 가치의 2배 초과나 30% 미만 낙찰은 <b>"이상"으로 따로 세어 뺍니다</b>. <b>낙찰가÷우리 가치</b>가 100%보다 많이 낮으면 우리가 가치를 높게 본 것, 많이 높으면 낮게 본 것입니다(85~115% 밖은 노란색).</p>
       <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
         {Object.keys(EVIDENCE_LABEL).map((k) => (

@@ -2,7 +2,7 @@
 // 입찰(매각)기일이 되면 더 이상 고치지 않는다(결과를 보고 예측을 바꾸지 않도록). 완료 물건 화면에서 실제 결과와 비교한다.
 // 계산식(분석기 버전)이 바뀌면: 이미 기록된 예측(forecast·forecastFirst)은 절대 덮어쓰지 않고,
 // 새 계산은 '수정 후 참고값'(forecastRevised)에만 넣는다. 채점은 기록된 forecast 그대로.
-const RULES_VERSION = '2026-10-23c';
+const RULES_VERSION = '2026-10-23d';
 
 
 function kstNow() {
@@ -41,9 +41,11 @@ async function loadDeals(db, type, lawd, cache) {
 }
 
 // 저장할 예측 요약(작게)
-function summarize(it, a, day) {
+function summarize(it, a, day, bid = null) {
   const sp = a.special;
   return {
+    // 우리 입찰가(예상 낙찰가, 가산 0%) — 완료 물건 채점은 이 값 그대로
+    bid: bid?.price || null, bidPremium: bid?.premium || null, bidScope: bid?.scope || null,
     at: day, rules: RULES_VERSION, analyzerVersion: a.analyzerVersion || null,
     verdict: a.verdict, minBid: it.minBid || null, appraisal: it.appraisal || null, round: it.round || null,
     value: a.value ?? null, full: a.full ?? null, cap: a.cap ?? null,
@@ -60,10 +62,15 @@ function summarize(it, a, day) {
 async function run({ db, log = console.log, deadline = Infinity }) {
   const { analyze, tradeTypeOf, ANALYZER_VERSION } = await import('../shared/analyze.mjs');
   const { DEFAULT_SETTINGS, lawdOf } = await import('../shared/defaults.mjs');
+  const { premiumTable, predictPrice } = await import('../shared/bidForecast.mjs');
   const s = await db.collection('settings').doc('main').get();
   const settings = { ...DEFAULT_SETTINGS, ...(s.exists ? s.data() : {}) };
   const now = kstNow();
   const snap = await db.collection('listings').get();
+  // 예상 낙찰가 기준표: 낙찰가가 있는 완료 물건(진행 중 모은 것 + 과거 입찰결과) — 화면과 같은 방식
+  const past = await db.collection('pastResults').get().catch(() => ({ docs: [] }));
+  const ids = new Set(snap.docs.map((d) => d.id));
+  const table = premiumTable([...snap.docs.map((d) => d.data()), ...past.docs.filter((d) => !ids.has(d.id)).map((d) => d.data())]);
   const cache = new Map();
   let batch = db.batch(); let n = 0; const stats = { total: snap.size, forecast: 0, revised: 0, frozen: 0, errors: 0, calcAnomaly: 0, analyzerVersion: ANALYZER_VERSION };
   for (const doc of snap.docs) {
@@ -74,7 +81,7 @@ async function run({ db, log = console.log, deadline = Infinity }) {
       const lawd = lawdOf(it.sido, it.sgg);
       const deals = lawd ? await loadDeals(db, tradeTypeOf(it), lawd, cache) : [];
       const a = analyze(it, { settings, deals });
-      const f = summarize(it, { ...a, analyzerVersion: ANALYZER_VERSION }, now.day);
+      const f = summarize(it, { ...a, analyzerVersion: ANALYZER_VERSION }, now.day, predictPrice(it, table));
       const upd = {};
       const recorded = it.forecast ? it.forecast.analyzerVersion || null : null;
       if (!it.forecast || recorded === ANALYZER_VERSION) { upd.forecast = f; stats.forecast++; } // 같은 분석기로 기록 중인 물건만 기일 전까지 갱신
