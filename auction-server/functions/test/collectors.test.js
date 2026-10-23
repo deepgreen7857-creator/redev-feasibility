@@ -370,3 +370,19 @@ test('Claude 검토: 원자료·사이트 계산을 보내고 JSON 결과를 읽
   assert.equal(sent.headers['x-api-key'], 'k'); assert.ok(sent.body.messages[0].content.includes('[사이트 자동 검토 결과]'));
   await assert.rejects(() => ai.review({ item: {}, analysis: null, apiKey: '' }));
 });
+
+// 배포 전 자동 복사(predeploy)는 윈도우에서 .mjs '연결 프로그램' 창을 띄우고 실제로는 복사를 안 해서 뺐다.
+// 대신 저장소에 올라간 서버용 복사본이 화면 원본과 같은지 시험으로 확인한다(다르면: node auction-server/scripts/sync-shared.mjs).
+test('서버 판정 코드 복사본이 화면 원본과 같음', () => {
+  const fs = require('node:fs'); const path = require('node:path');
+  const web = path.join(__dirname, '../../../auction-web/src');
+  const out = path.join(__dirname, '../src/shared');
+  const script = fs.readFileSync(path.join(__dirname, '../../scripts/sync-shared.mjs'), 'utf8');
+  const files = Function(`return (${script.match(/const files = (\{[^}]*\})/)[1]})`)(); // 복사 대상 목록은 복사 스크립트에서 그대로 읽는다
+  const fix = (s) => s.replace(/from '\.\.\/data\/defaults\.js'/g, "from './defaults.mjs'").replace(/from '\.\/([\w-]+)\.js'/g, "from './$1.mjs'");
+  const norm = (s) => s.replace(/\r\n/g, '\n');
+  for (const [src, dst] of Object.entries(files)) {
+    const want = `// 자동 복사본 — 원본: auction-web/src/${src} (직접 고치지 말 것)\n${fix(fs.readFileSync(path.join(web, src), 'utf8'))}`;
+    assert.equal(norm(fs.readFileSync(path.join(out, dst), 'utf8')), norm(want), `${dst} 가 원본과 다름 — node auction-server/scripts/sync-shared.mjs 실행`);
+  }
+});
