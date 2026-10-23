@@ -1,13 +1,18 @@
-// 오늘의 호가 확인 — 매일 매력도 상위 물건을 골라 두고(자동), 호가는 정민 님이 링크를 눌러 직접 보고 넣는다.
-// 우리 서버는 네이버·호갱노노 등에 접속하지 않는다(링크만). 넣은 호가는 가치 검토의 기준 하나로 들어가 다시 계산된다.
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+// 오늘의 호가 확인 — 매일 매력도 상위 물건을 골라 두고(자동), 링크로 네이버 등을 열어
+// 북마크(호가 가져오기) 한 번 누르면 화면의 매매 호가가 읽혀 자동 입력·저장된다. 복사한 글로도 자동 입력 가능.
+// 우리 서버는 네이버·호갱노노 등에 접속하지 않는다(정민 님 브라우저 화면 글만 읽음). 넣은 호가는 가치 검토 기준으로 다시 계산된다.
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { parseAsking, summarize, bookmarkletCode } from '../lib/askingParse.js';
 import { listListings, getSettings, getDeals, saveListing } from '../lib/store.js';
 import { analyze, tradeTypeOf, eok, typeLabel, VERDICT } from '../lib/analyze.js';
 import { lawdOf } from '../data/defaults.js';
 import { Badge, Empty } from '../components/ui.jsx';
 
 const DAY = 86400e3;
+const ACTIVE_KEY = 'jbslab_asking_active';
+const getActive = () => { try { return localStorage.getItem(ACTIVE_KEY); } catch { return null; } };
+const setActive = (id) => { try { localStorage.setItem(ACTIVE_KEY, id); } catch { /* 저장 불가 */ } };
 const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 const endOf = (it) => String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10);
 
@@ -33,6 +38,12 @@ export default function AskingPage({ admin }) {
   const [settings, setSettings] = useState(null);
   const [dealsMap, setDealsMap] = useState({});
   const [saved, setSaved] = useState({});
+  const [notice, setNotice] = useState(null); // 자동 입력 결과 안내
+  const [pending, setPending] = useState(null); // 어느 물건 것인지 모를 때 고르게 할 호가
+  const loc = useLocation(); const nav = useNavigate();
+  const handled = useRef('');
+  const bm = useMemo(() => bookmarkletCode(`${window.location.origin}${import.meta.env.BASE_URL}`), []);
+  useEffect(() => { window.name = 'jbslab_asking'; }, []); // 북마크가 이 탭으로 호가를 보낸다
   useEffect(() => { Promise.all([listListings({}), getSettings()]).then(([l, s]) => { setItems(l); setSettings(s); }); }, []);
   useEffect(() => {
     if (!items) return;
@@ -59,29 +70,65 @@ export default function AskingPage({ admin }) {
       .slice(0, limit);
   }, [items, settings, dealsMap, minScore, limit]);
 
-  const save = async (it, low, high, memo) => {
-    const asking = { low: Number(low) * 1e4 || null, high: Number(high) * 1e4 || Number(low) * 1e4 || null, memo: memo || '', at: new Date().toISOString() };
+  const save = async (it, low, high, memo, auto) => {
+    const asking = { low: Number(low) * 1e4 || null, high: Number(high) * 1e4 || Number(low) * 1e4 || null, memo: memo || '', at: new Date().toISOString(), ...(auto ? { auto } : {}) };
     await saveListing({ id: it.id, manual: { ...(it.manual || {}), asking } });
     setSaved((s) => ({ ...s, [it.id]: asking }));
   };
+
+  // 읽어 온 호가(만원 배열)를 물건에 넣고 바로 저장
+  const applyPrices = async (it, prices, src) => {
+    const sm = summarize(prices);
+    if (!sm) { setNotice({ bad: true, text: '매매 호가를 찾지 못했습니다. 매물 목록이 보이는 화면에서 다시 해 주세요.' }); return; }
+    if (!admin) { setNotice({ bad: true, text: `호가 ${sm.n}건을 읽었지만 관리자 로그인이 안 돼 있어 저장하지 못했습니다.` }); return; }
+    await save(it, sm.low, sm.high, `자동 입력(${src || '화면'} ${sm.n}건)`, { src: src || '', n: sm.n, prices: prices.slice(0, 50) });
+    setNotice({ text: `${it.title}: 호가 ${sm.n}건 읽어 ${eok(sm.low * 1e4)}~${eok(sm.high * 1e4)}로 저장했습니다.` });
+  };
+
+  // 북마크가 보낸 #/asking?prices=… 받기
+  useEffect(() => {
+    const q = new URLSearchParams(loc.search);
+    const raw = q.get('prices');
+    if (!raw || !items || handled.current === loc.key) return;
+    handled.current = loc.key;
+    const prices = raw.split(',').map(Number).filter((v) => v > 0);
+    const src = q.get('src') || '';
+    nav('/asking', { replace: true });
+    const it = items.find((x) => x.id === getActive());
+    if (it) applyPrices(it, prices, src);
+    else setPending({ prices, src });
+  }, [loc, items]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4">
       <div className="card text-sm">
         <div className="text-base font-extrabold">오늘의 호가 확인 {rows.length}건</div>
-        <p className="mt-1 text-ink/70">매력도 {minScore}점 이상(또는 기회) 물건 중 입찰 마감 2주 안의 것부터 하루 {limit}건을 고릅니다. 링크를 눌러 호가를 보고 최저·최고만 넣으세요. 넣은 호가는 가치 검토에 <b>"현재 호가(직접 확인)" × 95%</b>로 들어가 점수·매수상한이 다시 계산됩니다. 확인한 물건은 2주 동안 이 목록에서 빠집니다.</p>
+        <p className="mt-1 text-ink/70">매력도 {minScore}점 이상(또는 기회) 물건 중 입찰 마감 2주 안의 것부터 하루 {limit}건을 고릅니다. <b>링크를 눌러 매물 화면을 연 뒤, 북마크바의 "호가 가져오기"를 한 번 누르면</b> 화면의 매매 호가가 읽혀 최저·최고가 자동으로 저장됩니다. (화면 글을 전체 복사한 뒤 "복사한 글로 자동 입력"을 눌러도 됩니다.) 넣은 호가는 가치 검토에 <b>"현재 호가(직접 확인)" × 95%</b>로 들어가 점수·매수상한이 다시 계산됩니다. 확인한 물건은 2주 동안 이 목록에서 빠집니다.</p>
         <p className="mt-1 text-xs text-ink/50">이 화면은 링크만 만들고 남의 사이트에 접속하지 않습니다. 직접 보기 번거로운 날은 대화창에서 "오늘 호가 10건 봐 줘"라고 시키시면 됩니다.</p>
       </div>
+      <div className="card text-sm">
+        <div className="font-bold">처음 한 번만: 북마크 만들기</div>
+        <p className="mt-1 text-ink/70">아래 버튼을 마우스로 끌어 크롬 북마크바에 놓으세요(북마크바가 안 보이면 Ctrl+Shift+B). 그다음부터는 네이버 부동산·호갱노노 매물 화면에서 그 북마크만 누르면 됩니다.</p>
+        <a href={bm} onClick={(e) => { e.preventDefault(); alert('이 버튼은 누르는 게 아니라 북마크바로 끌어다 놓는 버튼입니다.'); }} className="btn mt-2 inline-block bg-now text-white">⭐ 호가 가져오기</a>
+      </div>
+      {notice && <div className={`card text-sm ${notice.bad ? 'text-hard' : 'text-now'}`}>{notice.text}</div>}
+      {pending && (
+        <div className="card text-sm">
+          <div className="font-bold">호가 {pending.prices.length}건을 읽었습니다 — 어느 물건 것인가요?</div>
+          <div className="mt-2 flex flex-wrap gap-2">{rows.map(({ it }) => <button key={it.id} className="btn border border-line bg-white" onClick={() => { setPending(null); applyPrices(it, pending.prices, pending.src); }}>{it.title}</button>)}
+            <button className="btn text-ink/50" onClick={() => setPending(null)}>버리기</button></div>
+        </div>
+      )}
       {!items && <div className="card text-sm text-ink/50">고르는 중…</div>}
       {items && !rows.length && <Empty>오늘 확인할 물건이 없습니다.</Empty>}
-      {rows.map(({ it, a }) => <Row key={it.id} it={it} a={a} admin={admin} onSave={save} saved={saved[it.id]} />)}
+      {rows.map(({ it, a }) => <Row key={it.id} it={it} a={a} admin={admin} onSave={save} onPrices={applyPrices} saved={saved[it.id]} />)}
     </div>
   );
 }
 
 function addDays(n) { return new Date(Date.now() + 9 * 3600e3 + n * DAY).toISOString().slice(0, 10); }
 
-function Row({ it, a, admin, onSave, saved }) {
+function Row({ it, a, admin, onSave, onPrices, saved }) {
   const [low, setLow] = useState(''); const [high, setHigh] = useState(''); const [memo, setMemo] = useState('');
   return (
     <div className="card text-sm">
@@ -92,7 +139,13 @@ function Row({ it, a, admin, onSave, saved }) {
         <span className="ml-auto text-xs text-ink/50">마감 {endOf(it)}</span>
       </div>
       <div className="mt-1 text-xs text-ink/60">{it.address} · 최저가 {eok(it.minBid)} · 판단용 가치 {eok(a.value)}{a.valuation ? ` (${a.valuation.low ? `${eok(a.valuation.low)}~${eok(a.valuation.high)}` : ''}, 신뢰도 ${a.valuation.confidence})` : ''}</div>
-      <div className="mt-2 flex flex-wrap gap-2">{links(it).map(([n, u]) => <a key={n} href={u} target="_blank" rel="noreferrer" className="btn border border-line bg-white">{n} ↗</a>)}</div>
+      <div className="mt-2 flex flex-wrap gap-2">{links(it).map(([n, u]) => <a key={n} href={u} target="_blank" rel="opener" onClick={() => setActive(it.id)} className="btn border border-line bg-white">{n} ↗</a>)}
+        {admin && !saved && <button className="btn border border-now text-now" onClick={async () => {
+          setActive(it.id);
+          let t = '';
+          try { t = await navigator.clipboard.readText(); } catch { t = window.prompt('복사한 글을 여기에 붙여 넣으세요') || ''; }
+          onPrices(it, parseAsking(t), '복사');
+        }}>복사한 글로 자동 입력</button>}</div>
       {saved ? <div className="mt-2 text-now">저장됨: 호가 {eok(saved.low)}~{eok(saved.high)} — 새로고침하면 다시 계산된 값이 보입니다.</div> : admin ? (
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <input className="input" inputMode="numeric" placeholder="호가 최저(만원)" value={low} onChange={(e) => setLow(e.target.value.replace(/\D/g, ''))} />
