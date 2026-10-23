@@ -154,6 +154,7 @@ function parcelAddress(address) {
 async function findPnu({ address, key, fetcher = fetch }) {
   const q = parcelAddress(address);
   if (!key || !q) return null;
+  if (/[가-힣\d][로길]\s?\d+(?:-\d+)?$/.test(q)) return null; // 도로명 주소는 지번 검색에 넣지 않는다(번지 숫자가 우연히 같은 다른 필지를 잡지 않게) → findPnuByRoad
   const u = new URL('https://api.vworld.kr/req/search');
   const params = { service: 'search', request: 'search', version: '2.0', size: '10', page: '1', query: q, type: 'address', category: 'parcel', format: 'json', errorformat: 'json', key, domain: DOMAIN };
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
@@ -168,6 +169,36 @@ async function findPnu({ address, key, fetcher = fetch }) {
     return /^\d{19}$/.test(String(it.id)) && lastToken(p) === lastToken(q) && isMountain(p) === isMountain(q);
   });
   return hit ? { pnu: String(hit.id), parcel: hit.address.parcel, query: q } : null;
+}
+
+// 도로명 주소 → PNU. 법원 물건의 30%가량은 주소가 도로명뿐이라(예: 도림천로19길 12) 지번 검색으로는 필지를 못 찾는다.
+//  브이월드 주소검색(도로명)의 결과 id 가 그 건물이 선 필지번호(PNU)다. 도로명+건물번호가 정확히 같은 결과만 쓴다.
+function roadAddress(address) {
+  const s = String(address || '').replace(/\s+/g, ' ').trim();
+  const m = s.match(/^(.+?[로길]\s?\d+(?:-\d+)?)(?=\s|,|\(|$)/);
+  return m ? m[1] : null;
+}
+async function findPnuByRoad({ address, key, fetcher = fetch }) {
+  const q = roadAddress(address);
+  if (!key || !q) return null;
+  const u = new URL('https://api.vworld.kr/req/search');
+  const params = { service: 'search', request: 'search', version: '2.0', size: '10', page: '1', query: q, type: 'address', category: 'road', format: 'json', errorformat: 'json', key, domain: DOMAIN };
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  const res = await fetcher(u, { signal: AbortSignal.timeout(20000) });
+  if (!res.ok) throw new Error(`브이월드 주소검색(도로명) HTTP_${res.status}`);
+  const data = await res.json();
+  const items = (data && data.response && data.response.result && data.response.result.items) || [];
+  const tail = (x) => String(x || '').trim().split(/\s+/).slice(-2).join('');
+  const qt = q.split(/\s+/);
+  const sgg = qt.find((t, i) => i > 0 && /[시군구]$/.test(t));
+  const hit = items.find((it) => {
+    const road = String((it.address && it.address.road) || '').split('(')[0].trim();
+    return /^\d{19}$/.test(String(it.id)) && tail(road) === tail(q) && (!sgg || road.includes(sgg));
+  });
+  if (!hit) return null;
+  const road = String(hit.address.road || '').trim();
+  const head = road.split('(')[0].trim().split(/\s+/).slice(0, -2).join(' ');
+  return { pnu: String(hit.id), parcel: `${head} ${hit.address.parcel || ''}`.trim(), road, query: q };
 }
 
 // ── 주변 필지 맹지 확인 ─────────────────────────────────────────────
@@ -231,5 +262,5 @@ function normalizePnu(p) {
   return /^\d{19}$/.test(s) && s[10] === '0' ? `${s.slice(0, 10)}1${s.slice(11)}` : (p || null);
 }
 
-module.exports = { normalizePnu, lookup, housingPrice, analyzeLandUse, firstArray, parcelAddress, findPnu, neighbors, bboxOf, centroid, isEmptyLand, DOMAIN };
+module.exports = { normalizePnu, lookup, housingPrice, analyzeLandUse, firstArray, parcelAddress, findPnu, roadAddress, findPnuByRoad, neighbors, bboxOf, centroid, isEmptyLand, DOMAIN };
 

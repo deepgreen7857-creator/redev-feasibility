@@ -96,7 +96,7 @@ export function renovation(item, deals, settings, market) {
 // 물건의 읍면동: 수집값 → 주소 괄호 '(대림동, 단지명)' → 주소 낱말 순서로 찾는다
 export function emdOf(item, label) {
   if (item.emd) return item.emd;
-  const t = label || `${item.title || ''} ${item.address || ''} ${item.detail?.addressFull || ''}`;
+  const t = `${item.parcelAddress || ''} ${label || `${item.title || ''} ${item.address || ''} ${item.detail?.addressFull || ''}`}`;
   const m = t.match(/\(\s*([가-힣0-9]+(?:동|가|읍|면|리))\s*[,)]/) || t.match(/(?:^|\s)([가-힣]+[0-9]*(?:동|가)[0-9]*가?)(?=\s|$|,)/);
   return m ? m[1] : undefined;
 }
@@ -110,7 +110,7 @@ export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
   const q = (arr) => { const u = arr.map((d) => d[0] / d[1]).sort((x, y) => x - y); const at = (r) => u[Math.min(u.length - 1, Math.max(0, Math.round((u.length - 1) * r)))]; return { p25: at(0.25), p75: at(0.75) }; };
   // 같은 단지(거래 이름이 물건 이름·주소에 들어 있음): 같은 평형(±10%) 있으면 A, 단지 거래 2건 이상이면 B
   if (type !== 'land') {
-    const label = `${item.title || ''} ${item.address || ''} ${item.detail?.addressFull || ''}`;
+    const label = `${item.title || ''} ${item.address || ''} ${item.detail?.addressFull || ''} ${item.parcelAddress || ''}`;
     const GENERIC = /^(단독|다가구|다중|연립|다세대|아파트|오피스텔|주택|빌라|상가|근린|공동주택)$/;
     // 같은 이름의 다른 단지(예: 대림동 유탑유블레스 ↔ 당산동6가 유탑유블레스)를 막는다: 동이 같아야 같은 단지
     const emd = emdOf(item, label);

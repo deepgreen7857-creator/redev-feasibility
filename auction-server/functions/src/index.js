@@ -118,15 +118,18 @@ async function enrichLand(item) {
   if (pnu && pnu !== item.pnu) Object.assign(found, { pnu, pnuSource: `온비드 필지번호 보정(${item.pnu} → ${pnu})` });
   if (!pnu) {
     // 온비드 '주소' 칸은 읍면동까지만 있고 지번은 제목에 있다 → 상세 주소, 제목, 주소 순으로 찾는다
-    const hit = await vworld.findPnu({ address: (item.detail && item.detail.addressFull) || item.title || item.address, key });
+    const addr0 = (item.detail && item.detail.addressFull) || item.title || item.address;
+    let hit = await vworld.findPnu({ address: addr0, key }).catch(() => null);
+    // 지번으로 못 찾으면 도로명 주소로(법원 물건 주소는 도로명인 경우가 많음) — 지번 주소도 함께 저장
+    if (!hit) hit = await vworld.findPnuByRoad({ address: item.address || addr0, key }).catch(() => null);
     if (!hit) return {};
     pnu = hit.pnu;
-    Object.assign(found, { pnu, pnuSource: `주소검색: ${hit.parcel}` });
+    Object.assign(found, { pnu, pnuSource: `주소검색${hit.road ? '(도로명)' : ''}: ${hit.parcel}`, parcelAddress: hit.parcel, ...(hit.road ? { roadAddress: hit.road } : {}) });
   }
   const ref = db.collection('landCache').doc(String(pnu));
   const c = await ref.get();
   // 빈 응답(토지이용·공시지가·토지특성 모두 없음)은 캐시로 믿지 않는다 — 10/22 한때 빈 응답 366건이 30일 캐시에 묶였던 문제
-  let land = c.exists && !vworld.isEmptyLand(c.data()) && Date.now() - new Date(c.data().checkedAt).getTime() < 30 * 86400e3 ? c.data() : null;
+  let land = c.exists && !vworld.isEmptyLand(c.data()) && (c.data().jimok || c.data().officialPrice) && Date.now() - new Date(c.data().checkedAt).getTime() < 30 * 86400e3 ? c.data() : null;
   if (!land) {
     land = await vworld.lookup({ pnu, key });
     // 받은 필지번호로 빈 응답이면 지번 주소로 필지를 다시 찾아 한 번 더 (온비드 필지번호가 틀린 경우가 많음)
@@ -212,16 +215,20 @@ async function runLandBacklog({ deadline, max = 150 } = {}) {
   const weekAgo = Date.now() - 7 * 86400e3;
   const home = (it) => /(다세대|연립|빌라|아파트|단독|다가구|도시형)/.test(`${it.usage || ''} ${it.usageSmall || ''}`);
   const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-    .filter((it) => (!it.land || vworld.isEmptyLand(it.land)) && String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today)
-    .filter((it) => !it.landEmptyAt || it.landEmptyV !== 3 || new Date(it.landEmptyAt).getTime() < weekAgo) // 필지번호 보정 전에 빈 값으로 표시된 것은 다시
+    // 지목·공시지가가 비어 있으면(토지이용만 붙은 경우 포함) 다시 — 10/22 필지번호 11번째 자리 오류로 지목 없이 저장된 온비드 365건
+    .filter((it) => (!it.land || vworld.isEmptyLand(it.land) || (!it.land.jimok && !it.land.officialPrice)) && String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today)
+    .filter((it) => !it.landEmptyAt || it.landEmptyV !== 4 || new Date(it.landEmptyAt).getTime() < weekAgo) // 이번 판(4) 전에 빈 값으로 표시된 것은 다시
     .sort((x, y) => Number(home(y)) - Number(home(x)));
   let done = 0; let empty = 0; const errors = [];
   for (const it of list.slice(0, max)) {
     if (Date.now() > deadline) break;
     try {
       const extra = await enrichLand(it);
-      if (extra && extra.land && !extra.land.empty) { await db.collection('listings').doc(it.id).set(extra, { merge: true }); done++; }
-      else { await db.collection('listings').doc(it.id).set({ landEmptyAt: new Date().toISOString(), landEmptyV: 3, ...(extra?.land?.raw ? { landEmptyRaw: extra.land.raw } : {}) }, { merge: true }); empty++; if (errors.length < 5 && extra?.land?.raw) errors.push(`${it.id} 빈 응답: ${JSON.stringify(extra.land.raw).slice(0, 300)}`); }
+      if (extra && extra.land && !extra.land.empty) {
+        // 토지이용은 받았는데 지목·공시지가가 여전히 없으면 일주일 뒤 다시(20분마다 같은 물건을 반복 조회하지 않게)
+        const partial = !extra.land.jimok && !extra.land.officialPrice;
+        await db.collection('listings').doc(it.id).set({ ...extra, ...(partial ? { landEmptyAt: new Date().toISOString(), landEmptyV: 4 } : {}) }, { merge: true }); done++;
+      } else { await db.collection('listings').doc(it.id).set({ landEmptyAt: new Date().toISOString(), landEmptyV: 4, ...(extra?.land?.raw ? { landEmptyRaw: extra.land.raw } : {}) }, { merge: true }); empty++; if (errors.length < 5 && extra?.land?.raw) errors.push(`${it.id} 빈 응답: ${JSON.stringify(extra.land.raw).slice(0, 300)}`); }
     } catch (e) { if (errors.length < 5) errors.push(`${it.id}: ${e.message}`); }
   }
   return { waiting: list.length, done, empty, errors };

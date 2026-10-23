@@ -401,6 +401,7 @@ function jimokOf(item, d) {
 // 도로명 주소: 상세 값 → 법원 주소가 도로명이면 그대로
 function roadOf(item, d) {
   if (d?.roadAddress) return d.roadAddress;
+  if (item.roadAddress) return item.roadAddress; // 서버가 브이월드 도로명 검색으로 찾은 값
   const addr = item.source === 'court' ? (d?.addressFull || item.address || '') : '';
   if (/[가-힣\d]+(로|길)\s?\d+/.test(addr)) return addr;
   return null;
@@ -435,7 +436,7 @@ function BasicSection({ item, d, dv, waitText }) {
           {!photos.length && item.thumbnail && <p className="mt-1 text-[11px] text-ink/50">목록 썸네일입니다. 상세 사진은 {d ? '제공되지 않았습니다' : item.source === 'court' ? '원문에서 확인하세요' : '상세 수집 대기 중입니다'}.</p>}
         </div>
         <div className="min-w-0">
-          <Row k="지번 주소" v={d?.addressFull || item.address || '—'} />
+          <Row k="지번 주소" v={item.parcelAddress || (/[가-힣\d]+(로|길)\s?\d+/.test(d?.addressFull || item.address || '') ? dv(null) : d?.addressFull || item.address) || '—'} />
           <Row k="도로명 주소" v={roadOf(item, d) || dv(null)} />
           <Row k="지목" v={jimokOf(item, d) || dv(null)} />
           <Row k="용도" v={item.usage || '—'} />
