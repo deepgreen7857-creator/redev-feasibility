@@ -4,6 +4,7 @@
 
 import { TAX_DEFAULTS, propertyKind, flipTax, corpFit, acquisitionTax } from './tax.js';
 import { specialAnalysis, detectSpecial, parseShare } from './special.js';
+import { valuation } from './valuation.js';
 
 export const VERDICT = {
   now: { label: '지금 매력', tone: 'now' },
@@ -87,6 +88,18 @@ export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
   const area = type === 'land' ? item.landArea : item.buildingArea || item.landArea;
   if (!area || !deals || !deals.length) return { type, area, value: null, count: 0, basis: '시세 자료 없음' };
   let pool = deals.filter((d) => d[0] && d[1] && !d[7] && !(excludeDirect && d[8] === '직거래'));
+  const q = (arr) => { const u = arr.map((d) => d[0] / d[1]).sort((x, y) => x - y); const at = (r) => u[Math.min(u.length - 1, Math.max(0, Math.round((u.length - 1) * r)))]; return { p25: at(0.25), p75: at(0.75) }; };
+  // 같은 단지(거래 이름이 물건 이름·주소에 들어 있음): 같은 평형(±10%) 있으면 A, 단지 거래 2건 이상이면 B
+  if (type !== 'land') {
+    const label = `${item.title || ''} ${item.address || ''} ${item.detail?.addressFull || ''}`;
+    const same = pool.filter((d) => d[5] && String(d[5]).length >= 2 && label.includes(String(d[5])));
+    const sameArea = same.filter((d) => d[1] >= area * 0.9 && d[1] <= area * 1.1);
+    const pick = sameArea.length ? { arr: sameArea, grade: 'A', scope: `같은 단지(${sameArea[0][5]})·같은 평형` } : same.length >= 2 ? { arr: same, grade: 'B', scope: `같은 단지(${same[0][5]})·다른 평형 포함` } : null;
+    if (pick) {
+      const unit = median(pick.arr.map((d) => d[0] / d[1])); const r = q(pick.arr);
+      return { type, area, unit, value: Math.round(unit * area), low: Math.round(r.p25 * area), high: Math.round(r.p75 * area), count: pick.arr.length, grade: pick.grade, basis: `${pick.scope} 실거래 ${pick.arr.length}건 ㎡당 중앙값`, samples: pick.arr.slice(0, 12) };
+    }
+  }
   const sameDong = pool.filter((d) => item.emd && d[9] === item.emd);
   let scope = '같은 시군구';
   if (sameDong.length >= 5) { pool = sameDong; scope = `같은 동(${item.emd})`; }
@@ -97,9 +110,9 @@ export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
     pool = near;
   }
   if (!pool.length) return { type, area, value: null, count: 0, basis: '조건에 맞는 거래 없음' };
-  const unit = median(pool.map((d) => d[0] / d[1]));
+  const unit = median(pool.map((d) => d[0] / d[1])); const r = q(pool);
   return {
-    type, area, unit, value: Math.round(unit * area), count: pool.length,
+    type, area, unit, value: Math.round(unit * area), low: Math.round(r.p25 * area), high: Math.round(r.p75 * area), count: pool.length, grade: scope.startsWith('같은 동') ? 'C' : 'D',
     basis: `${scope} 실거래 ${pool.length}건 ㎡당 중앙값 (해제${excludeDirect ? '·직거래' : ''} 제외)`,
     samples: pool.slice(0, 12),
   };
@@ -292,6 +305,13 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   const hp = item.housePrice?.matched ? item.housePrice.price : null;
   if (hp && item.appraisal && item.appraisal < hp * 0.6 && !item.share) anomalies.push(`감정가(${eok(item.appraisal)})가 공시가격(${eok(hp)})보다 훨씬 낮음 — 지분 매각 의심`);
   if (anomalies.length) { value = null; valueBasis = '오류 의심으로 계산 보류'; }
+  // 가치 검토: 실거래·감정가·공시가격·전세를 맞대어 범위와 판단용 가치(검토 과정은 화면에 그대로)
+  const jeonse = jeonseEstimate(item, rentDeals);
+  let val = null;
+  if (!anomalies.length && !cashType && !rightType) {
+    val = valuation(item, { type: tradeTypeOf(item), market, marketValue: market.value ? value : null, jeonse, settings, stats: settings?.saleRates });
+    if (val.value) { value = val.value; valueBasis = val.summary; }
+  }
   const full = value;
   const special = specialAnalysis(item, { full, settings, member, rightValue: right?.value, redev, rounds });
   if (special) {
@@ -326,7 +346,6 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   if (member.status !== 'none') warnings.push('권리산정기준일 이후 신축·지분분할 물건이거나 한 세대가 여러 채를 가지면 분양자격이 달라질 수 있음');
   if (uaDiff !== null && uaDiff > 0.1 && uaDiff <= 0.3) warnings.push(`건축물대장 전유면적 ${item.ledger.unit.exclusiveArea}㎡ ≠ 읽어 온 면적 ${item.buildingArea}㎡`);
   if (item.ledger?.age >= 30) warnings.push(`사용승인 ${item.ledger.age}년 경과(${item.ledger.useApr}) — 노후, 수리비·누수 확인`);
-  const jeonse = jeonseEstimate(item, rentDeals);
   if (jeonse) {
     (item.detail?.leases || []).forEach((l) => {
       if (!l.deposit || l.rent) return;
@@ -340,7 +359,7 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   if (market.count && market.count < 5 && !cashType && !rightType) warnings.push('비교 거래가 적음 — 시세 신뢰도 낮음');
 
   const result = {
-    verdict, market, jeonse, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special, anomalies,
+    verdict, market, jeonse, valuation: val, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special, anomalies,
     farm, redev, cashType, rightType, right, member, stage, excluded: isExcluded(item, settings),
     ratio: item.appraisal && item.minBid ? item.minBid / item.appraisal : null,
   };
@@ -433,9 +452,8 @@ export function scoreOf(item, a) {
   if (a.cashType) pTrust = 12;
   else if (a.rightType) pTrust = item.manual?.econ?.newPrice ? 18 : 14;
   else {
-    const n = a.market.count || 0;
-    pTrust = n >= 20 ? 15 : n >= 10 ? 12 : n >= 5 ? 8 : n > 0 ? 4 : 0;
-    if (/같은 동/.test(a.market.basis || '')) pTrust += 5;
+    // 가치 검토 신뢰도(기준 수·일치도·실거래 등급)
+    pTrust = { 높음: 20, 보통: 13, 낮음: 6 }[a.valuation?.confidence] ?? 0;
   }
   pTrust = Math.min(20, pTrust);
   const f = item.detail?.flags;

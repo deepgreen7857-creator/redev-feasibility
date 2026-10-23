@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
+import ReportPage from './pages/ReportPage.jsx';
 import RulesPage from './pages/RulesPage.jsx';
 import ListPage from './pages/ListPage.jsx';
 import DetailPage from './pages/DetailPage.jsx';
@@ -42,6 +43,7 @@ export default function App() {
           <Route path="/opportunity" element={<ListPage mode="opportunity" />} />
           <Route path="/done" element={<ListPage mode="done" />} />
           <Route path="/rules" element={<RulesPage />} />
+          <Route path="/report/:id" element={<ReportPage />} />
           <Route path="/item/:id" element={<DetailPage admin={admin} />} />
           <Route path="/bankrupt" element={<BankruptPage />} />
           <Route path="/market" element={<MarketPage />} />

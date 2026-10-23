@@ -87,6 +87,7 @@ export default function DetailPage({ admin }) {
     <div className="space-y-4">
       <div className="no-print flex items-center justify-between">
         <Link to="/" className="text-sm text-brand">← 목록</Link>
+        <Link to={`/report/${encodeURIComponent(item.id)}`} className="btn bg-ink text-white">검토서 보기</Link>
         <button className="btn-ghost" onClick={() => window.print()}>결과지 인쇄</button>
       </div>
 
