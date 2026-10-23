@@ -3,7 +3,7 @@
 // 우리 서버는 네이버·호갱노노 등에 접속하지 않는다(정민 님 브라우저 화면 글만 읽음). 넣은 호가는 가치 검토 기준으로 다시 계산된다.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { parseAsking, summarize, bookmarkletCode } from '../lib/askingParse.js';
+import { parseAskingRows, pickByArea, summarize, bookmarkletCode } from '../lib/askingParse.js';
 import { listListings, getSettings, getDeals, saveListing } from '../lib/store.js';
 import { analyze, tradeTypeOf, eok, typeLabel, VERDICT } from '../lib/analyze.js';
 import { lawdOf } from '../data/defaults.js';
@@ -76,13 +76,17 @@ export default function AskingPage({ admin }) {
     setSaved((s) => ({ ...s, [it.id]: asking }));
   };
 
-  // 읽어 온 호가(만원 배열)를 물건에 넣고 바로 저장
-  const applyPrices = async (it, prices, src) => {
-    const sm = summarize(prices);
-    if (!sm) { setNotice({ bad: true, text: '매매 호가를 찾지 못했습니다. 매물 목록이 보이는 화면에서 다시 해 주세요.' }); return; }
+  // 읽어 온 호가({price 만원, area ㎡})를 물건 전용면적과 같은 것만 골라 넣고 바로 저장
+  const applyPrices = async (it, all, src) => {
+    const area = Number(it.ledger?.unit?.exclusiveArea || it.buildingArea) || null;
+    const { rows: picked, mixed, noSame } = pickByArea(all, area);
+    const sm = summarize(picked.map((r) => r.price));
+    if (!all.length) { setNotice({ bad: true, text: '매매 호가를 찾지 못했습니다. 단지를 눌러 매물 목록이 보이는 화면에서 다시 해 주세요.' }); return; }
+    if (!sm) { setNotice({ bad: true, text: `매매 호가 ${all.length}건을 읽었지만 이 물건(전용 ${area}㎡)과 같은 면적 매물이 없어 저장하지 않았습니다.` }); return; }
     if (!admin) { setNotice({ bad: true, text: `호가 ${sm.n}건을 읽었지만 관리자 로그인이 안 돼 있어 저장하지 못했습니다.` }); return; }
-    await save(it, sm.low, sm.high, `자동 입력(${src || '화면'} ${sm.n}건)`, { src: src || '', n: sm.n, prices: prices.slice(0, 50) });
-    setNotice({ text: `${it.title}: 호가 ${sm.n}건 읽어 ${eok(sm.low * 1e4)}~${eok(sm.high * 1e4)}로 저장했습니다.` });
+    const areaNote = area ? `전용 ${area}㎡ ±10% ${sm.n}건/전체 ${all.length}건` : `${sm.n}건${mixed ? ', 면적 섞임 주의' : ''}`;
+    await save(it, sm.low, sm.high, `자동 입력(${src || '화면'} · ${areaNote})`, { src: src || '', n: sm.n, total: all.length, area, rows: all.slice(0, 50) });
+    setNotice({ bad: mixed, text: `${it.title}: ${areaNote} → 호가 ${eok(sm.low * 1e4)}~${eok(sm.high * 1e4)} 저장${noSame ? ` (면적 다른 ${noSame}건 뺌)` : ''}${mixed ? ' — 물건 면적을 몰라 여러 면적이 섞였을 수 있습니다' : ''}` });
   };
 
   // 북마크가 보낸 #/asking?prices=… 받기
@@ -91,7 +95,7 @@ export default function AskingPage({ admin }) {
     const raw = q.get('prices');
     if (!raw || !items || handled.current === loc.key) return;
     handled.current = loc.key;
-    const prices = raw.split(',').map(Number).filter((v) => v > 0);
+    const prices = raw.split(',').map((x) => { const [p, a] = x.split('@'); return { price: Number(p), area: a ? Number(a) : null }; }).filter((r) => r.price > 0);
     const src = q.get('src') || '';
     nav('/asking', { replace: true });
     const it = items.find((x) => x.id === getActive());
@@ -103,7 +107,7 @@ export default function AskingPage({ admin }) {
     <div className="space-y-4">
       <div className="card text-sm">
         <div className="text-base font-extrabold">오늘의 호가 확인 {rows.length}건</div>
-        <p className="mt-1 text-ink/70">매력도 {minScore}점 이상(또는 기회) 물건 중 입찰 마감 2주 안의 것부터 하루 {limit}건을 고릅니다. <b>링크를 눌러 매물 화면을 연 뒤, 북마크바의 "호가 가져오기"를 한 번 누르면</b> 화면의 매매 호가가 읽혀 최저·최고가 자동으로 저장됩니다. (화면 글을 전체 복사한 뒤 "복사한 글로 자동 입력"을 눌러도 됩니다.) 넣은 호가는 가치 검토에 <b>"현재 호가(직접 확인)" × 95%</b>로 들어가 점수·매수상한이 다시 계산됩니다. 확인한 물건은 2주 동안 이 목록에서 빠집니다.</p>
+        <p className="mt-1 text-ink/70">매력도 {minScore}점 이상(또는 기회) 물건 중 입찰 마감 2주 안의 것부터 하루 {limit}건을 고릅니다. <b>링크를 눌러 매물 화면을 연 뒤, 북마크바의 "호가 가져오기"를 한 번 누르면</b> 화면의 매매 호가가 읽혀 <b>이 물건과 같은 면적(전용 ±10%)</b>만으로 최저·최고가 자동 저장됩니다. 호갱노노는 검색 목록에서 단지를 한 번 누르고, 아래 "이 단지 매물"까지 내려 매물이 보일 때 누르세요. (화면 글을 전체 복사한 뒤 "복사한 글로 자동 입력"을 눌러도 됩니다.) 넣은 호가는 가치 검토에 <b>"현재 호가(직접 확인)" × 95%</b>로 들어가 점수·매수상한이 다시 계산됩니다. 확인한 물건은 2주 동안 이 목록에서 빠집니다.</p>
         <p className="mt-1 text-xs text-ink/50">이 화면은 링크만 만들고 남의 사이트에 접속하지 않습니다. 직접 보기 번거로운 날은 대화창에서 "오늘 호가 10건 봐 줘"라고 시키시면 됩니다.</p>
       </div>
       <div className="card text-sm">
@@ -144,7 +148,7 @@ function Row({ it, a, admin, onSave, onPrices, saved }) {
           setActive(it.id);
           let t = '';
           try { t = await navigator.clipboard.readText(); } catch { t = window.prompt('복사한 글을 여기에 붙여 넣으세요') || ''; }
-          onPrices(it, parseAsking(t), '복사');
+          onPrices(it, parseAskingRows(t), '복사');
         }}>복사한 글로 자동 입력</button>}</div>
       {saved ? <div className="mt-2 text-now">저장됨: 호가 {eok(saved.low)}~{eok(saved.high)} — 새로고침하면 다시 계산된 값이 보입니다.</div> : admin ? (
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
