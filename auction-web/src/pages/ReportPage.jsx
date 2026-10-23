@@ -176,7 +176,7 @@ export default function ReportPage({ admin }) {
         </>
       )}
 
-      <AiReview item={item} admin={admin} onDone={(r) => setItem({ ...item, aiReview: r })} />
+      {(settings.aiReviewEnabled || item.aiReview) && <AiReview item={item} admin={admin} onDone={(r) => setItem({ ...item, aiReview: r })} />}
 
       <p className="mt-6 border-t border-line pt-2 text-xs text-ink/50">이 검토서는 공개 자료로 자동 계산한 참고 자료입니다. 계산 방식은 사이트의 "판단 기준" 화면에 있습니다. 입찰 전 원문과 등기부, 현장을 반드시 확인하세요.</p>
     </div>
