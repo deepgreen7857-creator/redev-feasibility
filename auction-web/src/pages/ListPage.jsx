@@ -33,10 +33,12 @@ export default function ListPage({ mode }) {
     const keys = new Set();
     items.forEach((it) => { const l = lawdOf(it.sido, it.sgg); if (!l) return; const t = tradeTypeOf(it); if (villa && t !== 'rh') return; keys.add(`${t}|${l}`); if (villa) keys.add(`${t}Rent|${l}`); });
     const need = [...keys].filter((k) => !(k in dealsMap)).slice(0, 40);
+    // 받는 중인 키를 먼저 표시해 같은 키를 두 번 받지 않게
+    if (need.length) setDealsMap((m) => ({ ...m, ...Object.fromEntries(need.filter((k) => !(k in m)).map((k) => [k, undefined])) }));
     if (!need.length) return;
     Promise.all(need.map(async (k) => { const [t, l] = k.split('|'); return [k, await getDeals(t, l, 12)]; }))
       .then((pairs) => setDealsMap((m) => ({ ...m, ...Object.fromEntries(pairs) })));
-  }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [items, dealsMap]); // 40개씩 받고, 받은 뒤 남은 지역을 이어서 받는다(전에는 첫 40개만 받고 멈췄음)
 
   const rows = useMemo(() => {
     if (!items || !settings) return [];
@@ -50,7 +52,7 @@ export default function ListPage({ mode }) {
       if (f.verdict === 'special' ? !a.special : f.verdict !== 'all' && a.verdict !== f.verdict) return false;
       if (!f.showExcluded && a.excluded) return false;
       if (opp && !a.opportunity) return false;
-      if (villa && tradeTypeOf(it) !== 'rh') return false;
+      if (villa && (tradeTypeOf(it) !== 'rh' || notVilla(it))) return false;
       if (done !== isEnded(it)) return false;
       if (f.sgg && !(it.sgg || '').includes(f.sgg)) return false;
       if (f.maxPrice && (it.minBid || 0) > Number(f.maxPrice) * 1e4) return false;
@@ -211,6 +213,16 @@ function sorter(key) {
   if (key === 'certainty') return (x, y) => NUM(y.a.certainty?.value) - NUM(x.a.certainty?.value);
   if (key === 'end') return (x, y) => String(x.it.bidEnd || '9').localeCompare(String(y.it.bidEnd || '9'));
   return () => 0;
+}
+
+// 빌라 단타 목록에서 뺄 것: 지하층, 건물 200㎡ 초과(통건물·복합건물), 상가·업무·숙박 용도가 섞인 것
+// (온비드·법원 분류가 '다세대·연립'이라도 실제로는 오피스 지하 호실이나 통건물인 경우가 있음)
+export function notVilla(it) {
+  const text = `${it.title || ''} ${it.address || ''} ${it.detail?.addressFull || ''}`;
+  if (/지하\s?\d*층|제?지층|지하\d|\bB\d+층/.test(text)) return '지하층';
+  if (it.buildingArea && it.buildingArea > 200) return '건물 200㎡ 초과';
+  if (/(기타용도|복합건물|근린|상가|사무소|오피스|업무시설|숙박|공장|창고)/.test(`${text} ${it.usage || ''}`)) return '주거 외 용도';
+  return null;
 }
 
 // 판정이 '해결 안 됨'이어도 법인 적합도는 물건 성격으로 정해진다

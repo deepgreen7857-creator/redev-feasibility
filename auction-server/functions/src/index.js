@@ -184,6 +184,29 @@ async function runOnbid({ deadline, force = false, mode } = {}) {
   return { mode: m, ...res };
 }
 
+// 공시지가·토지특성이 아직 안 붙은 진행 물건에 브이월드 정보를 붙인다(온비드 상세 수집과 따로 — 상세가 밀려 있어도 땅값 계산이 되게).
+// 빌라·아파트·단독(땅값 대비 최저가를 보는 종류)을 먼저, 한 번에 최대 150건.
+async function runLandBacklog({ deadline, max = 150 } = {}) {
+  const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // YYYY-MM-DD (kstDay는 대시 없는 형식이라 쓰지 않음)
+  const snap = await db.collection('listings').select('land', 'pnu', 'address', 'title', 'usage', 'usageSmall', 'bidEnd', 'detail', 'landEmptyAt', 'sido', 'sgg', 'buildingArea').get();
+  const weekAgo = Date.now() - 7 * 86400e3;
+  const home = (it) => /(다세대|연립|빌라|아파트|단독|다가구|도시형)/.test(`${it.usage || ''} ${it.usageSmall || ''}`);
+  const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .filter((it) => !it.land && String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today)
+    .filter((it) => !it.landEmptyAt || new Date(it.landEmptyAt).getTime() < weekAgo)
+    .sort((x, y) => Number(home(y)) - Number(home(x)));
+  let done = 0; let empty = 0; const errors = [];
+  for (const it of list.slice(0, max)) {
+    if (Date.now() > deadline) break;
+    try {
+      const extra = await enrichLand(it);
+      if (extra && extra.land) { await db.collection('listings').doc(it.id).set(extra, { merge: true }); done++; }
+      else { await db.collection('listings').doc(it.id).set({ landEmptyAt: new Date().toISOString() }, { merge: true }); empty++; }
+    } catch (e) { if (errors.length < 5) errors.push(`${it.id}: ${e.message}`); }
+  }
+  return { waiting: list.length, done, empty, errors };
+}
+
 async function runTrades({ deadline } = {}) {
   const settings = await getSettings();
   return trades.collect({
@@ -306,8 +329,8 @@ async function tick({ only, force } = {}) {
   const deadline = started + TICK_BUDGET_MS;
   const out = {};
   const settings = await getSettings();
-  const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, results: settings.collectOnbid !== false, resultList: settings.collectOnbid !== false, trades: settings.collectTrades !== false };
-  const jobs = only ? [only] : ['zones', 'bankrupt', 'onbid', 'resultList', 'results', 'trades'];
+  const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, results: settings.collectOnbid !== false, resultList: settings.collectOnbid !== false, trades: settings.collectTrades !== false, land: settings.collectLand !== false };
+  const jobs = only ? [only] : ['zones', 'bankrupt', 'onbid', 'land', 'resultList', 'results', 'trades'];
   for (const job of jobs) {
     if (!enabled[job] && !only) continue;
     if (Date.now() > deadline) { out[job] = { stopped: 'time' }; continue; }
@@ -318,6 +341,7 @@ async function tick({ only, force } = {}) {
       if (job === 'results') out[job] = await runOnbidResults({ deadline });
       if (job === 'resultList') out[job] = await runOnbidResultList({ deadline, force });
       if (job === 'trades') out[job] = await runTrades({ deadline });
+      if (job === 'land') out[job] = await runLandBacklog({ deadline: Math.min(deadline, Date.now() + 120e3) });
     } catch (e) {
       logger.error(job, e);
       out[job] = { error: e.message };

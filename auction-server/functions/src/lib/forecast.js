@@ -10,8 +10,8 @@ function kstNow() {
 
 // 아직 입찰 전인가: 기일이 '내일 이후'(날짜만 있으면) 또는 마감 시각이 지금 이후(시각까지 있으면)
 // 법원 상태 '유찰'은 지난 회차 결과다 — 다음 기일이 미래면 진행 중으로 본다(전에는 이 때문에 법원 진행 물건이 예측 기록에서 빠졌음).
-// 취하·취소·정지·기각·종결처럼 사건 자체가 끝난 상태만 막는다.
-const CLOSED = /(취하|취소|정지|기각|종결)/;
+// 낙찰·매각(팔림)이나 취하·취소·정지·기각·종결처럼 끝난 상태만 막는다.
+const CLOSED = /(낙찰|매각|취하|취소|정지|기각|종결)/;
 function beforeBid(it, now = kstNow()) {
   if (it.result?.soldPrice) return false;
   const e = String(it.bidEnd || '').replace(/\./g, '-').trim();

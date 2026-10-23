@@ -33,3 +33,11 @@ test('입찰 결과: 유찰이면 단독 낙찰, 상한 넘으면 입찰 안 함
   assert.equal(bidOutcome(sold(90, 95), 100, 120, 'sold').kind, 'win');
   assert.equal(bidOutcome(sold(90, 105), 100, 120, 'sold').kind, 'lose');
 });
+
+import { lawdOf } from '../data/defaults.js';
+test('인천 신설구는 개편 전 구 시세 코드로 연결', () => {
+  assert.equal(lawdOf('인천광역시', '서해구'), lawdOf('인천광역시', '서구'));
+  assert.equal(lawdOf('인천광역시', '영종구'), lawdOf('인천광역시', '중구'));
+  assert.ok(lawdOf('인천광역시', '서구'));
+  assert.equal(lawdOf('인천광역시', '남동구'), '28200');
+});

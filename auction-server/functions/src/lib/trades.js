@@ -86,9 +86,14 @@ function plan({ type, done, backfillMonths = 12, codes }) {
 
 async function collect({ serviceKey, quota, fetcher, getProgress, saveMonth, saveProgress, backfillMonths = 12, types = Object.keys(TYPES), log = console.log, codes, deadline = Infinity }) {
   const summary = {};
-  for (const type of types) {
+  // 늘 같은 순서로 돌면 뒤쪽 종류(전월세 등)는 시간이 모자라 영영 차례가 안 온다 → 가장 오래 못 받은 종류부터
+  const progs = {};
+  for (const type of types) progs[type] = (await getProgress(type)) || { done: {}, empty: {} };
+  const order = [...types].sort((x, y) => String(progs[x].updatedAt || '').localeCompare(String(progs[y].updatedAt || '')));
+  for (const type of order) {
     if (Date.now() > deadline) { summary[type] = { stopped: 'time' }; continue; }
-    const progress = (await getProgress(type)) || { done: {}, empty: {} };
+    const progress = progs[type];
+    progress.done ||= {};
     const jobs = plan({ type, done: progress.done || {}, backfillMonths, codes });
     let ok = 0; let stopped = null; const errors = [];
     for (const job of jobs) {

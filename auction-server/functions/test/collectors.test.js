@@ -268,6 +268,8 @@ test('입찰 전 예측: 기일 전 물건만 판정하고, 기일이 된 물건
   assert.equal(forecast.beforeBid({ bidEnd: '2026.10.23', status: '진행' }, now), false); // 매각기일 당일은 굳힘
   assert.equal(forecast.beforeBid({ bidEnd: '2026-10-23 17:00', status: '입찰진행중' }, now), true);
   assert.equal(forecast.beforeBid({ bidEnd: '2026-11-01', status: '낙찰' }, now), false);
+  assert.equal(forecast.beforeBid({ bidEnd: '2026.11.05', status: '유찰' }, now), true); // 법원 '유찰'은 지난 회차 결과 — 다음 기일 전이면 진행 중
+  assert.equal(forecast.beforeBid({ bidEnd: '2026.11.05', status: '취하' }, now), false);
   // 가짜 Firestore로 실행
   const docs = [
     { id: 'a', data: { source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 6e8, minBid: 3e8, bidEnd: '2099.01.01', status: '진행' } },
