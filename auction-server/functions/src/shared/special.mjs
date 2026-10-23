@@ -49,18 +49,20 @@ export function detectSpecial(item) {
   const f = item.detail?.flags || {};
   // 지목·공고 용도(예: '토지 > 도로')·이용현황 어디에든 '도로/구거'가 단어로 있으면 도로 부지
   const jimok = `${item.land?.jimok || ''} ${item.detail?.landCategory || ''} ${item.usage || ''} ${item.usageSmall || ''} ${item.detail?.usageStatus || ''}`;
+  // '유치권 신고 없음', '분묘 없음', '인수할 권리 없음'처럼 없다고 쓴 글은 잡지 않는다(뒤 15자 안에 없음·해당 없음·미신고)
+  const said = (re) => { const m = t.match(re); return Boolean(m) && !/(없음|없다|없습|해당\s*없|해당사항\s*없|미신고|아님)/.test(t.slice(m.index, m.index + m[0].length + 15)); };
   const out = [];
   const add = (key, evidence) => { if (!out.some((o) => o.key === key)) out.push({ key, evidence }); };
   const jm = jimok.match(/(^|[\s>/·,()])(도로|구거)($|[\s>/·,()])/);
   if (jm) add('road', item.land?.jimok && /도로|구거/.test(item.land.jimok) ? `지목 ${item.land.jimok}` : `공고상 ${jm[2]}`);
   else if (/현황\s*도로|도로로\s*(이용|사용)|사실상\s*(의\s*)?도로|통행로|도로\s*부지/.test(t)) add('road', '현황 도로로 이용');
-  if (/맹지|진입\s*도로\s*(없|미확보)|도로에\s*접하지/.test(t)) add('landlocked', '맹지 표시');
-  if (f.superficies || /법정지상권|제시\s*외\s*건물|건물\s*(은|은\s*)?매각\s*제외|토지만\s*매각/.test(t)) add('superficies', f.superficies ? '법정지상권 기재' : '지상 건물 매각 제외');
+  if (said(/맹지/) || /진입\s*도로\s*(없|미확보)|도로에\s*접하지/.test(t)) add('landlocked', '맹지 표시');
+  if (f.superficies || said(/법정지상권|제시\s*외\s*건물|건물\s*(은|은\s*)?매각\s*제외|토지만\s*매각/)) add('superficies', f.superficies ? '법정지상권 기재' : '지상 건물 매각 제외');
   if (/대지권\s*(미등기|없음|없는)|건물만\s*매각/.test(t)) add('noLandRight', '대지권 미등기·건물만 매각');
   if (item.share || /지분\s*(매각|일부)|공유\s*지분/.test(t)) add('share', item.detail?.shareText || '지분 물건');
-  if (/유치권/.test(t)) add('lien', '유치권 신고·기재');
-  if (/분묘/.test(t)) add('grave', '분묘 기재');
-  if (f.survivingRights || /선순위\s*(가처분|가등기|임차|전세권|지상권)|인수\s*(할|하는|조건)/.test(t)) add('surviving', item.detail?.survivingRights || '인수 권리 기재');
+  if (said(/유치권/)) add('lien', '유치권 신고·기재');
+  if (said(/분묘/)) add('grave', '분묘 기재');
+  if (f.survivingRights || said(/선순위\s*(가처분|가등기|임차|전세권|지상권)|인수\s*(할|하는|조건)/)) add('surviving', item.detail?.survivingRights || '인수 권리 기재');
   if (f.unclaimedTenants) {
     const r = riskyTenants(item);
     if (r.list.length) add('tenant', `배분요구 안 한 임차인 ${r.list.length}명${r.base ? '(말소기준보다 먼저 전입)' : ''}`);

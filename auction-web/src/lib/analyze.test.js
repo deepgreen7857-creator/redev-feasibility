@@ -157,3 +157,19 @@ test('비슷한 면적 거래가 3건 미만이면 시세 부족', () => {
   const m = marketEstimate({ emd: '봉천동', buildingArea: 13.2, usage: '오피스텔' }, d);
   assert.equal(m.value, null);
 });
+
+test('점검 수정: 없다고 쓴 글은 특수 사정 아님, 일반 이름은 같은 단지 아님, 토지는 같은 지목, 취득세는 사는 가격에', async () => {
+  const { detectSpecial } = await import('./special.js');
+  assert.equal(detectSpecial({ detail: { cautions: '유치권 신고 없음. 분묘 해당 없음. 매수인이 인수할 권리 없음' } }).length, 0);
+  assert.ok(detectSpecial({ detail: { cautions: '유치권 신고 있음(공사대금 3천만 원)' } }).some((x) => x.key === 'lien'));
+  const shDeals = Array.from({ length: 8 }, (_, i) => [3e8 + i * 1e7, 100, 1, 1, '1', '단독', 1990, false, '중개거래', '용현동']);
+  const m = marketEstimate({ title: '용현동 단독주택', usage: '단독주택', emd: '용현동', buildingArea: 100 }, shDeals);
+  assert.notEqual(m.grade, 'B'); assert.notEqual(m.grade, 'A');
+  const landDeals = [...Array.from({ length: 5 }, () => [1e8, 100, 0, 1, '', '', 0, false, '중개거래', '구월동', '대']), ...Array.from({ length: 5 }, () => [1e7, 100, 0, 1, '', '', 0, false, '중개거래', '구월동', '전'])];
+  const lm = marketEstimate({ usage: '토지', emd: '구월동', landArea: 100, land: { jimok: '전' } }, landDeals);
+  assert.equal(lm.value, 1e7);
+  const base = { source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 5.1e8, minBid: 3e8 };
+  const a = analyze(base, { settings: { ...DEFAULT_SETTINGS, owner: 'person' }, deals });
+  assert.equal(a.costs.tax, Math.round(a.cap * a.costs.taxRate));
+  assert.ok(Math.abs(a.cap * (1 + a.costs.taxRate) + a.costs.eviction + a.costs.repair - a.value * 0.9) < 5);
+});

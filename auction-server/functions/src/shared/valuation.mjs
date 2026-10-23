@@ -25,7 +25,7 @@ function monthsSince(ymd) {
   return (now.getFullYear() - y) * 12 + (now.getMonth() + 1 - m);
 }
 
-export function valuation(item, { type, market, marketValue, jeonse, settings, stats } = {}) {
+export function valuation(item, { type, market, marketValue, jeonse, settings, stats, shareRatio = 1 } = {}) {
   const cfg = { ...VALUATION_DEFAULTS, ...(settings?.valuation || {}) };
   const anchors = [];
   const add = (a) => anchors.push({ used: true, ...a });
@@ -46,11 +46,13 @@ export function valuation(item, { type, market, marketValue, jeonse, settings, s
     add({ key: 'appraisal', label: '감정가', value: item.appraisal, basis: `법원·온비드 감정평가${ad ? ` (${String(ad).replace(/\D/g, '').slice(0, 8)} 감정${age !== null ? `, ${age}개월 전` : ''})` : ''}`, stale: age !== null && age > 12 });
   }
 
-  // ③ 공시가격 환산
+  // ③ 공시가격 환산 — 집 전체 값이므로 지분 물건은 지분 비율을 곱하고, 비율을 모르면 쓰지 않는다
   const hp = item.housePrice?.matched ? item.housePrice : null;
-  if (hp?.price) {
+  const shareText = shareRatio !== 1 ? ` × 지분 ${Math.round(shareRatio * 1000) / 10}%` : '';
+  if ((hp?.price || jeonse?.value) && shareRatio === 0) anchors.push({ key: 'official', label: '공시가격·전세 환산', value: null, used: false, why: '지분 물건인데 지분 비율을 못 읽어 집 전체 값을 쓸 수 없음' });
+  else if (hp?.price) {
     const r = hp.kind === '개별주택' ? cfg.realization.detachedHouse : cfg.realization.apartHouse;
-    add({ key: 'official', label: '공시가격 환산', value: Math.round(hp.price / r), basis: `${hp.kind} 공시가격 ${eok(hp.price)}(${hp.year}) ÷ 현실화율 ${Math.round(r * 1000) / 10}% (추정)` });
+    add({ key: 'official', label: '공시가격 환산', value: Math.round((hp.price / r) * shareRatio), basis: `${hp.kind} 공시가격 ${eok(hp.price)}(${hp.year}) ÷ 현실화율 ${Math.round(r * 1000) / 10}%${shareText} (추정)` });
   } else if (type === 'land' && item.land?.officialPrice && item.landArea) {
     const r = cfg.realization.land;
     const v = item.land.officialPrice * item.landArea;
@@ -58,9 +60,9 @@ export function valuation(item, { type, market, marketValue, jeonse, settings, s
   }
 
   // ④ 전세 환산
-  if (jeonse?.value && cfg.jeonseRatio[type]) {
+  if (jeonse?.value && cfg.jeonseRatio[type] && shareRatio > 0) {
     const r = cfg.jeonseRatio[type];
-    add({ key: 'jeonse', label: '전세 환산', value: Math.round(jeonse.value / r), basis: `${jeonse.basis} ${eok(jeonse.value)} ÷ 전세가율 ${Math.round(r * 100)}% (추정)` });
+    add({ key: 'jeonse', label: '전세 환산', value: Math.round((jeonse.value / r) * shareRatio), basis: `${jeonse.basis} ${eok(jeonse.value)} ÷ 전세가율 ${Math.round(r * 100)}%${shareText} (추정)` });
   }
 
   // ⑤ 현재 호가(정민 님이 직접 확인해 넣은 값) — 호가는 실제 거래보다 높게 나오므로 95%로

@@ -93,13 +93,21 @@ export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
   // 같은 단지(거래 이름이 물건 이름·주소에 들어 있음): 같은 평형(±10%) 있으면 A, 단지 거래 2건 이상이면 B
   if (type !== 'land') {
     const label = `${item.title || ''} ${item.address || ''} ${item.detail?.addressFull || ''}`;
-    const same = pool.filter((d) => d[5] && String(d[5]).length >= 2 && label.includes(String(d[5])));
+    const GENERIC = /^(단독|다가구|다중|연립|다세대|아파트|오피스텔|주택|빌라|상가|근린|공동주택)$/;
+    const same = pool.filter((d) => d[5] && String(d[5]).length >= 2 && !GENERIC.test(String(d[5])) && (!item.emd || !d[9] || d[9] === item.emd) && label.includes(String(d[5])));
     const sameArea = same.filter((d) => d[1] >= area * 0.9 && d[1] <= area * 1.1);
     const pick = sameArea.length ? { arr: sameArea, grade: 'A', scope: `같은 단지(${sameArea[0][5]})·같은 평형` } : same.length >= 2 ? { arr: same, grade: 'B', scope: `같은 단지(${same[0][5]})·다른 평형 포함` } : null;
     if (pick) {
       const unit = median(pick.arr.map((d) => d[0] / d[1])); const r = q(pick.arr);
       return { type, area, unit, value: Math.round(unit * area), low: Math.round(r.p25 * area), high: Math.round(r.p75 * area), count: pick.arr.length, grade: pick.grade, basis: `${pick.scope} 실거래 ${pick.arr.length}건 ㎡당 중앙값`, samples: pick.arr.slice(0, 12) };
     }
+  }
+  let jimokNote = '';
+  if (type === 'land') {
+    const jm = String(item.land?.jimok || item.detail?.landCategory || '').replace(/\s/g, '');
+    const key = { 대: '대', 대지: '대', 전: '전', 답: '답', 임야: '임야', 잡종지: '잡종지', 과수원: '과수원', 공장용지: '공장용지', 도로: '도로' }[jm] || null;
+    const sameJ = key ? pool.filter((d) => String(d[10] || '').replace(/\s/g, '') === key) : [];
+    if (sameJ.length >= 3) { pool = sameJ; jimokNote = ` · 지목 ${key}만`; }
   }
   const sameDong = pool.filter((d) => item.emd && d[9] === item.emd);
   let scope = '같은 시군구';
@@ -114,7 +122,7 @@ export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
   const unit = median(pool.map((d) => d[0] / d[1])); const r = q(pool);
   return {
     type, area, unit, value: Math.round(unit * area), low: Math.round(r.p25 * area), high: Math.round(r.p75 * area), count: pool.length, grade: scope.startsWith('같은 동') ? 'C' : 'D',
-    basis: `${scope} 실거래 ${pool.length}건 ㎡당 중앙값 (해제${excludeDirect ? '·직거래' : ''} 제외)`,
+    basis: `${scope}${jimokNote} 실거래 ${pool.length}건 ㎡당 중앙값 (해제${excludeDirect ? '·직거래' : ''} 제외)`,
     samples: pool.slice(0, 12),
   };
 }
@@ -312,7 +320,7 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   const jeonse = jeonseEstimate(item, rentDeals);
   let val = null;
   if (!anomalies.length && !cashType && !rightType) {
-    val = valuation(item, { type: tradeTypeOf(item), market, marketValue: market.value ? value : null, jeonse, settings, stats: settings?.saleRates });
+    val = valuation(item, { type: tradeTypeOf(item), market, marketValue: market.value ? value : null, jeonse, settings, stats: settings?.saleRates, shareRatio: item.share ? (parseShare(item) || 0) : 1 });
     if (val.value) { value = val.value; valueBasis = val.summary; }
   }
   const full = value;
@@ -327,7 +335,9 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
     }
   }
   const costs = value ? costEstimate(item, value, settings) : null;
-  const cap = value ? Math.round(value * (1 - margin) - costs.total) : null;
+  // 취득세는 가치가 아니라 사는 가격(상한)에 붙는다 → 상한 = (가치 × (1 − 마진) − 명도 − 수리) ÷ (1 + 취득세율)
+  const cap = value ? Math.round((value * (1 - margin) - costs.eviction - costs.repair) / (1 + costs.taxRate)) : null;
+  if (costs && cap) { costs.tax = Math.round(Math.max(0, cap) * costs.taxRate); costs.total = costs.tax + costs.eviction + costs.repair; }
   const entry = special?.floorKnown ? special.floorEntry : cap ? rounds.find((r) => r.price <= cap) : null;
 
   let verdict = 'unknown';
