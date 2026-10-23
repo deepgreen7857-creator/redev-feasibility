@@ -38,7 +38,7 @@ export default function ListPage({ mode }) {
 
   const rows = useMemo(() => {
     if (!items || !settings) return [];
-    return dedupeRounds(items).map((it) => {
+    return (done ? items : dedupeRounds(items)).map((it) => { // 완료 물건은 회차마다 따로 채점
       const l = lawdOf(it.sido, it.sgg);
       const a = analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${l}`] });
       return { it, a };
@@ -287,6 +287,52 @@ function DoneSummary({ rows }) {
         </div>
         {judged > 0 && <div className="mt-1">일치율 <b>{pct((m.agreeBuy + m.agreePass) / judged)}</b> — 틀린 쪽 물건을 열어 왜 어긋났는지 보면 규칙을 고칠 곳이 보입니다.</div>}
       </div>
+      <ScoreBreakdown rows={rows} />
+    </div>
+  );
+}
+
+// 성적표: 규칙은 고정(판단 기준 2026-10-23판)한 채로, 종류·지역·개찰월별 적중률과 '낙찰가 ÷ 우리 판단 가치'
+function ScoreBreakdown({ rows }) {
+  const med = (xs) => { if (!xs.length) return null; const a = [...xs].sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
+  const group = (keyOf) => {
+    const g = {};
+    rows.forEach(({ it, a }) => {
+      const r = resultOf(it); if (!['sold', 'fail'].includes(r.kind)) return;
+      const k = keyOf(it); const cap = it.forecast ? it.forecast.cap : a.cap; const value = it.forecast ? it.forecast.value : a.value;
+      const x = (g[k] ||= { n: 0, hit: 0, judged: 0, sold: 0, ratio: [] });
+      x.n++; if (r.kind === 'sold') x.sold++;
+      if (cap && it.minBid) { x.judged++; const buy = cap >= it.minBid; if ((buy && r.kind === 'sold') || (!buy && r.kind === 'fail')) x.hit++; }
+      // 어이없는 낙찰(감정가의 150% 초과, 또는 우리 가치의 2배 초과·30% 미만)은 따로 세고 중앙값에서 뺀다
+      if (r.kind === 'sold' && r.price && value) {
+        const q = r.price / value;
+        if (q > 2 || q < 0.3 || (r.rate && r.rate > 1.5)) x.odd = (x.odd || 0) + 1; else x.ratio.push(q);
+      }
+    });
+    return Object.entries(g).sort((p, q) => q[1].n - p[1].n).slice(0, 12);
+  };
+  const Table = ({ title, data }) => (
+    <div>
+      <div className="mt-3 font-bold">{title}</div>
+      <table className="w-full text-xs">
+        <thead className="text-ink/50"><tr><th className="text-left">구분</th><th className="text-right">결과</th><th className="text-right">낙찰률</th><th className="text-right">채점</th><th className="text-right">적중률</th><th className="text-right">낙찰가÷우리 가치</th></tr></thead>
+        <tbody>{data.map(([k, v]) => {
+          const ratio = med(v.ratio);
+          return (<tr key={k} className="border-t border-line/50"><td>{k}</td><td className="text-right">{v.n}</td><td className="text-right">{pct(v.sold / v.n)}</td><td className="text-right">{v.judged}</td>
+            <td className={`text-right font-bold ${v.judged >= 10 ? (v.hit / v.judged >= 0.7 ? 'text-now' : v.hit / v.judged < 0.6 ? 'text-hard' : '') : 'text-ink/40'}`}>{v.judged ? pct(v.hit / v.judged) : '—'}</td>
+            <td className={`text-right ${ratio && (ratio < 0.85 || ratio > 1.15) ? 'font-bold text-wait' : ''}`}>{ratio ? `${Math.round(ratio * 100)}% (${v.ratio.length})` : '—'}{v.odd ? <span className="ml-1 text-ink/40">이상 {v.odd}</span> : null}</td></tr>);
+        })}</tbody>
+      </table>
+    </div>
+  );
+  const month = (it) => String(it.result?.openAt || it.bidEnd || '').replace(/\./g, '-').slice(0, 7) || '날짜 없음';
+  return (
+    <div className="mt-4 rounded-md border border-line p-2 text-sm">
+      <div className="font-extrabold">성적표 — 규칙 고정(판단 기준 2026-10-23판) 상태의 채점</div>
+      <p className="text-xs text-ink/60">규칙은 고치지 않고 성적부터 봅니다. 적중률은 10건 이상일 때만 색을 칠합니다(70%↑ 초록, 60%↓ 빨강). 낙찰가는 과열·실수·특수 사정으로 어이없게 나오는 경우가 많아, 평균이 아니라 <b>중앙값</b>을 쓰고 감정가 150% 초과·우리 가치의 2배 초과나 30% 미만 낙찰은 <b>"이상"으로 따로 세어 뺍니다</b>. <b>낙찰가÷우리 가치</b>가 100%보다 많이 낮으면 우리가 가치를 높게 본 것, 많이 높으면 낮게 본 것입니다(85~115% 밖은 노란색).</p>
+      <Table title="물건 종류별" data={group((it) => typeLabel(it))} />
+      <Table title="지역별" data={group((it) => `${it.sido || ''} ${it.sgg || ''}`.trim() || '지역 없음')} />
+      <Table title="개찰 월별" data={group(month).sort((p, q) => q[0].localeCompare(p[0]))} />
     </div>
   );
 }
