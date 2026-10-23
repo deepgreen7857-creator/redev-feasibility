@@ -49,7 +49,7 @@ firebase deploy --only functions
 처음 한 번 (미니PC):
 ```powershell
 cd C:\jbslab\court-collector
-npm run myauction-login          # 뜬 창에서 마이옥션 로그인 → 창 닫기 (로그인 상태가 state/myauction-profile 에 남음)
+npm run myauction-login          # 뜬 창에서 마이옥션 로그인 → 로그인되면 저장하고 창이 저절로 닫힘(state/myauction-cookies.json)
 npm run registry-test            # 2건만 받아 정리 결과를 state/registry-test.json 에 (서버에 안 보냄)
 powershell -ExecutionPolicy Bypass -File .\install-registry-task.ps1   # 매일 자동
 ```

@@ -86,6 +86,22 @@ async function loggedIn(page) {
   return page.locator('a:has-text("로그아웃")').first().isVisible({ timeout: 10e3 }).catch(() => false);
 }
 
+// 마이옥션 로그인 쿠키는 브라우저를 닫으면 사라지는 '세션 쿠키'라 프로필만으로는 안 남는다
+//  → 로그인된 쿠키를 파일로 저장해 두고, 돌 때마다 다시 넣는다(세션 쿠키는 30일 만료로 바꿔 넣음)
+const COOKIES = path.join(STATE, 'myauction-cookies.json');
+async function saveCookies(ctx) {
+  const list = (await ctx.cookies()).filter((c) => /my-auction|nuriauction/.test(c.domain));
+  if (list.length) fs.writeFileSync(COOKIES, JSON.stringify(list));
+  return list.length;
+}
+async function loadCookies(ctx) {
+  if (!fs.existsSync(COOKIES)) return 0;
+  const until = Math.floor(Date.now() / 1000) + 30 * 86400;
+  const list = JSON.parse(fs.readFileSync(COOKIES, 'utf8')).map((c) => (c.expires === -1 || !c.expires ? { ...c, expires: until } : c));
+  await ctx.addCookies(list).catch(() => {});
+  return list.length;
+}
+
 // 법원 이름 → 마이옥션 목록에 찍히는 이름(지원은 '부천지원'처럼 지원 이름만)
 const courtKey = (court) => String(court || '').trim().split(/\s+/).pop();
 
@@ -162,11 +178,19 @@ async function main() {
   try {
     if (LOGIN) {
       await page.goto(`${BASE}/main/main.php`);
-      log('마이옥션 창에서 로그인한 뒤 창을 닫으세요. (로그인 상태는 이 PC에 남습니다)');
-      await new Promise((r) => ctx.on('close', r));
+      log('마이옥션 창에서 로그인하세요("자동로그인"이 있으면 체크). 로그인되면 저장하고 창이 저절로 닫힙니다.');
+      let closed = false; ctx.on('close', () => { closed = true; });
+      for (let i = 0; i < 600 && !closed; i++) { // 최대 30분 기다림
+        await sleep(3000);
+        const ok = await page.evaluate(() => /로그아웃/.test(document.body?.innerText || '')).catch(() => false);
+        if (ok) { const n = await saveCookies(ctx); log(`로그인 확인 — 로그인 정보 ${n}개 저장. 이제 npm run registry-test 로 시험하세요.`); return; }
+      }
+      log(closed ? '로그인 전에 창이 닫혔습니다. 다시 npm run myauction-login 하세요.' : '30분 동안 로그인이 안 돼 끝냅니다.');
       return;
     }
+    await loadCookies(ctx);
     if (!(await loggedIn(page))) throw new NeedLogin('마이옥션 로그인이 풀려 있음 — 미니PC에서 npm run myauction-login 으로 한 번 로그인하세요');
+    await saveCookies(ctx); // 사이트가 쿠키를 새로 주면 그걸로 바꿔 둔다
 
     let targets;
     if (arg('--case')) targets = [{ id: `court_${String(arg('--court') || '').replace(/\s/g, '')}_${arg('--case')}_${arg('--item') || 1}`, court: arg('--court') || '', caseNo: arg('--case'), itemNo: arg('--item') || '1' }];
