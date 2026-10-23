@@ -8,7 +8,7 @@ import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
 import { premiumTable, predictPrice, isFirstRound, scoreErrors, evidenceGroup, EVIDENCE_LABEL, bidOutcome, soldOf } from '../lib/bidForecast.js';
 
 const SOURCES = [['all', '전체'], ['court', '법원경매'], ['public', '공매'], ['bankrupt', '파산자산']];
-const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '유찰 대기'], ['check', '권리 확인 후 판단'], ['suspect', '오류 의심'], ['special', '특수물건 전체'], ['hard', '가격 안 맞음'], ['unknown', '시세 부족']];
+const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '유찰 대기'], ['check', '권리 확인 후 판단'], ['suspect', '오류 의심·계산 이상'], ['shareUnknown', '지분비율 미확인'], ['special', '특수물건 전체'], ['hard', '가격 안 맞음'], ['unknown', '시세 부족']];
 
 export default function ListPage({ mode }) {
   const opp = mode === 'opportunity';
@@ -138,6 +138,7 @@ export default function ListPage({ mode }) {
           <Link key={it.id} to={`/item/${encodeURIComponent(it.id)}`} className="card block transition hover:border-brand/50 hover:shadow-sm">
             <div className="mb-2 flex flex-wrap items-center gap-1.5">
               <VerdictBadge verdict={a.verdict} />
+              {a.calcAnomaly && <Badge tone="hard">계산 이상</Badge>}
               {fitOf(it, a) && <Badge tone={{ A: 'now', B: 'wait', X: 'hard' }[fitOf(it, a)] || 'muted'}>법인 {fitOf(it, a)}</Badge>}
               {a.score && <Badge tone={a.score.grade === 'A' ? 'now' : a.score.grade === 'B' ? 'wait' : 'muted'}>{a.score.grade} · {a.score.total}점</Badge>}
               <Badge tone={it.category === 'bankrupt' ? 'cash' : 'muted'}>{SOURCE_LABEL[it.source === 'court' ? 'court' : it.category]}</Badge>
@@ -145,7 +146,10 @@ export default function ListPage({ mode }) {
               {a.cashType && <Badge tone="cash">현금청산형</Badge>}
               {a.member.status === 'member' && a.member.rank >= 3 && <Badge tone="now">입주권형</Badge>}
               {a.member.status === 'check' && <Badge tone="wait">분양자격 확인</Badge>}
-              {it.manual?.zone ? <Badge tone="brand">{it.manual.zone.stage || '정비구역'}</Badge> : a.redev.length > 0 && !a.cashType && <Badge tone="brand">정비구역</Badge>}
+              {it.manual?.zone ? <Badge tone="brand">{it.manual.zone.stage || '정비구역'}</Badge>
+                : it.redevMatch?.status === 'listed' ? <Badge tone="brand">{it.redevMatch.name} · {it.redevMatch.stage}</Badge>
+                  : it.redevMatch?.status === 'unlisted' ? <Badge tone="wait">정비구역(목록 미등록)</Badge>
+                    : a.redev.length > 0 && !a.cashType && <Badge tone="brand">정비구역</Badge>}
               {a.farm && <Badge tone="wait">농지</Badge>}
               {a.excluded && <Badge>관심 제외</Badge>}
               {it.otherRounds > 0 && <Badge>다른 회차 {it.otherRounds}건</Badge>}
@@ -158,6 +162,7 @@ export default function ListPage({ mode }) {
             </div>
             <div className="mt-0.5 truncate text-xs text-ink/60">{it.address}</div>
             {areaText(it) && <div className="text-xs text-ink/60">{areaText(it)}</div>}
+            {a.estimateBasis && <div className="text-xs text-wait">{a.estimateBasis}</div>}
             {a.money && !a.money.upside && (
               <div className="mt-3 grid grid-cols-4 gap-2 rounded-lg bg-paper p-2 text-sm">
                 <div><div className="text-xs text-ink/50">{a.special ? '최악일 때 수익' : a.money.owner === 'corp' ? '세후 수익' : '예상 수익'}</div><div className={`num font-bold ${a.money.profit < 0 ? 'text-hard' : 'text-now'}`}>{eok(a.money.profit)}</div></div>
@@ -196,6 +201,7 @@ export default function ListPage({ mode }) {
             </div>
             {a.reasons.length > 0 && <div className="mt-2 text-xs text-hard">{a.reasons.join(' · ')}</div>}
             {a.anomalies?.length > 0 && <div className="mt-2 rounded-md bg-hard/5 p-2 text-xs text-hard">{a.anomalies.join(' · ')}</div>}
+            {a.calcAnomaly && <div className="mt-2 rounded-md bg-hard/5 p-2 text-xs text-hard"><b>계산 이상</b> — {a.calcAnomaly.join(' · ')} (지금 매력·A등급에서 제외)</div>}
           </Link>
         ))}
       </div>

@@ -48,7 +48,7 @@ function toItem(row, detail) {
     caseNo: row.caseNo, itemNo: row.itemNo || '1', court: row.court, title: detail?.title || `${addr.split(' ').slice(1, 4).join(' ')} ${row.usage || ''}`.trim(),
     usage: detail?.usage || row.usage, address: addr, sido, sgg, emd, pnu: detail?.pnu,
     appraisal: row.appraisal, minBid: row.minBid, failCount: row.failCount, bidEnd: row.bidEnd, status: row.status || '진행',
-    landArea: detail?.landArea, buildingArea: detail?.buildingArea, share: detail?.share, bulk: detail?.bulk,
+    landArea: detail?.landArea, buildingArea: detail?.buildingArea, share: detail?.share, shareRatio: detail?.shareRatio, bulk: detail?.bulk,
     thumbnail: detail?.photos?.[0], url: 'https://www.courtauction.go.kr', detailVer: detail ? DETAIL_V : undefined,
     detail: detail ? {
       photos: detail.photos || [], location: detail.appraisalSummary, shareText: detail.shareText, conditions: detail.specialConditions, baseRightDate: detail.baseRightDate,

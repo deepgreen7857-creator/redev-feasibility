@@ -3,17 +3,25 @@
 // + 현금청산형(조합설립인가 전후 분양권 없는 물건), 농지(농취증), 관심 제외 표시
 
 import { TAX_DEFAULTS, propertyKind, flipTax, corpFit, acquisitionTax } from './tax.js';
-import { specialAnalysis, detectSpecial, parseShare } from './special.js';
+import { specialAnalysis, detectSpecial, shareInfo } from './special.js';
 import { valuation } from './valuation.js';
+import { stageInfo, rightsCheck } from './zoneMatch.js';
 
 export const VERDICT = {
   now: { label: '지금 매력', tone: 'now' },
   wait: { label: '유찰 대기', tone: 'wait' },
   check: { label: '권리 확인 후 판단', tone: 'cash' },
   suspect: { label: '오류 의심 — 원문 확인', tone: 'hard' },
+  shareUnknown: { label: '지분비율 미확인', tone: 'muted' },
   hard: { label: '가격 안 맞음', tone: 'hard' },
   unknown: { label: '시세 부족', tone: 'muted' },
 };
+
+// 분석기 버전 — 계산식을 바꿀 때마다 올리고 수정일·내용을 남긴다(예측 기록에 함께 저장)
+export const ANALYZER_VERSION = '2026-10-23c';
+export const ANALYZER_CHANGES = [
+  { version: '2026-10-23c', date: '2026-10-23', note: '지분비율 미반영 수정(비율 미확인이면 금액 계산 안 함) · 감정가 없는 물건 확실성 최대 C · 계산 이상(수익률 1,000% 초과·바닥가치 최저가 100배 초과) 경고 · 임야·농지 지분 공유자 매도 가능성 낮춤 · 정비구역 목록 연계·권리산정기준일 판정' },
+];
 
 export const SOURCE_LABEL = { court: '법원경매', public: '공매', bankrupt: '파산자산', onbid: '공매' };
 
@@ -199,20 +207,32 @@ export function isOverheated(item, settings) {
   return (settings?.overheated || []).some((r) => r.sido === item.sido && (r.sgg === '*' || (item.sgg && last(item.sgg) === last(r.sgg))));
 }
 
+// 관리자 정비구역 목록에 연결된 구역(해제 제외) — 서버가 매일 물건에 붙인다(listing.redevMatch)
+export function listedZone(item) {
+  const z = item.redevMatch;
+  return z?.status === 'listed' && z.stage !== '해제' ? z : null;
+}
+
 export function projectKind(item) {
-  const t = `${item.manual?.zone?.type || ''} ${item.manual?.projectType || ''} ${item.manual?.zone?.kind || ''}`;
+  const t = `${item.manual?.zone?.type || ''} ${item.manual?.projectType || ''} ${item.manual?.zone?.kind || ''} ${listedZone(item)?.type || ''}`;
   if (/재건축|가로주택|소규모|자율주택/.test(t)) return 'rebuild'; // 소규모주택정비도 조합설립인가 후 기준으로 본다
   if (/재개발|촉진|도시환경|주거환경/.test(t)) return 'redevelop';
   return null;
 }
 
 export function membership(item, settings) {
-  const stage = item.manual?.zone?.stage || item.manual?.redevStage || null;
+  const lz = listedZone(item);
+  const lzStage = lz ? stageInfo(lz.stage) : null;
+  const stage = item.manual?.zone?.stage || item.manual?.redevStage || (lzStage ? lzStage.legacy : null);
   if (!stage) return { status: 'none' };
-  const rank = STAGE_RANK[stage] ?? (/관리처분/.test(stage) ? 5 : /사업시행/.test(stage) ? 4 : /조합설립인가 후/.test(stage) ? 3 : 1);
+  const rank = lzStage && stage === lzStage.legacy ? lzStage.rank : STAGE_RANK[stage] ?? (/관리처분/.test(stage) ? 5 : /사업시행/.test(stage) ? 4 : /조합설립인가 후/.test(stage) ? 3 : 1);
   const overheated = isOverheated(item, settings);
   const kind = projectKind(item);
   if (item.manual?.cashOut === true) return { status: 'cash', stage, rank, overheated, kind, reason: '직접 표시: 현금청산' };
+  // 권리산정기준일(도시정비법 제77조①) — 기준일 다음 날 이후 분할·집합건물 전환·분리 소유·신축이면 분양권 제한
+  const r77 = lz ? rightsCheck(item, lz) : null; // 관리자가 서류로 확인한 값(manual.rights77)이 바로 반영되게 매번 다시 판정
+  if (r77?.status === 'restricted') return { status: 'cash', stage, rank, overheated, kind, rights: r77, reason: `${r77.text} (${r77.law})` };
+  if (r77?.status === 'risk') return { status: 'check', stage, rank, overheated, kind, rights: r77, reason: `${r77.text} (${r77.law})` };
   if (!overheated) return { status: 'member', stage, rank, overheated, kind, reason: '투기과열지구가 아니어서 조합원 지위 양도 제한(제39조②) 없음 — 권리산정기준일·다물권은 따로 확인' };
   if (!kind) return { status: 'check', stage, rank, overheated, kind, reason: '투기과열지구 — 재개발/재건축 구분이 없어 판정 보류' };
   const limitRank = kind === 'rebuild' ? 3 : 5;
@@ -293,8 +313,11 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   const right = member.status === 'member' && member.rank >= 3 ? rightValue(item, aptDeals) : null;
   const rightType = Boolean(right && right.value);
 
+  const sh = shareInfo(item);
+  const shareUnknown = sh.share && !sh.ratio && !cashType && !rightType;
   let value = market.value;
   let valueBasis = market.basis;
+  let fromAppraisal = false;
   if (cashType) {
     value = Math.round((item.appraisal || 0) * (settings?.settlementRatio ?? 0.9));
     valueBasis = `현금청산형: 감정가 × ${Math.round((settings?.settlementRatio ?? 0.9) * 100)}% (예상 청산금)`;
@@ -311,12 +334,16 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   if (!value && item.appraisal && !cashType && !rightType && detectSpecial(item).length) {
     value = item.appraisal;
     valueBasis = '거래 사례·공시지가 없음 → 감정가 기준';
+    fromAppraisal = true; // 지분 물건의 감정가는 이미 지분 값
   }
-  // 지분 물건: 시세는 집 전체 값이므로 지분 비율을 곱한다. 비율을 못 읽었고 감정가보다 훨씬 크면 감정가를 기준으로
-  if (item.share && value && !cashType && !rightType) {
-    const sr = parseShare(item);
-    if (sr) { value = Math.round(value * sr); valueBasis += ` × 지분 ${Math.round(sr * 1000) / 10}%`; }
-    else if (item.appraisal && value > item.appraisal * 1.5) { value = item.appraisal; valueBasis = '지분 물건(비율 미확인) — 감정가 기준'; }
+  // 지분 물건: 시세·공시지가는 필지(집) 전체 값 → 전체 가치 × 지분비율.
+  // 지분비율을 원본에서 못 읽으면 금액을 계산하지 않는다('지분비율 미확인', 매력 판정 제외)
+  if (shareUnknown) {
+    value = null;
+    valueBasis = '지분비율 미확인 — 원본(공고·등기)에서 지분(분자/분모)을 읽지 못해 금액을 계산하지 않음';
+  } else if (sh.share && value && !cashType && !rightType && !fromAppraisal) {
+    const f = sh.areaIsShare ? 1 : sh.ratio;
+    if (f !== 1) { value = Math.round(value * f); valueBasis += ` × 지분 ${sh.num}/${sh.den}`; } else valueBasis += ' (수집 면적이 이미 지분 면적)';
   }
   // ── 오류 의심 걸러내기: 원본(감정가·공시가격)과 크게 어긋나면 계산을 믿지 않는다 ──
   const anomalies = [];
@@ -334,13 +361,13 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
     if (r < 0.5) anomalies.push(`시세로 계산한 가치(${eok(value)})가 감정가(${eok(item.appraisal)})의 절반 미만 — 자료 확인 필요`);
   }
   const hp = item.housePrice?.matched ? item.housePrice.price : null;
-  if (hp && item.appraisal && item.appraisal < hp * 0.6 && !item.share) anomalies.push(`감정가(${eok(item.appraisal)})가 공시가격(${eok(hp)})보다 훨씬 낮음 — 지분 매각 의심`);
+  if (hp && item.appraisal && item.appraisal < hp * 0.6 && !sh.share) anomalies.push(`감정가(${eok(item.appraisal)})가 공시가격(${eok(hp)})보다 훨씬 낮음 — 지분 매각 의심`);
   if (anomalies.length) { value = null; valueBasis = '오류 의심으로 계산 보류'; }
   // 가치 검토: 실거래·감정가·공시가격·전세를 맞대어 범위와 판단용 가치(검토 과정은 화면에 그대로)
   const jeonse = jeonseEstimate(item, rentDeals);
   let val = null;
-  if (!anomalies.length && !cashType && !rightType) {
-    val = valuation(item, { type: tradeTypeOf(item), market, marketValue: market.value ? value : null, jeonse, settings, stats: settings?.saleRates, shareRatio: item.share ? (parseShare(item) || 0) : 1 });
+  if (!anomalies.length && !cashType && !rightType && !shareUnknown) {
+    val = valuation(item, { type: tradeTypeOf(item), market, marketValue: market.value ? value : null, jeonse, settings, stats: settings?.saleRates, shareRatio: sh.share ? sh.ratio : 1, landShare: sh.share ? (sh.areaIsShare ? 1 : sh.ratio) : 1 });
     if (val.value) { value = val.value; valueBasis = val.summary; }
   }
   const full = value;
@@ -363,6 +390,7 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   let verdict = 'unknown';
   if (reasons.length) verdict = 'hard';
   else if (anomalies.length) verdict = 'suspect';
+  else if (shareUnknown) verdict = 'shareUnknown';
   else if (special && !special.floorKnown) verdict = full ? 'check' : 'unknown';
   // 특수물건: 마진을 따로 두지 않고 '바닥 가치 이하로 살 수 있느냐'로 판정(수익은 상승 시나리오에서)
   else if (special) verdict = !special.floorEntry ? 'hard' : special.floorEntry.step === 0 ? 'now' : 'wait';
@@ -376,6 +404,15 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   if (member.status === 'check') warnings.push(`분양자격 확인 필요: ${member.reason}`);
   if (member.status === 'member' && /임박/.test(member.reason || '')) warnings.push(member.reason);
   if (member.status === 'member' && member.rank >= 3 && !rightType) warnings.push('입주권형 — 구역의 비례율·조합원분양가를 넣으면 입주권 가치로 계산합니다');
+  const lz = listedZone(item);
+  if (lz) {
+    const r77 = rightsCheck(item, lz);
+    if (['pending', 'noHit'].includes(r77.status)) warnings.push(r77.text);
+    if (lz.recheck) warnings.push(`정비구역 목록 '${lz.name}' 확인일이 90일 지남 — 추진현황 재확인 필요`);
+    if (lz.permitZone?.yes) warnings.push(`토지거래허가구역${lz.permitZone.from || lz.permitZone.to ? `(${lz.permitZone.from || ''}~${lz.permitZone.to || ''})` : ''} — 경매는 허가 예외(국토계획법 시행령 제121조), 공매·일반 매매는 허가 대상인지 확인`);
+    if (lz.actRestriction?.yes) warnings.push('행위제한 고시 구역 — 신축·분할 등 제한');
+  }
+  if (item.redevMatch?.status === 'unlisted') warnings.push(`브이월드 토지이용계획에 정비구역(${item.redevMatch.vworld.join(', ')}) — 관리자 정비구역 목록에 아직 없음`);
   if (member.status !== 'none') warnings.push('권리산정기준일 이후 신축·지분분할 물건이거나 한 세대가 여러 채를 가지면 분양자격이 달라질 수 있음');
   if (uaDiff !== null && uaDiff > 0.1 && uaDiff <= 0.3) warnings.push(`건축물대장 전유면적 ${item.ledger.unit.exclusiveArea}㎡ ≠ 읽어 온 면적 ${item.buildingArea}㎡`);
   if (item.ledger?.age >= 30) warnings.push(`사용승인 ${item.ledger.age}년 경과(${item.ledger.useApr}) — 노후, 수리비·누수 확인`);
@@ -393,7 +430,7 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
 
   const result = {
     verdict, market, jeonse, valuation: val, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special, anomalies,
-    farm, redev, cashType, rightType, right, member, stage, excluded: isExcluded(item, settings),
+    farm, redev, cashType, rightType, right, member, stage, excluded: isExcluded(item, settings), share: sh, shareUnknown,
     ratio: item.appraisal && item.minBid ? item.minBid / item.appraisal : null,
   };
   result.score = anomalies.length ? null : special ? special.score : scoreOf(item, result);
@@ -401,6 +438,10 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   // 특수물건의 '지금 매력'은 최악(바닥 가치에 팔 때)에도 세금·비용 빼고 남을 때만
   if (special && result.verdict === 'now' && !(result.money?.profit > 0)) result.verdict = 'check';
   result.certainty = anomalies.length ? null : special ? specialCertainty(special) : certaintyOf(result.score);
+  // 감정가가 없는 물건(파산재산 등): 확실성 최대 C, 대체 추정 근거를 카드에 보인다
+  result.noAppraisal = !item.appraisal;
+  if (result.noAppraisal && result.certainty) result.certainty = { ...capGrade(result.certainty, 'C'), note: '감정가 없음 — 최대 C' };
+  result.estimateBasis = result.noAppraisal && full ? estimateBasisOf(item, { market, val, value: full, valueBasis }) : null;
   // 상승 시나리오가 성공했을 때의 돈 계산(지금 최저가로 샀다고 보고, 시나리오 기간만큼 보유)
   if (special?.best?.value && item.minBid) {
     result.upMoney = moneyOf(item, { ...result, value: special.best.value, verdict: 'now', costs: costEstimate(item, special.best.value, settings) }, { ...settings, holdMonths: special.best.months || 12 });
@@ -452,7 +493,53 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   }
   result.opportunity = opp.length ? opp.sort((x, y) => y.profit - x.profit)[0] : null;
   result.opportunities = opp;
+
+  // 상식 검사: 이런 숫자는 계산이 틀렸을 가능성이 크다 → '계산 이상', 지금 매력·A등급·기회에서 뺀다
+  const odd = sanityOf(item, result);
+  if (odd.length) {
+    result.calcAnomaly = odd;
+    result.verdict = 'suspect';
+    if (result.score) result.score = capGrade(result.score, 'B');
+    if (result.certainty) result.certainty = capGrade(result.certainty, 'B');
+    result.opportunity = null; result.opportunities = [];
+  }
   return result;
+}
+
+// 등급 상한: A → B 처럼 grade 만 낮춘다(점수는 그대로 보여 줌)
+const GRADE_ORDER = ['A', 'B', 'C'];
+function capGrade(x, max) {
+  if (!x?.grade || GRADE_ORDER.indexOf(x.grade) >= GRADE_ORDER.indexOf(max)) return x;
+  return { ...x, grade: max, capped: true };
+}
+
+export const SANITY = { maxRoi: 10, maxValueToBid: 100 }; // 수익률 1,000%, 가치/최저가 100배
+
+export function sanityOf(item, a) {
+  const out = [];
+  const bid = item.minBid || a.entry?.price;
+  const rois = [['수익률', a.money?.roi], ['상승 시 수익률', a.upMoney?.roi], ['올수리 수익률', a.renoMoney?.roi], ...(a.opportunities || []).map((o) => [`기회(${o.kind}) 수익률`, o.roi])];
+  const badRoi = rois.find(([, r]) => r !== null && r !== undefined && r > SANITY.maxRoi);
+  if (badRoi) out.push(`${badRoi[0]} ${Math.round(badRoi[1] * 100).toLocaleString('ko-KR')}% — ${SANITY.maxRoi * 100}% 초과`);
+  if (bid) {
+    const vals = [['바닥가치', a.special?.floorKnown ? a.special.floor : null], ['판단 가치', a.value], ['하자 없을 때 가치', a.full], ['기대 가치', a.special?.expected]];
+    const big = vals.find(([, v]) => v && v > bid * SANITY.maxValueToBid);
+    if (big) out.push(`${big[0]} ${eok(big[1])}이 최저가 ${eok(bid)}의 ${Math.round(big[1] / bid).toLocaleString('ko-KR')}배 — ${SANITY.maxValueToBid}배 초과`);
+  }
+  return out;
+}
+
+// 감정가 없는 물건: 가치를 무엇으로 추정했는지 한 줄로
+function estimateBasisOf(item, { market, val, valueBasis }) {
+  const parts = [];
+  const used = (k) => val?.anchors?.some((x) => x.key === k && x.used && x.value);
+  if (used('official') && item.land?.officialPrice && tradeTypeOf(item) === 'land') parts.push(`공시지가 ${item.land.officialPrice.toLocaleString('ko-KR')}원/㎡`);
+  else if (used('official') && item.housePrice?.price) parts.push(`주택 공시가격 ${eok(item.housePrice.price)}`);
+  if ((used('trade') || (!val && market?.value)) && market?.unit) parts.push(`실거래 ㎡당 ${Math.round(market.unit).toLocaleString('ko-KR')}원(${market.count}건)`);
+  if (used('jeonse')) parts.push('전세 환산');
+  if (used('asking')) parts.push('직접 확인한 호가');
+  if (!parts.length && /공시지가/.test(valueBasis || '') && item.land?.officialPrice) parts.push(`공시지가 ${item.land.officialPrice.toLocaleString('ko-KR')}원/㎡`);
+  return parts.length ? `추정 근거: ${parts.join(' · ')} (감정가 없음)` : `추정 근거: ${valueBasis || '—'} (감정가 없음)`;
 }
 
 // 돈 계산: 들어갈 가격(지금 최저가 또는 진입 회차 가격)으로 샀을 때
@@ -548,8 +635,17 @@ export function typeLabel(item) {
   return { apt: '아파트', rh: '다세대·연립', sh: '단독·다가구', offi: '오피스텔', land: '토지' }[t] || '기타';
 }
 
+const m2 = (v) => `${(Math.round(v * 100) / 100).toLocaleString('ko-KR')}㎡`;
 export function areaText(item) {
+  const sh = shareInfo(item);
   const b = item.buildingArea ? `건물 ${Math.round(item.buildingArea * 10) / 10}㎡(${Math.round(item.buildingArea / 3.3058)}평)` : '';
-  const l = item.landArea ? `토지 ${Math.round(item.landArea * 10) / 10}㎡(${Math.round(item.landArea / 3.3058)}평)` : '';
+  let l = item.landArea ? `토지 ${Math.round(item.landArea * 10) / 10}㎡(${Math.round(item.landArea / 3.3058)}평)` : '';
+  // 지분 물건: '전체 ○㎡ 중 지분 ○㎡(○/○)'
+  if (sh.share) {
+    const kind = sh.isLand || !item.buildingArea ? '토지' : '건물';
+    const shareText = !sh.ratio ? `${kind} ${m2(sh.area || item.landArea || item.buildingArea || 0)} · 지분비율 미확인`
+      : sh.totalArea ? `${kind} 전체 ${m2(sh.totalArea)} 중 지분 ${m2(sh.shareArea)}(${sh.num}/${sh.den})` : `${kind} 지분 ${sh.num}/${sh.den}(면적 미상)`;
+    return kind === '토지' ? [b, shareText].filter(Boolean).join(' · ') : [shareText, l].filter(Boolean).join(' · ');
+  }
   return [b, l].filter(Boolean).join(' · ');
 }

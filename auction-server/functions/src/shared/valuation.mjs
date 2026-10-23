@@ -25,7 +25,8 @@ function monthsSince(ymd) {
   return (now.getFullYear() - y) * 12 + (now.getMonth() + 1 - m);
 }
 
-export function valuation(item, { type, market, marketValue, jeonse, settings, stats, shareRatio = 1 } = {}) {
+// shareRatio: 지분비율(집 전체 값에 곱함) · landShare: 토지면적에 곱할 비율(수집 면적이 이미 지분 면적이면 1)
+export function valuation(item, { type, market, marketValue, jeonse, settings, stats, shareRatio = 1, landShare = shareRatio } = {}) {
   const cfg = { ...VALUATION_DEFAULTS, ...(settings?.valuation || {}) };
   const anchors = [];
   const add = (a) => anchors.push({ used: true, ...a });
@@ -55,8 +56,8 @@ export function valuation(item, { type, market, marketValue, jeonse, settings, s
     add({ key: 'official', label: '공시가격 환산', value: Math.round((hp.price / r) * shareRatio), basis: `${hp.kind} 공시가격 ${eok(hp.price)}(${hp.year}) ÷ 현실화율 ${Math.round(r * 1000) / 10}%${shareText} (추정)` });
   } else if (type === 'land' && item.land?.officialPrice && item.landArea) {
     const r = cfg.realization.land;
-    const v = item.land.officialPrice * item.landArea;
-    add({ key: 'official', label: '공시지가 환산', value: Math.round(v / r), basis: `개별공시지가 ${item.land.officialPrice.toLocaleString('ko-KR')}원/㎡ × ${Math.round(item.landArea)}㎡ = ${eok(v)} ÷ 현실화율 ${Math.round(r * 1000) / 10}% (추정)` });
+    const v = item.land.officialPrice * item.landArea * landShare;
+    add({ key: 'official', label: '공시지가 환산', value: Math.round(v / r), basis: `개별공시지가 ${item.land.officialPrice.toLocaleString('ko-KR')}원/㎡ × ${Math.round(item.landArea)}㎡${landShare !== 1 ? ` × 지분 ${Math.round(landShare * 10000) / 100}%` : ''} = ${eok(v)} ÷ 현실화율 ${Math.round(r * 1000) / 10}% (추정)` });
   }
 
   // ④ 전세 환산

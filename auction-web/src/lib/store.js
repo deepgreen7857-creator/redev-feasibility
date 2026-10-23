@@ -172,20 +172,57 @@ export async function signIn() {
 export async function signOut() { const f = await firebase(); if (!f) { mem.user = null; userListeners.forEach((cb) => cb(null)); return; } await f.au.signOut(f.auth); }
 export const isAdmin = (u) => Boolean(u && (u.demo || ADMINS.includes(String(u.email).toLowerCase())));
 
-// 정비사업 현황(분기 엑셀) — 시도마다 문서 1개
+// 정비사업 현황(분기 엑셀, 참고 자료) — 시도마다 문서 1개(redevZoneFiles)
 const demoZones = {};
 export async function saveZones(sido, payload) {
   const f = await firebase();
   const doc = { sido, quarter: payload.quarter || null, fileName: payload.fileName || null, count: payload.zones.length, uploadedAt: new Date().toISOString(), z: JSON.stringify(payload.zones) };
   if (!f) { demoZones[sido] = doc; return; }
-  await f.fs.setDoc(f.fs.doc(f.db, 'redevZones', sido), doc);
+  await f.fs.setDoc(f.fs.doc(f.db, 'redevZoneFiles', sido), doc);
 }
 export async function getZones(sido) {
   if (!sido) return { zones: [] };
   const f = await firebase();
   let doc;
   if (!f) doc = demoZones[sido] || (await import('../data/sampleZones.js')).SAMPLE_ZONES[sido];
-  else { const s = await f.fs.getDoc(f.fs.doc(f.db, 'redevZones', sido)); doc = s.exists() ? s.data() : null; }
+  else { const s = await f.fs.getDoc(f.fs.doc(f.db, 'redevZoneFiles', sido)); doc = s.exists() ? s.data() : null; }
   if (!doc) return { zones: [] };
   try { return { ...doc, zones: doc.zones || JSON.parse(doc.z || '[]') }; } catch { return { ...doc, zones: [] }; }
+}
+
+// ── 정비구역 목록(관리자 전용 redevZones) — 추진현황 페이지·공보로 사람이 확인한 구역 ──
+const demoList = new Map();
+export async function listRedevZones() {
+  const f = await firebase();
+  if (!f) return [...demoList.values()];
+  const snap = await f.fs.getDocs(f.fs.collection(f.db, 'redevZones'));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+export async function saveRedevZone(zone) {
+  const f = await firebase();
+  const { id, ...rest } = zone;
+  const doc = { ...rest, updatedAt: new Date().toISOString() };
+  if (!f) { const k = id || `demo_${Date.now()}`; demoList.set(k, { id: k, ...doc }); return k; }
+  if (id) { await f.fs.setDoc(f.fs.doc(f.db, 'redevZones', id), doc); return id; }
+  const ref = await f.fs.addDoc(f.fs.collection(f.db, 'redevZones'), { ...doc, createdAt: doc.updatedAt });
+  return ref.id;
+}
+export async function deleteRedevZone(id) {
+  const f = await firebase();
+  if (!f) { demoList.delete(id); return; }
+  await f.fs.deleteDoc(f.fs.doc(f.db, 'redevZones', id));
+}
+
+// 관리자 알림: 목록 미등록 정비구역(zoneUnlisted)·계산 이상(calcAnomaly)
+export async function listAlerts() {
+  const f = await firebase();
+  if (!f) return [];
+  const { collection, query, where, getDocs } = f.fs;
+  const snap = await getDocs(query(collection(f.db, 'adminAlerts'), where('resolved', '==', false)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+export async function resolveAlert(id) {
+  const f = await firebase();
+  if (!f) return;
+  await f.fs.setDoc(f.fs.doc(f.db, 'adminAlerts', id), { resolved: true, resolvedAt: new Date().toISOString(), resolvedBy: 'admin' }, { merge: true });
 }

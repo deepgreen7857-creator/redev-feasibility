@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getListing, getSettings, getDeals, callFn, saveListing, getZones } from '../lib/store.js';
 import { zonesForListing, stageForAnalysis } from '../lib/redevZones.js';
-import { analyze, tradeTypeOf, courtRate, eok, won, pct, SOURCE_LABEL, typeLabel } from '../lib/analyze.js';
+import { ZONE_STATUS_LABEL, ART77, rightsCheck } from '../lib/zoneMatch.js';
+import { analyze, tradeTypeOf, courtRate, eok, won, pct, SOURCE_LABEL, typeLabel, areaText } from '../lib/analyze.js';
+import { shareInfo } from '../lib/special.js';
 import { lawdOf } from '../data/defaults.js';
 import { Badge, VerdictBadge, Card, Row, Field, Empty } from '../components/ui.jsx';
 
@@ -94,6 +96,7 @@ export default function DetailPage({ admin }) {
       <Card>
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
           <VerdictBadge verdict={a.verdict} />
+          {a.calcAnomaly && <Badge tone="hard">계산 이상</Badge>}
           <Badge tone={item.category === 'bankrupt' ? 'cash' : 'muted'}>{SOURCE_LABEL[item.source === 'court' ? 'court' : item.category]}</Badge>
           {item.propertyTypeName && <Badge>{item.propertyTypeName}</Badge>}
           {a.cashType && <Badge tone="cash">현금청산형</Badge>}
@@ -123,7 +126,7 @@ export default function DetailPage({ admin }) {
               <>
                 <Check state={st(f?.survivingRights, !!d)} label="말소되지 않는 권리(인수)" note={d?.survivingRights} />
                 <Check state={st(f?.superficies, !!d)} label="법정지상권" note={d?.superficies} />
-                <Check state={st(item.share, item.share !== undefined || !!d)} label="지분 물건" note={d?.shareText} />
+                <Check state={st(a.share.share, item.share !== undefined || !!d)} label="지분 물건" note={a.share.share ? (a.share.ratio ? `지분 ${a.share.num}/${a.share.den} (${a.share.how}, ${a.share.source})${a.share.coOwners ? ` · 공유자 ${a.share.coOwners}명` : ''}` : `지분비율 미확인 — 금액 계산 안 함${d?.shareText ? ` · ${d.shareText}` : ''}`) : d?.shareText} />
                 <Check state={st(f?.unclaimedTenants > 0, !!d)} label={`임차인 ${f?.tenants ?? '?'}명${f?.tenantsUnknown ? ` (+ 조사 안 됨 ${f.tenantsUnknown})` : ''}`} note={f?.unclaimedTenants ? `배분요구 안 함 ${f.unclaimedTenants}명` : d?.distributionDeadline ? `배분요구 종기 ${fmtYmd(d.distributionDeadline)}` : null} />
                 <Check state={st(f?.qualification, !!d)} label="매수인 자격 제한" note={d?.buyerQualification} />
               </>
@@ -138,6 +141,7 @@ export default function DetailPage({ admin }) {
               <li>현장: 실제 점유자, 건물 상태{item.source === 'court' ? ', 매각물건명세서·현황조사서·감정평가서' : ', 온비드 공고문·감정평가서'}</li>
             </ul>
           </div>
+          {admin && a.share.share && <ShareForm item={item} onSave={updateManual} />}
           {!d && <p className="mt-2 text-xs text-ink/50">{item.source === 'court' ? '법원경매는 자동 권리 정보가 없습니다. 위 항목은 모두 "확인 안 됨"입니다.' : '상세(권리) 정보 수집 대기 중입니다.'}</p>}
           <label className="mt-3 flex items-center gap-2 text-sm">
             <input type="checkbox" disabled={!admin} checked={Boolean(item.manual?.hard)} onChange={(e) => updateManual({ hard: e.target.checked })} />
@@ -205,8 +209,9 @@ export default function DetailPage({ admin }) {
             ) : <Empty>{item.pnu ? '아직 조회 전입니다(상세 수집 때 함께 조회).' : '필지번호(PNU)가 없습니다 — 상세 수집 때 주소로 찾아 조회합니다.'}</Empty>}
           </div>
           <div>
-            <div className="rounded-lg bg-paper p-3">
-              <div className="mb-1 text-sm font-bold">정비사업 현황(분기 엑셀)에서 같은 동 구역</div>
+            <ZoneMatchBox item={item} admin={admin} onSave={updateManual} />
+            <div className="mt-3 rounded-lg bg-paper p-3">
+              <div className="mb-1 text-sm font-bold">정비사업 현황 엑셀(참고)에서 같은 동 구역</div>
               {item.manual?.zone ? (
                 <div className="text-sm">
                   <div><Badge tone="brand">연결됨</Badge> {item.manual.zone.name} · <b>{item.manual.zone.stage || '단계 미상'}</b></div>
@@ -257,6 +262,7 @@ export default function DetailPage({ admin }) {
         {a.member.status === 'member' && a.member.rank >= 3 && <RightCalc item={item} a={a} admin={admin} onSave={(econ) => updateManual({ econ })} silvDeals={silvDeals} zoneName={item.manual?.zone?.name} />}
       </Card>
 
+      {(item.forecast || item.forecastRevised) && <ForecastCard item={item} />}
       {a.special && <SpecialCard item={item} a={a} admin={admin} onSave={updateManual} onNeighbors={checkNeighbors} busy={busy === 'nb'} />}
 
       {a.renovation && <RenoCard a={a} />}
@@ -306,6 +312,8 @@ export default function DetailPage({ admin }) {
           )}
           <p className="mt-2 text-xs text-ink/50">{a.valueBasis}</p>
           {a.reasons.length > 0 && <div className="mt-3 rounded-md bg-hard/5 p-2 text-sm text-hard">제외 이유: {a.reasons.join(', ')}</div>}
+          {a.estimateBasis && <p className="mt-1 text-xs text-wait">{a.estimateBasis} — 확실성 최대 C</p>}
+          {a.calcAnomaly && <div className="mt-3 rounded-md bg-hard/5 p-2 text-sm text-hard"><b>계산 이상 — 지금 매력·A등급에서 제외.</b> {a.calcAnomaly.join(' · ')} 지분비율·면적·단가를 원문과 대조하세요.</div>}
           {a.anomalies?.length > 0 && <div className="mt-3 rounded-md bg-hard/5 p-2 text-sm text-hard"><b>오류 의심 — 계산 보류.</b> {a.anomalies.join(' · ')} 법원 원문(매각물건명세서·감정평가서)을 확인하세요.</div>}
           {a.warnings.length > 0 && <ul className="mt-3 space-y-1 text-sm text-wait">{a.warnings.map((w) => <li key={w}>• {w}</li>)}</ul>}
         </Card>
@@ -432,6 +440,7 @@ function BasicSection({ item, d, dv, waitText }) {
           <Row k="지목" v={jimokOf(item, d) || dv(null)} />
           <Row k="용도" v={item.usage || '—'} />
           <Row k="토지 면적" v={sqm(item.landArea) || dv(null)} />
+          {shareInfo(item).share && <Row k="지분" v={areaText(item)} />}
           <Row k="건물 면적" v={sqm(item.buildingArea) || (item.landArea ? '— (토지만)' : dv(null))} />
           <Row k="감정가" v={`${won(item.appraisal)}${d?.appraisalDate ? ` (${fmtYmd(d.appraisalDate)} 감정)` : ''}`} />
           <Row k="최저가" v={item.minBidText && !item.minBid ? item.minBidText : `${won(item.minBid)}${item.appraisal && item.minBid ? ` (${Math.round((item.minBid / item.appraisal) * 100)}%)` : ''}`} strong />
@@ -671,6 +680,89 @@ function BuildingCard({ item }) {
         </div>
       )}
       {pm?.error && <p className="text-xs text-hard">건축 허가 조회 실패: {pm.error}</p>}
+    </Card>
+  );
+}
+
+// 관리자: 지분비율·공유자 수를 원문(공고·등기부)에서 확인해 넣기 — 원본에서 자동으로 못 읽은 경우
+function ShareForm({ item, onSave }) {
+  const ms = item.manual?.share || {};
+  const [v, setV] = useState({ num: ms.num || '', den: ms.den || '', coOwners: ms.coOwners || '', note: ms.note || '' });
+  const save = () => onSave({ share: { num: Number(v.num) || null, den: Number(v.den) || null, coOwners: Number(v.coOwners) || null, note: v.note || null, at: new Date().toISOString() } });
+  return (
+    <div className="mt-3 rounded-md border border-line p-2 text-xs">
+      <div className="mb-1 font-bold">지분비율(원문 확인 후 입력)</div>
+      <div className="grid grid-cols-[1fr_auto_1fr_1fr] items-center gap-1.5">
+        <input className="input py-1" placeholder="분자" value={v.num} onChange={(e) => setV({ ...v, num: e.target.value })} />
+        <span>/</span>
+        <input className="input py-1" placeholder="분모" value={v.den} onChange={(e) => setV({ ...v, den: e.target.value })} />
+        <input className="input py-1" placeholder="등기상 공유자 수" value={v.coOwners} onChange={(e) => setV({ ...v, coOwners: e.target.value })} />
+      </div>
+      <input className="input mt-1.5 py-1" placeholder="근거(예: 등기부 갑구 3번, 공고문 2쪽)" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} />
+      <div className="mt-1.5 flex gap-2"><button className="btn-ghost py-1 text-xs" onClick={save}>저장</button><button className="text-hard underline" onClick={() => onSave({ share: { ...ms, notShare: !ms.notShare } })}>{ms.notShare ? '지분 물건으로 되돌리기' : '지분 매각 아님(대지지분 등 오인)'}</button></div>
+    </div>
+  );
+}
+
+// 정비구역 목록 연계 결과(서버가 매일 붙임) + 권리산정기준일(도시정비법 제77조①) 판정
+function ZoneMatchBox({ item, admin, onSave }) {
+  const m = item.redevMatch;
+  const r = m?.status === 'listed' ? rightsCheck(item, m) : null;
+  const m77 = item.manual?.rights77 || {};
+  const tone = { listed: 'brand', unlisted: 'wait', none: 'muted', unchecked: 'muted' }[m?.status] || 'muted';
+  const setFlag = (k, v) => onSave({ rights77: { ...m77, [k]: v } });
+  const FLAG = [['split', 1], ['toCollective', 2], ['separated', 3], ['newBuild', 4]];
+  return (
+    <div className="rounded-lg border border-brand/20 p-3 text-sm">
+      <div className="mb-1 flex flex-wrap items-center gap-1.5 font-bold">정비구역 목록 연계 <Badge tone={tone}>{m ? ZONE_STATUS_LABEL[m.status] : '연결 전(새벽 수집 때)'}</Badge></div>
+      {m?.status === 'listed' && (
+        <>
+          <div><b>{m.name}</b> · {m.type || '유형 미상'} · 단계 <b>{m.stage}</b> <span className="text-xs text-ink/50">({m.by} 일치)</span></div>
+          <div className="mt-0.5 text-xs text-ink/60">
+            확인일 {m.confirmedAt || '—'}{m.recheck && <Badge tone="wait" className="ml-1">재확인 필요</Badge>}
+            {m.permitZone?.yes ? ` · 토지거래허가구역 ${m.permitZone.from || ''}~${m.permitZone.to || ''}` : ''}{m.actRestriction?.yes ? ' · 행위제한 고시' : ''}
+          </div>
+          {m.sourceUrls?.length > 0 && <div className="mt-0.5 text-xs">{m.sourceUrls.map((u, i) => <a key={u} className="mr-2 text-brand underline" href={u} target="_blank" rel="noreferrer">근거{i + 1}</a>)}</div>}
+          {r && (
+            <div className={`mt-2 rounded-md p-2 text-xs ${r.status === 'restricted' ? 'bg-hard/5 text-hard' : r.status === 'risk' ? 'bg-wait/10' : 'bg-paper'}`}>
+              <div className="font-bold">권리산정기준일{r.basisDate ? ` ${r.basisDate}(${r.basisFrom || '—'}) → ${r.effectiveFrom}부터 적용` : ''}</div>
+              <div>{r.text}</div>
+              {[...(r.hits || []), ...(r.risks || [])].map((h, i) => <div key={i}>· 제{h.ho}호 {h.text} — {h.evidence}</div>)}
+              {r.checks?.length > 0 && <div className="mt-1 text-ink/60">확인할 서류: {r.checks.join(', ')}</div>}
+              <div className="mt-1 text-[11px] text-ink/50">{r.law}: 기준일 다음 날 이후 분할·집합건물 전환·토지/건물 분리 소유·신축이면 분양받을 권리를 제한</div>
+            </div>
+          )}
+          {admin && r && r.status !== 'pending' && (
+            <div className="mt-2 grid gap-1 text-xs">
+              <div className="font-bold">서류로 확인한 값(기준일 다음 날 이후 생겼나)</div>
+              {FLAG.map(([k, ho]) => (
+                <label key={k} className="flex items-center gap-2">
+                  <select className="input w-24 py-0.5" value={m77[k] === true ? 'y' : m77[k] === false ? 'n' : ''} onChange={(e) => setFlag(k, e.target.value === 'y' ? true : e.target.value === 'n' ? false : undefined)}>
+                    <option value="">모름</option><option value="y">해당</option><option value="n">아님</option>
+                  </select>
+                  제{ho}호 {ART77[ho]}
+                </label>
+              ))}
+              <p className="text-ink/50">바꾸면 분양자격 판정에 바로 반영됩니다.</p>
+            </div>
+          )}
+        </>
+      )}
+      {m?.status === 'unlisted' && <div className="text-xs">브이월드 토지이용계획: {m.vworld.join(', ')} — 관리자 정비구역 목록에 아직 없음(관리자 화면 알림).</div>}
+      {m?.status === 'none' && <div className="text-xs text-ink/60">목록·토지이용계획 모두 정비구역 아님. 지정 전 구역(후보지 등)은 목록에 있어야만 잡힙니다.</div>}
+      {m?.status === 'unchecked' && <div className="text-xs text-ink/60">토지이용계획 조회 전이고 목록과도 맞지 않음 — 조회 뒤 다시 판정.</div>}
+    </div>
+  );
+}
+
+// 예측 기록: 입찰 전에 기록한 값(채점은 이 값 그대로) + 분석기 수정 뒤 재계산 참고값
+function ForecastCard({ item }) {
+  const f = item.forecast; const r = item.forecastRevised;
+  const line = (x) => `${x.at} · ${x.verdict}${x.grade ? ` · ${x.grade} ${x.score}점` : ''} · 가치 ${eok(x.value)} · 매수상한 ${eok(x.cap)}${x.profit !== null && x.profit !== undefined ? ` · 수익 ${eok(x.profit)}` : ''}${x.calcAnomaly ? ' · 계산 이상' : ''}`;
+  return (
+    <Card title="예측 기록">
+      {f && <div className="text-sm"><b>기록된 예측</b> ({f.analyzerVersion || `규칙 ${f.rules}`}): {line(f)} <span className="text-xs text-ink/50">— 완료 채점은 이 값 그대로</span></div>}
+      {r && <div className="mt-1 text-sm text-ink/70"><b>수정 후 참고값</b> ({r.analyzerVersion}): {line(r)}</div>}
     </Card>
   );
 }

@@ -98,7 +98,8 @@ async function runIncheonZones({ force = false } = {}) {
   if (!force && st.lastDay === kstDay()) return { skipped: '오늘 이미 확인' };
   const res = await incheonZones.collect({
     knownNtt: force ? 0 : st.ntt || 0,
-    save: (p) => db.collection('redevZones').doc(p.sido).set({
+    // 분기 엑셀(참고 자료)은 redevZoneFiles 에 둔다. redevZones 는 사람이 확인한 정비구역 목록(관리자 전용)
+    save: (p) => db.collection('redevZoneFiles').doc(p.sido).set({
       sido: p.sido, quarter: p.quarter, fileName: p.fileName, source: p.source, ntt: p.ntt, title: p.title,
       count: p.zones.length, uploadedAt: new Date().toISOString(), z: JSON.stringify(p.zones),
     }),
@@ -122,8 +123,13 @@ async function enrichLand(item) {
   }
   const ref = db.collection('landCache').doc(String(pnu));
   const c = await ref.get();
-  let land = c.exists && Date.now() - new Date(c.data().checkedAt).getTime() < 30 * 86400e3 ? c.data() : null;
-  if (!land) { land = await vworld.lookup({ pnu, key }); await ref.set(land); }
+  // 빈 응답(토지이용·공시지가·토지특성 모두 없음)은 캐시로 믿지 않는다 — 10/22 한때 빈 응답 366건이 30일 캐시에 묶였던 문제
+  let land = c.exists && !vworld.isEmptyLand(c.data()) && Date.now() - new Date(c.data().checkedAt).getTime() < 30 * 86400e3 ? c.data() : null;
+  if (!land) {
+    land = await vworld.lookup({ pnu, key });
+    if (land.empty) logger.warn('브이월드 빈 응답', pnu, JSON.stringify(land.raw).slice(0, 600));
+    else await ref.set(land);
+  }
   const out = { ...found, land };
   // 건축HUB: 건물이 있으면 건축물대장(면적·용도·사용승인일 교차 확인), 토지·도로·맹지면 같은 법정동 최근 건축 허가
   let dkey = null; try { dkey = DATA_GO_KR_KEY.value(); } catch { dkey = null; }
@@ -192,7 +198,7 @@ async function runLandBacklog({ deadline, max = 150 } = {}) {
   const weekAgo = Date.now() - 7 * 86400e3;
   const home = (it) => /(다세대|연립|빌라|아파트|단독|다가구|도시형)/.test(`${it.usage || ''} ${it.usageSmall || ''}`);
   const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-    .filter((it) => !it.land && String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today)
+    .filter((it) => (!it.land || vworld.isEmptyLand(it.land)) && String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today)
     .filter((it) => !it.landEmptyAt || new Date(it.landEmptyAt).getTime() < weekAgo)
     .sort((x, y) => Number(home(y)) - Number(home(x)));
   let done = 0; let empty = 0; const errors = [];
@@ -200,11 +206,56 @@ async function runLandBacklog({ deadline, max = 150 } = {}) {
     if (Date.now() > deadline) break;
     try {
       const extra = await enrichLand(it);
-      if (extra && extra.land) { await db.collection('listings').doc(it.id).set(extra, { merge: true }); done++; }
-      else { await db.collection('listings').doc(it.id).set({ landEmptyAt: new Date().toISOString() }, { merge: true }); empty++; }
+      if (extra && extra.land && !extra.land.empty) { await db.collection('listings').doc(it.id).set(extra, { merge: true }); done++; }
+      else { await db.collection('listings').doc(it.id).set({ landEmptyAt: new Date().toISOString(), ...(extra?.land?.raw ? { landEmptyRaw: extra.land.raw } : {}) }, { merge: true }); empty++; if (errors.length < 5 && extra?.land?.raw) errors.push(`${it.id} 빈 응답: ${JSON.stringify(extra.land.raw).slice(0, 300)}`); }
     } catch (e) { if (errors.length < 5) errors.push(`${it.id}: ${e.message}`); }
   }
   return { waiting: list.length, done, empty, errors };
+}
+
+// ── 정비구역 연계: 관리자 정비구역 목록(redevZones) ↔ 진행 물건 ──────────────
+//  목록과 PNU·지번(또는 대략 경계)이 맞으면 구역 스냅숏을 물건에 붙이고(listing.redevMatch),
+//  목록에 없는데 브이월드 토지이용계획에 정비구역이 찍히면 '목록 미등록 구역' 알림(adminAlerts)을 남긴다.
+// 키 순서와 무관한 비교용 문자열(Firestore가 돌려주는 맵의 키 순서는 저장 순서와 다를 수 있음)
+const stable = (v) => (Array.isArray(v) ? `[${v.map(stable).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => `${k}:${stable(v[k])}`).join(',')}}` : JSON.stringify(v ?? null));
+
+async function runZoneMatch({ deadline = Date.now() + 120e3, listingIds } = {}) {
+  const { zoneStatus } = await import('./shared/zoneMatch.mjs');
+  const zones = (await db.collection('redevZones').get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+  const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  let docs;
+  if (listingIds?.length) docs = (await db.getAll(...listingIds.map((id) => db.collection('listings').doc(id)))).filter((d) => d.exists);
+  else docs = (await db.collection('listings').select('sido', 'sgg', 'emd', 'pnu', 'address', 'title', 'detail', 'land', 'ledger', 'usage', 'usageSmall', 'manual', 'bidEnd', 'redevMatch').get()).docs;
+  const list = docs.map((d) => ({ id: d.id, ...d.data() })).filter((it) => listingIds || String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today);
+  const polySidos = new Set(zones.filter((z) => z.boundary && z.boundary.polygon).map((z) => z.sido));
+  const key = (() => { try { return VWORLD_KEY.value(); } catch { return null; } })();
+  const stats = { zones: zones.length, listings: list.length, listed: 0, unlisted: 0, none: 0, unchecked: 0, changed: 0, alerts: 0 };
+  let batch = db.batch(); let n = 0;
+  const flush = async () => { if (n) { await batch.commit(); batch = db.batch(); n = 0; } };
+  for (const it of list) {
+    if (Date.now() > deadline) { stats.stoppedBy = 'time'; break; }
+    // 경계 다각형이 있는 시도의 물건만 필지 중심점을 구한다(30일 캐시)
+    let geo = null;
+    if (key && it.pnu && polySidos.has(it.sido)) {
+      const gref = db.collection('landCache').doc(`geo_${it.pnu}`); const g = await gref.get();
+      if (g.exists && Date.now() - new Date(g.data().checkedAt).getTime() < 30 * 86400e3) geo = g.data().geo;
+      else { try { geo = await vworld.centroid({ pnu: it.pnu, key }); await gref.set({ geo, checkedAt: new Date().toISOString() }); } catch (e) { logger.warn('centroid', it.id, e.message); } }
+    }
+    const m = zoneStatus(it, zones, { geo });
+    stats[m.status] = (stats[m.status] || 0) + 1;
+    const prev = it.redevMatch || {};
+    const same = stable({ ...prev, checkedAt: null }) === stable({ ...m, checkedAt: null });
+    if (!same) { batch.set(db.collection('listings').doc(it.id), { redevMatch: m }, { merge: true }); n++; stats.changed++; }
+    const aref = db.collection('adminAlerts').doc(`zone_${it.id}`);
+    if (m.status === 'unlisted' && prev.status !== 'unlisted') {
+      batch.set(aref, { type: 'zoneUnlisted', listingId: it.id, title: it.title || '', sido: it.sido || null, sgg: it.sgg || null, pnu: it.pnu || null, vworld: m.vworld, at: new Date().toISOString(), resolved: false }, { merge: true }); n++; stats.alerts++;
+    } else if (m.status !== 'unlisted' && prev.status === 'unlisted') {
+      batch.set(aref, { resolved: true, resolvedAt: new Date().toISOString(), resolvedBy: m.status }, { merge: true }); n++;
+    }
+    if (n >= 400) await flush();
+  }
+  await flush();
+  return stats;
 }
 
 async function runTrades({ deadline } = {}) {
@@ -329,8 +380,8 @@ async function tick({ only, force } = {}) {
   const deadline = started + TICK_BUDGET_MS;
   const out = {};
   const settings = await getSettings();
-  const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, results: settings.collectOnbid !== false, resultList: settings.collectOnbid !== false, trades: settings.collectTrades !== false, land: settings.collectLand !== false };
-  const jobs = only ? [only] : ['zones', 'bankrupt', 'onbid', 'land', 'resultList', 'results', 'trades'];
+  const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, results: settings.collectOnbid !== false, resultList: settings.collectOnbid !== false, trades: settings.collectTrades !== false, land: settings.collectLand !== false, zoneMatch: true };
+  const jobs = only ? [only] : ['zones', 'bankrupt', 'onbid', 'land', 'zoneMatch', 'resultList', 'results', 'trades'];
   for (const job of jobs) {
     if (!enabled[job] && !only) continue;
     if (Date.now() > deadline) { out[job] = { stopped: 'time' }; continue; }
@@ -342,6 +393,7 @@ async function tick({ only, force } = {}) {
       if (job === 'resultList') out[job] = await runOnbidResultList({ deadline, force });
       if (job === 'trades') out[job] = await runTrades({ deadline });
       if (job === 'land') out[job] = await runLandBacklog({ deadline: Math.min(deadline, Date.now() + 120e3) });
+      if (job === 'zoneMatch') out[job] = await runZoneMatch({ deadline: Math.min(deadline, Date.now() + 120e3) });
     } catch (e) {
       logger.error(job, e);
       out[job] = { error: e.message };
@@ -373,7 +425,7 @@ function requireAdmin(request) {
 exports.runNow = onCall({ timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_GO_KR_KEY, VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
   const job = request.data && request.data.job;
-  if (!['zones', 'bankrupt', 'onbid', 'resultList', 'results', 'trades'].includes(job)) throw new HttpsError('invalid-argument', 'job 값이 잘못되었습니다.');
+  if (!['zones', 'bankrupt', 'onbid', 'resultList', 'results', 'trades', 'land', 'zoneMatch'].includes(job)) throw new HttpsError('invalid-argument', 'job 값이 잘못되었습니다.');
   return tick({ only: job, force: true });
 });
 
@@ -458,7 +510,9 @@ exports.testApis = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORL
   }
   await tryOne('브이월드 토지이용계획', async () => {
     const r = await vworld.lookup({ pnu: (request.data && request.data.pnu) || '2823710100100010000', key: VWORLD_KEY.value() });
-    return { zone: r.landUse && r.landUse.zone, officialPrice: r.officialPrice, error: r.landUseError };
+    // 빈 값이면 원문을 그대로 보여 준다(인증키 등록 도메인 불일치 등 진단용). 호출 도메인: vworld.DOMAIN
+    const head = `도메인 ${vworld.DOMAIN} · 용도지역 ${(r.landUse && r.landUse.zone) || '—'} · 공시지가 ${r.officialPrice || '—'}`;
+    return { total: r.empty ? 0 : 1, zone: r.landUse && r.landUse.zone, officialPrice: r.officialPrice, error: r.landUseError, sample: r.empty ? `${head} ‖ 빈 응답 원문: ${JSON.stringify(r.raw).slice(0, 600)}` : `${head}${r.errors ? ` ‖ 오류: ${r.errors.join(' / ')}` : ''}` };
   });
   await tryOne('인천 정비사업 추진현황 게시판', async () => {
     const res = await fetch(incheonZones.LIST, { signal: AbortSignal.timeout(20000) });
@@ -506,14 +560,23 @@ exports.aiReviewNow = onCall({ timeoutSeconds: 180, memory: '1GiB', secrets: [AN
   return out;
 });
 
+// 관리자: 정비구역 목록을 고친 뒤 물건 다시 연결(전체 또는 물건 몇 개)
+exports.zoneMatchNow = onCall({ timeoutSeconds: 300, memory: '512MiB', secrets: [VWORLD_KEY] }, async (request) => {
+  requireAdmin(request);
+  const ids = Array.isArray(request.data && request.data.listingIds) ? request.data.listingIds.slice(0, 100).map(String) : null;
+  const out = await runZoneMatch({ deadline: Date.now() + 270e3, listingIds: ids });
+  await logRun('zoneMatch', out);
+  return out;
+});
+
 exports.landCheck = onCall({ timeoutSeconds: 60, secrets: [VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
   const { pnu, listingId } = request.data || {};
   const cacheRef = db.collection('landCache').doc(String(pnu || 'none'));
   const cached = await cacheRef.get();
-  const fresh = cached.exists && Date.now() - new Date(cached.data().checkedAt).getTime() < 30 * 86400e3;
+  const fresh = cached.exists && !vworld.isEmptyLand(cached.data()) && Date.now() - new Date(cached.data().checkedAt).getTime() < 30 * 86400e3;
   const land = fresh ? cached.data() : await vworld.lookup({ pnu, key: VWORLD_KEY.value() });
-  if (!fresh) await cacheRef.set(land);
+  if (!fresh && !land.empty) await cacheRef.set(land);
   let housePrice = null;
   if (listingId) {
     const it = (await db.collection('listings').doc(listingId).get()).data() || {};
@@ -576,7 +639,7 @@ exports.seedSettings = onCall({}, async (request) => {
 // POST /ingestCourt  머리글 Authorization: Bearer <COURT_INGEST_TOKEN>
 // 본문 { items: [ {caseNo, court, itemNo, ...} ], run: { ... } }
 const COURT_FIELDS = ['caseNo', 'itemNo', 'court', 'title', 'usage', 'usageSmall', 'address', 'sido', 'sgg', 'emd', 'pnu', 'appraisal', 'minBid', 'failCount', 'round',
-  'bidEnd', 'status', 'landArea', 'buildingArea', 'share', 'bulk', 'thumbnail', 'url', 'detail', 'history', 'result', 'detailVer'];
+  'bidEnd', 'status', 'landArea', 'buildingArea', 'share', 'shareRatio', 'bulk', 'thumbnail', 'url', 'detail', 'history', 'result', 'detailVer'];
 
 function cleanCourtItem(raw) {
   if (!raw || typeof raw !== 'object') return null;

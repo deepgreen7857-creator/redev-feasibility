@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { getSettings } from '../lib/store.js';
 import { SPECIAL_DEFAULTS } from '../lib/special.js';
+import { ANALYZER_VERSION, ANALYZER_CHANGES } from '../lib/analyze.js';
 import { TAX_DEFAULTS } from '../lib/tax.js';
 import { Card } from '../components/ui.jsx';
 
@@ -28,6 +29,10 @@ export default function RulesPage() {
   const margin = s.marginRate ?? 0.1;
   return (
     <div className="space-y-4">
+      <div className="card text-xs text-ink/70">
+        <b>분석기 버전 {ANALYZER_VERSION}</b> — 계산식을 바꾸면 버전과 수정일을 남깁니다. 이미 기록된 입찰 전 예측은 덮어쓰지 않고(완료 채점은 기록값 그대로), 새 계산은 '수정 후 참고값'으로만 저장합니다.
+        <ul className="mt-1 list-disc pl-4">{ANALYZER_CHANGES.map((c) => <li key={c.version}>{c.date} ({c.version}): {c.note}</li>)}</ul>
+      </div>
       <div className="card text-sm">
         <div className="text-base font-extrabold">판단 기준 — 이 사이트가 물건을 판정하는 방식</div>
         <p className="mt-1 text-ink/70">아래는 실제 계산식 그대로입니다. 숫자는 지금 관리자 설정값입니다. 물건 상세의 숫자가 이상하면, 이 중 <b>어느 단계에서 어긋났는지</b>를 보시면 됩니다. 틀린 단계를 알려 주시면 그 규칙을 고칩니다.</p>
@@ -51,7 +56,8 @@ export default function RulesPage() {
           <li>건물: 면적 <b>±20%</b> 거래가 <b>3건 미만이면 "시세 부족"</b>(큰·작은 평형 가격을 끌어다 쓰지 않음).</li>
           <li>값 = 비교 거래의 <b>㎡당 가격 중앙값 × 이 물건 면적</b>(건물면적, 토지는 토지면적).</li>
           <li>토지 거래가 없으면 <b>개별공시지가 × 면적</b>. 특수물건인데 시세·공시지가가 다 없으면 <b>감정가</b>.</li>
-          <li>지분 물건: 지분 비율을 읽으면 실거래·공시가격·전세 환산 모두 × 지분 비율, 비율을 못 읽으면 공시가격·전세 환산은 쓰지 않고, 실거래 값이 감정가의 1.5배를 넘으면 감정가를 기준으로.</li>
+          <li>지분 물건: 가치 = <b>전체 가치 × 지분비율(분자/분모)</b>. 지분비율은 원본(온비드 면적표·법원 목록내역·공고 글, 또는 관리자가 원문 확인해 넣은 값)에서만 읽습니다. <b>못 읽으면 금액을 계산하지 않고 '지분비율 미확인'</b>으로 매력 판정에서 뺍니다. 면적은 '전체 ○㎡ 중 지분 ○㎡(○/○)'.</li>
+          <li>감정가 없는 물건(파산재산 등): 확실성 <b>최대 C</b>, 카드에 '추정 근거: 공시지가 ○원/㎡ · 실거래 ㎡당 ○원' 표시.</li>
         </ul>
         <p className="font-bold">가치 검토(실거래가 없는 물건이 더 많으므로 여러 기준을 맞댐)</p>
         <ul>
@@ -74,6 +80,7 @@ export default function RulesPage() {
           <li>여러 물건·용도 일괄 매각(용도에 쉼표, "일괄")</li>
         </ul>
         <p>하나라도 걸리면 판정 <b>"오류 의심 — 원문 확인"</b>, 매력도·돈 계산·기회 모두 보류.</p>
+        <p><b>상식 검사(계산 이상)</b>: 계산을 다 한 뒤 수익률이 <b>1,000% 초과</b>이거나 바닥가치(또는 판단 가치)가 <b>최저가의 100배 초과</b>면 '계산 이상' 배지 — '지금 매력'·A등급·기회 찾기에서 빼고 관리자 화면 이상치 목록에 올립니다.</p>
         <Check>오류 의심 물건은 법원·온비드 원문(물건 내역, 매각물건명세서, 감정평가서)으로 지분·면적·용도를 확인하세요. 원문이 맞고 사이트가 틀렸다면 수집(읽기) 오류입니다.</Check>
       </Sec>
 

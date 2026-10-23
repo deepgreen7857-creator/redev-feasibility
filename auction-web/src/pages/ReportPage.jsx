@@ -53,6 +53,8 @@ export default function ReportPage({ admin }) {
   const v = a.valuation; const sp = a.special; const m = a.money;
   const verdict = VERDICT[a.verdict]?.label || a.verdict;
   const conclusion = a.anomalies?.length ? `오류 의심 — 계산을 보류했습니다(${a.anomalies[0]})`
+    : a.calcAnomaly ? `계산 이상 — 숫자를 믿을 수 없어 판정에서 뺐습니다(${a.calcAnomaly[0]})`
+    : a.verdict === 'shareUnknown' ? '지분비율을 원본에서 읽지 못해 금액을 계산하지 않았습니다(공고·등기부에서 지분 확인)'
     : a.verdict === 'now' ? `지금 최저가 ${eok(item.minBid)}로 들어갈 만합니다(매수상한 ${eok(a.cap)})`
       : a.verdict === 'wait' ? `${a.entry?.label}(${eok(a.entry?.price)})에 들어가면 됩니다(매수상한 ${eok(a.cap)})`
         : a.verdict === 'check' ? '권리(인수 금액 등)를 확인한 뒤 판단해야 합니다'
@@ -161,7 +163,7 @@ export default function ReportPage({ admin }) {
 
       <H no={sp ? 8 : 7}>판정 근거와 확인할 것</H>
       <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm">
-        {[...a.reasons.map((r) => `제외 사유: ${r}`), ...(a.anomalies || []), ...a.warnings].map((w, i) => <li key={i}>{w}</li>)}
+        {[...a.reasons.map((r) => `제외 사유: ${r}`), ...(a.anomalies || []), ...(a.calcAnomaly || []).map((x) => `계산 이상: ${x}`), ...(a.estimateBasis ? [a.estimateBasis] : []), ...a.warnings].map((w, i) => <li key={i}>{w}</li>)}
         {sp && sp.checks.map((c) => <li key={c}>☐ {c}</li>)}
         <li>☐ 등기부: 말소기준권리와 그보다 앞선 권리(가처분·가등기·전세권), 대지권 미등기·토지 별도등기</li>
         <li>☐ 전입세대 열람: 대항력 임차인, 실제 점유자</li>

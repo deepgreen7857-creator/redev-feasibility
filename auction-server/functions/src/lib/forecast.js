@@ -1,6 +1,8 @@
 // 입찰 전 예측 기록 — 매일 밤 진행 중인 물건을 화면과 같은 계산식으로 판정해 '그때 우리가 뭐라고 했는지'를 저장한다.
 // 입찰(매각)기일이 되면 더 이상 고치지 않는다(결과를 보고 예측을 바꾸지 않도록). 완료 물건 화면에서 실제 결과와 비교한다.
-const RULES_VERSION = '2026-10-23b';
+// 계산식(분석기 버전)이 바뀌면: 이미 기록된 예측(forecast·forecastFirst)은 절대 덮어쓰지 않고,
+// 새 계산은 '수정 후 참고값'(forecastRevised)에만 넣는다. 채점은 기록된 forecast 그대로.
+const RULES_VERSION = '2026-10-23c';
 
 
 function kstNow() {
@@ -42,7 +44,7 @@ async function loadDeals(db, type, lawd, cache) {
 function summarize(it, a, day) {
   const sp = a.special;
   return {
-    at: day, rules: RULES_VERSION,
+    at: day, rules: RULES_VERSION, analyzerVersion: a.analyzerVersion || null,
     verdict: a.verdict, minBid: it.minBid || null, appraisal: it.appraisal || null, round: it.round || null,
     value: a.value ?? null, full: a.full ?? null, cap: a.cap ?? null,
     entryLabel: a.entry?.label || null, entryPrice: a.entry?.price || null,
@@ -51,18 +53,19 @@ function summarize(it, a, day) {
     special: sp ? sp.types.map((t) => t.key) : [], floor: sp?.floorKnown ? sp.floor : null, expected: sp?.expected ?? null,
     opportunity: a.opportunity ? { kind: a.opportunity.kind, profit: a.opportunity.profit } : null,
     anomalies: (a.anomalies || []).length,
+    calcAnomaly: a.calcAnomaly || null, shareUnknown: Boolean(a.shareUnknown),
   };
 }
 
 async function run({ db, log = console.log, deadline = Infinity }) {
-  const { analyze, tradeTypeOf } = await import('../shared/analyze.mjs');
+  const { analyze, tradeTypeOf, ANALYZER_VERSION } = await import('../shared/analyze.mjs');
   const { DEFAULT_SETTINGS, lawdOf } = await import('../shared/defaults.mjs');
   const s = await db.collection('settings').doc('main').get();
   const settings = { ...DEFAULT_SETTINGS, ...(s.exists ? s.data() : {}) };
   const now = kstNow();
   const snap = await db.collection('listings').get();
   const cache = new Map();
-  let batch = db.batch(); let n = 0; const stats = { total: snap.size, forecast: 0, frozen: 0, errors: 0 };
+  let batch = db.batch(); let n = 0; const stats = { total: snap.size, forecast: 0, revised: 0, frozen: 0, errors: 0, calcAnomaly: 0, analyzerVersion: ANALYZER_VERSION };
   for (const doc of snap.docs) {
     if (Date.now() > deadline) { stats.stoppedBy = 'time'; break; }
     const it = { id: doc.id, ...doc.data() };
@@ -71,10 +74,17 @@ async function run({ db, log = console.log, deadline = Infinity }) {
       const lawd = lawdOf(it.sido, it.sgg);
       const deals = lawd ? await loadDeals(db, tradeTypeOf(it), lawd, cache) : [];
       const a = analyze(it, { settings, deals });
-      const f = summarize(it, a, now.day);
-      const upd = { forecast: f };
+      const f = summarize(it, { ...a, analyzerVersion: ANALYZER_VERSION }, now.day);
+      const upd = {};
+      const recorded = it.forecast ? it.forecast.analyzerVersion || null : null;
+      if (!it.forecast || recorded === ANALYZER_VERSION) { upd.forecast = f; stats.forecast++; } // 같은 분석기로 기록 중인 물건만 기일 전까지 갱신
+      else { upd.forecastRevised = { ...f, note: `분석기 ${ANALYZER_VERSION} 재계산 참고값 — 기록된 예측(${it.forecast.analyzerVersion || `규칙 ${it.forecast.rules}`} · ${it.forecast.at})은 보존` }; stats.revised++; }
       if (!it.forecastFirst) upd.forecastFirst = f; // 처음 본 날의 예측도 남겨 둔다(회차가 내려가며 판단이 어떻게 바뀌었나)
-      batch.set(doc.ref, upd, { merge: true }); n++; stats.forecast++;
+      batch.set(doc.ref, upd, { merge: true }); n++;
+      // 계산 이상 → 관리자 이상치 목록
+      const aref = db.collection('adminAlerts').doc(`calc_${doc.id}`);
+      if (a.calcAnomaly) { batch.set(aref, { type: 'calcAnomaly', listingId: doc.id, title: it.title || '', minBid: it.minBid || null, reasons: a.calcAnomaly, value: a.value ?? null, roi: a.money?.roi ?? null, analyzerVersion: ANALYZER_VERSION, at: now.day, resolved: false }, { merge: true }); n++; stats.calcAnomaly++; }
+      else if (it.forecast?.calcAnomaly || it.forecastRevised?.calcAnomaly) { batch.set(aref, { resolved: true, resolvedAt: now.day }, { merge: true }); n++; }
       if (n >= 400) { await batch.commit(); batch = db.batch(); n = 0; }
     } catch (e) { stats.errors++; if (stats.errors <= 5) log(`예측 오류 ${doc.id}: ${e.message}`); }
   }

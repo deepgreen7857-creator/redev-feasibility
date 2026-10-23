@@ -5,6 +5,7 @@ import { DEFAULT_COURTS, SIDO } from '../data/defaults.js';
 import { Card, Field, Row, Badge } from '../components/ui.jsx';
 import { parseCourtText } from '../lib/parseCourt.js';
 import ZoneUpload from '../components/ZoneUpload.jsx';
+import ZoneList from '../components/ZoneList.jsx';
 
 export default function AdminPage({ user }) {
   if (!isAdmin(user)) {
@@ -19,6 +20,7 @@ export default function AdminPage({ user }) {
     <div className="space-y-4">
       <Status />
       <RuleSuggestions />
+      <ZoneList />
       <ZoneUpload />
       <Settings />
       <CourtForm />
@@ -69,6 +71,7 @@ function Status() {
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'onbid' }, 'onbid')}>{busy === 'onbid' ? '수집 중…' : '온비드 지금 수집'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'results' }, 'results')}>{busy === 'results' ? '받는 중…' : '온비드 입찰결과 지금 받기'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'resultList' }, 'resultList')} title="최근 4일 + 과거 1년치를 7일씩 거슬러 받음(하루 한도 안에서)">{busy === 'resultList' ? '받는 중…' : '온비드 과거 입찰결과 받기'}</button>
+        <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'land' }, 'land')} title="공시지가·토지이용이 없거나 빈 응답이었던 진행 물건을 다시 조회(최대 150건)">{busy === 'land' ? '조회 중…' : '토지이용 빈 값 다시 조회'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'zones' }, 'zones')}>{busy === 'zones' ? '받는 중…' : '인천 정비현황 지금 받기'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'bankrupt' }, 'bankrupt')}>{busy === 'bankrupt' ? '수집 중…' : '파산 공고 지금 수집'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'trades' }, 'trades')}>{busy === 'trades' ? '수집 중…(최대 8분)' : '실거래가 이어 받기'}</button>

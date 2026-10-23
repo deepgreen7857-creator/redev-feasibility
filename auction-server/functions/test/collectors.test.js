@@ -289,6 +289,27 @@ test('입찰 전 예측: 기일 전 물건만 판정하고, 기일이 된 물건
   assert.equal(st.forecast, 1); assert.equal(st.frozen, 1);
   assert.ok(written.a.forecast.verdict && written.a.forecastFirst);
   assert.equal(written.b, undefined);
+  assert.ok(written.a.forecast.analyzerVersion);
+  // 수정 전 분석기로 기록된 예측은 덮어쓰지 않고 '수정 후 참고값'(forecastRevised)에만 넣는다
+  const old = { at: '2026-10-20', rules: '2026-10-23b', verdict: 'now', value: 9.5e9 };
+  docs[0].data = { ...docs[0].data, forecast: old, forecastFirst: old };
+  for (const k of Object.keys(written)) delete written[k];
+  const st2 = await forecast.run({ db, log: () => {} });
+  assert.equal(st2.revised, 1); assert.equal(st2.forecast, 0);
+  assert.equal(written.a.forecast, undefined); assert.equal(written.a.forecastFirst, undefined);
+  assert.ok(written.a.forecastRevised.analyzerVersion);
+});
+
+test('브이월드: 빈 응답은 원문을 붙여 empty 로 표시(캐시하지 않음), resultCode 오류는 예외', async () => {
+  const vworld = require('../src/lib/vworld');
+  const empty = JSON.stringify({ landUses: { field: [], totalCount: '0', resultCode: '', resultMsg: '' } });
+  const r = await vworld.lookup({ pnu: '2823710100100010000', key: 'k', fetcher: async () => ({ ok: true, status: 200, text: async () => empty }) });
+  assert.equal(r.empty, true); assert.ok(r.raw.landUse.includes('landUses'));
+  assert.equal(vworld.isEmptyLand(r), true);
+  const bad = JSON.stringify({ landUses: { field: [], resultCode: 'INCORRECT_KEY', resultMsg: '인증키 도메인 불일치' } });
+  const r2 = await vworld.lookup({ pnu: '2823710100100010000', key: 'k', fetcher: async () => ({ ok: true, status: 200, text: async () => bad }) });
+  assert.match(r2.landUseError, /도메인 불일치/);
+  assert.equal(vworld.isEmptyLand(r2), false);
 });
 
 test('온비드 입찰결과: 이전 회차 내역에서 같은 회차의 낙찰가·낙찰가율', () => {

@@ -29,7 +29,8 @@ export function propertyKind(item, tradeType, farm) {
 }
 
 export function inRedevArea(item) {
-  return Boolean(item.manual?.zone || item.manual?.redevStage || (item.land?.landUse?.redevelopment || []).length);
+  const listed = item.redevMatch?.status === 'listed' && item.redevMatch.stage !== '해제';
+  return Boolean(item.manual?.zone || item.manual?.redevStage || listed || (item.land?.landUse?.redevelopment || []).length);
 }
 
 // 시가표준액: 호가 맞으면 그 값, 아니면 그 필지 전 호가 기준 이하일 때만 최댓값으로 인정

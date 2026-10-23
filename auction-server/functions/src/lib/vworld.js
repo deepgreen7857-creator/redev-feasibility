@@ -19,11 +19,30 @@ async function get(op, params, key, fetcher) {
   u.searchParams.set('numOfRows', '100');
   for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v);
   const res = await fetcher(u, { signal: AbortSignal.timeout(20000) });
-  if (!res.ok) throw new Error(`브이월드 HTTP_${res.status}`);
-  const data = await res.json();
+  const text = await res.text();
+  if (!res.ok) throw new Error(`브이월드 HTTP_${res.status} ${text.replace(/\s+/g, ' ').slice(0, 200)}`);
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error(`브이월드 응답이 JSON이 아님: ${text.replace(/\s+/g, ' ').slice(0, 200)}`); }
   const err = data && (data.response && data.response.error);
   if (err) throw new Error(`브이월드 오류: ${err.text || err.code}`);
-  return firstArray(data);
+  // NED 응답은 오류(인증키·도메인 불일치 등)도 빈 목록 + resultCode/resultMsg 로 오는 경우가 있다 → 원문을 붙여 둔다
+  const rows = firstArray(data);
+  const code = findKey(data, 'resultCode'); const msg = findKey(data, 'resultMsg');
+  if (!rows.length && code && !/^(0+|OK|NORMAL_SERVICE|INFO-000)?$/i.test(String(code))) throw new Error(`브이월드 오류: ${msg || code}(${code})`);
+  Object.defineProperty(rows, 'raw', { value: text.replace(/\s+/g, ' ').slice(0, 300), enumerable: false });
+  return rows;
+}
+
+function findKey(obj, key) {
+  if (!obj || typeof obj !== 'object') return null;
+  if (key in obj && typeof obj[key] !== 'object') return obj[key];
+  for (const v of Object.values(obj)) { const r = findKey(v, key); if (r !== null && r !== undefined) return r; }
+  return null;
+}
+
+// 토지이용·공시지가·토지특성 모두 빈 응답(오류 표시 없음) — 키/도메인·일시 장애일 수 있어 캐시하지 않는다
+function isEmptyLand(land) {
+  return Boolean(land) && !land.landUseError && !land.officialPrice && !land.jimok && !land.area && !(land.landUse && land.landUse.items && land.landUse.items.length);
 }
 
 const RE = {
@@ -70,7 +89,8 @@ async function lookup({ pnu, key, fetcher = fetch, year }) {
   const priceRows = (price.status === 'fulfilled' && price.value.length ? price.value : prevPrice.status === 'fulfilled' ? prevPrice.value : []);
   const p = priceRows[0] || {};
   const c = (chars.status === 'fulfilled' && chars.value[0]) || {};
-  return {
+  const rawOf = (r) => (r.status === 'fulfilled' ? r.value.raw : `오류: ${r.reason && r.reason.message}`);
+  const out = {
     pnu,
     landUse: use.status === 'fulfilled' ? analyzeLandUse(use.value) : null,
     landUseError: use.status === 'rejected' ? use.reason.message : null,
@@ -82,6 +102,20 @@ async function lookup({ pnu, key, fetcher = fetch, year }) {
     roadSide: c.roadSideCodeNm || null,
     checkedAt: new Date().toISOString(),
   };
+  if (isEmptyLand(out)) { out.empty = true; out.raw = { landUse: rawOf(use), price: rawOf(price), chars: rawOf(chars) }; }
+  else { // 빈 값/오류가 섞여 있으면 원문을 남겨 둔다(진단용)
+    const errs = [use, price, chars].filter((r) => r.status === 'rejected').map((r) => r.reason.message);
+    if (errs.length) out.errors = errs;
+  }
+  return out;
+}
+
+// 필지 중심점 [경도, 위도] — 정비구역 '대략 경계' 다각형 대조용(연속지적도)
+async function centroid({ pnu, key, fetcher = fetch }) {
+  if (!key || !/^\d{19}$/.test(String(pnu || ''))) return null;
+  const f = (await cadastral({ attrFilter: `pnu:=:${pnu}` }, key, fetcher))[0];
+  const bb = f && bboxOf(f.geometry);
+  return bb ? [(bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2] : null;
 }
 
 // 주택 공시가격(시가표준액): 공동주택가격(호별) → 없으면 개별주택가격
@@ -191,5 +225,5 @@ async function neighbors({ pnu, key, fetcher = fetch, year, max = 25 }) {
   };
 }
 
-module.exports = { lookup, housingPrice, analyzeLandUse, firstArray, parcelAddress, findPnu, neighbors, bboxOf };
+module.exports = { lookup, housingPrice, analyzeLandUse, firstArray, parcelAddress, findPnu, neighbors, bboxOf, centroid, isEmptyLand, DOMAIN };
 

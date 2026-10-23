@@ -25,11 +25,15 @@ test('판정: 지금 매력 / 유찰 대기 / 해결 안 됨 (개인 기준)', (
   assert.equal(analyze({ ...base, minBid: 300000000 }, { settings: DEFAULT_SETTINGS_P, deals }).verdict, 'now');
   const w = analyze({ ...base, minBid: 600000000 }, { settings: DEFAULT_SETTINGS_P, deals });
   assert.equal(w.verdict, 'wait'); assert.equal(w.entry.step, 1);
-  // 지분 물건도 버리지 않음: 바닥 가치(지분 할인)로 판정하고 상승 시나리오를 붙인다
-  const sh = analyze({ ...base, minBid: 250000000, share: true }, { settings: DEFAULT_SETTINGS_P, deals });
+  // 지분 물건도 버리지 않음: 지분비율을 읽으면 바닥 가치(지분 할인)로 판정하고 상승 시나리오를 붙인다
+  const sh = analyze({ ...base, minBid: 120000000, appraisal: 300000000, share: true, detail: { shareText: '2분의 1 지분 매각' } }, { settings: DEFAULT_SETTINGS_P, deals });
   assert.ok(sh.special && sh.special.types[0].key === 'share');
   assert.ok(['now', 'wait'].includes(sh.verdict));
   assert.ok(sh.special.best.value > sh.value);
+  assert.ok(sh.full < 300000000); // 전체 가치(약 5억) × 1/2
+  // 지분비율을 못 읽으면 금액 계산 안 함
+  const un = analyze({ ...base, minBid: 250000000, share: true }, { settings: DEFAULT_SETTINGS_P, deals });
+  assert.equal(un.verdict, 'shareUnknown'); assert.equal(un.value, null); assert.equal(un.money, null);
 });
 test('현황도로 토지: 같은 구 토지 시세를 그대로 쓰지 않고 1/3 바닥 + 상승 시나리오', () => {
   const landDeals = Array.from({ length: 10 }, (_, i) => [30000000 + i * 100000, 100, 0, 1, '', '', 0, false, '중개거래', '구월동', '대']);
@@ -172,4 +176,62 @@ test('점검 수정: 없다고 쓴 글은 특수 사정 아님, 일반 이름은
   const a = analyze(base, { settings: { ...DEFAULT_SETTINGS, owner: 'person' }, deals });
   assert.equal(a.costs.tax, Math.round(a.cap * a.costs.taxRate));
   assert.ok(Math.abs(a.cap * (1 + a.costs.taxRate) + a.costs.eviction + a.costs.repair - a.value * 0.9) < 5);
+});
+
+// ── 2026-10-23c: 지분·감정가 없음·상식 검사·공유자 매도 ─────────────────
+import { shareInfo } from './special.js';
+import { areaText, sanityOf } from './analyze.js';
+const landDeals = Array.from({ length: 12 }, (_, i) => [400000000 + i * 1e6, 1000, 0, 1, '', '', 0, false, '중개거래', '포곡읍', '임야']);
+const sam = { source: 'onbid', category: 'bankrupt', sido: '경기도', sgg: '용인시 처인구', emd: '포곡읍', title: '경기도 용인시 처인구 포곡읍 삼계리 산 56 임야', usage: '부동산 > 토지 > 임야', usageSmall: '임야', landArea: 36364, appraisal: null, minBid: 5000000, share: true, detail: { flags: {} } };
+
+test('2012358 유형: 임야 지분, 비율 미확인 → 금액 계산 안 함(95억·154,336% 같은 값이 나오지 않음)', () => {
+  const a = analyze(sam, { settings: DEFAULT_SETTINGS, deals: landDeals });
+  assert.equal(a.verdict, 'shareUnknown');
+  assert.equal(a.value, null); assert.equal(a.money, null); assert.equal(a.upMoney, undefined);
+  assert.equal(a.opportunity, null);
+  assert.match(areaText(sam), /지분비율 미확인/);
+});
+test('임야 지분, 비율을 읽으면 전체 가치 × 지분비율, 면적 "전체 ○㎡ 중 지분 ○㎡(○/○)"', () => {
+  const it = { ...sam, detail: { flags: {}, areas: [{ kind: '토지>임야', area: '36364', share: '1/40' }] } };
+  const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: landDeals });
+  const unit = 405500; // 실거래 ㎡당 중앙값(약 40.6만)
+  assert.ok(Math.abs(a.full - unit * 36364 / 40) / a.full < 0.05, `full ${a.full}`);
+  assert.equal(areaText(it), '토지 전체 36,364㎡ 중 지분 909.1㎡(1/40)');
+  // 감정가 없음 → 확실성 최대 C, 추정 근거 표시
+  if (a.certainty) assert.equal(a.certainty.grade, 'C');
+  assert.match(a.estimateBasis, /추정 근거: .*실거래 ㎡당/);
+  // 임야 지분: 다른 공유자에게 매도 가능성 기본 '낮음'
+  const sc = a.special.scenarios.find((x) => x.name === '다른 공유자에게 매도');
+  assert.equal(sc.prob, '낮음');
+});
+test('지분비율 모양: 3분의 1 · 1/3 · ㎡ 중 ㎡ · 대지권 비율은 지분 아님', () => {
+  assert.equal(shareInfo({ source: 'court', share: true, detail: { shareText: '지분매각 공유자 우선매수 3분의 1 지분' } }).num, 1);
+  assert.equal(shareInfo({ source: 'onbid', share: true, title: '임야 지분 1/3' }).den, 3);
+  const r = shareInfo({ source: 'onbid', share: true, usage: '토지', landArea: 1000, detail: { cautions: '전체 1,000㎡ 중 250㎡ 지분 매각' } });
+  assert.equal(r.ratio, 0.25); assert.equal(r.totalArea, 1000);
+  assert.equal(shareInfo({ source: 'onbid', share: true, detail: { shareText: '대지권의 비율 1234분의 56' } }).ratio, null);
+  // 법원: '적정 대지지분'만 있으면 지분 매각이 아님
+  assert.equal(shareInfo({ source: 'court', share: true, detail: { conditions: '대지권 미등기, 적정대지지분 포함 일괄평가' } }).share, false);
+});
+test('수집 면적이 이미 지분 면적이면 다시 곱하지 않음', () => {
+  const r = shareInfo({ source: 'onbid', share: true, usage: '토지 > 답', landArea: 250, land: { area: 1000 }, detail: { areas: [{ share: '1/4' }] } });
+  assert.equal(r.areaIsShare, true); assert.equal(r.totalArea, 1000); assert.equal(r.shareArea, 250);
+});
+test('공유자 수가 많을수록 공유자 매도 가능성 낮춤', () => {
+  const it = { ...sam, detail: { flags: {}, areas: [{ share: '1/40' }], conditions: '공유자 12명' } };
+  const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: landDeals });
+  assert.equal(a.special.scenarios.find((x) => x.name === '다른 공유자에게 매도').prob, '매우 낮음');
+  const apt = analyze({ source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 3e8, minBid: 1.2e8, share: true, detail: { shareText: '지분매각 2분의 1' } }, { settings: DEFAULT_SETTINGS, deals });
+  assert.equal(apt.special.scenarios.find((x) => x.name === '다른 공유자에게 매도').prob, '보통');
+});
+test('상식 검사: 수익률 1,000% 초과·가치가 최저가 100배 초과 → 계산 이상, 지금 매력·A등급 제외', () => {
+  assert.equal(sanityOf({ minBid: 5e6 }, { value: 9.5e9 }).length, 1);
+  assert.equal(sanityOf({ minBid: 5e6 }, { money: { roi: 1543 } }).length, 1);
+  assert.equal(sanityOf({ minBid: 1e8 }, { value: 2e8, money: { roi: 0.3 } }).length, 0);
+  // 비율을 읽었어도 숫자가 말이 안 되면 경고(예: 1/2 지분인데 최저가 500만)
+  const it = { ...sam, detail: { flags: {}, areas: [{ share: '1/2' }] } };
+  const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: landDeals });
+  assert.ok(a.calcAnomaly?.length);
+  assert.equal(a.verdict, 'suspect');
+  assert.notEqual(a.score?.grade, 'A'); assert.equal(a.opportunity, null);
 });

@@ -34,6 +34,17 @@ export async function checkBlocked(page) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const num = (s) => { const d = String(s || '').replace(/[^\d]/g, ''); return d ? Number(d) : undefined; };
 const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+// 지분비율(분자/분모): '지분' 이 들어간 줄의 'N분의 M'(대지권 비율 줄은 제외) → { num, den, text }
+export function shareRatioOf(text) {
+  for (const line of String(text || '').split(/\n/)) {
+    if (!/지분/.test(line) || /대지권/.test(line)) continue;
+    const m = line.match(/([\d,.]+)\s*분의\s*([\d,.]+)/);
+    if (!m) continue;
+    const den = Number(m[1].replace(/,/g, '')); const num = Number(m[2].replace(/,/g, ''));
+    if (den > 0 && num > 0 && num < den) return { num, den, text: clean(line).slice(0, 120) };
+  }
+  return undefined;
+}
 
 // 화면 전환 뒤 '조회중' 표시가 사라지고 통신이 잦아들 때까지 기다린다
 async function settle(page) {
@@ -241,6 +252,7 @@ export async function readDetail(page) {
     // 지분: 비고·목록내역·상세 칸 어디든 '지분' 또는 '공유자 우선매수'가 있으면(대지권 비율 '○분의 ○'은 제외)
     share: /지분|공유자\s*우선매수/.test(`${remarks} ${items} ${Object.values(f).join(' ')}`),
     shareText: (`${remarks} ${items} ${Object.values(f).join(' ')}`.match(/[^\n]{0,40}(?:지분|공유자\s*우선매수)[^\n]{0,40}/) || [])[0]?.trim() || undefined,
+    shareRatio: shareRatioOf(`${remarks}\n${items}`),
     bulk: addrKeys.length > 1 || /일괄매각/.test(remarks),
     photos: [],
     appraisalSummary: raw.appraisal || undefined,

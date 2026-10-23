@@ -11,7 +11,10 @@ service cloud.firestore {
     match /tradeMonths/{id}     { allow read: if true; allow write: if false; }
     match /landCache/{id}       { allow read: if true; allow write: if false; }
     match /settings/{id}        { allow read: if true; allow write: if isAdmin(); }
-    match /redevZones/{id}      { allow read: if true; allow write: if isAdmin(); }
+    // 정비구역 목록(사람이 추진현황·공보로 확인) — 관리자 전용. 물건에는 서버가 공개 가능한 값만 스냅숏으로 붙인다
+    match /redevZones/{id}      { allow read, write: if isAdmin(); }
+    match /redevZoneFiles/{id}  { allow read: if true; allow write: if isAdmin(); }
+    match /adminAlerts/{id}     { allow read, write: if isAdmin(); }
     match /state/{id}           { allow read: if isAdmin(); allow write: if false; }
     match /tradeProgress/{id}   { allow read: if isAdmin(); allow write: if false; }
     match /quota/{id}           { allow read: if isAdmin(); allow write: if false; }

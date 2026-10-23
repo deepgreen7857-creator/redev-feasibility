@@ -21,13 +21,77 @@ const corpus = (item) => {
     .filter(Boolean).join(' ');
 };
 
-export function parseShare(item) {
-  const s = `${item.detail?.shareText || ''} ${typeof item.share === 'string' ? item.share : ''} ${item.title || ''}`;
-  let m = s.match(/(\d+(?:\.\d+)?)\s*분의\s*(\d+(?:\.\d+)?)/);
-  if (m) return Number(m[2]) / Number(m[1]);
-  m = s.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
-  if (m && Number(m[2]) > 0 && Number(m[1]) < Number(m[2])) return Number(m[1]) / Number(m[2]);
+// ── 지분 물건: 지분비율(분자/분모)을 원본 글에서 읽는다 ─────────────────────
+// 읽는 곳(원본만): 관리자가 원문을 보고 넣은 값 → 수집기가 따로 읽은 비율 → 온비드 면적표의 지분 칸 → 공고 글(지분 근처)
+// 모양: '3분의 1'(분모 먼저) · '1/3' · '36,364㎡ 중 1,212㎡' · '지분 25%'
+// 대지권 비율('대지권의 비율 1234분의 56')은 지분이 아니므로 뺀다.
+const numOf = (s) => Number(String(s).replace(/,/g, ''));
+function ratioIn(text, { needWord = true } = {}) {
+  const s = String(text || '');
+  const near = (i) => !needWord || /지분|공유/.test(s.slice(Math.max(0, i - 25), i + 40));
+  const notLandRight = (i) => !/대지권|대지\s*사용권/.test(s.slice(Math.max(0, i - 20), i));
+  for (const m of s.matchAll(/([\d,]+(?:\.\d+)?)\s*분의\s*([\d,]+(?:\.\d+)?)/g)) {
+    const den = numOf(m[1]); const num = numOf(m[2]);
+    if (den > 0 && num > 0 && num < den && near(m.index) && notLandRight(m.index)) return { num, den, how: `${m[1]}분의 ${m[2]}` };
+  }
+  for (const m of s.matchAll(/([\d,]+(?:\.\d+)?)\s*㎡\s*중\s*(?:지분\s*)?([\d,]+(?:\.\d+)?)\s*㎡/g)) {
+    const total = numOf(m[1]); const part = numOf(m[2]);
+    if (total > 0 && part > 0 && part < total) return { num: part, den: total, how: `${m[1]}㎡ 중 ${m[2]}㎡`, totalArea: total, shareArea: part };
+  }
+  for (const m of s.matchAll(/(?<![\d./-])(\d{1,7}(?:\.\d+)?)\s*\/\s*(\d{1,9}(?:\.\d+)?)(?![\d./-])/g)) {
+    const num = numOf(m[1]); const den = numOf(m[2]);
+    if (den > 0 && num > 0 && num < den && near(m.index) && notLandRight(m.index)) return { num, den, how: `${m[1]}/${m[2]}` };
+  }
+  const p = s.match(/지분\s*(?:율|비율)?\s*:?\s*(\d{1,2}(?:\.\d+)?)\s*%/);
+  if (p && Number(p[1]) > 0 && Number(p[1]) < 100) return { num: Number(p[1]), den: 100, how: `${p[1]}%` };
   return null;
+}
+
+const LANDISH = /(임야|(^|[\s>])(전|답|과수원)($|[\s>])|농지|토지|대지|잡종지|목장)/;
+
+// 지분 물건인가: 온비드 지분여부(Y)·법원 '지분매각/공유자 우선매수'. '적정 대지지분'처럼 대지권 이야기만 있으면 지분 매각이 아님
+export function isShareSale(item) {
+  if (!item) return false;
+  if (item.manual?.share?.notShare) return false;
+  if (item.source !== 'court') return Boolean(item.share) || /지분\s*매각|공유\s*지분/.test(`${item.title || ''}`);
+  const t = `${item.detail?.shareText || ''} ${item.detail?.conditions || ''} ${item.title || ''}`;
+  if (/지분\s*매각|공유자\s*우선\s*매수|매각\s*지분|지분\s*전부|공유\s*지분/.test(t)) return true;
+  return Boolean(item.share) && !/(대지\s*지분|대지권)/.test(t);
+}
+
+export function shareInfo(item) {
+  if (!isShareSale(item)) return { share: false, ratio: 1 };
+  const d = item.detail || {};
+  const ms = item.manual?.share;
+  let hit = null; let source = null;
+  if (ms?.num > 0 && ms?.den > 0 && ms.num < ms.den) { hit = { num: Number(ms.num), den: Number(ms.den), how: `${ms.num}/${ms.den}` }; source = '관리자 원문 확인'; }
+  if (!hit && item.shareRatio?.num > 0 && item.shareRatio?.den > 0) { hit = { ...item.shareRatio, how: item.shareRatio.text || `${item.shareRatio.num}/${item.shareRatio.den}` }; source = '원문(수집기)'; }
+  if (!hit) for (const a of d.areas || []) { const r = ratioIn(a.share, { needWord: false }); if (r) { hit = r; source = '온비드 면적표 지분'; break; } }
+  if (!hit) { const r = ratioIn([d.shareText, item.title, d.conditions, d.cautions, d.extraNotes, d.location].filter(Boolean).join('\n')); if (r) { hit = r; source = '공고 글'; } }
+  const coOwners = coOwnersOf(item);
+  const isLand = LANDISH.test(`${item.usage || ''} ${item.usageSmall || ''} ${item.land?.jimok || ''}`) && !item.buildingArea;
+  if (!hit) return { share: true, ratio: null, source: null, coOwners, isLand, area: item.landArea || item.buildingArea || null };
+  const ratio = hit.num / hit.den;
+  // 면적: 브이월드 토지특성(필지 전체 면적) → 글에 적힌 전체 면적 → 수집 면적. 수집 면적이 이미 '지분 면적'이면(전체 × 비율과 같음) 다시 곱하지 않는다
+  const base = isLand ? item.landArea : (item.buildingArea || item.landArea);
+  const total = hit.totalArea || (isLand && item.land?.area) || base || null;
+  const shareArea = hit.shareArea || (total ? Math.round(total * ratio * 100) / 100 : null);
+  const areaIsShare = Boolean(base && shareArea && total && total !== base && Math.abs(base - shareArea) / shareArea < 0.03);
+  return { share: true, ratio, num: hit.num, den: hit.den, how: hit.how, source, totalArea: total, shareArea, areaIsShare, coOwners, isLand };
+}
+
+export function parseShare(item) {
+  const i = shareInfo(item);
+  return i.share ? i.ratio : null;
+}
+
+// 등기상 공유자 수: 관리자가 등기부를 보고 넣은 값 → 공고 글('공유자 5인', '7인 공유')
+export function coOwnersOf(item) {
+  if (item.manual?.share?.coOwners) return Number(item.manual.share.coOwners);
+  const d = item.detail || {};
+  const t = [d.shareText, d.conditions, d.cautions, d.extraNotes, item.title].filter(Boolean).join(' ');
+  const m = t.match(/공유자\s*(?:수\s*)?:?\s*(\d{1,3})\s*(?:명|인)/) || t.match(/(\d{1,3})\s*인\s*공유/);
+  return m ? Number(m[1]) : null;
 }
 
 // 배분요구를 안 했고, 말소기준일보다 먼저(또는 날짜 모름) 전입한 임차인 → 보증금 인수 가능
@@ -58,7 +122,7 @@ export function detectSpecial(item) {
   if (said(/맹지/) || /진입\s*도로\s*(없|미확보)|도로에\s*접하지/.test(t)) add('landlocked', '맹지 표시');
   if (f.superficies || said(/법정지상권|제시\s*외\s*건물|건물\s*(은|은\s*)?매각\s*제외|토지만\s*매각/)) add('superficies', f.superficies ? '법정지상권 기재' : '지상 건물 매각 제외');
   if (/대지권\s*(미등기|없음|없는)|건물만\s*매각/.test(t)) add('noLandRight', '대지권 미등기·건물만 매각');
-  if (item.share || /지분\s*(매각|일부)|공유\s*지분/.test(t)) add('share', item.detail?.shareText || '지분 물건');
+  if (isShareSale(item) || /지분\s*(매각|일부)|공유\s*지분/.test(t)) add('share', item.detail?.shareText || '지분 물건');
   if (said(/유치권/)) add('lien', '유치권 신고·기재');
   if (said(/분묘/)) add('grave', '분묘 기재');
   if (f.survivingRights || said(/선순위\s*(가처분|가등기|임차|전세권|지상권)|인수\s*(할|하는|조건)/)) add('surviving', item.detail?.survivingRights || '인수 권리 기재');
@@ -129,9 +193,11 @@ function build(key, item, full, ctx) {
         { name: '대지사용권 함께 취득 확인 → 정상 가격', value: v(1), months: 6, prob: '확인 필요', basis: '분양대금이 다 치러졌는데 등기만 안 된 경우 낙찰자가 대지사용권도 취득', conditions: ['분양대금 완납 여부', '토지 별도등기·대지권 분리처분 사정'] },
       ], checks: ['집합건물 등기부 표제부', '분양계약·대금 완납 자료'] };
     case 'share': {
-      const r = parseShare(item);
-      return { floor: s.shareFloor, floorBasis: `지분 할인 ${Math.round((1 - s.shareFloor) * 100)}%${r ? ` · 지분 ${Math.round(r * 1000) / 10}%` : ''}`, scenarios: [
-        { name: '다른 공유자에게 매도', value: v(0.85), months: 6, prob: '보통', basis: '공유자가 거주·사용 중이면 매수 유인', conditions: ['공유자 수·관계(가족 여부)', '공유자 실거주'] },
+      const info = shareInfo(item);
+      const r = info.ratio;
+      const co = coOwnerSale(info);
+      return { floor: s.shareFloor, floorBasis: `지분 할인 ${Math.round((1 - s.shareFloor) * 100)}%${r ? ` · 지분 ${info.num}/${info.den}` : ' · 지분비율 미확인'}`, scenarios: [
+        { name: '다른 공유자에게 매도', value: v(0.85), months: 6, prob: co.prob, basis: co.basis, conditions: [info.coOwners ? `등기상 공유자 ${info.coOwners}명 — 많을수록 한 사람에게 팔기 어려움` : '공유자 수·관계(가족 여부) — 등기부 확인 전', '공유자 실거주'] },
         { name: '공유물분할 청구 → 경매로 분할', value: v(0.8), months: 15, prob: '높음', basis: '판결로 전체를 팔아 지분만큼 받음(소송비 수백만 원)', conditions: ['현물분할 가능성', '다른 지분의 근저당'] },
       ], checks: ['공유자 우선매수신고 가능성(민사집행법 제140조)', '공유자 전원 등기부', '감정가가 전체 기준인지 지분 기준인지'] };
     }
@@ -166,6 +232,18 @@ function build(key, item, full, ctx) {
   }
 }
 
+// 다른 공유자에게 매도: 임야·농지 지분은 기본 '낮음'(공유자가 흩어져 있고 실사용 유인이 약함), 공유자가 많을수록 낮춘다
+function coOwnerSale(info) {
+  const c = info.coOwners;
+  if (info.isLand) {
+    if (c >= 5) return { prob: '매우 낮음', basis: `임야·농지 지분, 공유자 ${c}명 — 매수할 공유자를 찾기 어려움` };
+    return { prob: '낮음', basis: `임야·농지 지분은 공유자의 매수 유인이 약함(기본 '낮음')${c ? ` · 공유자 ${c}명` : ''}` };
+  }
+  if (c >= 5) return { prob: '매우 낮음', basis: `공유자 ${c}명 — 한 사람이 사 줄 가능성 낮음` };
+  if (c >= 3) return { prob: '낮음', basis: `공유자 ${c}명 — 사 줄 사람이 나뉨` };
+  return { prob: '보통', basis: `공유자가 거주·사용 중이면 매수 유인${c ? ` · 공유자 ${c}명` : ''}` };
+}
+
 // 주변 필지 맹지 자동 확인 결과(서버가 브이월드 지적도·토지특성으로 조사)
 function nbProb(item) {
   const nb = item.neighbors;
@@ -189,7 +267,7 @@ function pmText(item) {
   return pm.newBuild ? `✔ 확인됨: 같은 동 최근 ${pm.years}년 신축 허가 ${pm.newBuild}건(같은 번지대 ${pm.nearby}건) — 개발 수요 있음` : `✔ 확인됨: 같은 동 최근 ${pm.years}년 신축 허가 없음 — 개발 수요 약함`;
 }
 
-const PROB_PT = { 높음: 20, 보통: 13, '확인 필요': 9, 낮음: 5 };
+const PROB_PT = { 높음: 20, 보통: 13, '확인 필요': 9, 낮음: 5, '매우 낮음': 2 };
 
 // 하자 없는 가치(full)를 받아 특수물건 분석 결과를 만든다. 특수 사정이 없으면 null
 export function specialAnalysis(item, { full, settings, member, rightValue, redev, rounds } = {}) {
@@ -220,7 +298,7 @@ export function specialAnalysis(item, { full, settings, member, rightValue, rede
   const price = item.minBid || null;
   const floorEntry = floorKnown && floor > 0 ? (rounds || []).find((r) => r.price <= floor) || null : null;
   // 기대 가치: 바닥에서 최고 시나리오까지 오른 폭을 가능성만큼만 인정
-  const P = { 높음: 0.8, 보통: 0.5, '확인 필요': 0.3, 낮음: 0.2 };
+  const P = { 높음: 0.8, 보통: 0.5, '확인 필요': 0.3, 낮음: 0.2, '매우 낮음': 0.05 };
   // 바닥을 모를 때(인수 금액 미확인)는 하자 없는 가치의 일정 비율(기본 60%)을 임시 바닥으로 본다
   const base = floorKnown ? floor : full ? full * (s.unknownFloor ?? 0.6) : null;
   const expected = best && base !== null ? Math.round(base + Math.max(0, best.value - base) * (P[best.prob] ?? 0.3)) : base;

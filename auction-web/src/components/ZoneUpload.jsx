@@ -52,7 +52,7 @@ export default function ZoneUpload() {
   const stageCount = (zones) => { const c = {}; zones.forEach((z) => { c[z.stage || '단계 미상'] = (c[z.stage || '단계 미상'] || 0) + 1; }); return c; };
 
   return (
-    <Card title="정비사업 현황 올리기 (분기 엑셀)">
+    <Card title="정비사업 현황 엑셀 올리기 (참고 자료 — 판정 기준은 위 정비구역 목록)">
       <p className="mb-3 text-xs text-ink/60">서울·경기는 분기 엑셀을 올려 주세요(경기는 정비사업·재정비촉진 두 파일을 한 번에). 인천은 추정분담금 정보시스템 자료실에서 매달 자동으로 받아옵니다. 엑셀을 올리면, 물건과 같은 동의 구역을 찾아 단계(조합설립·사업시행·관리처분)를 붙입니다. 새 분기 파일을 올리면 그 시도 자료가 통째로 바뀝니다.</p>
       <div className="mb-3 flex flex-wrap gap-2 text-xs">
         {SIDO.map((s) => <Badge key={s} tone={saved[s]?.zones?.length ? 'brand' : 'muted'}>{s}: {saved[s]?.zones?.length ? `${saved[s].zones.length}개 · ${saved[s].quarter || ''}` : '없음'}</Badge>)}
