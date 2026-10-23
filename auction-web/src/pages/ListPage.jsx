@@ -12,6 +12,7 @@ const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '
 export default function ListPage({ mode }) {
   const opp = mode === 'opportunity';
   const done = mode === 'done';
+  const villa = mode === 'villa';
   const [items, setItems] = useState(null);
   const [settings, setSettings] = useState(null);
   const [dealsMap, setDealsMap] = useState({});
@@ -29,7 +30,7 @@ export default function ListPage({ mode }) {
   useEffect(() => {
     if (!items) return;
     const keys = new Set();
-    items.forEach((it) => { const l = lawdOf(it.sido, it.sgg); if (l) keys.add(`${tradeTypeOf(it)}|${l}`); });
+    items.forEach((it) => { const l = lawdOf(it.sido, it.sgg); if (!l) return; const t = tradeTypeOf(it); if (villa && t !== 'rh') return; keys.add(`${t}|${l}`); if (villa) keys.add(`${t}Rent|${l}`); });
     const need = [...keys].filter((k) => !(k in dealsMap)).slice(0, 40);
     if (!need.length) return;
     Promise.all(need.map(async (k) => { const [t, l] = k.split('|'); return [k, await getDeals(t, l, 12)]; }))
@@ -40,7 +41,7 @@ export default function ListPage({ mode }) {
     if (!items || !settings) return [];
     return (done ? items : dedupeRounds(items)).map((it) => { // 완료 물건은 회차마다 따로 채점
       const l = lawdOf(it.sido, it.sgg);
-      const a = analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${l}`] });
+      const a = analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${l}`], rentDeals: villa ? dealsMap[`${tradeTypeOf(it)}Rent|${l}`] : undefined });
       return { it, a };
     }).filter(({ it, a }) => {
       const cat = it.source === 'court' ? 'court' : it.category;
@@ -48,6 +49,7 @@ export default function ListPage({ mode }) {
       if (f.verdict === 'special' ? !a.special : f.verdict !== 'all' && a.verdict !== f.verdict) return false;
       if (!f.showExcluded && a.excluded) return false;
       if (opp && !a.opportunity) return false;
+      if (villa && tradeTypeOf(it) !== 'rh') return false;
       if (done !== isEnded(it)) return false;
       if (f.sgg && !(it.sgg || '').includes(f.sgg)) return false;
       if (f.maxPrice && (it.minBid || 0) > Number(f.maxPrice) * 1e4) return false;
@@ -57,8 +59,8 @@ export default function ListPage({ mode }) {
       if (!done && f.onlyOpen && /(낙찰|취소|종결|매각)/.test(it.status || '') && !/진행/.test(it.status || '')) return false;
       if (f.q && !`${it.title} ${it.address} ${it.caseNo}`.includes(f.q)) return false;
       return true;
-    }).sort((x, y) => (done && f.sort === 'verdict' ? endOf(y.it).localeCompare(endOf(x.it)) : 0) || (opp && f.sort === 'verdict' ? NUM(y.a.opportunity?.profit) - NUM(x.a.opportunity?.profit) : 0) || sorter(f.sort)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
-  }, [items, settings, dealsMap, f, opp, done]);
+    }).sort((x, y) => (villa && f.sort === 'verdict' ? NUM(y.a.renoMoney?.profit ?? y.a.money?.profit) - NUM(x.a.renoMoney?.profit ?? x.a.money?.profit) : 0) || (done && f.sort === 'verdict' ? endOf(y.it).localeCompare(endOf(x.it)) : 0) || (opp && f.sort === 'verdict' ? NUM(y.a.opportunity?.profit) - NUM(x.a.opportunity?.profit) : 0) || sorter(f.sort)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
+  }, [items, settings, dealsMap, f, opp, done, villa]);
 
   const counts = useMemo(() => {
     const c = { now: 0, wait: 0, check: 0, hard: 0, unknown: 0, special: 0, suspect: 0 };
@@ -71,6 +73,13 @@ export default function ListPage({ mode }) {
   return (
     <div className="space-y-4">
       {done && <DoneSummary rows={rows} />}
+      {villa && (
+        <div className="card border-brand/30 text-sm">
+          <div className="text-base font-extrabold">빌라 단타 — 땅값 수준에 사서 올수리 후 매도</div>
+          <p className="mt-1 text-ink/70">다세대·연립만 모았습니다. 올수리 후 세후 수익 큰 순입니다. 기준: <b>최저가가 땅값(대지지분 가치) 이하인가</b>, <b>올수리 후 500만 원 이상 남나</b>, 그리고 <b>물렸을 때 버틸 수 있나</b>(같은 동 거래가 충분한가, 전세로 돌리면 묶이는 돈이 내 돈 안인가, 월세가 이자를 넘나).</p>
+          <p className="mt-1 text-xs text-ink/50">한 달에 2건씩 팔려면 동시에 8~12건이 돌아가야 합니다. 출구가 둘 다 막힌 물건은 한 건만 물려도 연쇄로 막힙니다.</p>
+        </div>
+      )}
       {opp && (
         <div className="card border-now/30 bg-now/5 text-sm">
           <div className="text-base font-extrabold">기회 찾기 — 지금 값보다 손을 대면 오르는 물건</div>
@@ -152,6 +161,7 @@ export default function ListPage({ mode }) {
               </div>
             )}
             {done && <ResultRow it={it} a={a} />}
+            {villa && <VillaRow it={it} a={a} />}
             {a.opportunity && (
               <div className="mt-2 rounded-lg border border-now/30 bg-now/5 p-2 text-sm">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -202,6 +212,21 @@ function sorter(key) {
 function fitOf(it, a) {
   if (a.money?.fit) return a.money.fit.grade;
   return corpFit(it, propertyKind(it, tradeTypeOf(it), a.farm)).grade;
+}
+
+// 빌라 단타 줄: 땅값 대비 · 올수리 수익 · 회전율 · 두 번째 출구
+function VillaRow({ it, a }) {
+  const lv = a.landValue; const rm = a.renoMoney || a.money; const lq = a.liquidity; const ex = a.exit2;
+  const good = (b) => (b === true ? 'text-now' : b === false ? 'text-hard' : 'text-ink/50');
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg border border-brand/20 bg-brand2/40 p-2 text-sm sm:grid-cols-4">
+      <div><div className="text-xs text-ink/50">땅값 대비 최저가</div><div className={`num font-bold ${good(lv?.ratio ? lv.ratio <= 1 : null)}`}>{lv?.ratio ? pct(lv.ratio) : '땅값 확인 전'}</div><div className="text-[11px] text-ink/50">{lv ? `땅값 ${eok(lv.value)}` : '공시지가·대지권 필요'}</div></div>
+      <div><div className="text-xs text-ink/50">{a.renoMoney ? '올수리 후 세후' : '세후 수익'}</div><div className={`num font-bold ${good(rm ? rm.profit >= 5000000 : null)}`}>{rm && !rm.upside ? eok(rm.profit) : '—'}</div><div className="text-[11px] text-ink/50">{rm && !rm.upside ? `내 돈 ${eok(rm.own)} · ${rm.months}개월` : ''}</div></div>
+      <div><div className="text-xs text-ink/50">회전율</div><div className={`font-bold ${good(lq ? lq.level !== '낮음' : null)}`}>{lq ? lq.level : '—'}</div><div className="text-[11px] text-ink/50">{lq ? `같은 동 1년 ${lq.sameDong}건` : ''}</div></div>
+      <div><div className="text-xs text-ink/50">물렸을 때</div><div className={`font-bold ${good(ex ? ex.ok : null)}`}>{ex ? (ex.ok === null ? '전월세 자료 없음' : ex.ok ? '버틸 수 있음' : '출구 막힘') : '—'}</div>
+        <div className="text-[11px] text-ink/50">{ex?.jeonse ? `전세 ${eok(ex.jeonse)}→묶임 ${eok(ex.lockedAfterJeonse)}` : '전세 자료 없음'}{ex?.rent ? ` · 월세 ${eok(ex.rent.monthly)}/이자 ${eok(ex.monthlyInterest)}` : ''}</div></div>
+    </div>
+  );
 }
 
 // ── 완료 물건 ──────────────────────────────────────────────

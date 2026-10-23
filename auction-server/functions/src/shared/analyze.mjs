@@ -260,6 +260,27 @@ export function jeonseEstimate(item, rentDeals) {
   return { value: Math.round(median(pool.map((d) => d[0] / d[1])) * area), count: pool.length, basis: `${same.length >= 5 ? '같은 동' : '같은 시군구'} 비슷한 면적 전세 ${pool.length}건 ㎡당 중앙값` };
 }
 
+// 월세 시세(같은 동/시군구·비슷한 면적, 월세 있는 계약의 보증금·월세 중앙값)
+export function rentEstimate(item, rentDeals) {
+  const area = item.buildingArea;
+  if (!area || !rentDeals?.length) return null;
+  let pool = rentDeals.filter((d) => d[1] && d[10] > 0);
+  const same = pool.filter((d) => item.emd && d[9] === item.emd);
+  if (same.length >= 5) pool = same;
+  pool = pool.filter((d) => d[1] >= area * 0.8 && d[1] <= area * 1.2);
+  if (pool.length < 3) return null;
+  return { deposit: Math.round(median(pool.map((d) => d[0] || 0))), monthly: Math.round(median(pool.map((d) => d[10]))), count: pool.length, basis: `${same.length >= 5 ? '같은 동' : '같은 시군구'} 비슷한 면적 월세 ${pool.length}건 중앙값` };
+}
+
+// 회전율: 같은 동(없으면 시군구) 같은 종류 최근 12개월 거래 건수 — 적으면 팔기 어려움
+export function liquidityOf(item, deals) {
+  const pool = (deals || []).filter((d) => d[0] && !d[7]);
+  const same = pool.filter((d) => item.emd && d[9] === item.emd);
+  const near = item.buildingArea ? same.filter((d) => d[1] >= item.buildingArea * 0.7 && d[1] <= item.buildingArea * 1.3) : same;
+  const n = same.length;
+  return { sameDong: n, similar: near.length, level: n >= 24 ? '좋음' : n >= 8 ? '보통' : '낮음', basis: `같은 동 최근 12개월 ${n}건(비슷한 면적 ${near.length}건)` };
+}
+
 export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   const margin = settings?.marginRate ?? 0.1;
   const market = marketEstimate(item, deals, { excludeDirect: settings?.excludeDirect !== false });
@@ -402,6 +423,27 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
 
   // 기회: 권리를 풀면(가능성 반영 기대 가치) 또는 올수리하면 지금 계산보다 돈이 더 되는 물건
   const opp = [];
+  // 땅값(대지지분 가치): 빌라를 땅값 수준에 사면 손해가 적다는 실전 기준(정민 님) — 대지권 면적 × 개별공시지가 ÷ 토지 현실화율
+  if (['rh', 'sh', 'apt'].includes(tradeTypeOf(item)) && item.landArea && item.land?.officialPrice) {
+    const r = settings?.valuation?.realization?.land ?? 0.655;
+    const v = Math.round((item.landArea * item.land.officialPrice) / r);
+    result.landValue = { value: v, ratio: item.minBid ? item.minBid / v : null, basis: `대지 ${Math.round(item.landArea * 10) / 10}㎡ × 개별공시지가 ${item.land.officialPrice.toLocaleString('ko-KR')}원/㎡ ÷ ${Math.round(r * 1000) / 10}%` };
+  }
+  // 물렸을 때 버틸 수 있나: 회전율 + 두 번째 출구(전세로 돌리면 묶이는 돈, 월세로 돌리면 이자 감당)
+  if (['rh', 'sh', 'apt', 'offi'].includes(tradeTypeOf(item))) {
+    result.liquidity = liquidityOf(item, deals);
+    const base = result.renoMoney || result.money;
+    if (base && !base.upside) {
+      const rent = rentEstimate(item, rentDeals);
+      const invested = base.price + (base.t?.acqTax || 0) + (base.other || 0); // 산 값 + 취득세 + 명도·수리
+      const exit = { invested };
+      if (jeonse) { exit.jeonse = jeonse.value; exit.lockedAfterJeonse = Math.max(0, invested - jeonse.value); }
+      if (rent) { const interest = Math.round(base.loan * (base.rate || 0.045) / 12); exit.rent = rent; exit.monthlyInterest = interest; exit.rentCovers = rent.monthly >= interest; }
+      // 전월세 자료가 하나도 없으면 판단 보류(null) — '막힘'으로 단정하지 않는다
+      exit.ok = exit.jeonse === undefined && exit.rent === undefined ? null : (exit.lockedAfterJeonse !== undefined && exit.lockedAfterJeonse <= base.own) || exit.rentCovers === true;
+      result.exit2 = exit;
+    }
+  }
   if (special?.expected && item.minBid) {
     const exp = moneyOf(item, { ...result, value: special.expected, verdict: 'now', costs: costEstimate(item, special.expected, settings) }, { ...settings, holdMonths: special.best?.months || 12 });
     if (exp?.profit > 0) opp.push({ kind: '권리 풀기', profit: exp.profit, own: exp.own, roi: exp.roi, months: exp.months, note: special.best ? `${special.best.name} (가능성 ${special.best.prob} 반영)` : '' });
