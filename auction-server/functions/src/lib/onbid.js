@@ -10,6 +10,8 @@ const { CAPITAL_SIDO } = require('../data/regions');
 const ENDPOINTS = {
   list: process.env.ONBID_LIST_URL || 'https://apis.data.go.kr/B010003/OnbidRlstListSrvc2/getRlstCltrList2',
   detail: process.env.ONBID_DETAIL_URL || 'https://apis.data.go.kr/B010003/OnbidRlstDtlSrvc2/getRlstDtlInf2',
+  // 물건상세 입찰정보: 이전 회차 입찰결과(낙찰·유찰, 낙찰금액, 감정가 대비 낙찰가율)와 입찰 방법·보증금
+  bid: process.env.ONBID_BID_URL || 'https://apis.data.go.kr/B010003/OnbidCltrBidDtlSrvc2/getCltrBidInf2',
 };
 
 // 재산유형: 0007 압류, 0010 국유, 0005 기타일반, 0002 공유, 0003 금융권담보, 0006 유입, 0008 수탁, 0011 공공개발, 0013 파산자산
@@ -281,4 +283,42 @@ function score(item) {
   return s;
 }
 
-module.exports = { DETAIL_VERSION, validPnu, ENDPOINTS, PROPERTY_CODES, BANKRUPT_CODE, partitions, mapListRow, mapDetail, fetchListPage, fetchDetail, fetchDetails, collect, listingId, score };
+// ── 입찰 결과 ───────────────────────────────────────────────
+const arr = (v) => (Array.isArray(v) ? v : v && Array.isArray(v.listItem) ? v.listItem : v && v.listItem ? [v.listItem] : v && typeof v === 'object' ? [v] : []);
+const amount = (v) => { const n = Number(String(v ?? '').split('|')[0].replace(/[^\d]/g, '')); return Number.isFinite(n) && n > 0 ? n : null; };
+const ymdhm = (v) => { const t = text(v); return t && /^\d{12}$/.test(t) ? `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)} ${t.slice(8, 10)}:${t.slice(10, 12)}` : t || null; };
+
+function mapBidInfo(r) {
+  const history = arr(r.prcnBidClgList).map((h) => ({
+    round: text(h.pbctNsq), openAt: ymdhm(h.cltrOpbdDt), status: text(h.pbctStatNm),
+    minBid: amount(h.lowstBidPrcIndctCont), soldPrice: amount(h.scfbAmt),
+    rateToAppraisal: num(h.apslPrcCtrsLowstBidRto), rateToMinBid: num(h.frstCtrsLowstBidPrcRto),
+  }));
+  return {
+    round: text(r.pbctNsq), failCount: num(r.usbdNft),
+    prevResult: text(r.prcnNsqBidRsltNm), prevMinBid: amount(r.prcnNsqLowstBidPrc),
+    deposit: text(r.pbctTdpsCont), payTerm: text(r.pcmtPayTermCont), coBid: text(r.collbBidPsblYn) === 'Y', proxyBid: text(r.subtBidPsblYn) === 'Y',
+    nextRankApply: text(r.nrnkAplyPsblYn) === 'Y', bidCondition: text(r.bidVldCrtrCont), qualification: text(r.qlfcLmtCdtnCont) || text(r.bidPtctAplyDcmtCont) || null,
+    history,
+  };
+}
+
+async function fetchBidInfo({ cltrMngNo, pbctCdtnNo, serviceKey, quota, fetcher }) {
+  const r = await call({ api: 'onbid-bid', url: ENDPOINTS.bid, serviceKey, quota, fetcher, params: { pageNo: 1, numOfRows: 10, resultType: 'json', cltrMngNo, pbctCdtnNo } });
+  return r.rows[0] ? mapBidInfo(r.rows[0]) : null;
+}
+
+// 이 물건(이 회차)의 결과: 이력에서 같은 회차 → 없으면 가장 최근의 낙찰/유찰
+function resultFor(item, info) {
+  if (!info) return null;
+  const done = info.history.filter((h) => /(낙찰|유찰|취소)/.test(h.status || ''));
+  const hit = done.find((h) => item.round && String(h.round) === String(item.round)) || null;
+  if (!hit) return null;
+  return {
+    status: hit.status, soldPrice: /낙찰/.test(hit.status) ? hit.soldPrice : null,
+    rate: hit.rateToAppraisal ? hit.rateToAppraisal / 100 : null, minBid: hit.minBid || item.minBid || null,
+    openAt: hit.openAt, source: '온비드 물건상세 입찰정보', at: new Date().toISOString(),
+  };
+}
+
+module.exports = { mapBidInfo, fetchBidInfo, resultFor, DETAIL_VERSION, validPnu, ENDPOINTS, PROPERTY_CODES, BANKRUPT_CODE, partitions, mapListRow, mapDetail, fetchListPage, fetchDetail, fetchDetails, collect, listingId, score };

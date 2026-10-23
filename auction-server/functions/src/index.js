@@ -178,13 +178,54 @@ async function runTrades({ deadline } = {}) {
   });
 }
 
+// 온비드 입찰 결과: 입찰이 끝났는데 결과가 없는 물건을 물건상세 입찰정보로 조회해 낙찰가·낙찰가율을 채운다.
+// 결과가 아직 안 올라온 물건은 하루 뒤 다시(최대 5번).
+async function runOnbidResults({ deadline, max = 400 } = {}) {
+  const now = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');
+  const snap = await db.collection('listings').where('source', '==', 'onbid')
+    .select('cltrMngNo', 'pbctCdtnNo', 'round', 'minBid', 'bidEnd', 'status', 'result', 'resultTries', 'resultCheckedAt').get();
+  const dayAgo = Date.now() - 20 * 3600e3;
+  const targets = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .filter((it) => it.cltrMngNo && it.pbctCdtnNo && !it.result && String(it.bidEnd || '') && String(it.bidEnd) < now)
+    .filter((it) => (it.resultTries || 0) < 5 && (!it.resultCheckedAt || new Date(it.resultCheckedAt).getTime() < dayAgo))
+    .sort((a, b) => String(b.bidEnd).localeCompare(String(a.bidEnd)))
+    .slice(0, max);
+  // 같은 물건의 다른 회차(유찰 뒤 새로 올라온 회차) — 그 회차를 조회하면 이전 회차 결과가 나온다
+  const siblings = new Map();
+  snap.docs.forEach((d) => { const x = d.data(); if (!x.cltrMngNo) return; (siblings.get(x.cltrMngNo) || siblings.set(x.cltrMngNo, []).get(x.cltrMngNo)).push({ id: d.id, ...x }); });
+  const quota = new Quota(db);
+  const stats = { targets: targets.length, filled: 0, pending: 0, errors: 0 };
+  for (const it of targets) {
+    if (Date.now() > deadline) { stats.stoppedBy = 'time'; break; }
+    if ((await quota.remaining('onbid-bid')) <= 0) { stats.stoppedBy = 'quota'; break; }
+    try {
+      const info = await onbid.fetchBidInfo({ cltrMngNo: it.cltrMngNo, pbctCdtnNo: it.pbctCdtnNo, serviceKey: DATA_GO_KR_KEY.value(), quota });
+      let result = onbid.resultFor(it, info);
+      if (!result) {
+        const later = (siblings.get(it.cltrMngNo) || []).filter((x) => x.pbctCdtnNo !== it.pbctCdtnNo && Number(x.round || 0) > Number(it.round || 0))
+          .sort((a, b) => Number(b.round || 0) - Number(a.round || 0))[0];
+        if (later && (await quota.remaining('onbid-bid')) > 0) {
+          const info2 = await onbid.fetchBidInfo({ cltrMngNo: later.cltrMngNo, pbctCdtnNo: later.pbctCdtnNo, serviceKey: DATA_GO_KR_KEY.value(), quota });
+          result = onbid.resultFor(it, info2);
+          if (info2) await db.collection('listings').doc(later.id).set({ bidInfo: info2 }, { merge: true });
+        }
+      }
+      const upd = { resultCheckedAt: new Date().toISOString(), resultTries: (it.resultTries || 0) + 1 };
+      if (info) upd.bidInfo = info;
+      if (result) { upd.result = result; stats.filled++; } else stats.pending++;
+      await db.collection('listings').doc(it.id).set(upd, { merge: true });
+    } catch (e) { stats.errors++; if (stats.errors <= 3) logger.warn('onbid result', it.id, e.message); }
+  }
+  return stats;
+}
+
 async function tick({ only, force } = {}) {
   const started = Date.now();
   const deadline = started + TICK_BUDGET_MS;
   const out = {};
   const settings = await getSettings();
-  const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, trades: settings.collectTrades !== false };
-  const jobs = only ? [only] : ['zones', 'bankrupt', 'onbid', 'trades'];
+  const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, results: settings.collectOnbid !== false, trades: settings.collectTrades !== false };
+  const jobs = only ? [only] : ['zones', 'bankrupt', 'onbid', 'results', 'trades'];
   for (const job of jobs) {
     if (!enabled[job] && !only) continue;
     if (Date.now() > deadline) { out[job] = { stopped: 'time' }; continue; }
@@ -192,6 +233,7 @@ async function tick({ only, force } = {}) {
       if (job === 'zones') out[job] = await runIncheonZones({ force });
       if (job === 'bankrupt') out[job] = await runBankrupt({ force });
       if (job === 'onbid') out[job] = await runOnbid({ deadline, force });
+      if (job === 'results') out[job] = await runOnbidResults({ deadline });
       if (job === 'trades') out[job] = await runTrades({ deadline });
     } catch (e) {
       logger.error(job, e);
@@ -224,7 +266,7 @@ function requireAdmin(request) {
 exports.runNow = onCall({ timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_GO_KR_KEY, VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
   const job = request.data && request.data.job;
-  if (!['zones', 'bankrupt', 'onbid', 'trades'].includes(job)) throw new HttpsError('invalid-argument', 'job 값이 잘못되었습니다.');
+  if (!['zones', 'bankrupt', 'onbid', 'results', 'trades'].includes(job)) throw new HttpsError('invalid-argument', 'job 값이 잘못되었습니다.');
   return tick({ only: job, force: true });
 });
 
@@ -274,6 +316,14 @@ exports.testApis = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORL
         + ` ‖ 목록형 항목: ${Object.entries(row).filter(([, v]) => v && typeof v === 'object').map(([k, v]) => `${k}=${shape(v)}`).join(', ')}`
         + ` ‖ 항목 ${Object.keys(row).length}개: ${Object.keys(row).join(', ')}`,
     };
+  });
+  await tryOne('온비드 입찰결과(물건상세 입찰정보)', async () => {
+    const list = await onbid.fetchListPage({ part: { sido: '인천광역시', prptDivCd: onbid.PROPERTY_CODES, pvctTrgtYn: 'N' }, pageNo: 1, serviceKey: key, quota });
+    const row = list.rows.find((r) => r.cltrMngNo && Number(r.usbdNft || 0) > 0) || list.rows.find((r) => r.cltrMngNo);
+    if (!row) return { total: 0, message: '목록에 물건이 없어 시험하지 못했습니다.' };
+    const info = await onbid.fetchBidInfo({ cltrMngNo: row.cltrMngNo, pbctCdtnNo: row.pbctCdtnNo, serviceKey: key, quota });
+    if (!info) return { total: 0, cltrMngNo: row.cltrMngNo, message: '응답이 비어 있습니다.' };
+    return { total: info.history.length, cltrMngNo: row.cltrMngNo, sample: `유찰 ${info.failCount ?? '—'}회 · 직전 결과 ${info.prevResult || '—'} · 이력 ${info.history.map((h) => `${h.round}회 ${h.status} ${h.minBid || ''}${h.soldPrice ? `→낙찰 ${h.soldPrice}` : ''}`).join(' / ') || '없음'} · 보증금 ${info.deposit || '—'}` };
   });
   await tryOne('온비드 파산자산(전국)', async () => {
     const r = await onbid.fetchListPage({ part: { sido: null, prptDivCd: onbid.BANKRUPT_CODE, pvctTrgtYn: 'N' }, pageNo: 1, serviceKey: key, quota });

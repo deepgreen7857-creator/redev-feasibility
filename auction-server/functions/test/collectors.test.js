@@ -288,3 +288,22 @@ test('입찰 전 예측: 기일 전 물건만 판정하고, 기일이 된 물건
   assert.ok(written.a.forecast.verdict && written.a.forecastFirst);
   assert.equal(written.b, undefined);
 });
+
+test('온비드 입찰결과: 이전 회차 내역에서 같은 회차의 낙찰가·낙찰가율', () => {
+  const onbid = require('../src/lib/onbid');
+  const info = onbid.mapBidInfo({
+    pbctNsq: '3', usbdNft: '2', prcnNsqBidRsltNm: '유찰', prcnNsqLowstBidPrc: '80000000', pbctTdpsCont: '최저입찰가*10%',
+    prcnBidClgList: [
+      { pbctNsq: '1', cltrOpbdDt: '202610011030', pbctStatNm: '유찰', lowstBidPrcIndctCont: '100000000' },
+      { pbctNsq: '2', cltrOpbdDt: '202610081030', pbctStatNm: '낙찰', lowstBidPrcIndctCont: '90000000', scfbAmt: '93500000', apslPrcCtrsLowstBidRto: '93.5' },
+    ],
+  });
+  assert.equal(info.history.length, 2);
+  const r = onbid.resultFor({ round: '2', minBid: 9e7 }, info);
+  assert.equal(r.soldPrice, 93500000); assert.equal(r.rate, 0.935); assert.equal(r.status, '낙찰');
+  const f = onbid.resultFor({ round: '1' }, info);
+  assert.equal(f.status, '유찰'); assert.equal(f.soldPrice, null);
+  assert.equal(onbid.resultFor({ round: '5' }, info), null);
+  const one = onbid.mapBidInfo({ prcnBidClgList: { listItem: { pbctNsq: '1', pbctStatNm: '낙찰', scfbAmt: '1|2' } } });
+  assert.equal(one.history[0].soldPrice, 1);
+});

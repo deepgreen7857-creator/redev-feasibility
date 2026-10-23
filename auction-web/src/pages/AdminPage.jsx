@@ -65,6 +65,7 @@ function Status() {
       <div className="no-print mt-4 flex flex-wrap gap-2">
         <button className="btn-primary" disabled={!!busy} onClick={() => run('testApis', {}, 'test')}>{busy === 'test' ? '시험 중…' : 'API 연결 시험'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'onbid' }, 'onbid')}>{busy === 'onbid' ? '수집 중…' : '온비드 지금 수집'}</button>
+        <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'results' }, 'results')}>{busy === 'results' ? '받는 중…' : '온비드 입찰결과 지금 받기'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'zones' }, 'zones')}>{busy === 'zones' ? '받는 중…' : '인천 정비현황 지금 받기'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'bankrupt' }, 'bankrupt')}>{busy === 'bankrupt' ? '수집 중…' : '파산 공고 지금 수집'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'trades' }, 'trades')}>{busy === 'trades' ? '수집 중…(최대 8분)' : '실거래가 이어 받기'}</button>
