@@ -39,3 +39,18 @@ firebase functions:secrets:set COURT_INGEST_TOKEN
 firebase deploy --only functions
 ```
 토큰은 아무 긴 문자열이면 됩니다(예: 비밀번호 생성기로 40자). 같은 값을 미니PC `.env` 에 넣습니다.
+
+## 등기부 열람본 자동 자료화 (마이옥션, 관리자 전용)
+지금 경매 중인 법원 물건 중 열람본이 아직 없는 것을 입찰일 가까운 순으로, 마이옥션에서 사건번호로 찾아 물건마다 붙은 등기부(건물·토지·집합건물) 열람본 PDF를 받습니다.
+- PDF 원본은 이 PC(`state/registry`, `.env` 의 `REGISTRY_DIR` 로 바꿀 수 있음)에 두고, 정리한 갑구·을구·'주요 등기사항 요약'만 서버의 관리자 전용 모음(`registry`)으로 보냅니다. 주민·법인 등록번호는 지웁니다.
+- 물건에는 이름 없는 표시만 붙습니다(`registryFlags`: 말소기준권리 후보, 그보다 앞선 가처분·가등기·전세권·지상권 등, 가압류·압류·근저당 합계, 공유 여부). 관리자 화면 물건 상세의 '등기부(열람본)' 카드에서 봅니다.
+- 천천히: 물건 사이 50~120초, 15건마다 5~15분 쉼, 08~23시, 하루 120건. 마이옥션에서 못 찾거나 열람본이 없는 물건은 7일 뒤 다시 봅니다.
+
+처음 한 번 (미니PC):
+```powershell
+cd C:\jbslab\court-collector
+npm run myauction-login          # 뜬 창에서 마이옥션 로그인 → 창 닫기 (로그인 상태가 state/myauction-profile 에 남음)
+npm run registry-test            # 2건만 받아 정리 결과를 state/registry-test.json 에 (서버에 안 보냄)
+powershell -ExecutionPolicy Bypass -File .\install-registry-task.ps1   # 매일 자동
+```
+로그가 `로그인 필요` 로 끝나면 `npm run myauction-login` 만 다시 하면 됩니다. 로그: `logs\registry-날짜.log`

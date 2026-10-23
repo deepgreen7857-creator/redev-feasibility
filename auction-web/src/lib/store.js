@@ -226,3 +226,12 @@ export async function resolveAlert(id) {
   if (!f) return;
   await f.fs.setDoc(f.fs.doc(f.db, 'adminAlerts', id), { resolved: true, resolvedAt: new Date().toISOString(), resolvedBy: 'admin' }, { merge: true });
 }
+
+// 등기부 열람본(관리자 전용 모음 registry) — 물건 하나에 건물·토지 등 여러 장
+export async function getRegistry(listingId) {
+  const f = await firebase();
+  if (!f) return [];
+  const { collection, query, where, getDocs } = f.fs;
+  const snap = await getDocs(query(collection(f.db, 'registry'), where('listingId', '==', listingId)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}

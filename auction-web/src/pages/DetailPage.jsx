@@ -7,6 +7,7 @@ import { analyze, tradeTypeOf, courtRate, eok, won, pct, SOURCE_LABEL, typeLabel
 import { shareInfo } from '../lib/special.js';
 import { lawdOf } from '../data/defaults.js';
 import { Badge, VerdictBadge, Card, Row, Field, Empty } from '../components/ui.jsx';
+import RegistryCard from '../components/RegistryCard.jsx';
 
 const STAGES = ['', '정비예정구역', '구역지정', '추진위원회 승인', '조합설립인가 전(임박)', '조합설립인가 후', '사업시행인가 후', '관리처분인가 후'];
 const ZLABEL = { designated: '구역지정', committee: '추진위', union: '조합설립', implementation: '사업시행', management: '관리처분', construction: '착공', completion: '준공', transfer: '이전고시' };
@@ -264,6 +265,8 @@ export default function DetailPage({ admin }) {
 
       {(item.forecast || item.forecastRevised) && <ForecastCard item={item} />}
       {a.special && <SpecialCard item={item} a={a} admin={admin} onSave={updateManual} onNeighbors={checkNeighbors} busy={busy === 'nb'} />}
+
+      {admin && item.source === 'court' && <RegistryCard item={item} />}
 
       {a.renovation && <RenoCard a={a} />}
 

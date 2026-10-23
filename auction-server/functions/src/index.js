@@ -712,11 +712,64 @@ function cleanCourtItem(raw) {
   return item;
 }
 
+// ---------- 등기부 열람본(미니PC 등기부 수집기) — 관리자 전용 ----------
+//  registryTargets: 지금 경매 중인 법원 물건 중 열람본이 없는 것(입찰일 가까운 순, 없음 표시는 7일 뒤 다시)
+//  registry: 정리한 열람본 저장 → registry 모음(관리자만 읽음). 물건에는 이름 없는 표시(registryFlags)만 붙인다
+//  registryMiss: 마이옥션에서 못 찾음/열람본 없음 표시, registryState: 수집기 회차 결과
+const plain = (v) => JSON.parse(JSON.stringify(v ?? null));
+async function handleRegistry(body) {
+  if (body.action === 'registryTargets') {
+    const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+    const weekAgo = Date.now() - 7 * 86400e3;
+    const snap = await db.collection('listings').where('source', '==', 'court').select('court', 'caseNo', 'itemNo', 'bidEnd', 'status', 'registryAt', 'registryMissAt').get();
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .filter((it) => !it.registryAt && String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today)
+      .filter((it) => !/취하|기각|매각|종국/.test(it.status || ''))
+      .filter((it) => !it.registryMissAt || new Date(it.registryMissAt).getTime() < weekAgo)
+      .sort((a, b) => String(a.bidEnd).localeCompare(String(b.bidEnd)))
+      .slice(0, Math.min(Number(body.limit) || 50, 200))
+      .map(({ id, court, caseNo, itemNo, bidEnd }) => ({ id, court, caseNo, itemNo: itemNo || '1', bidEnd }));
+    return { ok: true, items };
+  }
+  if (body.action === 'registry') {
+    const docs = (Array.isArray(body.items) ? body.items : []).filter((d) => d && /^court_/.test(String(d.listingId || '')) && d.kind).slice(0, 10);
+    const byListing = {};
+    for (const d of docs) {
+      const id = `${d.listingId}_${String(d.kind).replace(/[^\w가-힣]/g, '')}_${String(d.sourceType || d.sourceView || '').replace(/[^\w]/g, '')}`;
+      await db.collection('registry').doc(id).set({ ...plain(d), savedAt: new Date().toISOString() });
+      (byListing[d.listingId] ||= []).push(d);
+    }
+    for (const [lid, list] of Object.entries(byListing)) {
+      const f = {}; // 종류별 표시를 합침(살아 있는 기록 수는 더하고, 나머지는 하나라도 있으면)
+      for (const d of list) for (const [k, v] of Object.entries(d.flags || {})) {
+        if (v === undefined || v === null) continue;
+        if (typeof v === 'number') f[k] = (f[k] || 0) + v;
+        else if (Array.isArray(v)) f[k] = [...(f[k] || []), ...v];
+        else if (k === 'baseRight') { if (!f.baseRight || String(v.date) < String(f.baseRight.date)) f.baseRight = v; }
+        else f[k] = f[k] || v;
+      }
+      await db.collection('listings').doc(lid).set(plain({
+        registryAt: new Date().toISOString(), registryKinds: list.map((d) => d.kind),
+        registryViewedAt: list.map((d) => d.viewedAt).filter(Boolean).sort()[0] || null, registryFlags: f,
+      }), { merge: true });
+    }
+    return { ok: true, saved: docs.length, listings: Object.keys(byListing).length };
+  }
+  if (body.action === 'registryMiss') {
+    if (!/^court_/.test(String(body.id || ''))) return { ok: false };
+    await db.collection('listings').doc(String(body.id)).set({ registryMissAt: new Date().toISOString(), registryMissReason: String(body.reason || '') }, { merge: true });
+    return { ok: true };
+  }
+  if (body.action === 'registryState') { await setState('registry', { lastRun: new Date().toISOString(), lastDay: kstDay(), ...plain(body.run || {}) }); return { ok: true }; }
+  return { ok: false, error: '모르는 동작' };
+}
+
 exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY, DATA_GO_KR_KEY], timeoutSeconds: 300, memory: '512MiB', cors: false }, async (req, res) => {
   if (req.method !== 'POST') { res.status(405).send('POST만 받습니다'); return; }
   const auth = String(req.get('authorization') || '');
   if (!COURT_INGEST_TOKEN.value() || auth !== `Bearer ${COURT_INGEST_TOKEN.value()}`) { res.status(401).send('토큰이 맞지 않습니다'); return; }
   const body = req.body || {};
+  if (body.action) { res.json(await handleRegistry(body)); return; }
   const items = (Array.isArray(body.items) ? body.items : []).slice(0, 200).map(cleanCourtItem).filter(Boolean);
   const { needDetail } = await saveListings(items);
   // 땅 정보 붙이기는 90초까지만. 브이월드·건축HUB가 느린 날 20건을 다 붙이다 300초를 넘겨 504가 나던 문제(10/23).

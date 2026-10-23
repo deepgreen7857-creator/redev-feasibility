@@ -3,14 +3,20 @@
   "private": true,
   "description": "정비경매 리포트 — 법원경매 수집기(전용 PC에서 사람 조회 속도로 실행)",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test-run": "node src/run.js --limit 3 --dry",
     "run": "node src/run.js",
-    "setup-browser": "set PLAYWRIGHT_BROWSERS_PATH=0&& npx playwright install chromium"
+    "setup-browser": "set PLAYWRIGHT_BROWSERS_PATH=0&& npx playwright install chromium",
+    "registry": "node src/registry.js",
+    "registry-test": "node src/registry.js --limit 2 --dry",
+    "myauction-login": "node src/registry.js --login",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "pdfjs-dist": "4.10.38",
+    "pdfjs-dist": "^4.10.38",
     "playwright": "^1.48.0"
   }
 }
