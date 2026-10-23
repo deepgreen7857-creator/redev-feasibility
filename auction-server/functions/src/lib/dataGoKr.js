@@ -117,7 +117,11 @@ async function call({ api, url, params, serviceKey, quota, fetcher = fetch, retr
       }
       if (!res.ok) {
         let body = '';
-        try { body = (await res.text()).replace(/\s+/g, ' ').slice(0, 160); } catch { /* 무시 */ }
+        try { body = (await res.text()).replace(/\s+/g, ' ').slice(0, 400); } catch { /* 무시 */ }
+        // 키 미등록(30)·미승인(20) 같은 인증 거절은 HTTP 403 본문에 사유 코드로 온다 → 그 코드로 던져야 수집기가 바로 멈춘다
+        // (전에는 HTTP_403으로만 던져서 거절당하면서도 하루 한도를 다 썼음)
+        const reason = (body.match(/returnReasonCode[^0-9]{0,12}(\d{2})/) || [])[1];
+        if (reason) throw new ApiError(reason, `공공데이터 API 거절(코드 ${reason}${/NOT_REGISTERED/.test(body) ? ' 등록되지 않은 서비스키 — 활용신청 승인이 포털에 아직 반영 안 됨' : ''})`);
         throw new ApiError(`HTTP_${res.status}`, `공공데이터 API 오류(HTTP_${res.status})${body ? ` ${body}` : ''}`);
       }
       return decode(await res.text());

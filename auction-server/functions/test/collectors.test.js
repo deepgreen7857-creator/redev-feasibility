@@ -386,3 +386,17 @@ test('서버 판정 코드 복사본이 화면 원본과 같음', () => {
     assert.equal(norm(fs.readFileSync(path.join(out, dst), 'utf8')), norm(want), `${dst} 가 원본과 다름 — node auction-server/scripts/sync-shared.mjs 실행`);
   }
 });
+
+test('공공데이터 HTTP 403 + 키 미등록(30)이면 사유 코드로 멈추고 재시도·한도 낭비 안 함', async () => {
+  const { call } = require('../src/lib/dataGoKr');
+  let calls = 0;
+  const body = '<?xml version="1.0" encoding="UTF-8"?> <OpenAPI_ServiceResponse> <cmmMsgHeader> <errMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</errMsg> <returnAuthMsg>등록되지 않은 서비스키</returnAuthMsg> <returnReasonCode>30</returnReasonCode> </cmmMsgHeader> </OpenAPI_ServiceResponse>';
+  const fetcher = async () => { calls++; return { ok: false, status: 403, text: async () => body }; };
+  await assert.rejects(call({ api: 't', url: 'https://apis.data.go.kr/x', serviceKey: 'k', fetcher }), (e) => e.code === '30');
+  assert.ok(calls <= 2); // https 403 → http 한 번 더 시도까지만
+  const trades = require('../src/lib/trades');
+  const saved = [];
+  const sum = await trades.collect({ serviceKey: 'k', fetcher, types: ['rh'], codes: ['11740', '28237'], backfillMonths: 3, getProgress: async () => null, saveProgress: async () => {}, saveMonth: async (m) => saved.push(m), log: () => {} });
+  assert.equal(sum.rh.ok, 0); assert.ok(/코드 30/.test(sum.rh.stopped)); assert.equal(saved.length, 0);
+  assert.ok(calls <= 4); // 첫 작업에서 바로 멈춤
+});
