@@ -307,3 +307,15 @@ test('온비드 입찰결과: 이전 회차 내역에서 같은 회차의 낙찰
   const one = onbid.mapBidInfo({ prcnBidClgList: { listItem: { pbctNsq: '1', pbctStatNm: '낙찰', scfbAmt: '1|2' } } });
   assert.equal(one.history[0].soldPrice, 1);
 });
+
+test('온비드 물건 입찰결과목록: 물건명에서 시도·시군구·읍면동, 낙찰가·낙찰가율·유효입찰자수', () => {
+  const onbid = require('../src/lib/onbid');
+  assert.deepEqual(onbid.placeOf('경기도 수원시 영통구 매탄동 123-4 아파트'), { sido: '경기도', sgg: '수원시 영통구', emd: '매탄동' });
+  assert.deepEqual(onbid.placeOf('인천광역시 부평구 십정동 1 다세대'), { sido: '인천광역시', sgg: '부평구', emd: '십정동' });
+  const r = onbid.mapResultRow({ cltrMngNo: '2026-0001-000001', pbctCdtnNo: '123', onbidCltrno: '1979485', prptDivCd: '0007', onbidCltrNm: '인천광역시 부평구 십정동 1 다세대', apslEvlAmt: '100000000', lowstBidPrcIndctCont: '70000000', pbctNsq: '4', pbctStatNm: '낙찰', scfbAmt: '81000000', apslPrcCtrsScfbPrcRto: '81', vldBddrNope: '6', cltrOpbdDt: '202610201100', bldSqms: '45.2' });
+  assert.equal(r.id, 'onbid_2026-0001-000001_123');
+  assert.equal(r.result.soldPrice, 81000000); assert.equal(r.result.rate, 0.81); assert.equal(r.result.bidders, 6);
+  assert.equal(r.bidEnd, '2026-10-20 11:00'); assert.equal(r.sgg, '부평구'); assert.equal(r.category, 'public');
+  const f = onbid.mapResultRow({ cltrMngNo: 'x', pbctCdtnNo: '1', prptDivCd: '0013', onbidCltrNm: '서울특별시 강남구 역삼동 1', pbctStatNm: '유찰', scfbAmt: '' });
+  assert.equal(f.result.soldPrice, null); assert.equal(f.category, 'bankrupt');
+});

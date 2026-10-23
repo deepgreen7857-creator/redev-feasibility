@@ -11,6 +11,7 @@ const ENDPOINTS = {
   list: process.env.ONBID_LIST_URL || 'https://apis.data.go.kr/B010003/OnbidRlstListSrvc2/getRlstCltrList2',
   detail: process.env.ONBID_DETAIL_URL || 'https://apis.data.go.kr/B010003/OnbidRlstDtlSrvc2/getRlstDtlInf2',
   // 물건상세 입찰정보: 이전 회차 입찰결과(낙찰·유찰, 낙찰금액, 감정가 대비 낙찰가율)와 입찰 방법·보증금
+  resultList: process.env.ONBID_RESULT_LIST_URL || 'https://apis.data.go.kr/B010003/OnbidCltrBidRsltListSrvc2/getCltrBidRsltList2',
   bid: process.env.ONBID_BID_URL || 'https://apis.data.go.kr/B010003/OnbidCltrBidDtlSrvc2/getCltrBidInf2',
 };
 
@@ -321,4 +322,46 @@ function resultFor(item, info) {
   };
 }
 
-module.exports = { mapBidInfo, fetchBidInfo, resultFor, DETAIL_VERSION, validPnu, ENDPOINTS, PROPERTY_CODES, BANKRUPT_CODE, partitions, mapListRow, mapDetail, fetchListPage, fetchDetail, fetchDetails, collect, listingId, score };
+// ── 물건 입찰결과목록: 개찰일 기간·시도로 끝난 물건 전체(낙찰가·낙찰가율·유효입찰자수) ──
+// 물건명 앞부분이 지번 주소: '경기도 수원시 영통구 매탄동 123 ...' → 시도·시군구·읍면동
+function placeOf(name) {
+  const p = String(name || '').trim().split(/\s+/);
+  const sido = p[0] || null;
+  let i = 1; let sgg = p[1] || null;
+  if (p[1] && /시$/.test(p[1]) && p[2] && /구$/.test(p[2])) { sgg = `${p[1]} ${p[2]}`; i = 2; }
+  const emd = p.slice(i + 1).find((t) => /[동읍면가리]$/.test(t) && !/^\d/.test(t)) || null;
+  return { sido, sgg, emd };
+}
+
+function mapResultRow(r) {
+  const name = text(r.onbidCltrNm);
+  const pl = placeOf(name);
+  const status = text(r.pbctStatNm);
+  const sold = /낙찰/.test(status || '') ? amount(r.scfbAmt) : null;
+  const prpt = text(r.prptDivCd);
+  return {
+    id: listingId(r), source: 'onbid', category: prpt === BANKRUPT_CODE ? 'bankrupt' : 'public',
+    caseNo: text(r.onbidCltrno) || text(r.cltrMngNo), cltrMngNo: text(r.cltrMngNo), pbctCdtnNo: text(r.pbctCdtnNo),
+    title: name, propertyType: prpt, propertyTypeName: text(r.prptDivNm) || PRPT_NAMES[prpt] || null,
+    usage: [text(r.cltrUsgLclsCtgrNm), text(r.cltrUsgMclsCtgrNm), text(r.cltrUsgSclsCtgrNm)].filter(Boolean).join(' > ') || null,
+    usageSmall: text(r.cltrUsgSclsCtgrNm), address: name, ...pl,
+    appraisal: num(r.apslEvlAmt), minBid: amount(r.lowstBidPrcIndctCont), round: text(r.pbctNsq),
+    landArea: num(r.landSqms), buildingArea: num(r.bldSqms), bidEnd: ymdhm(r.cltrOpbdDt), status,
+    url: 'https://www.onbid.co.kr',
+    result: {
+      status, soldPrice: sold, rate: num(r.apslPrcCtrsScfbPrcRto) ? num(r.apslPrcCtrsScfbPrcRto) / 100 : (sold && num(r.apslEvlAmt) ? sold / num(r.apslEvlAmt) : null),
+      rateToMinBid: num(r.lowstBidCtrsScfbPrcRto) ? num(r.lowstBidCtrsScfbPrcRto) / 100 : null,
+      bidders: num(r.vldBddrNope), invalidBidders: num(r.nfctBddrNope), minBid: amount(r.lowstBidPrcIndctCont),
+      openAt: ymdhm(r.cltrOpbdDt), source: '온비드 물건 입찰결과목록', at: new Date().toISOString(),
+    },
+  };
+}
+
+async function fetchResultPage({ sido, prptDivCd, from, to, pageNo, serviceKey, quota, fetcher }) {
+  return call({
+    api: 'onbid-result-list', url: ENDPOINTS.resultList, serviceKey, quota, fetcher,
+    params: { pageNo, numOfRows: PAGE_SIZE, resultType: 'json', cltrTypeCd: '0001', prptDivCd, dspsMthodCd: '0001', lctnSdnm: sido || undefined, opbdDtStart: from, opbdDtEnd: to },
+  });
+}
+
+module.exports = { placeOf, mapResultRow, fetchResultPage, CAPITAL_SIDO, mapBidInfo, fetchBidInfo, resultFor, DETAIL_VERSION, validPnu, ENDPOINTS, PROPERTY_CODES, BANKRUPT_CODE, partitions, mapListRow, mapDetail, fetchListPage, fetchDetail, fetchDetails, collect, listingId, score };

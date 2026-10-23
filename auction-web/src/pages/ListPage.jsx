@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listListings, getSettings, getDeals } from '../lib/store.js';
+import { listListings, listPastResults, getSettings, getDeals } from '../lib/store.js';
 import { analyze, tradeTypeOf, eok, pct, SOURCE_LABEL, typeLabel, areaText } from '../lib/analyze.js';
 import { lawdOf, SIDO } from '../data/defaults.js';
 import { corpFit, propertyKind } from '../lib/tax.js';
@@ -20,10 +20,10 @@ export default function ListPage({ mode }) {
 
   useEffect(() => {
     setItems(null);
-    Promise.all([listListings({ sido: f.sido || undefined }), getSettings()])
-      .then(([list, s]) => { setItems(list); setSettings(s); })
+    Promise.all([listListings({ sido: f.sido || undefined }), getSettings(), mode === 'done' ? listPastResults({ sido: f.sido || undefined }).catch(() => []) : Promise.resolve([])])
+      .then(([list, s, past]) => { const ids = new Set(list.map((x) => x.id)); setItems([...list, ...past.filter((x) => !ids.has(x.id))]); setSettings(s); })
       .catch((e) => setError(e.message));
-  }, [f.sido]);
+  }, [f.sido, mode]);
 
   // 물건이 있는 (종류·시군구)만 시세를 불러온다
   useEffect(() => {

@@ -54,11 +54,23 @@ export async function listListings({ sido } = {}) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+// 온비드 입찰결과목록으로 받은 과거 완료 물건(우리가 진행 중에 모으지 않았던 것) — 완료 물건 채점용
+export async function listPastResults({ sido } = {}) {
+  const f = await firebase();
+  if (!f) return [];
+  const { collection, query, where, orderBy, limit, getDocs } = f.fs;
+  const q = sido ? query(collection(f.db, 'pastResults'), where('sido', '==', sido), limit(5000)) : query(collection(f.db, 'pastResults'), orderBy('bidEnd', 'desc'), limit(5000));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
 export async function getListing(id) {
   const f = await firebase();
   if (!f) return demoListings().find((x) => x.id === id) || null;
   const snap = await f.fs.getDoc(f.fs.doc(f.db, 'listings', id));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  if (snap.exists()) return { id: snap.id, ...snap.data() };
+  const past = await f.fs.getDoc(f.fs.doc(f.db, 'pastResults', id));
+  return past.exists() ? { id: past.id, ...past.data() } : null;
 }
 
 export async function saveListing(item) {

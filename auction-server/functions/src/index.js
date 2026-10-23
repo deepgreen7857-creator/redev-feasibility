@@ -219,13 +219,75 @@ async function runOnbidResults({ deadline, max = 400 } = {}) {
   return stats;
 }
 
+// 온비드 물건 입찰결과목록: 개찰일 기간으로 끝난 물건 전체를 받아 '완료 물건'을 채운다.
+//  매일: 최근 4일 / 남는 한도로: 과거 7일씩 거슬러 올라가며 최대 365일(채점 자료)
+const ymd8 = (d) => d.toISOString().slice(0, 10).replace(/-/g, '');
+async function saveResultRows(rows) {
+  let created = 0; let updated = 0;
+  for (let i = 0; i < rows.length; i += 300) {
+    const chunk = rows.slice(i, i + 300);
+    const refs = chunk.map((r) => db.collection('listings').doc(r.id));
+    const snaps = await db.getAll(...refs);
+    const batch = db.batch();
+    chunk.forEach((r, k) => {
+      // 우리가 진행 중에 모았던 물건이면 결과만 붙이고, 처음 보는 과거 물건은 별도 모음(pastResults)에 — 진행 목록이 과거 물건에 묻히지 않게
+      if (snaps[k].exists) { batch.set(refs[k], { result: r.result, status: r.status }, { merge: true }); updated++; } else { batch.set(db.collection('pastResults').doc(r.id), { ...r, fromResultList: true, savedAt: new Date().toISOString() }); created++; }
+    });
+    await batch.commit();
+  }
+  return { created, updated };
+}
+async function fetchResultRange({ from, to, quota, deadline }) {
+  const parts = [...onbid.CAPITAL_SIDO.map((sido) => ({ sido, prptDivCd: onbid.PROPERTY_CODES })), { sido: null, prptDivCd: onbid.BANKRUPT_CODE }];
+  let rows = 0; let stopped = null; const errors = [];
+  for (const part of parts) {
+    for (let pageNo = 1; pageNo <= 50; pageNo++) {
+      if (Date.now() > deadline) { stopped = 'time'; break; }
+      if ((await quota.remaining('onbid-result-list')) <= 0) { stopped = 'quota'; break; }
+      try {
+        const page = await onbid.fetchResultPage({ ...part, from, to, pageNo, serviceKey: DATA_GO_KR_KEY.value(), quota });
+        const mapped = page.rows.filter((r) => r.cltrMngNo).map(onbid.mapResultRow).filter((r) => !part.sido || !r.sido || r.sido === part.sido);
+        if (mapped.length) await saveResultRows(mapped);
+        rows += mapped.length;
+        if (!page.rows.length || pageNo * 100 >= (page.total || 0)) break;
+      } catch (e) { errors.push(`${part.sido || '파산'} ${from}~${to}: ${e.message}`); break; }
+    }
+    if (stopped) break;
+  }
+  return { rows, stopped, errors };
+}
+async function runOnbidResultList({ deadline, force } = {}) {
+  const st = await getState('onbidResults');
+  const quota = new Quota(db);
+  const now = new Date(Date.now() + 9 * 3600e3);
+  const out = {};
+  if (force || st.lastDay !== kstDay()) {
+    out.recent = await fetchResultRange({ from: ymd8(new Date(now - 4 * 86400e3)), to: ymd8(now), quota, deadline });
+    if (!out.recent.stopped && !(out.recent.rows === 0 && out.recent.errors.length)) await setState('onbidResults', { lastDay: kstDay() });
+  }
+  // 과거로 거슬러 올라가기
+  let cursor = st.backfillCursor ? new Date(st.backfillCursor) : new Date(now - 5 * 86400e3);
+  const limit = new Date(now - Number((await getSettings()).resultBackfillDays || 365) * 86400e3);
+  out.backfill = { weeks: 0, rows: 0 };
+  while (cursor > limit && Date.now() < deadline) {
+    const from = new Date(cursor - 6 * 86400e3);
+    const r = await fetchResultRange({ from: ymd8(from), to: ymd8(cursor), quota, deadline });
+    if (r.stopped || (r.rows === 0 && r.errors.length)) { out.backfill.stopped = r.stopped || 'error'; out.backfill.errors = r.errors.slice(0, 3); break; }
+    out.backfill.weeks++; out.backfill.rows += r.rows;
+    cursor = new Date(from - 86400e3);
+    await setState('onbidResults', { backfillCursor: cursor.toISOString() });
+  }
+  out.backfill.cursor = ymd8(cursor);
+  return out;
+}
+
 async function tick({ only, force } = {}) {
   const started = Date.now();
   const deadline = started + TICK_BUDGET_MS;
   const out = {};
   const settings = await getSettings();
-  const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, results: settings.collectOnbid !== false, trades: settings.collectTrades !== false };
-  const jobs = only ? [only] : ['zones', 'bankrupt', 'onbid', 'results', 'trades'];
+  const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, results: settings.collectOnbid !== false, resultList: settings.collectOnbid !== false, trades: settings.collectTrades !== false };
+  const jobs = only ? [only] : ['zones', 'bankrupt', 'onbid', 'resultList', 'results', 'trades'];
   for (const job of jobs) {
     if (!enabled[job] && !only) continue;
     if (Date.now() > deadline) { out[job] = { stopped: 'time' }; continue; }
@@ -234,6 +296,7 @@ async function tick({ only, force } = {}) {
       if (job === 'bankrupt') out[job] = await runBankrupt({ force });
       if (job === 'onbid') out[job] = await runOnbid({ deadline, force });
       if (job === 'results') out[job] = await runOnbidResults({ deadline });
+      if (job === 'resultList') out[job] = await runOnbidResultList({ deadline, force });
       if (job === 'trades') out[job] = await runTrades({ deadline });
     } catch (e) {
       logger.error(job, e);
@@ -266,7 +329,7 @@ function requireAdmin(request) {
 exports.runNow = onCall({ timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_GO_KR_KEY, VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
   const job = request.data && request.data.job;
-  if (!['zones', 'bankrupt', 'onbid', 'results', 'trades'].includes(job)) throw new HttpsError('invalid-argument', 'job 값이 잘못되었습니다.');
+  if (!['zones', 'bankrupt', 'onbid', 'resultList', 'results', 'trades'].includes(job)) throw new HttpsError('invalid-argument', 'job 값이 잘못되었습니다.');
   return tick({ only: job, force: true });
 });
 
@@ -324,6 +387,12 @@ exports.testApis = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORL
     const info = await onbid.fetchBidInfo({ cltrMngNo: row.cltrMngNo, pbctCdtnNo: row.pbctCdtnNo, serviceKey: key, quota });
     if (!info) return { total: 0, cltrMngNo: row.cltrMngNo, message: '응답이 비어 있습니다.' };
     return { total: info.history.length, cltrMngNo: row.cltrMngNo, sample: `유찰 ${info.failCount ?? '—'}회 · 직전 결과 ${info.prevResult || '—'} · 이력 ${info.history.map((h) => `${h.round}회 ${h.status} ${h.minBid || ''}${h.soldPrice ? `→낙찰 ${h.soldPrice}` : ''}`).join(' / ') || '없음'} · 보증금 ${info.deposit || '—'}` };
+  });
+  await tryOne('온비드 물건 입찰결과목록', async () => {
+    const to = new Date(Date.now() + 9 * 3600e3); const from = new Date(to - 3 * 86400e3);
+    const p = await onbid.fetchResultPage({ sido: '인천광역시', prptDivCd: onbid.PROPERTY_CODES, from: from.toISOString().slice(0, 10).replace(/-/g, ''), to: to.toISOString().slice(0, 10).replace(/-/g, ''), pageNo: 1, serviceKey: key, quota });
+    const m = p.rows.slice(0, 3).map(onbid.mapResultRow);
+    return { total: p.total, fields: Object.keys(p.rows[0] || {}).slice(0, 40), sample: m.map((x) => `${x.title} · ${x.result.status} · 낙찰 ${x.result.soldPrice || '—'} · ${x.result.rate ? Math.round(x.result.rate * 100) + '%' : '—'} · 입찰자 ${x.result.bidders ?? '—'}`).join(' / ') };
   });
   await tryOne('온비드 파산자산(전국)', async () => {
     const r = await onbid.fetchListPage({ part: { sido: null, prptDivCd: onbid.BANKRUPT_CODE, pvctTrgtYn: 'N' }, pageNo: 1, serviceKey: key, quota });
