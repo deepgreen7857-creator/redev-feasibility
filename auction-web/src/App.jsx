@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
+import RulesPage from './pages/RulesPage.jsx';
 import ListPage from './pages/ListPage.jsx';
 import DetailPage from './pages/DetailPage.jsx';
 import BankruptPage from './pages/BankruptPage.jsx';
@@ -8,7 +9,7 @@ import AdminPage from './pages/AdminPage.jsx';
 import { JbsMark } from './components/ui.jsx';
 import { DEMO, onUser, isAdmin, signOut } from './lib/store.js';
 
-const NAV = [['/', '물건 찾기'], ['/opportunity', '기회 찾기'], ['/done', '완료 물건'], ['/bankrupt', '파산 공고'], ['/market', '시세'], ['/admin', '관리자']];
+const NAV = [['/', '물건 찾기'], ['/opportunity', '기회 찾기'], ['/done', '완료 물건'], ['/rules', '판단 기준'], ['/bankrupt', '파산 공고'], ['/market', '시세'], ['/admin', '관리자']];
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/" element={<ListPage />} />
           <Route path="/opportunity" element={<ListPage mode="opportunity" />} />
           <Route path="/done" element={<ListPage mode="done" />} />
+          <Route path="/rules" element={<RulesPage />} />
           <Route path="/item/:id" element={<DetailPage admin={admin} />} />
           <Route path="/bankrupt" element={<BankruptPage />} />
           <Route path="/market" element={<MarketPage />} />
