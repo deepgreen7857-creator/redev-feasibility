@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>천만원 모의투자</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400&display=swap" rel="stylesheet">
+<script src="d3.min.js"></script>
+<style>
+:root{--color-fg:#1d2228;--color-fg-muted:#5c6670;--color-bg:#f6f7f8;--color-panel:#ffffff;--color-border-line:#e1e5e9;--color-ok:#1f7a4d;--color-warn:#a8650a;--color-bad:#c0392b;
+--cds-text-secondary:#5c6670;--cds-surface-popover:#ffffff;--cds-border:#d5dbe0;--cds-shadow-popover:0 4px 16px rgba(20,30,40,.12);
+--cds-chart-grid:#eceff2;--cds-chart-axis:#9aa4ad;--cds-chart-reference:#9aa4ad;
+--font-anthropic-sans:"Noto Sans KR",system-ui,-apple-system,"Malgun Gothic",sans-serif;--font-anthropic-serif:"Noto Serif KR","Batang",serif;
+--cds-font-size-caption:12px;--cds-font-size-body:14px;--cds-font-size-heading:16px;--cds-font-size-title:28px;--cds-font-weight-medium:500;
+--cds-gap-xs:4px;--cds-gap-sm:8px;--cds-gap-md:16px;--cds-gap-lg:24px;--cds-gap-xl:32px;--cds-pad-xs:4px;--cds-pad-sm:8px;--cds-pad-lg:20px;--cds-radius:10px;--cds-dur-slow:.3s;
+--s1:#2563a8;--s2:#9aa4ad;--s3:#c2611f;--s4:#3f8f6b}
+@media (prefers-color-scheme: dark){:root{--color-fg:#e6e9ec;--color-fg-muted:#9ba5ae;--color-bg:#14181c;--color-panel:#1c2126;--color-border-line:#2c333a;--color-ok:#5cc28f;--color-warn:#e0a24a;--color-bad:#ef6f61;
+--cds-text-secondary:#9ba5ae;--cds-surface-popover:#232a30;--cds-border:#38414a;--cds-shadow-popover:0 4px 16px rgba(0,0,0,.4);--cds-chart-grid:#262d33;--cds-chart-axis:#5d6872;--cds-chart-reference:#5d6872;
+--s1:#6aa5e6;--s2:#7b8691;--s3:#e8925a;--s4:#6cc49b;color-scheme:dark}}
+body{margin:0;background:var(--color-bg);color:var(--color-fg);font-family:var(--font-anthropic-sans);font-size:14px}
+.wrap{max-width:1200px;margin:0 auto;padding:24px max(16px,env(safe-area-inset-right,0px)) 48px max(16px,env(safe-area-inset-left,0px))}
+.topbar{display:flex;align-items:center;gap:10px;margin-bottom:20px;color:var(--color-fg-muted);font-size:13px}
+.topbar a{color:inherit;text-decoration:none}
+.topbar .logo{height:28px}
+.dash-skeleton{color:transparent!important;background:var(--color-border-line);border-radius:6px;min-width:3em;display:inline-block}
+
+.mt { font-family: var(--font-anthropic-sans); display: flex; flex-direction: column; gap: var(--cds-gap-xl); }
+.mt h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+.mt .lede { color: var(--color-fg-muted); margin: var(--cds-gap-xs) 0 0; max-width: 70ch; line-height: 1.6; }
+.mt h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0 0 var(--cds-gap-sm); }
+.mt .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--cds-gap-md); }
+.mt .card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); min-width: 0; }
+.mt .card h3 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; }
+.mt .note { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); margin: var(--cds-gap-xs) 0 var(--cds-gap-md); line-height: 1.5; }
+.mt .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: var(--cds-gap-md); }
+.mt .tile .lab { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.mt .tile .big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; margin-top: var(--cds-gap-xs); }
+.mt .tile .sub { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); margin-top: var(--cds-gap-xs); font-variant-numeric: tabular-nums; }
+.mt .tw { overflow-x: auto; }
+.mt table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-body); font-variant-numeric: tabular-nums; }
+.mt th, .mt td { text-align: right; padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+.mt th { color: var(--color-fg-muted); font-weight: var(--cds-font-weight-medium); font-size: var(--cds-font-size-caption); }
+.mt th:first-child, .mt td:first-child { text-align: left; }
+.mt .neg { color: var(--color-bad); }
+.mt .pos { color: var(--color-ok); }
+.mt .chart { position: relative; min-height: 300px; }
+.mt .legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm) var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); margin-bottom: var(--cds-gap-sm); }
+.mt .legend span { display: inline-flex; align-items: center; gap: 6px; }
+.mt .legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.mt .tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mt .tip .d { color: var(--cds-text-secondary); margin-bottom: 2px; }
+.mt .tip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+.mt .rules { display: grid; grid-template-columns: max-content 1fr; gap: var(--cds-gap-xs) var(--cds-gap-md); font-size: var(--cds-font-size-body); line-height: 1.5; }
+.mt .rules dt { color: var(--color-fg-muted); }
+.mt .rules dd { margin: 0; }
+.mt .pill { display: inline-block; font-size: var(--cds-font-size-caption); padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; margin-left: 6px; }
+.mt [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+.mt [data-dash-source-state=empty] { color: transparent; }
+@media (max-width: 480px) { .mt .rules { grid-template-columns: 1fr; } .mt .hide-n { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="topbar"><a href="/"><span class="logo" style="font-size:1.3rem;line-height:1;vertical-align:-2px;margin-right:6px" aria-hidden="true">▦</span>jbslab</a><span>›</span><span>모의투자</span></div>
+
+
+<div class="mt">
+  <header>
+    <h1>천만원 모의투자</h1>
+    <p class="lede" id="lede">2023년 1월부터 매 거래일 천만원 계좌를 하나씩 시작해 1년씩 굴려 본 결과입니다. 금액은 1년 뒤 손익(만원), 수수료·거래세 반영, 배당 제외.</p>
+  </header>
+
+  <section id="headline">
+    <h2>1년 보유 시 손익 중앙값 (2023.1~2025.10 시작, 675개 계좌)</h2>
+    <div class="tiles">
+      <div class="card tile"><div class="lab">미국 S&P500 보유</div><div class="big dash-skeleton" data-source="compare3y" data-field="중앙값" data-where="전략=미국 S&amp;P500 보유" data-k="미국 S&P500 보유">—</div><div class="sub">수익 계좌 <span class="dash-skeleton" data-source="compare3y" data-field="수익계좌비율" data-where="전략=미국 S&amp;P500 보유" data-p="미국 S&P500 보유">—</span></div></div>
+      <div class="card tile"><div class="lab">우리 규칙 · 동일 비중</div><div class="big dash-skeleton" data-source="compare3y" data-field="중앙값" data-where="전략=우리 규칙 · 동일 비중" data-k="우리 규칙 · 동일 비중">—</div><div class="sub">수익 계좌 <span class="dash-skeleton" data-source="compare3y" data-field="수익계좌비율" data-where="전략=우리 규칙 · 동일 비중" data-p="우리 규칙 · 동일 비중">—</span></div></div>
+      <div class="card tile"><div class="lab">한국50·미국50</div><div class="big dash-skeleton" data-source="compare3y" data-field="중앙값" data-where="전략=한국50·미국50" data-k="한국50·미국50">—</div><div class="sub">수익 계좌 <span class="dash-skeleton" data-source="compare3y" data-field="수익계좌비율" data-where="전략=한국50·미국50" data-p="한국50·미국50">—</span></div></div>
+      <div class="card tile"><div class="lab">한국 지수 보유</div><div class="big dash-skeleton" data-source="compare3y" data-field="중앙값" data-where="전략=한국 지수 보유" data-k="한국 지수 보유">—</div><div class="sub">수익 계좌 <span class="dash-skeleton" data-source="compare3y" data-field="수익계좌비율" data-where="전략=한국 지수 보유" data-p="한국 지수 보유">—</span></div></div>
+    </div>
+  </section>
+
+  <section id="compare">
+    <div class="card">
+      <h3>전략별 1년 손익 (천만원 기준, 만원)</h3>
+      <p class="note">중앙값은 계좌를 줄 세웠을 때 가운데 계좌, 하위 5%는 나쁜 쪽에서 5% 지점 계좌입니다.</p>
+      <div class="tw">
+        <table id="cmpTable" data-source="compare3y" data-row-key="전략">
+          <thead><tr><th data-field="전략">전략</th><th data-field="중앙값">중앙값</th><th data-field="평균" class="hide-n">평균</th><th data-field="수익계좌비율">수익 계좌</th><th data-field="하위5">하위 5%</th><th data-field="최악">최악</th><th data-field="최고" class="hide-n">최고</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card" id="c3y">
+      <h3>시작일별 1년 손익</h3>
+      <p class="note">2023년 1월~2025년 10월에 시작한 계좌를 각각 1년 굴렸을 때 손익(만원). 우리 규칙은 동일 비중·+30% 절반 익절.</p>
+      <div class="legend" id="lg3y"></div>
+      <div class="chart" id="ch3y" data-source="cohorts3y"></div>
+    </div>
+    <div class="card" id="c26">
+      <h3>올해 시작 계좌의 10월 20일까지 손익</h3>
+      <p class="note">2026년에 시작한 계좌를 10/20 종가까지 굴린 손익(만원). 기간이 계좌마다 다릅니다. 우리 규칙은 점수 비례·+30% 절반 익절.</p>
+      <div class="legend" id="lg26"></div>
+      <div class="chart" id="ch26" data-source="ytd2026"></div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card" id="cyear">
+      <h3>시작 연도별 1년 손익 중앙값 (만원)</h3>
+      <p class="note">2025년 시작은 한국 시장 급등기라 한국 쪽 숫자가 크게 나옵니다.</p>
+      <div class="tw">
+        <table id="yrTable" data-source="byyear" data-row-key="전략">
+          <thead><tr><th data-field="전략">전략</th><th data-field="2023">2023</th><th data-field="2024">2024</th><th data-field="2025">2025</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" id="cvar">
+      <h3>우리 규칙 변형 비교</h3>
+      <p class="note">합격선: 한국 지수를 이긴 비율 60% 이상, 최악 계좌 -250만원 이내.</p>
+      <div class="tw">
+        <table id="varTable" data-source="variants3y" data-row-key="변형">
+          <thead><tr><th data-field="변형">변형</th><th data-field="중앙값">중앙값</th><th data-field="수익계좌비율">수익 계좌</th><th data-field="최악">최악</th><th data-field="한국지수이긴비율">지수 이김</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="rulebook">
+    <div class="card">
+      <h3>현재 규칙집 <span class="pill" style="color: var(--color-warn)">검증 중</span></h3>
+      <p class="note">합격선을 넘기 전까지 실제 돈은 넣지 않습니다.</p>
+      <dl class="rules">
+        <dt>대상</dt><dd>코스피200 종목</dd>
+        <dt>점수</dt><dd>싼 정도(PBR) + 돈 버는 능력(ROE) + 차트 신호(6개월 추세·장기 평균선·거래량), 같은 비중</dd>
+        <dt>종목 수</dt><dd>점수 상위 10개</dd>
+        <dt>비중</dt><dd>점수 비례(한 종목 최대 20%) → 3년 결과로는 동일 비중이 나아 변경 검토 중</dd>
+        <dt>손절</dt><dd>산 가격 대비 -20%</dd>
+        <dt>익절</dt><dd>+30%에서 절반 매도, 남은 절반은 본전 손절 (3년 결과로는 익절 없음도 비슷)</dd>
+        <dt>매도</dt><dd>매월 첫 거래일 점검 때 순위 30위 밖이면 매도</dd>
+        <dt>재진입</dt><dd>판 돈은 다음 점검일에 새 상위 종목 매수, 손절 종목은 3개월간 재매수 금지</dd>
+        <dt>호재·뉴스</dt><dd>참고만, 매매에는 미적용</dd>
+        <dt>합격선</dt><dd>3년 계좌에서 한국 지수 이김 60% 이상, 최악 -25% 이내, 실제 계좌 3개월 관찰</dd>
+      </dl>
+    </div>
+  </section>
+</div>
+
+
+</div>
+<script>
+const SRC=["compare3y","cohorts3y","ytd2026","byyear","variants3y"];
+const store={};const subs=[];
+window.dash={colors:["var(--s1)","var(--s2)","var(--s3)","var(--s4)"],
+ data:id=>store[id]?{status:"ok",data:store[id]}:{status:"loading",data:[]},
+ onData:fn=>{subs.push(fn);fn();}};
+Promise.all(SRC.map(id=>fetch("data/"+id+".json").then(r=>r.json()).then(d=>store[id]=d))).then(()=>subs.forEach(f=>f())).catch(()=>{document.getElementById("lede").textContent="데이터를 불러오지 못했습니다. data 폴더가 같이 올라갔는지 확인해 주세요.";});
+let rt;window.addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>subs.forEach(f=>f()),150);});
+
+(function () {
+  const won = v => (v > 0 ? '+' : '') + d3.format(',')(v) + '만원';
+  const pct = v => d3.format('.0%')(v);
+  const sign = (el, v) => { el.classList.toggle('neg', v < 0); el.classList.toggle('pos', false); };
+
+  function fillTable(id, src, key, cols) {
+    const t = document.getElementById(id), body = t.querySelector('tbody');
+    const s = dash.data(src);
+    body.textContent = '';
+    if (s.status !== 'ok') return;
+    s.data.forEach(r => {
+      const tr = document.createElement('tr');
+      cols.forEach(([c, f]) => {
+        const td = document.createElement('td');
+        const v = r[c];
+        td.textContent = f ? f(v) : v;
+        if (typeof v === 'number' && f === won && v < 0) td.classList.add('neg');
+        if (t.querySelector(`th[data-field="${c}"]`).classList.contains('hide-n')) td.classList.add('hide-n');
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+  }
+
+  function lineChart(boxId, legendId, src, keys) {
+    const box = document.getElementById(boxId), lg = document.getElementById(legendId);
+    box.textContent = ''; lg.textContent = '';
+    const s = dash.data(src);
+    if (s.status !== 'ok') {
+      if (s.status === 'error') { box.style.display = 'flex'; box.style.alignItems = 'center'; box.style.justifyContent = 'center'; box.textContent = '불러오지 못했습니다'; }
+      else box.classList.add('dash-skeleton');
+      return;
+    }
+    box.classList.remove('dash-skeleton'); box.style.display = '';
+    const rows = s.data.map(r => ({ ...r, _d: new Date(r['시작일']) }));
+    const colors = [dash.colors[0], dash.colors[1], dash.colors[2], dash.colors[3]];
+    keys.forEach((k, i) => { const sp = document.createElement('span'); const ii = document.createElement('i'); ii.style.background = colors[i]; sp.appendChild(ii); sp.appendChild(document.createTextNode(k)); lg.appendChild(sp); });
+    const W = Math.max(280, box.clientWidth), H = 300, m = { t: 8, r: 8, b: 26, l: 8 };
+    const vals = rows.flatMap(r => keys.map(k => r[k])).filter(v => v != null);
+    const y = d3.scaleLinear([Math.min(0, d3.min(vals)), d3.max(vals)], [H - m.b, m.t]).nice();
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`);
+    const yTicks = y.ticks(5);
+    const tmp = svg.append('text').attr('font-size', 11).text(d3.format(',')(d3.min(yTicks)));
+    const tw = Math.max(tmp.node().getComputedTextLength(), svg.append('text').attr('font-size', 11).text(d3.format(',')(d3.max(yTicks))).node().getComputedTextLength());
+    svg.selectAll('text').remove();
+    m.l = tw + 10;
+    const x = d3.scaleUtc(d3.extent(rows, r => r._d), [m.l, W - m.r]);
+    svg.append('g').selectAll('line').data(yTicks).join('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', d => y(d)).attr('y2', d => y(d)).attr('stroke', d => d === 0 ? 'var(--cds-chart-axis)' : 'var(--cds-chart-grid)');
+    svg.append('g').selectAll('text').data(yTicks).join('text').attr('x', m.l - 6).attr('y', d => y(d)).attr('dy', '0.32em').attr('text-anchor', 'end').attr('font-size', 11).attr('fill', 'var(--color-fg-muted)').text(d => d3.format(',')(d));
+    const nx = Math.max(2, Math.floor((W - m.l) / 90));
+    svg.append('g').selectAll('text').data(x.ticks(nx)).join('text').attr('x', d => x(d)).attr('y', H - 6).attr('text-anchor', 'middle').attr('font-size', 11).attr('fill', 'var(--color-fg-muted)').text(d3.utcFormat('%y.%-m'));
+    keys.forEach((k, i) => {
+      const line = d3.line().defined(r => r[k] != null).x(r => x(r._d)).y(r => y(r[k]));
+      svg.append('path').datum(rows).attr('fill', 'none').attr('stroke', colors[i]).attr('stroke-width', i === 0 ? 2 : 1.5).attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round').attr('opacity', i === 0 ? 1 : .8).attr('d', line);
+    });
+    const rule = svg.append('line').attr('y1', m.t).attr('y2', H - m.b).attr('stroke', 'var(--cds-chart-reference)').attr('opacity', 0);
+    const tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true; box.appendChild(tip);
+    const bis = d3.bisector(r => r._d).center;
+    svg.append('rect').attr('x', m.l).attr('y', 0).attr('width', W - m.l - m.r).attr('height', H).attr('fill', 'transparent')
+      .on('pointermove', ev => {
+        const [px] = d3.pointer(ev); const r = rows[bis(rows, x.invert(px))];
+        rule.attr('x1', x(r._d)).attr('x2', x(r._d)).attr('opacity', 1);
+        tip.textContent = '';
+        const dd = document.createElement('div'); dd.className = 'd'; dd.textContent = r['시작일'] + ' 시작'; tip.appendChild(dd);
+        keys.forEach((k, i) => { if (r[k] == null) return; const ln = document.createElement('div'); const ii = document.createElement('i'); ii.style.background = colors[i]; ln.appendChild(ii); ln.appendChild(document.createTextNode(`${k} ${won(r[k])}`)); tip.appendChild(ln); });
+        tip.hidden = false;
+        const bw = box.clientWidth, sx = bw / W, left = x(r._d) * sx;
+        tip.style.top = '8px';
+        tip.style.left = (left + 12 + tip.offsetWidth > bw ? left - 12 - tip.offsetWidth : left + 12) + 'px';
+      })
+      .on('pointerleave', () => { tip.hidden = true; rule.attr('opacity', 0); });
+  }
+
+  dash.onData(() => {
+    const c = dash.data('compare3y');
+    document.querySelectorAll('[data-k]').forEach(el => {
+      if (c.status !== 'ok') { el.textContent = '—'; return; }
+      el.classList.remove('dash-skeleton');
+      const r = c.data.find(x => x['전략'] === el.dataset.k); el.textContent = r ? won(r['중앙값']) : '—'; if (r) sign(el, r['중앙값']);
+    });
+    document.querySelectorAll('[data-p]').forEach(el => {
+      if (c.status !== 'ok') { el.textContent = '—'; return; }
+      el.classList.remove('dash-skeleton');
+      const r = c.data.find(x => x['전략'] === el.dataset.p); el.textContent = r ? pct(r['수익계좌비율']) : '—';
+    });
+    fillTable('cmpTable', 'compare3y', '전략', [['전략'], ['중앙값', won], ['평균', won], ['수익계좌비율', pct], ['하위5', won], ['최악', won], ['최고', won]]);
+    fillTable('yrTable', 'byyear', '전략', [['전략'], ['2023', won], ['2024', won], ['2025', won]]);
+    fillTable('varTable', 'variants3y', '변형', [['변형'], ['중앙값', won], ['수익계좌비율', pct], ['최악', won], ['한국지수이긴비율', pct]]);
+    document.querySelectorAll('#varTable tbody tr').forEach(tr => { const td = tr.children[4]; const v = parseFloat(td.textContent) / 100; td.classList.toggle('pos', v >= .6); });
+    lineChart('ch3y', 'lg3y', 'cohorts3y', ['우리 규칙', '한국 지수', '미국 S&P500', '한국50·미국50']);
+    lineChart('ch26', 'lg26', 'ytd2026', ['우리 규칙', '한국 지수', '미국 S&P500', '한국50·미국50']);
+  });
+})();
+
+</script>
+</body>
+</html>
