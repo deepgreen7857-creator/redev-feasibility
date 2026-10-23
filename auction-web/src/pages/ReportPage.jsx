@@ -178,7 +178,7 @@ export default function ReportPage({ admin }) {
         </>
       )}
 
-      {(settings.aiReviewEnabled || item.aiReview) && <AiReview item={item} admin={admin} onDone={(r) => setItem({ ...item, aiReview: r })} />}
+      {(admin || item.aiReview) && <AiReview item={item} admin={admin} apiOn={Boolean(settings.aiReviewEnabled)} onDone={(r) => setItem({ ...item, aiReview: r })} />}
 
       <p className="mt-6 border-t border-line pt-2 text-xs text-ink/50">이 검토서는 공개 자료로 자동 계산한 참고 자료입니다. 계산 방식은 사이트의 "판단 기준" 화면에 있습니다. 입찰 전 원문과 등기부, 현장을 반드시 확인하세요.</p>
     </div>
@@ -186,25 +186,42 @@ export default function ReportPage({ admin }) {
 }
 
 // Claude 검토 — 규칙 계산과 별개로 원자료를 보고 다시 따져 본 결과(누를 때만)
-function AiReview({ item, admin, onDone }) {
+function AiReview({ item, admin, apiOn, onDone }) {
   const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('');
+  const [paste, setPaste] = useState('');
   const r = item.aiReview;
   const run = async () => {
     setBusy(true); setMsg('');
     try { onDone(await callFn('aiReviewNow', { listingId: item.id })); } catch (e) { setMsg(e.message); }
     setBusy(false);
   };
+  // 대화창 Claude가 크롬으로 원문(명세서 등)을 직접 보고 쓴 검토 JSON을 붙여 넣어 저장 — API 키 없이
+  const save = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const j = JSON.parse(paste);
+      const out = await callFn('saveChatReview', { listingId: item.id, review: j.review || j, spec: j.spec });
+      onDone(out); setPaste(''); setMsg('저장했습니다. 새로고침하면 명세서 내용이 계산에 반영됩니다.');
+    } catch (e) { setMsg(`저장 실패: ${e.message}`); }
+    setBusy(false);
+  };
   return (
     <div className="mt-6 rounded-lg border-2 border-brand/40 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-base font-extrabold">Claude 검토 — 규칙과 별개로 다시 따져 본 결과</h2>
-        {admin && <button className="no-print btn ml-auto bg-brand text-white" disabled={busy} onClick={run}>{busy ? '검토 중… (30초~1분)' : r ? '다시 검토 받기' : 'Claude 검토 받기'}</button>}
+        {admin && apiOn && <button className="no-print btn ml-auto bg-brand text-white" disabled={busy} onClick={run}>{busy ? '검토 중… (30초~1분)' : r ? '다시 검토 받기(API)' : 'Claude 검토 받기(API)'}</button>}
       </div>
       {msg && <p className="mt-1 text-sm text-hard">{msg}</p>}
-      {!r && <p className="mt-1 text-sm text-ink/60">{admin ? '버튼을 누르면 이 물건의 원자료와 위 검토 결과를 Claude가 독립적으로 다시 검토합니다(1건씩, 하루 한도).' : '아직 Claude 검토를 받지 않은 물건입니다.'}</p>}
+      {!r && <p className="mt-1 text-sm text-ink/60">아직 Claude 검토를 받지 않은 물건입니다.</p>}
+      {admin && (
+        <div className="no-print mt-2">
+          <textarea id="chat-review-input" className="h-20 w-full rounded border border-line p-2 font-mono text-xs" placeholder='Claude(대화창) 검토 JSON 붙여넣기 — {"review":{...},"spec":{...}}' value={paste} onChange={(e) => setPaste(e.target.value)} />
+          <button id="chat-review-save" className="btn mt-1 bg-brand text-white" disabled={busy || !paste.trim()} onClick={save}>{busy ? '저장 중…' : 'Claude 검토 저장'}</button>
+        </div>
+      )}
       {r && (
         <div className="mt-2 space-y-2 text-sm">
-          <div><b>[{r.verdict}]</b> {r.conclusion} <span className="text-xs text-ink/50">({String(r.at).slice(0, 16).replace('T', ' ')} · 신뢰도 {r.confidence})</span></div>
+          <div><b>[{r.verdict}]</b> {r.conclusion} <span className="text-xs text-ink/50">({String(r.at).slice(0, 16).replace('T', ' ')} · 신뢰도 {r.confidence}{r.by === 'claude-chat' ? ' · 대화창 Claude가 원문 직접 확인' : ''})</span></div>
           {r.bidRange && (r.bidRange.low || r.bidRange.high) && <div>입찰가 의견: <b>{r.bidRange.low ? eok(r.bidRange.low) : '—'} ~ {r.bidRange.high ? eok(r.bidRange.high) : '—'}</b> — {r.bidRange.reason}</div>}
           {r.disagree?.length > 0 && <T head={['단계', '사이트 판단', 'Claude 판단', '이유']} rows={r.disagree.map((x) => [x.step, x.site, x.mine, x.why])} />}
           {[['같은 점', r.agree], ['사이트가 놓친 위험', r.risks], ['오를 수 있는 점', r.upside], ['직접 확인할 것', r.checks]].filter(([, v]) => v?.length).map(([k, v]) => (

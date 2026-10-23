@@ -6,7 +6,7 @@ const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https')
 const { defineSecret, defineString } = require('firebase-functions/params');
 const { setGlobalOptions, logger } = require('firebase-functions/v2');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const { Quota, kstDay } = require('./lib/dataGoKr');
 const onbid = require('./lib/onbid');
@@ -539,6 +539,41 @@ exports.testApis = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORL
     return { total: parsed.rows.length, sample: parsed.rows[0] ? parsed.rows[0].title : null };
   });
   return { results };
+});
+
+// 관리자: Claude(대화창)가 크롬으로 사이트·법원 원문을 직접 보고 쓴 검토를 붙인다 — API 키·요금 없음.
+//  review: aiReviewNow 와 같은 모양(conclusion·verdict·bidRange·disagree·risks·checks·ruleSuggestions…)
+//  spec(선택): Claude가 매각물건명세서를 직접 읽은 내용 → 물건 상세에 넣어 분석기가 바로 반영(수집기가 못 읽은 물건 보충)
+const CHAT_VERDICTS = ['입찰 검토', '조건부 검토', '보류', '제외'];
+exports.saveChatReview = onCall({ timeoutSeconds: 60 }, async (request) => {
+  requireAdmin(request);
+  const { listingId, review, spec } = request.data || {};
+  if (!listingId || !review || typeof review !== 'object') throw new HttpsError('invalid-argument', '물건 번호와 검토 내용이 필요합니다.');
+  if (!CHAT_VERDICTS.includes(review.verdict)) throw new HttpsError('invalid-argument', `verdict 는 ${CHAT_VERDICTS.join('·')} 중 하나여야 합니다.`);
+  if (JSON.stringify(review).length > 30000) throw new HttpsError('invalid-argument', '검토 내용이 너무 깁니다.');
+  let ref = db.collection('listings').doc(listingId); let snap = await ref.get();
+  if (!snap.exists) { ref = db.collection('pastResults').doc(listingId); snap = await ref.get(); }
+  if (!snap.exists) throw new HttpsError('not-found', '물건을 찾지 못했습니다.');
+  const out = { ...review, by: 'claude-chat', at: new Date().toISOString() };
+  const patch = { aiReview: out };
+  const prev = snap.data().aiReview;
+  if (prev) patch.aiReviewHistory = FieldValue.arrayUnion({ ...prev, replacedAt: out.at }); // 이전 검토는 지우지 않고 남김
+  if (spec && typeof spec === 'object') {
+    const d = snap.data().detail || {};
+    const leases = Array.isArray(spec.leases) ? spec.leases.slice(0, 20).map((l) => ({ deposit: Number(l.deposit) || null, rent: Number(l.rent) || null, moveIn: l.moveIn || null, fixedDate: l.fixedDate || null, claimed: Boolean(l.claimed) })) : d.leases || [];
+    patch.detail = {
+      ...d, specRead: true, specBy: 'claude-chat', specAt: out.at,
+      baseRightDate: spec.baseRightDate || d.baseRightDate || null, baseRightType: spec.baseRightType || d.baseRightType || null,
+      leases, survivingRights: spec.survivingRights || null, superficies: spec.superficies || d.superficies || null,
+      assumedAmount: Number(spec.assumedAmount) || null, specRemarks: spec.remarks || d.specRemarks || null,
+      flags: { ...(d.flags || {}), specRead: true, tenants: leases.length, unclaimedTenants: leases.filter((l) => !l.claimed).length, survivingRights: Boolean(spec.survivingRights), superficies: Boolean(spec.superficies) },
+    };
+  }
+  await ref.set(patch, { merge: true });
+  if (Array.isArray(review.ruleSuggestions) && review.ruleSuggestions.length) {
+    await db.collection('ruleSuggestions').add({ listingId, title: snap.data().title || '', at: out.at, items: review.ruleSuggestions, verdict: review.verdict, by: 'claude-chat' });
+  }
+  return out;
 });
 
 // 토지이용계획·공시지가 조회(정비구역·농업진흥·개발제한 판정). 결과는 캐시해 두고 누구나 읽는다.

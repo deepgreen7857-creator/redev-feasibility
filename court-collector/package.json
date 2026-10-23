@@ -10,6 +10,7 @@
     "setup-browser": "set PLAYWRIGHT_BROWSERS_PATH=0&& npx playwright install chromium"
   },
   "dependencies": {
+    "pdfjs-dist": "4.10.38",
     "playwright": "^1.48.0"
   }
 }

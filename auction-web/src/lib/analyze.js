@@ -18,8 +18,9 @@ export const VERDICT = {
 };
 
 // 분석기 버전 — 계산식을 바꿀 때마다 올리고 수정일·내용을 남긴다(예측 기록에 함께 저장)
-export const ANALYZER_VERSION = '2026-10-23d';
+export const ANALYZER_VERSION = '2026-10-23e';
 export const ANALYZER_CHANGES = [
+  { version: '2026-10-23e', date: '2026-10-23', note: 'Claude 직접 검토(2025타경4883) 반영: ① 같은 이름 다른 동 단지 실거래를 같은 단지로 쓰던 오류(대림동↔당산동6가) — 주소 괄호에서 동을 찾아 동이 같을 때만 같은 단지 ② 매각물건명세서를 못 읽은 법원 물건은 권리 점수 만점 불가(25→10), 3회 이상 유찰이거나 주변 전세가가 가치의 90% 이상이면 \'권리 확인 후 판단\' ③ 명세서의 인수 보증금이 있으면 전액 인수 전제로 바닥 가치 계산 ④ 수집기 3판(명세서 PDF 읽기) 물건을 초기 수집분으로 오인하지 않음' },
   { version: '2026-10-23d', date: '2026-10-23', note: '성적표 보정: ① 유찰 상한 — 같은 단지 실거래(A·B)가 없으면 판단 가치가 직전 회차 유찰가(아무도 안 산 값)를 넘지 않게, 2회 이상 유찰이면 지금 최저가와 직전 유찰가의 가운데로 ② 감정가 하나뿐인 물건은 감정가 대신 경매 시장가(감정가 × 낙찰가율) ③ 토지는 같은 단지 실거래가 없으면 \'지금 매력·유찰 대기\' 대신 \'권리 확인 후 판단\'(물건별 검토 대상) — 상가 적중률 34%·낙찰가÷우리 가치 60%, 대지 오차 F 대응' },
   { version: '2026-10-23c', date: '2026-10-23', note: '지분비율 미반영 수정(비율 미확인이면 금액 계산 안 함) · 감정가 없는 물건 확실성 최대 C · 계산 이상(수익률 1,000% 초과·바닥가치 최저가 100배 초과) 경고 · 임야·농지 지분 공유자 매도 가능성 낮춤 · 정비구역 목록 연계·권리산정기준일 판정' },
 ];
@@ -91,6 +92,14 @@ export function renovation(item, deals, settings, market) {
   return { after, cost, uplift, months: settings?.renoMonths ?? 5, basis, perPyeong, area, worth: uplift > cost * 1.3 };
 }
 
+// 물건의 읍면동: 수집값 → 주소 괄호 '(대림동, 단지명)' → 주소 낱말 순서로 찾는다
+export function emdOf(item, label) {
+  if (item.emd) return item.emd;
+  const t = label || `${item.title || ''} ${item.address || ''} ${item.detail?.addressFull || ''}`;
+  const m = t.match(/\(\s*([가-힣0-9]+(?:동|가|읍|면|리))\s*[,)]/) || t.match(/(?:^|\s)([가-힣]+[0-9]*(?:동|가)[0-9]*가?)(?=\s|$|,)/);
+  return m ? m[1] : undefined;
+}
+
 // deals: 압축 거래 [가격, 면적, 층, 일, 지번, 이름, 건축년도, 해제, 거래유형, 읍면동, 추가]
 export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
   const type = tradeTypeOf(item);
@@ -102,7 +111,10 @@ export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
   if (type !== 'land') {
     const label = `${item.title || ''} ${item.address || ''} ${item.detail?.addressFull || ''}`;
     const GENERIC = /^(단독|다가구|다중|연립|다세대|아파트|오피스텔|주택|빌라|상가|근린|공동주택)$/;
-    const same = pool.filter((d) => d[5] && String(d[5]).length >= 2 && !GENERIC.test(String(d[5])) && (!item.emd || !d[9] || d[9] === item.emd) && label.includes(String(d[5])));
+    // 같은 이름의 다른 단지(예: 대림동 유탑유블레스 ↔ 당산동6가 유탑유블레스)를 막는다: 동이 같아야 같은 단지
+    const emd = emdOf(item, label);
+    const sameDongOk = (d) => (d[9] ? (emd ? d[9] === emd : label.includes(String(d[9]))) : false);
+    const same = pool.filter((d) => d[5] && String(d[5]).length >= 2 && !GENERIC.test(String(d[5])) && sameDongOk(d) && label.includes(String(d[5])));
     const sameArea = same.filter((d) => d[1] >= area * 0.9 && d[1] <= area * 1.1);
     const pick = sameArea.length ? { arr: sameArea, grade: 'A', scope: `같은 단지(${sameArea[0][5]})·같은 평형` } : same.length >= 2 ? { arr: same, grade: 'B', scope: `같은 단지(${same[0][5]})·다른 평형 포함` } : null;
     if (pick) {
@@ -366,7 +378,7 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   // ── 오류 의심 걸러내기: 원본(감정가·공시가격)과 크게 어긋나면 계산을 믿지 않는다 ──
   const anomalies = [];
   // 법원 수집기 초기판(10/23 이전)은 앞 물건 상세가 섞였을 수 있다 → 다시 읽기 전까지 계산 보류
-  if (item.source === 'court' && item.detail && item.detailVer !== 2) anomalies.push('법원 상세를 앞 물건과 섞어 읽었을 수 있는 초기 수집분 — 수집기가 다시 읽는 중(주소·면적 확인 전 계산 보류)');
+  if (item.source === 'court' && item.detail && !(item.detailVer >= 2)) anomalies.push('법원 상세를 앞 물건과 섞어 읽었을 수 있는 초기 수집분 — 수집기가 다시 읽는 중(주소·면적 확인 전 계산 보류)');
   // 건축물대장 교차 확인: 전유면적이 읽어 온 면적과 30% 넘게 다르면 오류 의심
   const ua = item.ledger?.unit?.exclusiveArea;
   const uaDiff = ua && item.buildingArea ? Math.abs(ua - item.buildingArea) / ua : null;
@@ -433,8 +445,17 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   // 토지: 성적표상 가치 오차가 커서(대지 F) 같은 단지 수준 실거래가 없으면 자동 '매력' 판정을 하지 않고 물건별 검토로
   const landReview = tradeTypeOf(item) === 'land' && !special && !cashType && !rightType && !strongTrade && ['now', 'wait'].includes(verdict);
   if (landReview) verdict = 'check';
+  // 권리(매각물건명세서)를 못 본 법원 물건: 여러 번 유찰됐으면 이유가 있다고 보고 자동 '매력' 판정을 하지 않는다
+  const specRead = Boolean(item.detail?.specRead);
+  const manyFails = (item.failCount || 0) >= (settings?.specCheckFails ?? 3);
+  const jeonseOver = Boolean(jeonse?.value && full && jeonse.value >= full * 0.9);
+  const rightsReview = item.source === 'court' && !specRead && !special && ['now', 'wait'].includes(verdict) && (manyFails || jeonseOver);
+  if (rightsReview) verdict = 'check';
 
   const warnings = [];
+  if (rightsReview) warnings.push(`매각물건명세서 미확인${manyFails ? ` + 유찰 ${item.failCount}회` : ''}${jeonseOver ? ' + 주변 전세가가 가치의 90% 이상' : ''} — 대항력 임차인 보증금 인수 등 유찰 이유를 확인하기 전에는 자동 판정하지 않음`);
+  else if (item.source === 'court' && !specRead) warnings.push('매각물건명세서 미확인 — 권리(말소기준·임차인·인수 권리)는 아직 안 봄');
+  if (jeonseOver) warnings.push(`주변 전세 시세(${eok(jeonse.value)})가 가치(${eok(full)})의 ${Math.round((jeonse.value / full) * 100)}% — 깡통 전세 신호: 선순위 임차인 보증금이 낙찰가를 넘으면 매수인이 인수`);
   if (landReview) warnings.push('토지 — 사이트 가치 계산의 오차가 커서 자동 판정하지 않음: 물건별 검토(Claude 검토) 후 판단');
   if (failCap) warnings.push(`유찰 상한 적용 — 가치 ${eok(failCap.before)} → ${eok(failCap.price)}${failCap.repeated ? '(지금 최저가와 직전 유찰가의 가운데)' : '(직전 회차 유찰가)'}`);
   if (farm) warnings.push(item.land?.landUse?.farmPromotion ? '농업진흥구역 농지 — 농취증·용도 제한 확인' : '농지 — 농지취득자격증명 필요');
@@ -466,7 +487,7 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   if (market.count && market.count < 5 && !cashType && !rightType) warnings.push('비교 거래가 적음 — 시세 신뢰도 낮음');
 
   const result = {
-    verdict, market, jeonse, valuation: val, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special, anomalies,
+    verdict, market, jeonse, valuation: val, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special, anomalies, specRead, rightsReview,
     farm, redev, cashType, rightType, right, member, stage, failCap, landReview, excluded: isExcluded(item, settings), share: sh, shareUnknown,
     ratio: item.appraisal && item.minBid ? item.minBid / item.appraisal : null,
   };
@@ -635,8 +656,10 @@ export function scoreOf(item, a) {
   }
   pTrust = Math.min(20, pTrust);
   const f = item.detail?.flags;
-  let pRights = f ? 25 : 15; // 상세(권리 정보)가 없으면 중간값
-  if (f) {
+  // 권리 점수는 매각물건명세서를 읽었을 때만 만점이 가능하다(읽지 못하면 '자료상 표시 없음'은 안전하다는 뜻이 아님)
+  const specRead = Boolean(item.detail?.specRead) || item.source !== 'court';
+  let pRights = f && specRead ? 25 : 10;
+  if (f && specRead) {
     if (f.unclaimedTenants) pRights -= 10;
     else if (f.tenants) pRights -= 5;
   }

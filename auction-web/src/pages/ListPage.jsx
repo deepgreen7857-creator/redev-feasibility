@@ -163,6 +163,8 @@ export default function ListPage({ mode }) {
             <div className="mt-0.5 truncate text-xs text-ink/60">{it.address}</div>
             {areaText(it) && <div className="text-xs text-ink/60">{areaText(it)}</div>}
             {a.estimateBasis && <div className="text-xs text-wait">{a.estimateBasis}</div>}
+            {it.aiReview && <div className={`mt-1 rounded px-2 py-1 text-xs ${/제외|보류/.test(it.aiReview.verdict) ? 'bg-hard/10 text-hard' : 'bg-now/10 text-now'}`}><b>Claude 검토 [{it.aiReview.verdict}]</b> {String(it.aiReview.conclusion || '').slice(0, 90)}</div>}
+            {!it.aiReview && it.source === 'court' && a.rightsReview && <div className="mt-1 text-xs text-wait">명세서 미확인 — Claude 검토 대기</div>}
             {a.money && !a.money.upside && (
               <div className="mt-3 grid grid-cols-4 gap-2 rounded-lg bg-paper p-2 text-sm">
                 <div><div className="text-xs text-ink/50">{a.special ? '최악일 때 수익' : a.money.owner === 'corp' ? '세후 수익' : '예상 수익'}</div><div className={`num font-bold ${a.money.profit < 0 ? 'text-hard' : 'text-now'}`}>{eok(a.money.profit)}</div></div>

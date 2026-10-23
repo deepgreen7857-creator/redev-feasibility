@@ -210,10 +210,18 @@ function build(key, item, full, ctx) {
       return { floor: s.graveFloor, floorBasis: '분묘 부담 할인', scenarios: [
         { name: '분묘 개장 협의 → 정상 토지', value: v(1), months: 12, prob: '보통', basis: '연고자 협의·개장(장사법)', conditions: ['분묘 수·연고자', '분묘기지권 성립 여부(시효취득도 지료는 청구 가능, 대법원 2021. 4. 29. 2017다228007 전원합의체)'] },
       ], checks: ['현장 분묘 수', '감정평가서 분묘 기재'] };
-    case 'surviving':
+    case 'surviving': {
+      // 매각물건명세서에 인수 보증금이 적혀 있으면(예: 대항력 임차인 1.13억) 그 금액 전부를 인수한다고 보고 바닥을 계산(배당받으면 줄어듦)
+      const amt = item.detail?.assumedAmount;
+      if (amt > 0) {
+        return { floor: 1, assume: amt, floorBasis: `명세서상 인수 보증금 ${Math.round(amt / 1e4).toLocaleString('ko-KR')}만 원 전액 인수 전제(배당에서 받는 만큼 줄어듦)`, scenarios: [
+          { name: '배당으로 보증금 상당 부분 회수 → 인수액 감소', value: v(1), months: 6, prob: '확인 필요', basis: '대항력·우선변제권 임차인이 배당요구하면 매각대금에서 먼저 배당받고 남은 금액만 인수', conditions: ['확정일자·배당요구 여부', '당해세·경매비용 등 앞순위 배당', '예상 낙찰가'] },
+        ], checks: ['매각물건명세서 인수 기재', '배당표 예상(앞순위 채권)', '임차권등기·HUG 대위 여부'] };
+      }
       return { floor: null, floorBasis: '인수 금액 확인 전 바닥 계산 불가', scenarios: [
         { name: '인수 권리가 실제로는 소멸 → 정상 가격', value: v(1), months: 6, prob: '확인 필요', basis: '담보가등기면 소멸, 보전처분 후 3년간 본안 미제기 가처분은 취소 신청(민사집행법 제288조)', conditions: ['가등기 성격(담보/소유권이전청구권)', '가처분 피보전권리·본안 제기 여부', '선순위 임차인 배당요구로 전액 배당되는지'] },
       ], checks: ['등기부 전체(말소기준권리 이전 권리)', '매각물건명세서 인수 기재'] };
+    }
     case 'tenant': {
       const r = riskyTenants(item);
       const known = r.deposit !== null && r.base;

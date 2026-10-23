@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pace, kstDay } from './pace.js';
 import { listCourt, readDetail, backToList, Blocked } from './site.js';
+import { readSpecDoc } from './specFetch.js';
 
 // 브라우저는 AppData 가 아니라 이 폴더의 node_modules 안에 둔다(npm run setup-browser 와 같은 위치).
 // AppData 에 두면 설치한 프로그램과 작업 스케줄러가 서로 다른 곳을 볼 수 있다(MSIX 앱 안에서 설치한 경우 등).
@@ -34,8 +35,8 @@ const progressFile = path.join(STATE, 'progress.json');
 const progress = fs.existsSync(progressFile) ? JSON.parse(fs.readFileSync(progressFile, 'utf8')) : {};
 const saveProgress = () => fs.writeFileSync(progressFile, JSON.stringify(progress));
 
-// 상세 읽기 판: 2 = 사건번호로 상세가 이 물건 것인지 확인한 뒤 읽음(그 전 판은 다시 읽는다)
-const DETAIL_V = 2;
+// 상세 읽기 판: 2 = 사건번호로 상세가 이 물건 것인지 확인한 뒤 읽음 / 3 = 매각물건명세서(PDF)까지 읽음(그 전 판은 다시 읽는다)
+const DETAIL_V = 3;
 const SIDO = (court) => (/서울/.test(court) ? '서울특별시' : /^인천지방법원$/.test(court) ? '인천광역시' : '경기도');
 
 function toItem(row, detail) {
@@ -43,7 +44,8 @@ function toItem(row, detail) {
   const parts = addr.split(/\s+/);
   const sido = /서울|인천|경기/.test(parts[0] || '') ? parts[0].replace(/^서울$/, '서울특별시').replace(/^인천$/, '인천광역시').replace(/^경기$/, '경기도') : SIDO(row.court);
   const sgg = parts[1] && /[시군구]$/.test(parts[1]) ? (parts[2] && /구$/.test(parts[2]) ? `${parts[1]} ${parts[2]}` : parts[1]) : undefined;
-  const emd = parts.find((p) => /[동읍면리가]$/.test(p) && p !== sgg);
+  // 도로명 주소면 동이 괄호 안에 있다: '... (대림동, 유탑유블레스)'
+  const emd = parts.find((p) => /[동읍면리가]$/.test(p) && p !== sgg) || (addr.match(/\(\s*([가-힣0-9]+(?:동|가|읍|면|리))\s*[,)]/) || [])[1];
   return {
     caseNo: row.caseNo, itemNo: row.itemNo || '1', court: row.court, title: detail?.title || `${addr.split(' ').slice(1, 4).join(' ')} ${row.usage || ''}`.trim(),
     usage: detail?.usage || row.usage, address: addr, sido, sgg, emd, pnu: detail?.pnu,
@@ -53,10 +55,16 @@ function toItem(row, detail) {
     detail: detail ? {
       photos: detail.photos || [], location: detail.appraisalSummary, shareText: detail.shareText, conditions: detail.specialConditions, baseRightDate: detail.baseRightDate,
       leases: detail.leases || [], survivingRights: detail.survivingRights, superficies: detail.superficies, documents: detail.documents || [],
+      // 매각물건명세서: specRead=true 일 때만 '권리 확인됨'(아니면 분석기는 권리 미확인으로 봄)
+      specRead: Boolean(detail.spec?.read), specWhy: detail.spec?.read ? undefined : detail.spec?.why,
+      baseRightType: detail.spec?.baseRightType, distributionDeadline: detail.spec?.distributionDeadline,
+      tenantNote: detail.spec?.tenantNote, specRemarks: detail.spec?.remarks, assumedAmount: detail.spec?.assumedAmount, opposableTenants: detail.spec?.opposable,
       rounds: (detail.rounds || []).map((r) => ({ round: r.round, start: r.date, minBid: r.minBid, open: r.date, result: r.result })),
       flags: {
         superficies: Boolean(detail.superficies && !/없음|해당\s*없/.test(detail.superficies)),
         survivingRights: Boolean(detail.survivingRights && !/없음|해당\s*없/.test(detail.survivingRights)),
+        specRead: Boolean(detail.spec?.read),
+        opposableTenants: detail.spec?.opposable || 0,
         tenants: (detail.leases || []).length,
         unclaimedTenants: (detail.leases || []).filter((l) => !l.claimed).length,
       },
@@ -175,6 +183,19 @@ async function main() {
           if (detail && detail.caseText && !cn(detail.caseText).includes(cn(row.caseNo))) {
             log(`상세 어긋남: 목록 ${row.caseNo} ↔ 상세 ${detail.caseText} — 상세 버림`);
             detail = null;
+          }
+          // 매각물건명세서(새 창 PDF) — 말소기준권리·임차인·인수 권리·지상권·비고를 여기서만 알 수 있다
+          if (detail) {
+            await pace.beforePage();
+            const spec = await readSpecDoc(page, { log });
+            detail.spec = spec;
+            if (spec.read) {
+              detail.baseRightDate = spec.baseRightDate || detail.baseRightDate;
+              detail.leases = spec.leases || [];
+              detail.survivingRights = spec.survivingRights;
+              if (spec.superficies) detail.superficies = spec.superficies;
+              stats.specRead = (stats.specRead || 0) + 1;
+            } else { stats.specMissed = (stats.specMissed || 0) + 1; log(`명세서 못 읽음 ${row.caseNo}: ${spec.why}`); }
           }
           await backToList(page);
           stats.detailed++;

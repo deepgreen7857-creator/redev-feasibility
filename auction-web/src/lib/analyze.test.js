@@ -253,3 +253,38 @@ test('토지: 같은 단지 수준 실거래가 없으면 권리 확인 후 판�
   assert.equal(a.verdict, 'check');
   assert.ok(a.landReview);
 });
+
+// ── 2026-10-23e: 2025타경4883(대림동 유탑유블레스 901호) 사례 ──
+const daerimBase = {
+  source: 'court', detailVer: 3, court: '서울남부지방법원', sido: '서울특별시', sgg: '영등포구', usage: '아파트',
+  caseNo: '2025타경4883', title: '영등포구 도림천로19길 12, 아파트',
+  address: '서울특별시 영등포구 도림천로19길 12, 제9층 제901호 (대림동, 유탑유블레스)',
+  buildingArea: 13.9, landArea: 5.4, appraisal: 118000000, minBid: 24746000, failCount: 7,
+};
+// 이름만 같은 당산동6가 유탑유블레스 실거래
+const dangsan = [[151000000, 13.7067, 5, 1, '1', '유탑유블레스', 2015, false, '중개거래', '당산동6가'], [152000000, 13.3867, 5, 1, '1', '유탑유블레스', 2015, false, '중개거래', '당산동6가']];
+test('같은 이름 다른 동 단지는 같은 단지 실거래로 쓰지 않음(주소 괄호에서 동을 찾음)', () => {
+  const m = marketEstimate(daerimBase, dangsan);
+  assert.notEqual(m.grade, 'A'); assert.notEqual(m.grade, 'B');
+  const ok = marketEstimate(daerimBase, dangsan.map((d) => [...d.slice(0, 9), '대림동']));
+  assert.equal(ok.grade, 'A');
+});
+test('명세서 미확인 + 7회 유찰 → 자동 매력 판정 안 함, 권리 점수 만점 아님', () => {
+  const near = Array.from({ length: 8 }, (_, i) => [150000000 + i * 1e6, 14, 5, 1, '1', '다른빌', 2015, false, '중개거래', '대림동']);
+  const a = analyze({ ...daerimBase, emd: '대림동', detail: { flags: { tenants: 0 } } }, { settings: DEFAULT_SETTINGS, deals: near });
+  assert.equal(a.verdict, 'check');
+  assert.ok(a.warnings.some((w) => /매각물건명세서 미확인/.test(w)));
+});
+test('명세서를 읽어 인수 보증금(1.13억)이 있으면 바닥 가치 = 가치 − 인수액', () => {
+  const near = Array.from({ length: 8 }, (_, i) => [150000000 + i * 1e6, 14, 5, 1, '1', '유탑유블레스', 2015, false, '중개거래', '대림동']);
+  const detail = {
+    specRead: true, baseRightDate: '2022.05.10', assumedAmount: 113000000,
+    survivingRights: '을구 2번 주택임차권 등기와 관련하여 매수인에게 대항할 수 있는 임차인이 있음(임차보증금 113,000,000원) 배당에서 보증금이 전액 변제되지 않으면 잔액을 매수인이 인수함',
+    leases: [{ deposit: 113000000, moveIn: '2021.08.06', fixedDate: '2021.07.14', claimed: true }],
+    flags: { tenants: 1, survivingRights: true, specRead: true },
+  };
+  const a = analyze({ ...daerimBase, emd: '대림동', detail }, { settings: DEFAULT_SETTINGS, deals: near });
+  assert.ok(a.special); assert.ok(a.special.types.some((t) => t.key === 'surviving'));
+  assert.equal(a.special.assume, 113000000);
+  assert.ok(a.value < a.full - 100000000);
+});
