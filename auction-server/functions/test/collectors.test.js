@@ -337,3 +337,13 @@ test('건축HUB 조회 키와 상업업무용 실거래 압축', async () => {
   const c = trades.compact('nrg', { dealAmount: '45,000', buildingAr: '60.5', buildingType: '집합', buildingUse: '제2종근린생활', umdNm: '부평동', cdealtype: 'O' });
   assert.equal(c[0], 450000000); assert.equal(c[1], 60.5); assert.equal(c[7], true); assert.equal(c[10], '집합');
 });
+
+test('Claude 검토: 원자료·사이트 계산을 보내고 JSON 결과를 읽음', async () => {
+  const ai = require('../src/lib/aiReview');
+  let sent = null;
+  const fetcher = async (url, opt) => { sent = { url, body: JSON.parse(opt.body), headers: opt.headers }; return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: '검토 결과입니다\n{"conclusion":"보류","verdict":"보류","agree":[],"disagree":[{"step":"시세","site":"2억","mine":"1.7억","why":"같은 단지 거래 없음"}],"risks":[],"upside":[],"checks":["등기부"],"ruleSuggestions":[{"step":"시세","rule":"D등급이면 매력 제외","why":"근거 약함"}],"confidence":"보통"}' }], usage: { input_tokens: 10 } }) }; };
+  const out = await ai.review({ item: { title: 't', appraisal: 1e8, detail: { leases: [] } }, analysis: { verdict: 'now', valuation: { anchors: [{ label: '실거래', value: 2e8, used: true }] } }, apiKey: 'k', fetcher });
+  assert.equal(out.verdict, '보류'); assert.equal(out.disagree[0].step, '시세'); assert.equal(out.ruleSuggestions.length, 1);
+  assert.equal(sent.headers['x-api-key'], 'k'); assert.ok(sent.body.messages[0].content.includes('[사이트 자동 검토 결과]'));
+  await assert.rejects(() => ai.review({ item: {}, analysis: null, apiKey: '' }));
+});

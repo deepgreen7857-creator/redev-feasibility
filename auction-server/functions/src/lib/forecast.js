@@ -79,4 +79,4 @@ async function run({ db, log = console.log, deadline = Infinity }) {
   return stats;
 }
 
-module.exports = { run, beforeBid, summarize, RULES_VERSION };
+module.exports = { run, beforeBid, summarize, loadDeals, RULES_VERSION };

@@ -137,6 +137,15 @@ export async function getStatus() {
 }
 
 // 서버 함수 호출(관리자)
+// 관리자: Claude 검토가 모아 둔 규칙 수정 제안(최근 것부터)
+export async function listRuleSuggestions() {
+  const f = await firebase();
+  if (!f) return [];
+  const { collection, query, orderBy, limit, getDocs } = f.fs;
+  const snap = await getDocs(query(collection(f.db, 'ruleSuggestions'), orderBy('at', 'desc'), limit(100)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
 export async function callFn(name, data = {}) {
   const f = await firebase();
   if (!f) {

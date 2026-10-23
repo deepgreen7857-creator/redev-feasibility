@@ -2,7 +2,7 @@
 // 사이트가 어떻게 판단했는지 과정을 그대로 보여 주고, 정민 님이 그 과정에서 오류를 찾도록 한다. (인쇄 가능)
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { getListing, getSettings, getDeals } from '../lib/store.js';
+import { getListing, getSettings, getDeals, callFn } from '../lib/store.js';
 import { analyze, tradeTypeOf, eok, won, pct, SOURCE_LABEL, typeLabel, VERDICT } from '../lib/analyze.js';
 import { lawdOf } from '../data/defaults.js';
 
@@ -28,7 +28,7 @@ function T({ head, rows }) {
 }
 const Note = ({ children }) => <p className="mt-1 text-xs text-ink/60">{children}</p>;
 
-export default function ReportPage() {
+export default function ReportPage({ admin }) {
   const { id } = useParams();
   const [item, setItem] = useState(null);
   const [settings, setSettings] = useState(null);
@@ -176,7 +176,41 @@ export default function ReportPage() {
         </>
       )}
 
+      <AiReview item={item} admin={admin} onDone={(r) => setItem({ ...item, aiReview: r })} />
+
       <p className="mt-6 border-t border-line pt-2 text-xs text-ink/50">이 검토서는 공개 자료로 자동 계산한 참고 자료입니다. 계산 방식은 사이트의 "판단 기준" 화면에 있습니다. 입찰 전 원문과 등기부, 현장을 반드시 확인하세요.</p>
+    </div>
+  );
+}
+
+// Claude 검토 — 규칙 계산과 별개로 원자료를 보고 다시 따져 본 결과(누를 때만)
+function AiReview({ item, admin, onDone }) {
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('');
+  const r = item.aiReview;
+  const run = async () => {
+    setBusy(true); setMsg('');
+    try { onDone(await callFn('aiReviewNow', { listingId: item.id })); } catch (e) { setMsg(e.message); }
+    setBusy(false);
+  };
+  return (
+    <div className="mt-6 rounded-lg border-2 border-brand/40 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-base font-extrabold">Claude 검토 — 규칙과 별개로 다시 따져 본 결과</h2>
+        {admin && <button className="no-print btn ml-auto bg-brand text-white" disabled={busy} onClick={run}>{busy ? '검토 중… (30초~1분)' : r ? '다시 검토 받기' : 'Claude 검토 받기'}</button>}
+      </div>
+      {msg && <p className="mt-1 text-sm text-hard">{msg}</p>}
+      {!r && <p className="mt-1 text-sm text-ink/60">{admin ? '버튼을 누르면 이 물건의 원자료와 위 검토 결과를 Claude가 독립적으로 다시 검토합니다(1건씩, 하루 한도).' : '아직 Claude 검토를 받지 않은 물건입니다.'}</p>}
+      {r && (
+        <div className="mt-2 space-y-2 text-sm">
+          <div><b>[{r.verdict}]</b> {r.conclusion} <span className="text-xs text-ink/50">({String(r.at).slice(0, 16).replace('T', ' ')} · 신뢰도 {r.confidence})</span></div>
+          {r.bidRange && (r.bidRange.low || r.bidRange.high) && <div>입찰가 의견: <b>{r.bidRange.low ? eok(r.bidRange.low) : '—'} ~ {r.bidRange.high ? eok(r.bidRange.high) : '—'}</b> — {r.bidRange.reason}</div>}
+          {r.disagree?.length > 0 && <T head={['단계', '사이트 판단', 'Claude 판단', '이유']} rows={r.disagree.map((x) => [x.step, x.site, x.mine, x.why])} />}
+          {[['같은 점', r.agree], ['사이트가 놓친 위험', r.risks], ['오를 수 있는 점', r.upside], ['직접 확인할 것', r.checks]].filter(([, v]) => v?.length).map(([k, v]) => (
+            <div key={k}><b>{k}</b><ul className="list-disc pl-5">{v.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
+          ))}
+          {r.ruleSuggestions?.length > 0 && <div className="rounded bg-wait/5 p-2 text-xs"><b>규칙 수정 제안</b> (관리자 화면에 모임)<ul className="list-disc pl-5">{r.ruleSuggestions.map((x, i) => <li key={i}>[{x.step}] {x.rule} — {x.why}</li>)}</ul></div>}
+        </div>
+      )}
     </div>
   );
 }

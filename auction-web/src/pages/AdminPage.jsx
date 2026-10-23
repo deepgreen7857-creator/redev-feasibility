@@ -1,3 +1,4 @@
+import { listRuleSuggestions } from '../lib/store.js';
 import { useEffect, useState } from 'react';
 import { getSettings, saveSettings, getStatus, callFn, saveListing, signIn, isAdmin, DEMO } from '../lib/store.js';
 import { DEFAULT_COURTS, SIDO } from '../data/defaults.js';
@@ -17,6 +18,7 @@ export default function AdminPage({ user }) {
   return (
     <div className="space-y-4">
       <Status />
+      <RuleSuggestions />
       <ZoneUpload />
       <Settings />
       <CourtForm />
@@ -230,6 +232,25 @@ function CourtForm() {
         <Field label="원문 주소(선택)"><input className="input" value={v.url} onChange={set('url')} /></Field>
       </div>
       <button className="btn-primary mt-3" onClick={submit}>등록</button>
+    </Card>
+  );
+}
+
+// Claude 검토가 모아 둔 규칙 수정 제안 — 같은 제안이 여러 물건에서 나오면 규칙을 고칠 때
+function RuleSuggestions() {
+  const [rows, setRows] = useState(null);
+  useEffect(() => { listRuleSuggestions().then(setRows).catch(() => setRows([])); }, []);
+  if (!rows || !rows.length) return null;
+  const flat = rows.flatMap((r) => (r.items || []).map((x) => ({ ...x, title: r.title, at: r.at, listingId: r.listingId })));
+  const byStep = flat.reduce((m, x) => { (m[x.step] ||= []).push(x); return m; }, {});
+  return (
+    <Card title={`Claude 검토의 규칙 수정 제안 (${flat.length}건)`}>
+      <p className="mb-2 text-xs text-ink/60">단계별로 모았습니다. 같은 취지가 여러 번 나오면 그 규칙을 고칠 때입니다. 대화창에서 "규칙 수정 제안 반영해 줘"라고 하시면 됩니다.</p>
+      {Object.entries(byStep).map(([step, xs]) => (
+        <div key={step} className="mb-2 text-sm"><b>{step}</b> ({xs.length})
+          <ul className="list-disc pl-5 text-xs">{xs.slice(0, 8).map((x, i) => <li key={i}>{x.rule} — {x.why} <a className="text-brand underline" href={`#/report/${encodeURIComponent(x.listingId)}`}>{x.title?.slice(0, 20)}</a></li>)}</ul>
+        </div>
+      ))}
     </Card>
   );
 }

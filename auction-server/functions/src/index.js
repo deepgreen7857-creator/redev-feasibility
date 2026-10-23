@@ -16,6 +16,7 @@ const vworld = require('./lib/vworld');
 const incheonZones = require('./lib/incheonZones');
 const forecast = require('./lib/forecast');
 const building = require('./lib/building');
+const aiReview = require('./lib/aiReview');
 const { COURTS } = require('./data/courts');
 
 initializeApp();
@@ -27,6 +28,7 @@ setGlobalOptions({ region: 'asia-northeast3', maxInstances: 2 }); // 서울 리�
 const DATA_GO_KR_KEY = defineSecret('DATA_GO_KR_KEY');
 const VWORLD_KEY = defineSecret('VWORLD_KEY');
 const COURT_INGEST_TOKEN = defineSecret('COURT_INGEST_TOKEN');
+const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 const ADMIN_EMAILS = defineString('ADMIN_EMAILS', { default: 'deepgreen7857@gmail.com' });
 
 const TICK_BUDGET_MS = 470 * 1000; // 함수 제한 540초 안에서 여유를 둔다
@@ -448,6 +450,38 @@ exports.testApis = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORL
 });
 
 // 토지이용계획·공시지가 조회(정비구역·농업진흥·개발제한 판정). 결과는 캐시해 두고 누구나 읽는다.
+// 관리자: Claude 검토 받기 — 물건 1건의 원자료와 사이트 계산을 Claude에게 보내 독립 재검토(누를 때만, 하루 한도)
+exports.aiReviewNow = onCall({ timeoutSeconds: 180, memory: '1GiB', secrets: [ANTHROPIC_API_KEY] }, async (request) => {
+  requireAdmin(request);
+  const { listingId } = request.data || {};
+  if (!listingId) throw new HttpsError('invalid-argument', '물건이 없습니다.');
+  const settings = await getSettings();
+  const limit = Number(settings.aiDailyLimit || 30);
+  const qref = db.collection('quota').doc(`ai-review_${kstDay()}`);
+  const used = ((await qref.get()).data() || {}).count || 0;
+  if (used >= limit) throw new HttpsError('resource-exhausted', `오늘 Claude 검토 한도(${limit}건)를 다 썼습니다.`);
+  let ref = db.collection('listings').doc(listingId); let snap = await ref.get();
+  if (!snap.exists) { ref = db.collection('pastResults').doc(listingId); snap = await ref.get(); }
+  if (!snap.exists) throw new HttpsError('not-found', '물건을 찾지 못했습니다.');
+  const item = { id: snap.id, ...snap.data() };
+  // 화면과 같은 계산식으로 사이트 판단을 다시 만든다
+  const { analyze, tradeTypeOf } = await import('./shared/analyze.mjs');
+  const { DEFAULT_SETTINGS, lawdOf } = await import('./shared/defaults.mjs');
+  const st = { ...DEFAULT_SETTINGS, ...settings };
+  const lawd = lawdOf(item.sido, item.sgg); const t = tradeTypeOf(item); const cache = new Map();
+  const deals = lawd ? await forecast.loadDeals(db, t, lawd, cache) : [];
+  const rentDeals = lawd && ['apt', 'rh', 'sh', 'offi'].includes(t) ? await forecast.loadDeals(db, `${t}Rent`, lawd, cache) : [];
+  const aptDeals = lawd ? (t === 'apt' ? deals : await forecast.loadDeals(db, 'apt', lawd, cache)) : [];
+  const analysis = analyze(item, { settings: st, deals, aptDeals, rentDeals });
+  const out = await aiReview.review({ item, analysis, apiKey: ANTHROPIC_API_KEY.value(), model: settings.aiModel || 'claude-sonnet-5-5' });
+  await ref.set({ aiReview: out }, { merge: true });
+  await qref.set({ count: used + 1, api: 'ai-review', day: kstDay() }, { merge: true });
+  if (Array.isArray(out.ruleSuggestions) && out.ruleSuggestions.length) {
+    await db.collection('ruleSuggestions').add({ listingId, title: item.title || '', at: out.at, items: out.ruleSuggestions, verdict: out.verdict });
+  }
+  return out;
+});
+
 exports.landCheck = onCall({ timeoutSeconds: 60, secrets: [VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
   const { pnu, listingId } = request.data || {};

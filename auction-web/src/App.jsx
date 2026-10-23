@@ -44,7 +44,7 @@ export default function App() {
           <Route path="/opportunity" element={<ListPage mode="opportunity" />} />
           <Route path="/done" element={<ListPage mode="done" />} />
           <Route path="/rules" element={<RulesPage />} />
-          <Route path="/report/:id" element={<ReportPage />} />
+          <Route path="/report/:id" element={<ReportPage admin={admin} />} />
           <Route path="/asking" element={<AskingPage admin={admin} />} />
           <Route path="/item/:id" element={<DetailPage admin={admin} />} />
           <Route path="/bankrupt" element={<BankruptPage />} />
