@@ -128,8 +128,20 @@ async function enrichLand(item) {
   let land = c.exists && !vworld.isEmptyLand(c.data()) && Date.now() - new Date(c.data().checkedAt).getTime() < 30 * 86400e3 ? c.data() : null;
   if (!land) {
     land = await vworld.lookup({ pnu, key });
+    // 받은 필지번호로 빈 응답이면 지번 주소로 필지를 다시 찾아 한 번 더 (온비드 필지번호가 틀린 경우가 많음)
+    if (land.empty && !found.pnuSource?.startsWith('주소검색')) {
+      const addr = (item.detail && item.detail.addressFull) || item.title || item.address;
+      const hit = await vworld.findPnu({ address: addr, key }).catch(() => null);
+      if (hit && hit.pnu !== pnu) {
+        const again = await vworld.lookup({ pnu: hit.pnu, key });
+        if (!again.empty) {
+          land = again; pnu = hit.pnu;
+          Object.assign(found, { pnu, pnuSource: `주소검색(받은 필지번호 ${item.pnu || '없음'}는 빈 응답): ${hit.parcel}` });
+        }
+      }
+    }
     if (land.empty) logger.warn('브이월드 빈 응답', pnu, JSON.stringify(land.raw).slice(0, 600));
-    else await ref.set(land);
+    else await db.collection('landCache').doc(String(pnu)).set(land);
   }
   const out = { ...found, land };
   // 건축HUB: 건물이 있으면 건축물대장(면적·용도·사용승인일 교차 확인), 토지·도로·맹지면 같은 법정동 최근 건축 허가
@@ -200,7 +212,7 @@ async function runLandBacklog({ deadline, max = 150 } = {}) {
   const home = (it) => /(다세대|연립|빌라|아파트|단독|다가구|도시형)/.test(`${it.usage || ''} ${it.usageSmall || ''}`);
   const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
     .filter((it) => (!it.land || vworld.isEmptyLand(it.land)) && String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today)
-    .filter((it) => !it.landEmptyAt || it.landEmptyV !== 2 || new Date(it.landEmptyAt).getTime() < weekAgo) // 필지번호 보정 전에 빈 값으로 표시된 것은 다시
+    .filter((it) => !it.landEmptyAt || it.landEmptyV !== 3 || new Date(it.landEmptyAt).getTime() < weekAgo) // 필지번호 보정 전에 빈 값으로 표시된 것은 다시
     .sort((x, y) => Number(home(y)) - Number(home(x)));
   let done = 0; let empty = 0; const errors = [];
   for (const it of list.slice(0, max)) {
@@ -208,7 +220,7 @@ async function runLandBacklog({ deadline, max = 150 } = {}) {
     try {
       const extra = await enrichLand(it);
       if (extra && extra.land && !extra.land.empty) { await db.collection('listings').doc(it.id).set(extra, { merge: true }); done++; }
-      else { await db.collection('listings').doc(it.id).set({ landEmptyAt: new Date().toISOString(), landEmptyV: 2, ...(extra?.land?.raw ? { landEmptyRaw: extra.land.raw } : {}) }, { merge: true }); empty++; if (errors.length < 5 && extra?.land?.raw) errors.push(`${it.id} 빈 응답: ${JSON.stringify(extra.land.raw).slice(0, 300)}`); }
+      else { await db.collection('listings').doc(it.id).set({ landEmptyAt: new Date().toISOString(), landEmptyV: 3, ...(extra?.land?.raw ? { landEmptyRaw: extra.land.raw } : {}) }, { merge: true }); empty++; if (errors.length < 5 && extra?.land?.raw) errors.push(`${it.id} 빈 응답: ${JSON.stringify(extra.land.raw).slice(0, 300)}`); }
     } catch (e) { if (errors.length < 5) errors.push(`${it.id}: ${e.message}`); }
   }
   return { waiting: list.length, done, empty, errors };
