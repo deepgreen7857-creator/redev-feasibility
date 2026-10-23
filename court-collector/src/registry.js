@@ -102,6 +102,22 @@ async function loadCookies(ctx) {
   return list.length;
 }
 
+// 마이옥션 화면은 뜬 뒤 한 번 더 이동(새로고침)하는 경우가 있어, 다 뜰 때까지 기다렸다 읽는다
+async function go(page, url, waitFor) {
+  await page.goto(url, { waitUntil: 'load', timeout: 60e3, referer: `${BASE}/auction/search.php` });
+  await page.waitForLoadState('networkidle', { timeout: 15e3 }).catch(() => {});
+  if (waitFor) await page.waitForSelector(waitFor, { timeout: 15e3 }).catch(() => {});
+}
+async function read(page, fn) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); } catch (e) {
+      if (i >= 3 || !/context was destroyed|navigation|Target closed/i.test(e.message)) throw e;
+      await page.waitForLoadState('load', { timeout: 30e3 }).catch(() => {});
+      await page.waitForLoadState('networkidle', { timeout: 15e3 }).catch(() => {});
+    }
+  }
+}
+
 // 법원 이름 → 마이옥션 목록에 찍히는 이름(지원은 '부천지원'처럼 지원 이름만)
 const courtKey = (court) => String(court || '').trim().split(/\s+/).pop();
 
@@ -110,9 +126,11 @@ async function findView(page, item) {
   if (!m) return { miss: 'caseNo' };
   const [, y, n] = m;
   const q = `npls=N&spels=Y&schs=N&pchs=N&stc=1&ipdate1=&ipdate2=&eprice1=0&eprice2=0&sno=${y}&tno=${n}&mprice1=0&mprice2=0&apoint1=0&apoint2=0&aorder=1`;
-  await page.goto(`${BASE}/auction/search_list.php?${q}`, { waitUntil: 'domcontentloaded', timeout: 60e3 });
-  const rows = await page.$$eval('tr', (trs) => trs.filter((t) => t.querySelector('a[href^="/view/"]'))
-    .map((t) => ({ view: t.querySelector('a[href^="/view/"]').getAttribute('href'), label: t.innerText.replace(/\s+/g, ' ') })));
+  await go(page, `${BASE}/auction/search_list.php?${q}`, 'a[href^="/view/"]');
+  // 다른 화면으로 튕기면 '없음'으로 표시하지 않고 오류로 본다(없음 표시는 7일 동안 다시 안 봄)
+  if (!/search_list/.test(page.url())) throw new Error(`검색 화면이 열리지 않음(${new URL(page.url()).pathname})`);
+  const rows = await read(page, () => page.$$eval('tr', (trs) => trs.filter((t) => t.querySelector('a[href^="/view/"]'))
+    .map((t) => ({ view: t.querySelector('a[href^="/view/"]').getAttribute('href'), label: t.innerText.replace(/\s+/g, ' ') }))));
   const key = courtKey(item.court);
   const re = new RegExp(`${y}-${n}(?:\\((\\d+)\\))?(?!\\d)`);
   const hit = rows.find((r) => {
@@ -125,16 +143,16 @@ async function findView(page, item) {
 }
 
 async function registryLinks(page, view) {
-  await page.goto(`${BASE}/view/${view}`, { waitUntil: 'domcontentloaded', timeout: 60e3 });
-  await page.waitForSelector('a[href^="javascript:pop_detail"]', { timeout: 15e3 }).catch(() => {});
-  return page.$$eval('a[href^="javascript:pop_detail"]', (as) => as
+  await go(page, `${BASE}/view/${view}`, 'a[href^="javascript:pop_detail"]');
+  if (!/\/view\//.test(page.url())) throw new Error(`물건 화면이 열리지 않음(${new URL(page.url()).pathname})`);
+  return read(page, () => page.$$eval('a[href^="javascript:pop_detail"]', (as) => as
     .map((a) => ({ label: a.textContent.replace(/\s+/g, '').replace(/New$/, ''), m: a.getAttribute('href').match(/pop_detail\('([^']+)'\s*,\s*'(\d+)'\)/) }))
-    .filter((x) => x.m && /등기부/.test(x.label)).map((x) => ({ label: x.label, type: x.m[1] })));
+    .filter((x) => x.m && /등기부/.test(x.label)).map((x) => ({ label: x.label, type: x.m[1] }))));
 }
 
 async function fetchPdf(page, view, type) {
-  await page.goto(`${BASE}/auction/auction_detail_view.php?type=${type}&idx=${view}`, { waitUntil: 'domcontentloaded', timeout: 60e3 });
-  const src = await page.$eval('iframe', (f) => f.src).catch(() => null);
+  await go(page, `${BASE}/auction/auction_detail_view.php?type=${type}&idx=${view}`, 'iframe');
+  const src = await read(page, () => page.$eval('iframe', (f) => f.src)).catch(() => null);
   if (!src) throw new Error('열람본 창에 PDF가 없음');
   const res = await page.context().request.get(src, { headers: { Referer: page.url() }, timeout: 60e3 });
   const buf = await res.body();
