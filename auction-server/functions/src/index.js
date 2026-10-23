@@ -663,10 +663,14 @@ exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY, DATA
   const body = req.body || {};
   const items = (Array.isArray(body.items) ? body.items : []).slice(0, 200).map(cleanCourtItem).filter(Boolean);
   const { needDetail } = await saveListings(items);
-  let enriched = 0;
+  // 땅 정보 붙이기는 90초까지만. 브이월드·건축HUB가 느린 날 20건을 다 붙이다 300초를 넘겨 504가 나던 문제(10/23).
+  // 못 붙인 물건은 새벽 정기 작업(runLandBacklog, 20분마다)이 이어서 붙인다.
+  const enrichUntil = Date.now() + 90e3;
+  let enriched = 0; let enrichLeft = 0;
   for (const it of items.filter((x) => x.pnu || x.address).slice(0, 50)) {
+    if (Date.now() > enrichUntil) { enrichLeft++; continue; }
     try { const extra = await enrichLand(it); if (Object.keys(extra).length) { await db.collection('listings').doc(it.id).set(extra, { merge: true }); enriched++; } } catch (e) { logger.warn('court enrich', it.id, e.message); }
   }
   if (body.run) await setState('court', { lastRun: new Date().toISOString(), lastDay: kstDay(), ...JSON.parse(JSON.stringify(body.run)) });
-  res.json({ ok: true, received: Array.isArray(body.items) ? body.items.length : 0, saved: items.length, changed: needDetail.length, enriched });
+  res.json({ ok: true, received: Array.isArray(body.items) ? body.items.length : 0, saved: items.length, changed: needDetail.length, enriched, enrichLeft });
 });

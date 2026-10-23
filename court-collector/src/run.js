@@ -64,15 +64,52 @@ function toItem(row, detail) {
   };
 }
 
+// 서버가 잠깐 느리거나(504) 끊겨도 회차를 접지 않도록: 기다렸다 다시 보낸다.
+//  토큰 오류(401)·잘못된 요청(400)처럼 다시 보내도 같은 결과인 것은 바로 멈춘다.
+const RETRY_WAITS = [30, 60, 120]; // 초
+const MAX_UPLOAD_FAILS = 3; // 다시 보내기까지 다 실패한 묶음이 연달아 이만큼이면 이번 회차는 멈춘다
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+class UploadDown extends Error {}
+
+async function postOnce(items, run) {
+  const res = await fetch(env.INGEST_URL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.INGEST_TOKEN}` },
+    body: JSON.stringify({ items, run }), signal: AbortSignal.timeout(330e3), // 서버 제한(300초)보다 조금 길게
+  });
+  const text = await res.text();
+  if (!res.ok) { const e = new Error(`업로드 실패 HTTP ${res.status} ${text.slice(0, 200)}`); e.retry = res.status >= 500 || res.status === 429; throw e; }
+  return text;
+}
+
 async function upload(items, run) {
   if (DRY) {
     fs.writeFileSync(path.join(STATE, 'test-run.json'), JSON.stringify(items, null, 2));
     log(`(시험) 올리지 않음: ${items.length}건 — 전체는 state/test-run.json, 첫 건: ${JSON.stringify(items[0] || {}).slice(0, 300)}`); return;
   }
-  if (!env.INGEST_URL || !env.INGEST_TOKEN) throw new Error('.env 에 INGEST_URL, INGEST_TOKEN 이 없습니다');
-  const res = await fetch(env.INGEST_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.INGEST_TOKEN}` }, body: JSON.stringify({ items, run }) });
-  if (!res.ok) throw new Error(`업로드 실패 HTTP ${res.status} ${await res.text()}`);
-  log(`업로드: ${JSON.stringify(await res.json())}`);
+  if (!env.INGEST_URL || !env.INGEST_TOKEN) { const e = new Error('.env 에 INGEST_URL, INGEST_TOKEN 이 없습니다'); e.retry = false; throw e; }
+  for (let i = 0; ; i++) {
+    try { log(`업로드: ${(await postOnce(items, run)).slice(0, 300)}`); return; } catch (e) {
+      // 네트워크 끊김·제한시간 초과는 e.retry 가 없음 → 다시 보냄
+      if (e.retry === false || i >= RETRY_WAITS.length) throw e;
+      log(`${e.message} — ${RETRY_WAITS[i]}초 뒤 다시 보냄(${i + 1}/${RETRY_WAITS.length})`);
+      await sleep(RETRY_WAITS[i] * 1000);
+    }
+  }
+}
+
+// 같은 수집기가 두 개 동시에 돌지 않게(작업을 멈춰도 node 가 남아 있는 경우) — 살아 있는 쪽이 있으면 이번 것은 그냥 끝낸다
+const lockFile = path.join(STATE, 'run.lock');
+function takeLock() {
+  if (DRY) return true;
+  try {
+    const pid = Number(fs.readFileSync(lockFile, 'utf8'));
+    if (pid && pid !== process.pid) { try { process.kill(pid, 0); log(`이미 다른 수집기(pid ${pid})가 돌고 있어 이번 실행은 하지 않음`); return false; } catch { /* 죽은 잠금 — 넘어감 */ } }
+  } catch { /* 잠금 파일 없음 */ }
+  fs.writeFileSync(lockFile, String(process.pid));
+  return true;
+}
+function releaseLock() {
+  try { if (Number(fs.readFileSync(lockFile, 'utf8')) === process.pid) fs.unlinkSync(lockFile); } catch { /* 없음 */ }
 }
 
 async function main() {
@@ -88,7 +125,24 @@ async function main() {
   await open();
   const stats = { listed: 0, detailed: 0, uploaded: 0, stoppedBy: null };
   let buffer = [];
-  const flush = async () => { if (buffer.length) { await upload(buffer, { ...stats, at: new Date().toISOString() }); stats.uploaded += buffer.length; buffer = []; } };
+  let uploadFails = 0;
+  let flushAt = cfg.uploadBatch; // 실패한 뒤에는 한 묶음이 더 쌓였을 때 다시 시도(물건 하나마다 재시도하지 않게)
+  // 한 묶음(uploadBatch)씩 보낸다. 다시 보내기까지 실패하면 그 물건들은 들고 있다가 다음에 함께 보내고 수집은 계속한다.
+  const flush = async () => {
+    while (buffer.length) {
+      const chunk = buffer.slice(0, cfg.uploadBatch);
+      try { await upload(chunk, { ...stats, at: new Date().toISOString() }); } catch (e) {
+        if (e.retry === false) throw e;
+        uploadFails++;
+        if (uploadFails >= MAX_UPLOAD_FAILS) throw new UploadDown(`서버 전송이 ${uploadFails}번 연달아 실패: ${e.message}`);
+        flushAt = buffer.length + cfg.uploadBatch;
+        log(`업로드 보류(${uploadFails}/${MAX_UPLOAD_FAILS}): ${buffer.length}건은 들고 있다가 다음에 다시 보냄 — ${e.message}`);
+        return;
+      }
+      uploadFails = 0; stats.uploaded += chunk.length; buffer = buffer.slice(chunk.length);
+    }
+    flushAt = cfg.uploadBatch;
+  };
   try {
     // 지난번에 멈춘 법원부터 이어서
     const start = Math.max(0, cfg.courts.indexOf(progress.court || ''));
@@ -127,7 +181,7 @@ async function main() {
           if (detail) { seen[key] = { minBid: row.minBid, status: row.status, at: Date.now(), v: DETAIL_V }; saveSeen(); }
         }
         buffer.push(toItem(row, detail));
-        if (buffer.length >= cfg.uploadBatch) await flush();
+        if (buffer.length >= flushAt) await flush();
         if (stats.detailed >= LIMIT) { stats.stoppedBy = 'test-limit'; break outer; }
         if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
       }
@@ -135,12 +189,18 @@ async function main() {
     }
     await flush();
   } catch (e) {
-    stats.stoppedBy = e instanceof Blocked ? 'blocked' : 'error';
-    log(`${e instanceof Blocked ? '차단 감지' : '오류'}: ${e.message}`);
-    try { await flush(); } catch (e2) { log(`업로드 오류: ${e2.message}`); }
+    stats.stoppedBy = e instanceof Blocked ? 'blocked' : e instanceof UploadDown ? 'upload' : 'error';
+    log(`${e instanceof Blocked ? '차단 감지' : e instanceof UploadDown ? '서버 전송 중단' : '오류'}: ${e.message}`);
+    if (!(e instanceof UploadDown)) { try { await flush(); } catch (e2) { log(`업로드 오류: ${e2.message}`); } }
     if (e instanceof Blocked) fs.writeFileSync(path.join(STATE, 'blocked.txt'), `${new Date().toISOString()} ${e.message}\n`);
   } finally {
     if (browser) await browser.close();
+    // 끝내 못 보낸 물건은 '읽음' 표시를 지워 다음 회차에 상세를 다시 읽어 보내게 한다(안 그러면 7일 동안 빠짐)
+    if (buffer.length && !DRY) {
+      for (const it of buffer) delete seen[`${it.court}_${it.caseNo}_${it.itemNo || 1}`];
+      saveSeen();
+      log(`못 보낸 ${buffer.length}건은 다음 회차에 다시 읽음`);
+    }
     log(`끝: ${JSON.stringify(stats)} / 오늘 연 화면 ${pace.count}`);
   }
 }
@@ -149,6 +209,8 @@ if (fs.existsSync(path.join(STATE, 'blocked.txt')) && !DRY) {
   log('지난 실행에서 차단이 감지되어 멈춰 있습니다. 확인 후 state/blocked.txt 를 지우면 다시 돌아갑니다.');
 } else {
   // 브라우저 실행 실패처럼 try 밖에서 난 오류도 로그에 남긴다(작업 스케줄러로 돌 때는 화면 출력이 안 보임)
+  if (!takeLock()) process.exit(0);
+  process.on('exit', releaseLock);
   main().catch((e) => {
     log(`실행 오류: ${e.stack || e.message}`);
     try { fs.statSync(chromium.executablePath()); } catch (e2) { log(`진단: 브라우저 파일 확인 실패 ${e2.code} ${e2.message} / LOCALAPPDATA=${process.env.LOCALAPPDATA} USERPROFILE=${process.env.USERPROFILE} PLAYWRIGHT_BROWSERS_PATH=${process.env.PLAYWRIGHT_BROWSERS_PATH || ''}`); }
