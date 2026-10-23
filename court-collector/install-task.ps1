@@ -2,8 +2,9 @@
 #   powershell -ExecutionPolicy Bypass -File .\install-task.ps1
 $dir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ErrorActionPreference = "Stop"   # 등록이 실패하면 아래 "등록 완료"를 찍지 않고 멈춤
-$node = (Get-Command node).Source
-$action  = New-ScheduledTaskAction -Execute $node -Argument "src\run.js" -WorkingDirectory $dir
+$node = (Get-Command node).Source   # node 가 설치돼 있는지 확인(없으면 여기서 멈춤)
+# start.cmd: 돌 때마다 저장소 최신판을 받은 뒤(git pull) 수집기를 실행 — 수집기를 고쳐도 미니PC에서 따로 받을 필요 없음
+$action  = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$dir\start.cmd`"" -WorkingDirectory $dir
 # 5시간 돌고 3시간 쉼: 01~06, 09~14, 17~22시 (config.json 의 allowedHours). 구간 시작마다 실행, 구간이 끝나면 스스로 멈춤
 $trigger = @((New-ScheduledTaskTrigger -Daily -At 1:00am), (New-ScheduledTaskTrigger -Daily -At 9:00am), (New-ScheduledTaskTrigger -Daily -At 5:00pm))
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Hours 6) -MultipleInstances IgnoreNew -DontStopIfGoingOnBatteries

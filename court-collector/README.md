@@ -23,7 +23,7 @@
 `src/site.js` 의 TODO 3곳(`listCourt`, `readDetail`, `backToList`)을 실제 법원경매정보 화면을 보면서 채웁니다.
 그다음 시험: `npm run test-run` → 3건만 읽고 서버에 올리지 않고 결과를 보여 줍니다.
 
-## 매일 자동 실행
+## 매일 자동 실행 (돌 때마다 저장소 최신판을 스스로 받음 — start.cmd)
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install-task.ps1
 ```
