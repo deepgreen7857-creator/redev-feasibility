@@ -34,6 +34,8 @@ const progressFile = path.join(STATE, 'progress.json');
 const progress = fs.existsSync(progressFile) ? JSON.parse(fs.readFileSync(progressFile, 'utf8')) : {};
 const saveProgress = () => fs.writeFileSync(progressFile, JSON.stringify(progress));
 
+// 상세 읽기 판: 2 = 사건번호로 상세가 이 물건 것인지 확인한 뒤 읽음(그 전 판은 다시 읽는다)
+const DETAIL_V = 2;
 const SIDO = (court) => (/서울/.test(court) ? '서울특별시' : /^인천지방법원$/.test(court) ? '인천광역시' : '경기도');
 
 function toItem(row, detail) {
@@ -47,7 +49,7 @@ function toItem(row, detail) {
     usage: detail?.usage || row.usage, address: addr, sido, sgg, emd, pnu: detail?.pnu,
     appraisal: row.appraisal, minBid: row.minBid, failCount: row.failCount, bidEnd: row.bidEnd, status: row.status || '진행',
     landArea: detail?.landArea, buildingArea: detail?.buildingArea, share: detail?.share, bulk: detail?.bulk,
-    thumbnail: detail?.photos?.[0], url: 'https://www.courtauction.go.kr',
+    thumbnail: detail?.photos?.[0], url: 'https://www.courtauction.go.kr', detailVer: detail ? DETAIL_V : undefined,
     detail: detail ? {
       photos: detail.photos || [], location: detail.appraisalSummary, shareText: detail.shareText, conditions: detail.specialConditions, baseRightDate: detail.baseRightDate,
       leases: detail.leases || [], survivingRights: detail.survivingRights, superficies: detail.superficies, documents: detail.documents || [],
@@ -107,16 +109,22 @@ async function main() {
         stats.listed++;
         const key = `${row.court}_${row.caseNo}_${row.itemNo || 1}`;
         const prev = seen[key];
-        const stale = !prev || prev.minBid !== row.minBid || prev.status !== row.status || Date.now() - (prev.at || 0) > cfg.refreshDetailAfterDays * 86400e3;
+        const stale = !prev || prev.v !== DETAIL_V || prev.minBid !== row.minBid || prev.status !== row.status || Date.now() - (prev.at || 0) > cfg.refreshDetailAfterDays * 86400e3;
         let detail = null;
         if (stale) {
           if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
           await pace.beforePage();
           await row.open();
           detail = await readDetail(page);
+          // 상세가 이 물건 것인지 확인: 사건번호가 다르면 상세를 버리고 목록 정보만 올린다(다음에 다시 읽음)
+          const cn = (x) => String(x || '').replace(/\s/g, '');
+          if (detail && detail.caseText && !cn(detail.caseText).includes(cn(row.caseNo))) {
+            log(`상세 어긋남: 목록 ${row.caseNo} ↔ 상세 ${detail.caseText} — 상세 버림`);
+            detail = null;
+          }
           await backToList(page);
           stats.detailed++;
-          seen[key] = { minBid: row.minBid, status: row.status, at: Date.now() }; saveSeen();
+          if (detail) { seen[key] = { minBid: row.minBid, status: row.status, at: Date.now(), v: DETAIL_V }; saveSeen(); }
         }
         buffer.push(toItem(row, detail));
         if (buffer.length >= cfg.uploadBatch) await flush();

@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS } from '../data/defaults.js';
 const deals = Array.from({ length: 20 }, (_, i) => [500000000 + i * 1e6, 84, 5, 1, '1', 'A', 2000, false, '중개거래', '부평동']);
 
 test('법원경매 회차: 인천 30% 저감', () => {
-  const r = projectRounds({ source: 'court', court: '인천지방법원', minBid: 100000000 }, DEFAULT_SETTINGS, 3);
+  const r = projectRounds({ source: 'court', detailVer: 2, court: '인천지방법원', minBid: 100000000 }, DEFAULT_SETTINGS, 3);
   assert.deepEqual(r.map((x) => x.price), [100000000, 70000000, 49000000]);
 });
 test('공매 회차: 최초가 10%씩, 50% 하한', () => {
@@ -21,7 +21,7 @@ test('시세 추정: 같은 동 5건 이상이면 동 기준, 해제 제외', ()
 });
 test('판정: 지금 매력 / 유찰 대기 / 해결 안 됨 (개인 기준)', () => {
   const DEFAULT_SETTINGS_P = { ...DEFAULT_SETTINGS, owner: 'person' };
-  const base = { source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000 };
+  const base = { source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000 };
   assert.equal(analyze({ ...base, minBid: 300000000 }, { settings: DEFAULT_SETTINGS_P, deals }).verdict, 'now');
   const w = analyze({ ...base, minBid: 600000000 }, { settings: DEFAULT_SETTINGS_P, deals });
   assert.equal(w.verdict, 'wait'); assert.equal(w.entry.step, 1);
@@ -48,7 +48,7 @@ test('공고 용도가 \'토지 > 도로\'면 도로 부지로 판별, 최악 �
   assert.ok(a.special.expected < a.special.best.value);
 });
 test('인수 권리 금액 미확인 → 권리 확인 후 판단', () => {
-  const base = { source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000, minBid: 300000000 };
+  const base = { source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000, minBid: 300000000 };
   const a = analyze({ ...base, detail: { flags: { survivingRights: true }, survivingRights: '선순위 가처분' } }, { settings: DEFAULT_SETTINGS, deals });
   assert.equal(a.verdict, 'check');
   assert.ok(a.upMoney);
@@ -59,11 +59,11 @@ test('관심 제외: 미추홀구 정비구역 물건(조회 전 포함), 부평
   assert.equal(isExcluded({ sido: '인천광역시', sgg: '부평구' }, DEFAULT_SETTINGS), false);
 });
 test('분양자격: 비투기과열(인천)은 조합설립인가 후에도 조합원 → 현금청산 아님', () => {
-  const a = analyze({ source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', usage: '다세대', buildingArea: 50, appraisal: 200000000, minBid: 140000000, manual: { redevStage: '조합설립인가 후', projectType: '재개발' } }, { settings: DEFAULT_SETTINGS, deals: [] });
+  const a = analyze({ source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '부평구', usage: '다세대', buildingArea: 50, appraisal: 200000000, minBid: 140000000, manual: { redevStage: '조합설립인가 후', projectType: '재개발' } }, { settings: DEFAULT_SETTINGS, deals: [] });
   assert.equal(a.member.status, 'member'); assert.equal(a.cashType, false);
 });
 test('분양자격: 서울 재건축 조합설립인가 후 — 채권자 모름이면 확인 필요, 개인이면 현금청산, 금융기관이면 조합원', () => {
-  const base = { source: 'court', court: '서울남부지방법원', sido: '서울특별시', sgg: '영등포구', usage: '아파트', buildingArea: 84, appraisal: 1e9, minBid: 8e8, manual: { redevStage: '조합설립인가 후', projectType: '재건축' } };
+  const base = { source: 'court', detailVer: 2, court: '서울남부지방법원', sido: '서울특별시', sgg: '영등포구', usage: '아파트', buildingArea: 84, appraisal: 1e9, minBid: 8e8, manual: { redevStage: '조합설립인가 후', projectType: '재건축' } };
   assert.equal(analyze(base, { settings: DEFAULT_SETTINGS }).member.status, 'check');
   const c = analyze({ ...base, manual: { ...base.manual, creditor: 'other' } }, { settings: DEFAULT_SETTINGS });
   assert.equal(c.cashType, true); assert.equal(c.value, 9e8);
@@ -78,7 +78,7 @@ test('분양자격: 온비드 압류재산 공매는 예외(체납) → 조합�
   assert.equal(m.overheated, true); assert.equal(m.status, 'member');
 });
 test('입주권 가치: 신축 시세 − (조합원분양가 − 감정가×비례율)', () => {
-  const a = analyze({ source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', usage: '다세대', buildingArea: 40, appraisal: 2e8, minBid: 1.4e8, manual: { redevStage: '관리처분인가 후', projectType: '재개발', econ: { ratio: 1.1, memberPrice: 5e8, newPrice: 7e8 } } }, { settings: DEFAULT_SETTINGS, deals: [] });
+  const a = analyze({ source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '부평구', usage: '다세대', buildingArea: 40, appraisal: 2e8, minBid: 1.4e8, manual: { redevStage: '관리처분인가 후', projectType: '재개발', econ: { ratio: 1.1, memberPrice: 5e8, newPrice: 7e8 } } }, { settings: DEFAULT_SETTINGS, deals: [] });
   assert.equal(a.right.rightPrice, 2.2e8); assert.equal(a.right.contribution, 2.8e8); assert.equal(a.value, 4.2e8); assert.equal(a.rightType, true);
 });
 test('용도 → 실거래 종류', () => {
@@ -93,7 +93,7 @@ test('법원경매 붙여넣기 해석', () => {
 });
 
 test('매력도: 지금 매력 물건에 점수, 지역 가산 없음', () => {
-  const base = { source: 'court', court: '인천지방법원', sido: '인천광역시', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000, minBid: 300000000 };
+  const base = { source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000, minBid: 300000000 };
   const a1 = analyze({ ...base, sgg: '부평구' }, { settings: DEFAULT_SETTINGS, deals });
   const a2 = analyze({ ...base, sgg: '남동구' }, { settings: DEFAULT_SETTINGS, deals });
   assert.ok(a1.score && a1.score.total > 0);
@@ -102,7 +102,7 @@ test('매력도: 지금 매력 물건에 점수, 지역 가산 없음', () => {
 });
 
 test('돈 계산(개인): 내 돈 = 입찰가 − 대출 + 세금·명도·수리, 수익률 = 수익 ÷ 내 돈', () => {
-  const a = analyze({ source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 6e8, minBid: 3e8 }, { settings: { ...DEFAULT_SETTINGS, owner: 'person' }, deals });
+  const a = analyze({ source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 6e8, minBid: 3e8 }, { settings: { ...DEFAULT_SETTINGS, owner: 'person' }, deals });
   const m = a.money;
   assert.equal(m.loan, 1.8e8);
   assert.equal(m.own, 3e8 - 1.8e8 + m.tax + m.other);
@@ -112,7 +112,7 @@ test('돈 계산(개인): 내 돈 = 입찰가 − 대출 + 세금·명도·수�
 });
 
 test('법인 단타: 공시가격 1억 이하·정비구역 밖·85㎡ 이하 = A, 일반세율·부가세 없음·추가 법인세', () => {
-  const base = { source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '다세대', buildingArea: 50, appraisal: 1.5e8, minBid: 1e8, land: { landUse: { redevelopment: [] } } };
+  const base = { source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '다세대', buildingArea: 50, appraisal: 1.5e8, minBid: 1e8, land: { landUse: { redevelopment: [] } } };
   const d = Array.from({ length: 20 }, () => [1.6e8, 50, 2, 1, '1', 'v', 2000, false, '중개거래', '부평동']);
   const a = analyze({ ...base, housePrice: { kind: '공동주택', price: 7e7 } }, { settings: DEFAULT_SETTINGS, deals: d });
   assert.equal(a.money.fit.grade, 'A');
@@ -127,13 +127,13 @@ test('법인 단타: 공시가격 1억 이하·정비구역 밖·85㎡ 이하 = 
 });
 test('법인: 농지는 X, 상가는 B(부가세)', () => {
   const t = (await_ => 0);
-  const farm = analyze({ source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '강화군', usage: '답', landArea: 900, appraisal: 1e8, minBid: 5e7, land: { jimok: '답' } }, { settings: DEFAULT_SETTINGS, deals: [] });
+  const farm = analyze({ source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '강화군', usage: '답', landArea: 900, appraisal: 1e8, minBid: 5e7, land: { jimok: '답' } }, { settings: DEFAULT_SETTINGS, deals: [] });
   assert.equal(farm.farm, true);
 });
 
 test('올수리 후 매도: 같은 동 비슷한 면적 상위 25% 가격, 수리비는 평당 단가', () => {
   const vd = Array.from({ length: 12 }, (_, i) => [150000000 + i * 10000000, 50, 2, 1, '1', 'B', 1995, false, '중개거래', '십정동']);
-  const it = { source: 'court', court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '십정동', usage: '다세대', buildingArea: 50, appraisal: 2e8, minBid: 1.4e8, detail: { flags: {} } };
+  const it = { source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '십정동', usage: '다세대', buildingArea: 50, appraisal: 2e8, minBid: 1.4e8, detail: { flags: {} } };
   const a = analyze(it, { settings: { ...DEFAULT_SETTINGS, owner: 'person' }, deals: vd });
   assert.ok(a.renovation);
   assert.ok(a.renovation.after > a.market.value);
@@ -143,7 +143,7 @@ test('올수리 후 매도: 같은 동 비슷한 면적 상위 25% 가격, 수�
 
 test('오류 의심: 시세 가치가 감정가의 2배를 넘으면 계산 보류, 지분이면 비율을 곱함', () => {
   const big = Array.from({ length: 10 }, (_, i) => [3e9 + i * 1e7, 138, 30, 1, '40', 'G', 2005, false, '중개거래', '잠실동']);
-  const base = { source: 'court', court: '서울중앙지방법원', sido: '서울특별시', sgg: '송파구', emd: '잠실동', usage: '아파트', buildingArea: 138.6, appraisal: 3.97e8, minBid: 3.176e8 };
+  const base = { source: 'court', detailVer: 2, court: '서울중앙지방법원', sido: '서울특별시', sgg: '송파구', emd: '잠실동', usage: '아파트', buildingArea: 138.6, appraisal: 3.97e8, minBid: 3.176e8 };
   const a = analyze(base, { settings: DEFAULT_SETTINGS, deals: big });
   assert.equal(a.verdict, 'suspect');
   assert.equal(a.money, null);

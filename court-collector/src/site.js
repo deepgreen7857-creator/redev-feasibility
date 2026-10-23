@@ -151,6 +151,9 @@ export async function* listCourt(page, court, pace) {
           if ((await currentPageNo(page)) !== p) await goToPage(page, p, pace);
           await page.locator(`${SEL.grid} a[onclick="moveDtlPage(${row.index})"]`).first().click();
           await page.waitForSelector(SEL.rounds, { timeout: 30000 });
+          // 직전 물건의 상세가 화면에 남아 있을 수 있다 → 이 물건의 사건번호가 화면에 뜰 때까지 기다린다
+          // (기다리지 않으면 앞 물건의 주소·면적이 이 물건 가격에 붙는다 — 2026.10.23 잠실 사례)
+          await page.waitForFunction((cn) => document.body.innerText.replace(/\s/g, '').includes(cn), row.caseNo.replace(/\s/g, ''), { timeout: 30000 });
           await settle(page);
         },
       };
@@ -226,7 +229,10 @@ export async function readDetail(page) {
     result: r[4] || undefined,
   }));
 
+  // 이 화면이 어느 사건인지(목록 줄과 맞는지 run.js 에서 확인)
+  const caseText = clean(f['사건번호'] || Object.entries(f).find(([k]) => /사건번호/.test(k))?.[1] || '') || undefined;
   return {
+    caseText,
     title: undefined, // run.js 가 주소·용도로 만든다
     usage: clean(f['물건종류']) || undefined,
     address,

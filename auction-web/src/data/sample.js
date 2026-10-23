@@ -35,7 +35,7 @@ export const SAMPLE_LISTINGS = [
     land: { landUse: { zone: '제2종일반주거지역', redevelopment: [], farmPromotion: false, greenbelt: false, roadConflict: [] }, officialPrice: 3150000 },
   },
   {
-    id: 'demo-2', source: 'court', category: 'court', caseNo: '2026타경10234', court: '인천지방법원', title: '[샘플] 십정동 다세대 52㎡',
+    id: 'demo-2', source: 'court', detailVer: 2, category: 'court', caseNo: '2026타경10234', court: '인천지방법원', title: '[샘플] 십정동 다세대 52㎡',
     usage: '다세대', address: '인천광역시 부평구 십정동 ○○빌라 3층', sido: '인천광역시', sgg: '부평구', emd: '십정동',
     appraisal: 230000000, minBid: 161000000, failCount: 1, round: '2', bidEnd: D(14), status: '진행', buildingArea: 52.3, landArea: 21.4,
     detail: { flags: { tenants: 1, unclaimedTenants: 0 } }, housePrice: { kind: '공동주택', year: 2026, price: 98000000 },
@@ -50,18 +50,18 @@ export const SAMPLE_LISTINGS = [
     manual: { zone: { name: '[샘플] 작전○구역 재건축', location: '계양구 작전동 45번지 일원', stage: '조합설립인가 후', type: '재건축', kind: '정비사업', dates: { union: '2024-02-20' } }, redevStage: '조합설립인가 후', econ: { ratio: 1.0, memberPrice: 520000000, newPrice: 780000000, area: 84 } },
   },
   {
-    id: 'demo-4', source: 'court', category: 'court', caseNo: '2025타경55120', court: '인천지방법원', title: '[샘플] 강화 선원면 답 990㎡',
+    id: 'demo-4', source: 'court', detailVer: 2, category: 'court', caseNo: '2025타경55120', court: '인천지방법원', title: '[샘플] 강화 선원면 답 990㎡',
     usage: '답', address: '인천광역시 강화군 선원면 ○○리', sido: '인천광역시', sgg: '강화군', emd: '선원면',
     appraisal: 210000000, minBid: 102900000, failCount: 2, round: '3', bidEnd: D(20), status: '진행', landArea: 991,
     land: { jimok: '답', landUse: { zone: '농림지역', redevelopment: [], farmPromotion: true, roadConflict: [] }, officialPrice: 98000 },
   },
   {
-    id: 'demo-5', source: 'court', category: 'court', caseNo: '2026타경3021', court: '인천지방법원', title: '[샘플] 용현동 단독주택(토지 지분)',
+    id: 'demo-5', source: 'court', detailVer: 2, category: 'court', caseNo: '2026타경3021', court: '인천지방법원', title: '[샘플] 용현동 단독주택(토지 지분)',
     usage: '단독주택', address: '인천광역시 미추홀구 용현동 ○○', sido: '인천광역시', sgg: '미추홀구', emd: '용현동', share: true,
     appraisal: 180000000, minBid: 88200000, failCount: 2, round: '3', bidEnd: D(11), status: '진행', buildingArea: 60, landArea: 70,
   },
   {
-    id: 'demo-6', source: 'court', category: 'court', caseNo: '2026타경7788', court: '의정부지방법원 고양지원', title: '[샘플] 백석동 아파트 84㎡',
+    id: 'demo-6', source: 'court', detailVer: 2, category: 'court', caseNo: '2026타경7788', court: '의정부지방법원 고양지원', title: '[샘플] 백석동 아파트 84㎡',
     usage: '아파트', address: '경기도 고양시 일산동구 백석동 ○○아파트', sido: '경기도', sgg: '고양시 일산동구', emd: '백석동',
     appraisal: 610000000, minBid: 610000000, failCount: 0, round: '1', bidEnd: D(25), status: '진행', buildingArea: 84.7, landArea: 40,
   },
@@ -108,7 +108,7 @@ SAMPLE_LISTINGS.push({
 });
 
 SAMPLE_LISTINGS.push({
-  id: 'demo-10', source: 'court', category: 'court', caseNo: '2026타경1111', court: '인천지방법원', title: '[샘플] 산곡동 다세대 49㎡ (완료 예시)',
+  id: 'demo-10', source: 'court', detailVer: 2, category: 'court', caseNo: '2026타경1111', court: '인천지방법원', title: '[샘플] 산곡동 다세대 49㎡ (완료 예시)',
   usage: '다세대', address: '인천광역시 부평구 산곡동 ○○빌라 2층', sido: '인천광역시', sgg: '부평구', emd: '산곡동',
   appraisal: 180000000, minBid: 126000000, failCount: 1, round: '2', bidEnd: '2026.10.15', status: '매각', buildingArea: 49, landArea: 20,
   result: { soldPrice: 151200000, bidders: 7, second: 148000000, status: '매각' },

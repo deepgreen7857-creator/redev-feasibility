@@ -292,6 +292,8 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   }
   // ── 오류 의심 걸러내기: 원본(감정가·공시가격)과 크게 어긋나면 계산을 믿지 않는다 ──
   const anomalies = [];
+  // 법원 수집기 초기판(10/23 이전)은 앞 물건 상세가 섞였을 수 있다 → 다시 읽기 전까지 계산 보류
+  if (item.source === 'court' && item.detail && item.detailVer !== 2) anomalies.push('법원 상세를 앞 물건과 섞어 읽었을 수 있는 초기 수집분 — 수집기가 다시 읽는 중(주소·면적 확인 전 계산 보류)');
   // 건축물대장 교차 확인: 전유면적이 읽어 온 면적과 30% 넘게 다르면 오류 의심
   const ua = item.ledger?.unit?.exclusiveArea;
   const uaDiff = ua && item.buildingArea ? Math.abs(ua - item.buildingArea) / ua : null;
