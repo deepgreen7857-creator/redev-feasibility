@@ -114,7 +114,8 @@ async function enrichLand(item) {
   const key = VWORLD_KEY.value();
   if (!key) return {};
   const found = {};
-  let pnu = item.pnu;
+  let pnu = vworld.normalizePnu(item.pnu);
+  if (pnu && pnu !== item.pnu) Object.assign(found, { pnu, pnuSource: `온비드 필지번호 보정(${item.pnu} → ${pnu})` });
   if (!pnu) {
     const hit = await vworld.findPnu({ address: (item.detail && item.detail.addressFull) || item.address || item.title, key });
     if (!hit) return {};
@@ -194,12 +195,12 @@ async function runOnbid({ deadline, force = false, mode } = {}) {
 // 빌라·아파트·단독(땅값 대비 최저가를 보는 종류)을 먼저, 한 번에 최대 150건.
 async function runLandBacklog({ deadline, max = 150 } = {}) {
   const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // YYYY-MM-DD (kstDay는 대시 없는 형식이라 쓰지 않음)
-  const snap = await db.collection('listings').select('land', 'pnu', 'address', 'title', 'usage', 'usageSmall', 'bidEnd', 'detail', 'landEmptyAt', 'sido', 'sgg', 'buildingArea').get();
+  const snap = await db.collection('listings').select('land', 'pnu', 'address', 'title', 'usage', 'usageSmall', 'bidEnd', 'detail', 'landEmptyAt', 'landEmptyV', 'sido', 'sgg', 'buildingArea').get();
   const weekAgo = Date.now() - 7 * 86400e3;
   const home = (it) => /(다세대|연립|빌라|아파트|단독|다가구|도시형)/.test(`${it.usage || ''} ${it.usageSmall || ''}`);
   const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
     .filter((it) => (!it.land || vworld.isEmptyLand(it.land)) && String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today)
-    .filter((it) => !it.landEmptyAt || new Date(it.landEmptyAt).getTime() < weekAgo)
+    .filter((it) => !it.landEmptyAt || it.landEmptyV !== 2 || new Date(it.landEmptyAt).getTime() < weekAgo) // 필지번호 보정 전에 빈 값으로 표시된 것은 다시
     .sort((x, y) => Number(home(y)) - Number(home(x)));
   let done = 0; let empty = 0; const errors = [];
   for (const it of list.slice(0, max)) {
@@ -207,7 +208,7 @@ async function runLandBacklog({ deadline, max = 150 } = {}) {
     try {
       const extra = await enrichLand(it);
       if (extra && extra.land && !extra.land.empty) { await db.collection('listings').doc(it.id).set(extra, { merge: true }); done++; }
-      else { await db.collection('listings').doc(it.id).set({ landEmptyAt: new Date().toISOString(), ...(extra?.land?.raw ? { landEmptyRaw: extra.land.raw } : {}) }, { merge: true }); empty++; if (errors.length < 5 && extra?.land?.raw) errors.push(`${it.id} 빈 응답: ${JSON.stringify(extra.land.raw).slice(0, 300)}`); }
+      else { await db.collection('listings').doc(it.id).set({ landEmptyAt: new Date().toISOString(), landEmptyV: 2, ...(extra?.land?.raw ? { landEmptyRaw: extra.land.raw } : {}) }, { merge: true }); empty++; if (errors.length < 5 && extra?.land?.raw) errors.push(`${it.id} 빈 응답: ${JSON.stringify(extra.land.raw).slice(0, 300)}`); }
     } catch (e) { if (errors.length < 5) errors.push(`${it.id}: ${e.message}`); }
   }
   return { waiting: list.length, done, empty, errors };
@@ -674,3 +675,4 @@ exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY, DATA
   if (body.run) await setState('court', { lastRun: new Date().toISOString(), lastDay: kstDay(), ...JSON.parse(JSON.stringify(body.run)) });
   res.json({ ok: true, received: Array.isArray(body.items) ? body.items.length : 0, saved: items.length, changed: needDetail.length, enriched, enrichLeft });
 });
+

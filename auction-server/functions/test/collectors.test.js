@@ -400,3 +400,11 @@ test('공공데이터 HTTP 403 + 키 미등록(30)이면 사유 코드로 멈추
   assert.equal(sum.rh.ok, 0); assert.ok(/코드 30/.test(sum.rh.stopped)); assert.equal(saved.length, 0);
   assert.ok(calls <= 4); // 첫 작업에서 바로 멈춤
 });
+
+test('온비드 필지번호 11번째 자리 0 → 1 보정(산은 2 그대로)', () => {
+  const { normalizePnu } = require('../src/lib/vworld');
+  assert.equal(normalizePnu('4127310900010850000'), '4127310900110850000');
+  assert.equal(normalizePnu('1174010900102330022'), '1174010900102330022');
+  assert.equal(normalizePnu('4146110100203210000'), '4146110100203210000');
+  assert.equal(normalizePnu(null), null);
+});

@@ -225,5 +225,11 @@ async function neighbors({ pnu, key, fetcher = fetch, year, max = 25 }) {
   };
 }
 
-module.exports = { lookup, housingPrice, analyzeLandUse, firstArray, parcelAddress, findPnu, neighbors, bboxOf, centroid, isEmptyLand, DOMAIN };
+// 필지번호(PNU 19자리) 11번째 자리는 대지 '1'·산 '2'인데, 온비드는 일반 토지를 '0'으로 줄 때가 있다 → 브이월드가 빈 응답을 준다
+function normalizePnu(p) {
+  const s = String(p || '');
+  return /^\d{19}$/.test(s) && s[10] === '0' ? `${s.slice(0, 10)}1${s.slice(11)}` : (p || null);
+}
+
+module.exports = { normalizePnu, lookup, housingPrice, analyzeLandUse, firstArray, parcelAddress, findPnu, neighbors, bboxOf, centroid, isEmptyLand, DOMAIN };
 
