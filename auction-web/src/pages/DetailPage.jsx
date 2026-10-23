@@ -381,6 +381,23 @@ function memberBasis(item, d, waitText) {
   return `토지면적 ${land || (d ? '—' : waitText)}${landShare} · 용도 ${usage || '—'} · 지분 여부 ${share}`;
 }
 
+// 지목 28종(공간정보관리법 제67조) — 온비드 용도 소분류가 지목 이름이면 그대로 지목으로 쓴다
+const JIMOK = ['전', '답', '과수원', '목장용지', '임야', '광천지', '염전', '대', '공장용지', '학교용지', '주차장', '주유소용지', '창고용지', '도로', '철도용지', '제방', '하천', '구거', '유지', '양어장', '수도용지', '공원', '체육용지', '유원지', '종교용지', '사적지', '묘지', '잡종지'];
+function jimokOf(item, d) {
+  const direct = d?.landCategory || item.land?.jimok;
+  if (direct) return direct;
+  const small = String(item.usageSmall || String(item.usage || '').split('>').pop() || '').trim();
+  if (JIMOK.includes(small)) return `${small} (온비드 용도 기준 — 토지대장 확인 전)`;
+  return null;
+}
+// 도로명 주소: 상세 값 → 법원 주소가 도로명이면 그대로
+function roadOf(item, d) {
+  if (d?.roadAddress) return d.roadAddress;
+  const addr = item.source === 'court' ? (d?.addressFull || item.address || '') : '';
+  if (/[가-힣\d]+(로|길)\s?\d+/.test(addr)) return addr;
+  return null;
+}
+
 // ① 물건 기본현황 — 사진 칸은 항상, 상세가 없는 값은 '수집 대기'
 function BasicSection({ item, d, dv, waitText }) {
   // 예전 해석기로 받은 상세에는 '[object Object]' 같은 깨진 값이 있어 http 주소만 쓴다(밤 수집 때 다시 받음)
@@ -411,8 +428,8 @@ function BasicSection({ item, d, dv, waitText }) {
         </div>
         <div className="min-w-0">
           <Row k="지번 주소" v={d?.addressFull || item.address || '—'} />
-          <Row k="도로명 주소" v={dv(d?.roadAddress)} />
-          <Row k="지목" v={dv(d?.landCategory || item.land?.jimok)} />
+          <Row k="도로명 주소" v={roadOf(item, d) || dv(null)} />
+          <Row k="지목" v={jimokOf(item, d) || dv(null)} />
           <Row k="용도" v={item.usage || '—'} />
           <Row k="토지 면적" v={sqm(item.landArea) || dv(null)} />
           <Row k="건물 면적" v={sqm(item.buildingArea) || (item.landArea ? '— (토지만)' : dv(null))} />

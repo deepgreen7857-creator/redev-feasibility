@@ -2,7 +2,6 @@
 // 입찰(매각)기일이 되면 더 이상 고치지 않는다(결과를 보고 예측을 바꾸지 않도록). 완료 물건 화면에서 실제 결과와 비교한다.
 const RULES_VERSION = '2026-10-23b';
 
-const ENDED = /(낙찰|매각|유찰|종결|취소|기각|변경|마감)/;
 
 function kstNow() {
   const d = new Date(Date.now() + 9 * 3600e3);
@@ -10,12 +9,17 @@ function kstNow() {
 }
 
 // 아직 입찰 전인가: 기일이 '내일 이후'(날짜만 있으면) 또는 마감 시각이 지금 이후(시각까지 있으면)
+// 법원 상태 '유찰'은 지난 회차 결과다 — 다음 기일이 미래면 진행 중으로 본다(전에는 이 때문에 법원 진행 물건이 예측 기록에서 빠졌음).
+// 취하·취소·정지·기각·종결처럼 사건 자체가 끝난 상태만 막는다.
+const CLOSED = /(취하|취소|정지|기각|종결)/;
 function beforeBid(it, now = kstNow()) {
-  if (it.result) return false;
-  if (ENDED.test(it.status || '') && !/진행/.test(it.status || '')) return false;
+  if (it.result?.soldPrice) return false;
   const e = String(it.bidEnd || '').replace(/\./g, '-').trim();
   if (!e) return false;
-  return e.length <= 10 ? e.slice(0, 10) > now.day : e.slice(0, 16) > now.stamp;
+  const future = e.length <= 10 ? e.slice(0, 10) > now.day : e.slice(0, 16) > now.stamp;
+  if (!future) return false;
+  if (CLOSED.test(it.status || '') && !/진행/.test(it.status || '')) return false;
+  return true;
 }
 
 function yms(months = 12) {

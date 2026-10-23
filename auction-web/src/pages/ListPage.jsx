@@ -5,6 +5,7 @@ import { analyze, tradeTypeOf, eok, pct, SOURCE_LABEL, typeLabel, areaText } fro
 import { lawdOf, SIDO } from '../data/defaults.js';
 import { corpFit, propertyKind } from '../lib/tax.js';
 import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
+import { premiumTable, predictPrice, isFirstRound, scoreErrors, evidenceGroup, EVIDENCE_LABEL, bidOutcome, soldOf } from '../lib/bidForecast.js';
 
 const SOURCES = [['all', '전체'], ['court', '법원경매'], ['public', '공매'], ['bankrupt', '파산자산']];
 const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '유찰 대기'], ['check', '권리 확인 후 판단'], ['suspect', '오류 의심'], ['special', '특수물건 전체'], ['hard', '가격 안 맞음'], ['unknown', '시세 부족']];
@@ -62,6 +63,9 @@ export default function ListPage({ mode }) {
     }).sort((x, y) => (villa && f.sort === 'verdict' ? NUM(y.a.renoMoney?.profit ?? y.a.money?.profit) - NUM(x.a.renoMoney?.profit ?? x.a.money?.profit) : 0) || (done && f.sort === 'verdict' ? endOf(y.it).localeCompare(endOf(x.it)) : 0) || (opp && f.sort === 'verdict' ? NUM(y.a.opportunity?.profit) - NUM(x.a.opportunity?.profit) : 0) || sorter(f.sort)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
   }, [items, settings, dealsMap, f, opp, done, villa]);
 
+  // 예상 낙찰가(=우리 입찰가) 기준표: 불러온 물건 중 낙찰가가 있는 완료 물건으로 만든다
+  const table = useMemo(() => (items ? premiumTable(items) : null), [items]);
+
   const counts = useMemo(() => {
     const c = { now: 0, wait: 0, check: 0, hard: 0, unknown: 0, special: 0, suspect: 0 };
     rows.forEach(({ a }) => { c[a.verdict] = (c[a.verdict] || 0) + 1; if (a.special) c.special++; });
@@ -72,7 +76,7 @@ export default function ListPage({ mode }) {
 
   return (
     <div className="space-y-4">
-      {done && <DoneSummary rows={rows} />}
+      {done && <DoneSummary rows={rows} table={table} />}
       {villa && (
         <div className="card border-brand/30 text-sm">
           <div className="text-base font-extrabold">빌라 단타 — 땅값 수준에 사서 올수리 후 매도</div>
@@ -160,7 +164,8 @@ export default function ListPage({ mode }) {
                 <div><div className="text-xs text-ink/50">확실성</div><div className="font-bold">{a.certainty ? `${a.certainty.grade} (${a.certainty.value})` : '—'}</div></div>
               </div>
             )}
-            {done && <ResultRow it={it} a={a} />}
+            {done && <ResultRow it={it} a={a} table={table} />}
+            {!done && <BidRow it={it} a={a} table={table} />}
             {villa && <VillaRow it={it} a={a} />}
             {a.opportunity && (
               <div className="mt-2 rounded-lg border border-now/30 bg-now/5 p-2 text-sm">
@@ -235,9 +240,11 @@ const VERDICT_LABEL = { now: '지금 매력', wait: '유찰 대기', check: '권
 const endOf = (it) => String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10);
 function isEnded(it) {
   const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  const e = endOf(it);
+  // 다음 기일이 내일 이후인데 확정 낙찰이 없으면 진행 중 — 법원 상태 '유찰'은 지난 회차 결과라서 종료로 보면 안 됨
+  if (e && e > today && !it.result?.soldPrice) return false;
   if (it.result) return true;
   if (/(낙찰|매각|유찰|종결|취소|기각|변경|마감)/.test(it.status || '') && !/진행/.test(it.status || '')) return true;
-  const e = endOf(it);
   return Boolean(e) && e < today;
 }
 function resultOf(it) {
@@ -248,8 +255,10 @@ function resultOf(it) {
   if (/(취소|기각|변경|종결)/.test(r.status || it.status || '')) return { kind: 'other', label: r.status || it.status };
   return { kind: 'unknown', label: '결과 확인 전' };
 }
-function ResultRow({ it, a }) {
+function ResultRow({ it, a, table }) {
   const r = resultOf(it);
+  const pred = it.forecast?.bid ? { price: it.forecast.bid, scope: `입찰 전 기록(${it.forecast.at})` } : predictPrice(it, table, { self: true });
+  const out = pred ? bidOutcome(it, pred.price, it.forecast ? it.forecast.cap : a?.cap, r.kind) : null;
   const fc = it.forecast; // 입찰 전에 서버가 기록해 둔 우리 예측
   const cap = fc ? fc.cap : a?.cap;
   const vs = r.price && cap ? (r.price <= cap ? `우리 매수상한 ${eok(cap)} 안에서 낙찰 — 우리 기준으로도 살 만했음` : `우리 매수상한 ${eok(cap)}보다 ${eok(r.price - cap)} 높게 낙찰 — 시장이 더 높게 봄`) : null;
@@ -260,6 +269,7 @@ function ResultRow({ it, a }) {
         : <span className="text-ink/50">입찰 전 예측 기록 없음 — 아래는 지금 규칙으로 다시 판정한 값</span>}
     </div>
     {vs && <div className={`mt-1 text-xs font-bold ${r.price <= cap ? 'text-now' : 'text-wait'}`}>{vs}</div>}
+    {pred && <div className="mt-1 text-xs"><b>우리 입찰가(예상 낙찰가) {eok(pred.price)}</b> <span className="text-ink/50">— {pred.scope}{it.forecast?.bid ? '' : ' · 사후 계산'}</span>{out && <span className={`ml-1 font-bold ${out.kind === 'win' || out.kind === 'alone' ? 'text-now' : out.kind === 'lose' ? 'text-wait' : 'text-ink/50'}`}>→ {out.label}</span>}</div>}
     <div className={`mt-2 grid grid-cols-4 gap-2 rounded-lg p-2 text-sm ${r.kind === 'sold' ? 'bg-now/5' : r.kind === 'fail' ? 'bg-wait/5' : 'bg-ink/5'}`}>
       <div><div className="text-xs text-ink/50">결과</div><div className="font-bold">{r.label}</div></div>
       <div><div className="text-xs text-ink/50">낙찰가</div><div className="num font-bold">{r.price ? eok(r.price) : '—'}</div></div>
@@ -270,7 +280,7 @@ function ResultRow({ it, a }) {
   );
 }
 // 우리 판정별로 실제 결과가 어땠는지(채점)
-function DoneSummary({ rows }) {
+function DoneSummary({ rows, table }) {
   const by = {};
   let recorded = 0;
   rows.forEach(({ it, a }) => {
@@ -312,13 +322,18 @@ function DoneSummary({ rows }) {
         </div>
         {judged > 0 && <div className="mt-1">일치율 <b>{pct((m.agreeBuy + m.agreePass) / judged)}</b> — 틀린 쪽 물건을 열어 왜 어긋났는지 보면 규칙을 고칠 곳이 보입니다.</div>}
       </div>
+      <AnalyzerScore rows={rows} table={table} />
       <ScoreBreakdown rows={rows} />
     </div>
   );
 }
 
 // 성적표: 규칙은 고정(판단 기준 2026-10-23판)한 채로, 종류·지역·개찰월별 적중률과 '낙찰가 ÷ 우리 판단 가치'
-function ScoreBreakdown({ rows }) {
+function ScoreBreakdown({ rows: allRows }) {
+  const [ev, setEv] = useState('all'); // 실거래 근거별로 나눠 보기 — 규칙은 그대로, 보기만 나눈다
+  const evCount = { all: 0, ab: 0, cd: 0, none: 0 };
+  allRows.forEach(({ it, a }) => { const k = resultOf(it).kind; if (k !== 'sold' && k !== 'fail') return; evCount.all++; evCount[evidenceGroup(a)]++; });
+  const rows = ev === 'all' ? allRows : allRows.filter(({ a }) => evidenceGroup(a) === ev);
   const med = (xs) => { if (!xs.length) return null; const a = [...xs].sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
   const group = (keyOf) => {
     const g = {};
@@ -328,7 +343,8 @@ function ScoreBreakdown({ rows }) {
       const x = (g[k] ||= { n: 0, hit: 0, judged: 0, sold: 0, ratio: [] });
       x.n++; if (r.kind === 'sold') { x.sold++; if (r.rate && r.rate > 1) x.over = (x.over || 0) + 1; }
       // 첫 회차(유찰 없이) 바로 팔린 것 — 시장이 감정가 근처 이상으로 본 물건. 우리가 '안 산다'였으면 놓친 기회
-      const first = String(it.round || '') === '1' || it.failCount === 0;
+      const first = isFirstRound(it); // 유찰 0회 또는 최저가 = 감정가. 알 수 없으면 따로 센다
+      if (first === null) x.firstUnknown = (x.firstUnknown || 0) + 1;
       if (first) { x.firstN = (x.firstN || 0) + 1; if (r.kind === 'sold') { x.firstSold = (x.firstSold || 0) + 1; if (cap && it.minBid && cap < it.minBid) x.missed = (x.missed || 0) + 1; } }
       if (cap && it.minBid) { x.judged++; const buy = cap >= it.minBid; if ((buy && r.kind === 'sold') || (!buy && r.kind === 'fail')) x.hit++; }
       // 어이없는 낙찰(감정가의 150% 초과, 또는 우리 가치의 2배 초과·30% 미만)은 따로 세고 중앙값에서 뺀다
@@ -346,7 +362,7 @@ function ScoreBreakdown({ rows }) {
         <thead className="text-ink/50"><tr><th className="text-left">구분</th><th className="text-right">결과</th><th className="text-right">낙찰률</th><th className="text-right">감정가 초과 낙찰</th><th className="text-right">1회차 바로 낙찰</th><th className="text-right">채점</th><th className="text-right">적중률</th><th className="text-right">낙찰가÷우리 가치</th></tr></thead>
         <tbody>{data.map(([k, v]) => {
           const ratio = med(v.ratio);
-          return (<tr key={k} className="border-t border-line/50"><td>{k}</td><td className="text-right">{v.n}</td><td className="text-right">{pct(v.sold / v.n)}</td><td className="text-right">{v.sold ? `${pct((v.over || 0) / v.sold)}` : '—'}</td><td className="text-right">{v.firstN ? `${v.firstSold || 0}/${v.firstN}건` : '—'}{v.missed ? <span className="ml-1 font-bold text-wait">놓침 {v.missed}</span> : null}</td><td className="text-right">{v.judged}</td>
+          return (<tr key={k} className="border-t border-line/50"><td>{k}</td><td className="text-right">{v.n}</td><td className="text-right">{pct(v.sold / v.n)}</td><td className="text-right">{v.sold ? `${pct((v.over || 0) / v.sold)}` : '—'}</td><td className="text-right">{v.firstN ? `${v.firstSold || 0}/${v.firstN}건` : '—'}{v.missed ? <span className="ml-1 font-bold text-wait">놓침 {v.missed}</span> : null}{v.firstUnknown ? <span className="ml-1 text-ink/40" title="유찰 횟수·감정가가 없어 첫 회차인지 알 수 없음">?{v.firstUnknown}</span> : null}</td><td className="text-right">{v.judged}</td>
             <td className={`text-right font-bold ${v.judged >= 10 ? (v.hit / v.judged >= 0.7 ? 'text-now' : v.hit / v.judged < 0.6 ? 'text-hard' : '') : 'text-ink/40'}`}>{v.judged ? pct(v.hit / v.judged) : '—'}</td>
             <td className={`text-right ${ratio && (ratio < 0.85 || ratio > 1.15) ? 'font-bold text-wait' : ''}`}>{ratio ? `${Math.round(ratio * 100)}% (${v.ratio.length})` : '—'}{v.odd ? <span className="ml-1 text-ink/40">이상 {v.odd}</span> : null}</td></tr>);
         })}</tbody>
@@ -357,10 +373,95 @@ function ScoreBreakdown({ rows }) {
   return (
     <div className="mt-4 rounded-md border border-line p-2 text-sm">
       <div className="font-extrabold">성적표 — 규칙 고정(판단 기준 2026-10-23판) 상태의 채점</div>
-      <p className="text-xs text-ink/60">규칙은 고치지 않고 성적부터 봅니다. 적중률은 10건 이상일 때만 색을 칠합니다(70%↑ 초록, 60%↓ 빨강). <b>1회차 바로 낙찰</b>은 유찰 없이 첫 회차에 팔린 건수(첫 회차 물건 중)이고, <b>놓침</b>은 그중 우리가 '안 산다'(상한 &lt; 최저가)였던 건수 — 시장이 우리보다 높게 본 기회입니다. 낙찰가는 과열·실수·특수 사정으로 어이없게 나오는 경우가 많아, 평균이 아니라 <b>중앙값</b>을 쓰고 감정가 150% 초과·우리 가치의 2배 초과나 30% 미만 낙찰은 <b>"이상"으로 따로 세어 뺍니다</b>. <b>낙찰가÷우리 가치</b>가 100%보다 많이 낮으면 우리가 가치를 높게 본 것, 많이 높으면 낮게 본 것입니다(85~115% 밖은 노란색).</p>
+      <p className="text-xs text-ink/60">규칙은 고치지 않고 성적부터 봅니다. 적중률은 10건 이상일 때만 색을 칠합니다(70%↑ 초록, 60%↓ 빨강). <b>1회차 바로 낙찰</b>은 첫 회차(유찰 0회, 또는 최저가 = 감정가) 물건 중 팔린 건수이고(?는 유찰 횟수·감정가가 없어 판단 불가), <b>놓침</b>은 그중 우리가 '안 산다'(상한 &lt; 최저가)였던 건수 — 시장이 우리보다 높게 본 기회입니다. 낙찰가는 과열·실수·특수 사정으로 어이없게 나오는 경우가 많아, 평균이 아니라 <b>중앙값</b>을 쓰고 감정가 150% 초과·우리 가치의 2배 초과나 30% 미만 낙찰은 <b>"이상"으로 따로 세어 뺍니다</b>. <b>낙찰가÷우리 가치</b>가 100%보다 많이 낮으면 우리가 가치를 높게 본 것, 많이 높으면 낮게 본 것입니다(85~115% 밖은 노란색).</p>
+      <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
+        {Object.keys(EVIDENCE_LABEL).map((k) => (
+          <button key={k} type="button" onClick={() => setEv(k)} className={`rounded-full border px-2.5 py-1 ${ev === k ? 'border-brand bg-brand text-white' : 'border-line bg-white'}`}>{EVIDENCE_LABEL[k]} {evCount[k]}</button>
+        ))}
+      </div>
+      <p className="mt-1 text-[11px] text-ink/50">근거가 다른 물건을 섞어 채점하면 규칙이 맞은 건지 운이었는지 구분이 안 됩니다. A·B는 같은 단지 실거래, C·D는 같은 동·시군구 실거래, '없음'은 감정가·공시가격만으로 판단한 물건입니다.</p>
       <Table title="물건 종류별" data={group((it) => typeLabel(it))} />
       <Table title="지역별" data={group((it) => `${it.sido || ''} ${it.sgg || ''}`.trim() || '지역 없음')} />
       <Table title="개찰 월별" data={group(month).sort((p, q) => q[0].localeCompare(p[0]))} />
+    </div>
+  );
+}
+
+// 분석기 성적표: 예상 낙찰가를 그대로 입찰가로 썼다면(가산 폭 0%) — 오차 폭으로 등급을 매긴다
+function AnalyzerScore({ rows, table }) {
+  const [open, setOpen] = useState(false);
+  if (!table || !table.n) return null;
+  const items = [];
+  const outcome = { alone: 0, win: 0, lose: 0, skip: 0 };
+  rows.forEach(({ it, a }) => {
+    const r = resultOf(it);
+    if (r.kind !== 'sold' && r.kind !== 'fail') return;
+    const pred = it.forecast?.bid ? { price: it.forecast.bid } : predictPrice(it, table, { self: true });
+    if (!pred) return;
+    const o = bidOutcome(it, pred.price, it.forecast ? it.forecast.cap : a.cap, r.kind);
+    if (o) outcome[o.kind]++;
+    const p = soldOf(it);
+    if (r.kind === 'sold' && p) items.push({ it, a, e: p / pred.price - 1, frozen: Boolean(it.forecast?.bid) });
+  });
+  if (!items.length) return null;
+  const grp = (keyOf) => {
+    const g = {};
+    items.forEach((x) => { const k = keyOf(x); (g[k] ||= []).push(x.e); });
+    return Object.entries(g).map(([k, es]) => [k, scoreErrors(es)]).sort((p, q) => q[1].n - p[1].n);
+  };
+  const all = scoreErrors(items.map((x) => x.e));
+  const frozen = items.filter((x) => x.frozen).length;
+  const P = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`);
+  const tone = (g) => (/^A|^B/.test(g) ? 'text-now' : /^D|^F/.test(g) ? 'text-hard' : '');
+  const T = ({ title, data, limit = 12 }) => (
+    <div>
+      <div className="mt-3 font-bold">{title}</div>
+      <table className="w-full text-xs">
+        <thead className="text-ink/50"><tr><th className="text-left">구분</th><th className="text-right">낙찰</th><th className="text-right">오차</th><th className="text-right">치우침</th><th className="text-right">승률(가산 0%)</th><th className="text-right">승률 70%에 필요한 가산 폭</th><th className="text-right">등급</th></tr></thead>
+        <tbody>{data.slice(0, limit).map(([k, v]) => (
+          <tr key={k} className="border-t border-line/50"><td>{k}</td><td className="text-right">{v.n}</td><td className="text-right">{P(v.error)}</td><td className="text-right">{v.bias > 0 ? '+' : ''}{P(v.bias)}</td><td className="text-right">{P(v.win0)}</td><td className="text-right">{P(v.margin70)}</td><td className={`text-right font-bold ${v.n >= 10 ? tone(v.grade) : 'text-ink/40'}`}>{v.grade}</td></tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+  return (
+    <div className="mt-4 rounded-md border-2 border-brand/40 p-2 text-sm">
+      <div className="font-extrabold">분석기 성적표 — 예상 낙찰가를 그대로 써냈다면 (가산 폭 0%)</div>
+      <p className="text-xs text-ink/60">물건마다 <b>예상 낙찰가 = 그 회차 최저가 × 같은 종류 완료 물건의 '낙찰가÷최저가' 중앙값</b>을 우리 입찰가로 씁니다. 가산 폭은 일부러 0% — <b>가산 폭이 필요할수록 분석기가 틀린 것</b>이라, 필요한 가산 폭을 결과로 계산해 보여 줍니다. 오차 등급: A ≤2% · B ≤4% · C ≤7% · D ≤10% · F &gt;10% (10건 미만은 표본 부족). 치우침이 +면 시장이 우리 예상보다 높게 썼다는 뜻입니다.</p>
+      <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg bg-paper p-2 sm:grid-cols-5">
+        <div><div className="text-xs text-ink/50">등급</div><div className={`text-lg font-extrabold ${tone(all.grade)}`}>{all.grade}</div></div>
+        <div><div className="text-xs text-ink/50">오차(중앙값)</div><div className="num font-bold">{P(all.error)}</div></div>
+        <div><div className="text-xs text-ink/50">치우침</div><div className="num font-bold">{all.bias > 0 ? '+' : ''}{P(all.bias)}</div></div>
+        <div><div className="text-xs text-ink/50">승률(가산 0%)</div><div className="num font-bold">{P(all.win0)}</div></div>
+        <div><div className="text-xs text-ink/50">승률 70%에 필요한 가산 폭</div><div className="num font-bold">{P(all.margin70)}</div></div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1 text-xs sm:grid-cols-4">
+        <div className="text-now">유찰 회차 단독 낙찰 <b>{outcome.alone}</b></div>
+        <div className="text-now">경쟁해서 이김 <b>{outcome.win}</b></div>
+        <div className="text-wait">짐 <b>{outcome.lose}</b></div>
+        <div className="text-ink/50">입찰 안 함(예상가 &gt; 매수상한) <b>{outcome.skip}</b></div>
+      </div>
+      <p className="mt-1 text-[11px] text-ink/50">낙찰가가 있는 {items.length}건 기준. 입찰 전에 굳혀 둔 입찰가로 채점한 물건 {frozen}건, 나머지는 <b>사후 계산</b>(그 물건 자신은 빼고 계산해 답을 보고 맞히지 않게 함). 법원경매는 낙찰가가 들어오면 함께 채점됩니다.</p>
+      <T title="응찰 형태별" data={grp((x) => ((x.it.result?.bidders || 0) <= 1 ? '단독 응찰' : '경쟁(2명 이상)'))} />
+      <T title="물건 종류별" data={grp((x) => typeLabel(x.it))} />
+      <T title="실거래 근거별" data={grp((x) => EVIDENCE_LABEL[evidenceGroup(x.a)])} />
+      <T title="시도별" data={grp((x) => x.it.sido || '지역 없음')} />
+      <button type="button" className="mt-2 text-xs text-brand underline" onClick={() => setOpen(!open)}>{open ? '시군구별 접기' : '시군구별 보기'}</button>
+      {open && <T title="시군구별" data={grp((x) => `${x.it.sido || ''} ${x.it.sgg || ''}`.trim() || '지역 없음')} limit={60} />}
+    </div>
+  );
+}
+
+// 진행 물건 카드: 예상 낙찰가(=우리 입찰가)
+function BidRow({ it, a, table }) {
+  const pred = predictPrice(it, table);
+  if (!pred) return null;
+  const over = a.cap && pred.price > a.cap;
+  return (
+    <div className="mt-2 flex flex-wrap items-baseline gap-x-2 rounded-md border border-brand/30 px-2 py-1 text-xs">
+      <span>우리 입찰가(예상 낙찰가)</span><b className="num text-sm">{eok(pred.price)}</b>
+      <span className="text-ink/50">최저가의 {Math.round(pred.premium * 1000) / 10}% · {pred.scope}</span>
+      {over && <span className="font-bold text-wait">매수상한보다 높음 — 이 회차는 입찰 안 함</span>}
     </div>
   );
 }
