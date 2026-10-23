@@ -327,6 +327,9 @@ function ScoreBreakdown({ rows }) {
       const k = keyOf(it); const cap = it.forecast ? it.forecast.cap : a.cap; const value = it.forecast ? it.forecast.value : a.value;
       const x = (g[k] ||= { n: 0, hit: 0, judged: 0, sold: 0, ratio: [] });
       x.n++; if (r.kind === 'sold') { x.sold++; if (r.rate && r.rate > 1) x.over = (x.over || 0) + 1; }
+      // 첫 회차(유찰 없이) 바로 팔린 것 — 시장이 감정가 근처 이상으로 본 물건. 우리가 '안 산다'였으면 놓친 기회
+      const first = String(it.round || '') === '1' || it.failCount === 0;
+      if (first) { x.firstN = (x.firstN || 0) + 1; if (r.kind === 'sold') { x.firstSold = (x.firstSold || 0) + 1; if (cap && it.minBid && cap < it.minBid) x.missed = (x.missed || 0) + 1; } }
       if (cap && it.minBid) { x.judged++; const buy = cap >= it.minBid; if ((buy && r.kind === 'sold') || (!buy && r.kind === 'fail')) x.hit++; }
       // 어이없는 낙찰(감정가의 150% 초과, 또는 우리 가치의 2배 초과·30% 미만)은 따로 세고 중앙값에서 뺀다
       if (r.kind === 'sold' && r.price && value) {
@@ -340,10 +343,10 @@ function ScoreBreakdown({ rows }) {
     <div>
       <div className="mt-3 font-bold">{title}</div>
       <table className="w-full text-xs">
-        <thead className="text-ink/50"><tr><th className="text-left">구분</th><th className="text-right">결과</th><th className="text-right">낙찰률</th><th className="text-right">감정가 초과 낙찰</th><th className="text-right">채점</th><th className="text-right">적중률</th><th className="text-right">낙찰가÷우리 가치</th></tr></thead>
+        <thead className="text-ink/50"><tr><th className="text-left">구분</th><th className="text-right">결과</th><th className="text-right">낙찰률</th><th className="text-right">감정가 초과 낙찰</th><th className="text-right">1회차 바로 낙찰</th><th className="text-right">채점</th><th className="text-right">적중률</th><th className="text-right">낙찰가÷우리 가치</th></tr></thead>
         <tbody>{data.map(([k, v]) => {
           const ratio = med(v.ratio);
-          return (<tr key={k} className="border-t border-line/50"><td>{k}</td><td className="text-right">{v.n}</td><td className="text-right">{pct(v.sold / v.n)}</td><td className="text-right">{v.sold ? `${pct((v.over || 0) / v.sold)}` : '—'}</td><td className="text-right">{v.judged}</td>
+          return (<tr key={k} className="border-t border-line/50"><td>{k}</td><td className="text-right">{v.n}</td><td className="text-right">{pct(v.sold / v.n)}</td><td className="text-right">{v.sold ? `${pct((v.over || 0) / v.sold)}` : '—'}</td><td className="text-right">{v.firstN ? `${v.firstSold || 0}/${v.firstN}건` : '—'}{v.missed ? <span className="ml-1 font-bold text-wait">놓침 {v.missed}</span> : null}</td><td className="text-right">{v.judged}</td>
             <td className={`text-right font-bold ${v.judged >= 10 ? (v.hit / v.judged >= 0.7 ? 'text-now' : v.hit / v.judged < 0.6 ? 'text-hard' : '') : 'text-ink/40'}`}>{v.judged ? pct(v.hit / v.judged) : '—'}</td>
             <td className={`text-right ${ratio && (ratio < 0.85 || ratio > 1.15) ? 'font-bold text-wait' : ''}`}>{ratio ? `${Math.round(ratio * 100)}% (${v.ratio.length})` : '—'}{v.odd ? <span className="ml-1 text-ink/40">이상 {v.odd}</span> : null}</td></tr>);
         })}</tbody>
@@ -354,7 +357,7 @@ function ScoreBreakdown({ rows }) {
   return (
     <div className="mt-4 rounded-md border border-line p-2 text-sm">
       <div className="font-extrabold">성적표 — 규칙 고정(판단 기준 2026-10-23판) 상태의 채점</div>
-      <p className="text-xs text-ink/60">규칙은 고치지 않고 성적부터 봅니다. 적중률은 10건 이상일 때만 색을 칠합니다(70%↑ 초록, 60%↓ 빨강). 낙찰가는 과열·실수·특수 사정으로 어이없게 나오는 경우가 많아, 평균이 아니라 <b>중앙값</b>을 쓰고 감정가 150% 초과·우리 가치의 2배 초과나 30% 미만 낙찰은 <b>"이상"으로 따로 세어 뺍니다</b>. <b>낙찰가÷우리 가치</b>가 100%보다 많이 낮으면 우리가 가치를 높게 본 것, 많이 높으면 낮게 본 것입니다(85~115% 밖은 노란색).</p>
+      <p className="text-xs text-ink/60">규칙은 고치지 않고 성적부터 봅니다. 적중률은 10건 이상일 때만 색을 칠합니다(70%↑ 초록, 60%↓ 빨강). <b>1회차 바로 낙찰</b>은 유찰 없이 첫 회차에 팔린 건수(첫 회차 물건 중)이고, <b>놓침</b>은 그중 우리가 '안 산다'(상한 &lt; 최저가)였던 건수 — 시장이 우리보다 높게 본 기회입니다. 낙찰가는 과열·실수·특수 사정으로 어이없게 나오는 경우가 많아, 평균이 아니라 <b>중앙값</b>을 쓰고 감정가 150% 초과·우리 가치의 2배 초과나 30% 미만 낙찰은 <b>"이상"으로 따로 세어 뺍니다</b>. <b>낙찰가÷우리 가치</b>가 100%보다 많이 낮으면 우리가 가치를 높게 본 것, 많이 높으면 낮게 본 것입니다(85~115% 밖은 노란색).</p>
       <Table title="물건 종류별" data={group((it) => typeLabel(it))} />
       <Table title="지역별" data={group((it) => `${it.sido || ''} ${it.sgg || ''}`.trim() || '지역 없음')} />
       <Table title="개찰 월별" data={group(month).sort((p, q) => q[0].localeCompare(p[0]))} />
