@@ -213,6 +213,15 @@ export async function deleteRedevZone(id) {
   await f.fs.deleteDoc(f.fs.doc(f.db, 'redevZones', id));
 }
 
+// 분석기 재계산 보고서(최근 것부터)
+export async function listRecalcReports() {
+  const f = await firebase();
+  if (!f) return [];
+  const { collection, query, orderBy, limit, getDocs } = f.fs;
+  const snap = await getDocs(query(collection(f.db, 'recalcReports'), orderBy('startedAt', 'desc'), limit(3)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
 // 관리자 알림: 목록 미등록 정비구역(zoneUnlisted)·계산 이상(calcAnomaly)
 export async function listAlerts() {
   const f = await firebase();

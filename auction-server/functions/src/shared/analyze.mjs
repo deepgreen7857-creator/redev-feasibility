@@ -6,7 +6,7 @@
 import { TAX_DEFAULTS, propertyKind, flipTax, corpFit, acquisitionTax } from './tax.mjs';
 import { specialAnalysis, detectSpecial, shareInfo } from './special.mjs';
 import { valuation } from './valuation.mjs';
-import { stageInfo, rightsCheck } from './zoneMatch.mjs';
+import { stageInfo, rightsCheck, rights77Of, zoneTags, extraParcels } from './zoneMatch.mjs';
 
 export const VERDICT = {
   now: { label: '지금 매력', tone: 'now' },
@@ -19,8 +19,9 @@ export const VERDICT = {
 };
 
 // 분석기 버전 — 계산식을 바꿀 때마다 올리고 수정일·내용을 남긴다(예측 기록에 함께 저장)
-export const ANALYZER_VERSION = '2026-10-23c';
+export const ANALYZER_VERSION = '2026-10-23d';
 export const ANALYZER_CHANGES = [
+  { version: '2026-10-23d', date: '2026-10-23', note: '권리산정기준일 판정: 제77조① 5호(전유부분 분할) 추가·사유 목록을 설정값(rights77)으로, 결과를 분양권 가능/분양권 제한(현금청산 위험)/판단불가(날짜 미확인) 셋으로, 토지 분할일·집합건물 전환일·사용승인일·전유부분 분할일·분리 소유 시점 비교 · 카드 태그(지정 전·기준일·허가구역·분양권 판정), 토지거래허가구역 법인 취득 제약 배지, 지정 전 구역 물건 우선 노출 · 외 ○필지 경고 · 산 지번 PNU 찾기 수정' },
   { version: '2026-10-23c', date: '2026-10-23', note: '지분비율 미반영 수정(비율 미확인이면 금액 계산 안 함) · 감정가 없는 물건 확실성 최대 C · 계산 이상(수익률 1,000% 초과·바닥가치 최저가 100배 초과) 경고 · 임야·농지 지분 공유자 매도 가능성 낮춤 · 정비구역 목록 연계·권리산정기준일 판정' },
 ];
 
@@ -231,7 +232,7 @@ export function membership(item, settings) {
   const kind = projectKind(item);
   if (item.manual?.cashOut === true) return { status: 'cash', stage, rank, overheated, kind, reason: '직접 표시: 현금청산' };
   // 권리산정기준일(도시정비법 제77조①) — 기준일 다음 날 이후 분할·집합건물 전환·분리 소유·신축이면 분양권 제한
-  const r77 = lz ? rightsCheck(item, lz) : null; // 관리자가 서류로 확인한 값(manual.rights77)이 바로 반영되게 매번 다시 판정
+  const r77 = lz ? rightsCheck(item, lz, rights77Of(settings)) : null; // 관리자가 서류로 확인한 값(manual.rights77)이 바로 반영되게 매번 다시 판정
   if (r77?.status === 'restricted') return { status: 'cash', stage, rank, overheated, kind, rights: r77, reason: `${r77.text} (${r77.law})` };
   if (r77?.status === 'risk') return { status: 'check', stage, rank, overheated, kind, rights: r77, reason: `${r77.text} (${r77.law})` };
   if (!overheated) return { status: 'member', stage, rank, overheated, kind, reason: '투기과열지구가 아니어서 조합원 지위 양도 제한(제39조②) 없음 — 권리산정기준일·다물권은 따로 확인' };
@@ -329,7 +330,7 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   // 토지 거래가 없으면 개별공시지가 × 면적을 대신 쓴다(보수적인 기준)
   if (!value && tradeTypeOf(item) === 'land' && item.land?.officialPrice && item.landArea && !cashType && !rightType) {
     value = Math.round(item.land.officialPrice * item.landArea);
-    valueBasis = `거래 사례 부족 → 개별공시지가 ${item.land.officialPrice.toLocaleString('ko-KR')}원/㎡ × ${Math.round(item.landArea)}㎡`;
+    valueBasis = `거래 사례 부족 → 개별공시지가 ${item.land.officialPrice.toLocaleString('ko-KR')}원/㎡ × ${Math.round(item.landArea)}㎡${extraParcels(item) ? ` (첫 필지 공시지가를 외 ${extraParcels(item)}필지 면적에도 적용 — 추정)` : ''}`;
   }
   // 특수물건은 시세가 없어도 버리지 않고 감정가를 기준으로 계산
   if (!value && item.appraisal && !cashType && !rightType && detectSpecial(item).length) {
@@ -406,13 +407,17 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   if (member.status === 'member' && /임박/.test(member.reason || '')) warnings.push(member.reason);
   if (member.status === 'member' && member.rank >= 3 && !rightType) warnings.push('입주권형 — 구역의 비례율·조합원분양가를 넣으면 입주권 가치로 계산합니다');
   const lz = listedZone(item);
+  const r77 = lz ? member.rights || rightsCheck(item, lz, rights77Of(settings)) : null;
+  const zoneInfo = zoneTags(item, lz, r77);
   if (lz) {
-    const r77 = rightsCheck(item, lz);
-    if (['pending', 'noHit'].includes(r77.status)) warnings.push(r77.text);
+    if (['pending', 'unknown'].includes(r77.status)) warnings.push(r77.text);
     if (lz.recheck) warnings.push(`정비구역 목록 '${lz.name}' 확인일이 90일 지남 — 추진현황 재확인 필요`);
-    if (lz.permitZone?.yes) warnings.push(`토지거래허가구역${lz.permitZone.from || lz.permitZone.to ? `(${lz.permitZone.from || ''}~${lz.permitZone.to || ''})` : ''} — 경매는 허가 예외(국토계획법 시행령 제121조), 공매·일반 매매는 허가 대상인지 확인`);
     if (lz.actRestriction?.yes) warnings.push('행위제한 고시 구역 — 신축·분할 등 제한');
   }
+  // 토지거래허가구역: 법인 단타는 취득 자체가 막히거나 이용 의무가 붙을 수 있다
+  if (zoneInfo.permit) warnings.push(`토지거래허가구역(${zoneInfo.permit.source}${zoneInfo.permit.from || zoneInfo.permit.to ? ` ${zoneInfo.permit.from || ''}~${zoneInfo.permit.to || ''}` : ''}) — 법인 취득 제약 확인 필요. 법원경매는 허가 예외(부동산거래신고법 제14조②), 공매·파산 매각은 시행령 예외 해당 여부 확인`);
+  const extra = extraParcels(item);
+  if (extra) warnings.push(`외 ${extra}필지 — 토지이용계획·공시지가는 첫 필지만 조회됨. 나머지 필지의 지목·공시지가·정비구역 포함 여부를 원문으로 확인`);
   if (item.redevMatch?.status === 'unlisted') warnings.push(`브이월드 토지이용계획에 정비구역(${item.redevMatch.vworld.join(', ')}) — 관리자 정비구역 목록에 아직 없음`);
   if (member.status !== 'none') warnings.push('권리산정기준일 이후 신축·지분분할 물건이거나 한 세대가 여러 채를 가지면 분양자격이 달라질 수 있음');
   if (uaDiff !== null && uaDiff > 0.1 && uaDiff <= 0.3) warnings.push(`건축물대장 전유면적 ${item.ledger.unit.exclusiveArea}㎡ ≠ 읽어 온 면적 ${item.buildingArea}㎡`);
@@ -431,7 +436,7 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
 
   const result = {
     verdict, market, jeonse, valuation: val, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special, anomalies,
-    farm, redev, cashType, rightType, right, member, stage, excluded: isExcluded(item, settings), share: sh, shareUnknown,
+    farm, redev, cashType, rightType, right, member, stage, excluded: isExcluded(item, settings), share: sh, shareUnknown, zoneInfo, rights77: r77, extraParcels: extra,
     ratio: item.appraisal && item.minBid ? item.minBid / item.appraisal : null,
   };
   result.score = anomalies.length ? null : special ? special.score : scoreOf(item, result);

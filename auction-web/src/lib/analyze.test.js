@@ -235,3 +235,14 @@ test('상식 검사: 수익률 1,000% 초과·가치가 최저가 100배 초과 
   assert.equal(a.verdict, 'suspect');
   assert.notEqual(a.score?.grade, 'A'); assert.equal(a.opportunity, null);
 });
+
+test('2012358 유형(법원 수집분): "36,364㎡ 중 지분 909.1㎡" → 전체 가치 × 지분, 95억 같은 값 안 나옴', () => {
+  const it = { source: 'court', detailVer: 2, court: '수원지방법원', sido: '경기도', sgg: '용인시 처인구', emd: '포곡읍', title: '경기도 용인시 처인구 포곡읍 삼계리 산56 임야', usage: '임야', landArea: 36364, appraisal: 3.6e8, minBid: 5e6, share: true,
+    shareRatio: { num: 909.1, den: 36364, totalArea: 36364, shareArea: 909.1, text: '1. 임야 36,364㎡ 중 지분 909.1㎡' }, detail: { flags: {}, shareText: '지분매각' } };
+  const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: landDeals });
+  assert.equal(a.share.source, '원문(수집기)');
+  assert.ok(a.full < 1e9, `하자 없을 때 가치 ${a.full} — 지분 반영`);
+  assert.ok(Math.abs(a.full - 405500 * 909.1) / a.full < 0.1, `full ${a.full}`); // 실거래 ㎡당 × 지분 면적(감정가와 맞음)
+  assert.equal(areaText(it), '토지 전체 36,364㎡ 중 지분 909.1㎡(909.1/36364)');
+  assert.ok(!(a.special?.floor > 1e9));
+});

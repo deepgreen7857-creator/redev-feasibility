@@ -6,6 +6,7 @@ import { getSettings } from '../lib/store.js';
 import { SPECIAL_DEFAULTS } from '../lib/special.js';
 import { ANALYZER_VERSION, ANALYZER_CHANGES } from '../lib/analyze.js';
 import { TAX_DEFAULTS } from '../lib/tax.js';
+import { rights77Of } from '../lib/zoneMatch.js';
 import { Card } from '../components/ui.jsx';
 
 const P = (r) => `${Math.round(r * 1000) / 10}%`;
@@ -192,6 +193,9 @@ export default function RulesPage() {
           <li>지금 투기과열지구: {(s.overheated || []).map((o) => (o.sgg === '*' ? o.sido : o.sgg)).join(', ') || '설정 없음'}.</li>
           <li>현금청산형 가치 = 감정가 × {P(s.settlementRatio ?? 0.9)}. 입주권형 = 신축 84㎡ 시세 − 추가분담금(조합원분양가 − 감정가 × 비례율).</li>
           <li>관심 제외: {(s.analysisExclude || []).map((r) => `${r.sido} ${r.sgg || ''}(${r.scope === 'all' ? '전체' : '정비구역 물건'})`).join(', ') || '없음'}.</li>
+          <li>정비구역 연결: 관리자 <b>정비구역 목록</b>(추진현황 페이지·공보로 사람이 확인)이 기준 — 물건 PNU·지번(또는 대략 경계)으로 연결. 목록에 없는데 브이월드 토지이용계획에 정비구역이 찍히면 '목록 미등록'(관리자 알림). 지정 전 구역(후보지 등)은 목록으로만 잡히며 '지금 매력' 안에서 맨 위로 올립니다.</li>
+          <li>권리산정기준일({rights77Of(s).law}): 기준일(지정고시일 또는 시·도 공보 고시일) <b>다음 날</b> 이후 {rights77Of(s).rules.map((r) => `${r.ho}호 ${r.text}`).join(' / ')} → 분양권 제한(현금청산 위험). 비교 날짜가 모두 그 전이면 '분양권 가능', 하나라도 모르면 '판단불가(날짜 미확인)', 기준일 미고시 구역은 '향후 고시 시 재판정'. 사유 목록은 관리자 설정값.</li>
+          <li>토지거래허가구역(목록 허가 기간 안 또는 토지이용계획): '법인 취득 제약 확인 필요' 배지. 법원경매는 허가 예외(부동산거래신고법 제14조②), 공매·파산 매각은 예외 해당 여부 확인.</li>
         </ul>
         <Check>정민 님 전문 분야입니다. 구역 단계·재개발/재건축 구분·투기과열지구 목록이 맞는지, 분양자격 판정이 실무와 다른 경우를 알려 주세요.</Check>
       </Sec>

@@ -8,13 +8,14 @@ const { setGlobalOptions, logger } = require('firebase-functions/v2');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 
-const { Quota, kstDay } = require('./lib/dataGoKr');
+const { Quota, kstDay, keyShape } = require('./lib/dataGoKr');
 const onbid = require('./lib/onbid');
 const trades = require('./lib/trades');
 const bankrupt = require('./lib/bankrupt');
 const vworld = require('./lib/vworld');
 const incheonZones = require('./lib/incheonZones');
 const forecast = require('./lib/forecast');
+const recalc = require('./lib/recalc');
 const building = require('./lib/building');
 const aiReview = require('./lib/aiReview');
 const { COURTS } = require('./data/courts');
@@ -71,7 +72,9 @@ const setState = (name, data) => db.collection('state').doc(name).set({ ...data,
 
 async function getSettings() {
   const s = await db.collection('settings').doc('main').get();
-  return s.exists ? s.data() : {};
+  const data = s.exists ? s.data() : {};
+  vworld.setDomain(data.vworldDomain); // 브이월드 인증키에 등록한 도메인(관리자 설정, 없으면 기본값)
+  return data;
 }
 
 async function logRun(job, result) {
@@ -219,14 +222,17 @@ async function runLandBacklog({ deadline, max = 150 } = {}) {
 // 키 순서와 무관한 비교용 문자열(Firestore가 돌려주는 맵의 키 순서는 저장 순서와 다를 수 있음)
 const stable = (v) => (Array.isArray(v) ? `[${v.map(stable).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => `${k}:${stable(v[k])}`).join(',')}}` : JSON.stringify(v ?? null));
 
-async function runZoneMatch({ deadline = Date.now() + 120e3, listingIds } = {}) {
-  const { zoneStatus } = await import('./shared/zoneMatch.mjs');
+// all: 진행·완료 전체(재계산 때). 아니면 진행 물건만.
+async function runZoneMatch({ deadline = Date.now() + 120e3, listingIds, all = false } = {}) {
+  const { zoneStatus, rights77Of } = await import('./shared/zoneMatch.mjs');
+  const rights77 = rights77Of(await getSettings()); // 제77조 사유 목록은 관리자 설정값
   const zones = (await db.collection('redevZones').get()).docs.map((d) => ({ id: d.id, ...d.data() }));
   const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   let docs;
   if (listingIds?.length) docs = (await db.getAll(...listingIds.map((id) => db.collection('listings').doc(id)))).filter((d) => d.exists);
-  else docs = (await db.collection('listings').select('sido', 'sgg', 'emd', 'pnu', 'address', 'title', 'detail', 'land', 'ledger', 'usage', 'usageSmall', 'manual', 'bidEnd', 'redevMatch').get()).docs;
-  const list = docs.map((d) => ({ id: d.id, ...d.data() })).filter((it) => listingIds || String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today);
+  else docs = (await db.collection('listings').select('sido', 'sgg', 'emd', 'pnu', 'address', 'title', 'detail', 'land', 'ledger', 'usage', 'usageSmall', 'buildingArea', 'manual', 'bidEnd', 'redevMatch').get()).docs;
+  const list = docs.map((d) => ({ id: d.id, ...d.data() })).filter((it) => listingIds || all || String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today);
+  const newlyListed = [];
   const polySidos = new Set(zones.filter((z) => z.boundary && z.boundary.polygon).map((z) => z.sido));
   const key = (() => { try { return VWORLD_KEY.value(); } catch { return null; } })();
   const stats = { zones: zones.length, listings: list.length, listed: 0, unlisted: 0, none: 0, unchecked: 0, changed: 0, alerts: 0 };
@@ -241,9 +247,10 @@ async function runZoneMatch({ deadline = Date.now() + 120e3, listingIds } = {}) 
       if (g.exists && Date.now() - new Date(g.data().checkedAt).getTime() < 30 * 86400e3) geo = g.data().geo;
       else { try { geo = await vworld.centroid({ pnu: it.pnu, key }); await gref.set({ geo, checkedAt: new Date().toISOString() }); } catch (e) { logger.warn('centroid', it.id, e.message); } }
     }
-    const m = zoneStatus(it, zones, { geo });
+    const m = zoneStatus(it, zones, { geo, rights77 });
     stats[m.status] = (stats[m.status] || 0) + 1;
     const prev = it.redevMatch || {};
+    if (m.status === 'listed' && (prev.status !== 'listed' || prev.zoneId !== m.zoneId)) newlyListed.push({ id: it.id, title: it.title || '', zone: m.name, stage: m.stage, by: m.by, before: prev.status || '연결 전', rights: m.rights?.status || null });
     const same = stable({ ...prev, checkedAt: null }) === stable({ ...m, checkedAt: null });
     if (!same) { batch.set(db.collection('listings').doc(it.id), { redevMatch: m }, { merge: true }); n++; stats.changed++; }
     const aref = db.collection('adminAlerts').doc(`zone_${it.id}`);
@@ -255,6 +262,7 @@ async function runZoneMatch({ deadline = Date.now() + 120e3, listingIds } = {}) 
     if (n >= 400) await flush();
   }
   await flush();
+  stats.newlyListed = newlyListed;
   return stats;
 }
 
@@ -393,7 +401,7 @@ async function tick({ only, force } = {}) {
       if (job === 'resultList') out[job] = await runOnbidResultList({ deadline, force });
       if (job === 'trades') out[job] = await runTrades({ deadline });
       if (job === 'land') out[job] = await runLandBacklog({ deadline: Math.min(deadline, Date.now() + 120e3) });
-      if (job === 'zoneMatch') out[job] = await runZoneMatch({ deadline: Math.min(deadline, Date.now() + 120e3) });
+      if (job === 'zoneMatch') { const z = await runZoneMatch({ deadline: Math.min(deadline, Date.now() + 120e3) }); out[job] = { ...z, newlyListed: z.newlyListed.slice(0, 50) }; }
     } catch (e) {
       logger.error(job, e);
       out[job] = { error: e.message };
@@ -438,6 +446,7 @@ exports.forecastNow = onCall({ timeoutSeconds: 540, memory: '1GiB' }, async (req
 // 관리자: API 연결 시험 — 각 API를 한 번씩 불러 결과코드와 첫 줄의 항목 이름을 돌려준다
 exports.testApis = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
+  await getSettings(); // 브이월드 도메인 설정 반영
   const key = DATA_GO_KR_KEY.value();
   const quota = new Quota(db);
   const results = [];
@@ -508,6 +517,13 @@ exports.testApis = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORL
       return { total: deals.length, sample: deals[0] || null };
     });
   }
+  await tryOne('공공데이터포털 인증키 형태', async () => ({ total: key ? 1 : 0, sample: `${keyShape(key)} — 등록 안 된 키(30)·승인 전(20) 오류가 나면 위 API 실패 줄에 원인이 함께 나옵니다` }));
+  await tryOne('브이월드 인증키 도메인(후보별 원문)', async () => {
+    const pnu = (request.data && request.data.pnu) || '2823710100100010000';
+    const rows = await vworld.probeDomains({ pnu, key: VWORLD_KEY.value() });
+    const good = rows.filter((x) => x.ok).map((x) => x.domain);
+    return { total: good.length, sample: `지금 쓰는 도메인 ${vworld.DOMAIN} · 응답 있는 도메인: ${good.join(', ') || '없음(키 자체·만료·서비스 신청 확인)'}${good.length && !good.includes(vworld.DOMAIN) ? ` → 관리자 설정 '브이월드 도메인'을 ${good[0]} 로 바꾸세요` : ''} ‖ ${rows.map((x) => `${x.domain}: ${x.ok ? `${x.rows}건` : '빈 값/오류'} ${String(x.raw || '').slice(0, 160)}`).join(' ‖ ')}` };
+  });
   await tryOne('브이월드 토지이용계획', async () => {
     const r = await vworld.lookup({ pnu: (request.data && request.data.pnu) || '2823710100100010000', key: VWORLD_KEY.value() });
     // 빈 값이면 원문을 그대로 보여 준다(인증키 등록 도메인 불일치 등 진단용). 호출 도메인: vworld.DOMAIN
@@ -560,6 +576,16 @@ exports.aiReviewNow = onCall({ timeoutSeconds: 180, memory: '1GiB', secrets: [AN
   return out;
 });
 
+// 관리자: 분석기 수정 뒤 기존 물건 전체 재계산 — 수정 후 참고값(forecastRevised)에만 저장, 기록된 예측은 보존.
+// 오래 걸리면 끊긴 곳부터 이어서(다시 누르기). reset: 처음부터 새 보고서
+exports.recalcNow = onCall({ timeoutSeconds: 540, memory: '1GiB', secrets: [VWORLD_KEY] }, async (request) => {
+  requireAdmin(request);
+  await getSettings();
+  const out = await recalc.run({ db, log: logger.info, deadline: Date.now() + TICK_BUDGET_MS, reset: Boolean(request.data && request.data.reset), runZoneMatch });
+  await logRun('recalc', { id: out.id, analyzerVersion: out.analyzerVersion, counts: out.counts, partial: out.partial });
+  return out;
+});
+
 // 관리자: 정비구역 목록을 고친 뒤 물건 다시 연결(전체 또는 물건 몇 개)
 exports.zoneMatchNow = onCall({ timeoutSeconds: 300, memory: '512MiB', secrets: [VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
@@ -571,6 +597,7 @@ exports.zoneMatchNow = onCall({ timeoutSeconds: 300, memory: '512MiB', secrets: 
 
 exports.landCheck = onCall({ timeoutSeconds: 60, secrets: [VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
+  await getSettings();
   const { pnu, listingId } = request.data || {};
   const cacheRef = db.collection('landCache').doc(String(pnu || 'none'));
   const cached = await cacheRef.get();
@@ -598,6 +625,7 @@ exports.landCheck = onCall({ timeoutSeconds: 60, secrets: [VWORLD_KEY] }, async 
 // 관리자: 이 물건 상세 지금 받기(온비드) — 상세·사진·권리를 받고 토지이용까지 붙여 갱신된 물건을 돌려준다
 exports.fetchDetailNow = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
+  await getSettings();
   const listingId = request.data && request.data.listingId;
   if (!listingId) throw new HttpsError('invalid-argument', 'listingId 가 없습니다.');
   const ref = db.collection('listings').doc(String(listingId));
@@ -661,6 +689,7 @@ exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY, DATA
   const auth = String(req.get('authorization') || '');
   if (!COURT_INGEST_TOKEN.value() || auth !== `Bearer ${COURT_INGEST_TOKEN.value()}`) { res.status(401).send('토큰이 맞지 않습니다'); return; }
   const body = req.body || {};
+  await getSettings(); // 브이월드 도메인 설정 반영
   const items = (Array.isArray(body.items) ? body.items : []).slice(0, 200).map(cleanCourtItem).filter(Boolean);
   const { needDetail } = await saveListings(items);
   let enriched = 0;

@@ -20,5 +20,7 @@ service cloud.firestore {
     match /quota/{id}           { allow read: if isAdmin(); allow write: if false; }
     match /runs/{id}            { allow read: if isAdmin(); allow write: if false; }
     match /ruleSuggestions/{id} { allow read: if isAdmin(); allow write: if isAdmin(); }
+    // 분석기 재계산 보고서(수정 전/후 크게 달라진 물건·새로 연결된 정비구역) — 서버만 씀
+    match /recalcReports/{id}   { allow read: if isAdmin(); allow write: if false; }
   }
 }

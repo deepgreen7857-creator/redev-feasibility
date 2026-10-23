@@ -13,6 +13,27 @@ class ApiError extends Error {
   }
 }
 
+// 인증키 관련 결과코드 → 확인할 것(인코딩/디코딩 키 혼동이 가장 흔함)
+const KEY_HINT = {
+  30: '등록되지 않은 인증키: Encoding 키를 그대로 넣어 두 번 인코딩됐거나(자동으로 풀어 쓰지만 % 없이 잘린 키는 못 풂), 다른 계정 키일 수 있음 — 공공데이터포털 마이페이지의 일반 인증키(Decoding)를 다시 넣으세요',
+  31: '활용 기간 만료 — 마이페이지에서 연장 신청',
+  20: '이 API 활용신청이 승인되지 않음 — 해당 API를 따로 활용신청',
+  12: '없는 서비스 주소 — API 주소(버전) 변경 확인',
+};
+
+// 키 모양만 알려 준다(키 값은 보이지 않음)
+function keyShape(key) {
+  const k = String(key || '');
+  const t = k.replace(/[\s"'`]/g, '');
+  const parts = [`${t.length}자`];
+  if (t !== k) parts.push('앞뒤 빈칸·따옴표 있음(자동 제거)');
+  if (/%[0-9A-Fa-f]{2}/.test(t)) parts.push('% 포함 → Encoding 키(자동으로 풀어 Decoding 키로 씀)');
+  else if (/[+/=]/.test(t)) parts.push('+ / = 포함 → Decoding 키(정상)');
+  else if (/^[0-9a-f]{64}$/i.test(t)) parts.push('16진수 64자 → 인코딩·디코딩 키가 같은 형식(정상)');
+  else parts.push('형식 확인 필요');
+  return parts.join(' · ');
+}
+
 // 결과코드 해석
 const NO_DATA = ['03'];
 const OK = ['00', '0', '000', '0000'];
@@ -43,7 +64,7 @@ function decode(raw) {
   const rows = rowsOf(body);
   const total = Number(body.totalCount || 0);
   if (NO_DATA.includes(code)) return { code, rows: [], total: 0, pageNo: 1, numOfRows: 0 };
-  if (!OK.includes(code)) throw new ApiError(code, message ? `${message}(${code})` : undefined);
+  if (!OK.includes(code)) throw new ApiError(code, `${message ? `${message}(${code})` : `공공데이터 API 오류(${code})`}${KEY_HINT[code] ? ` — ${KEY_HINT[code]}` : ''}`);
   return { code, rows, total, pageNo: Number(body.pageNo || 1), numOfRows: Number(body.numOfRows || rows.length) };
 }
 
@@ -146,4 +167,4 @@ const num = (v) => {
 const unescape = (s) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'");
 const text = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : unescape(String(v).trim()));
 
-module.exports = { normalizeKey, call, decode, rowsOf, Quota, ApiError, kstDay, won, num, text, DAILY_LIMIT, SAFETY_MARGIN };
+module.exports = { keyShape, KEY_HINT, normalizeKey, call, decode, rowsOf, Quota, ApiError, kstDay, won, num, text, DAILY_LIMIT, SAFETY_MARGIN };

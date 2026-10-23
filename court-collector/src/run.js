@@ -51,7 +51,7 @@ function toItem(row, detail) {
     landArea: detail?.landArea, buildingArea: detail?.buildingArea, share: detail?.share, shareRatio: detail?.shareRatio, bulk: detail?.bulk,
     thumbnail: detail?.photos?.[0], url: 'https://www.courtauction.go.kr', detailVer: detail ? DETAIL_V : undefined,
     detail: detail ? {
-      photos: detail.photos || [], location: detail.appraisalSummary, shareText: detail.shareText, conditions: detail.specialConditions, baseRightDate: detail.baseRightDate,
+      photos: detail.photos || [], location: detail.appraisalSummary, shareText: detail.shareText, itemsText: detail.itemsText, conditions: detail.specialConditions, baseRightDate: detail.baseRightDate,
       leases: detail.leases || [], survivingRights: detail.survivingRights, superficies: detail.superficies, documents: detail.documents || [],
       rounds: (detail.rounds || []).map((r) => ({ round: r.round, start: r.date, minBid: r.minBid, open: r.date, result: r.result })),
       flags: {

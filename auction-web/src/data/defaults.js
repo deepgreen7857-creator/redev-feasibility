@@ -39,6 +39,24 @@ export const DEFAULT_SETTINGS = {
   loanRatio: 0.6, landLoanRatio: 0.4, cashLoanRatio: 0.5, interestRate: 0.045, holdMonths: 6,
   owner: 'corp', corpHouseLimit: 100000000, brokerRate: 0.005, buildingRatio: 0.5, corpTaxRate: 0.11, surchargeRate: 0.22,
   repairCost: 5000000,
+  rights77: null, // null이면 RIGHTS77_DEFAULT — 관리자 설정에서 고친 값이 우선
+};
+
+// 권리산정기준일(도시정비법 제77조제1항, 현행) — 기준일 '다음 날' 이후 아래가 생기면 분양받을 권리를 제한.
+// 법이 바뀌면 관리자 화면 '권리산정기준일 판정 규칙'에서 고친다(코드에 고정하지 않음).
+//  date: 비교할 날짜(물건 manual.rights77[date], 사용승인일은 건축물대장에서 자동)
+//  applies: all(모든 물건) · building(건물이 있거나 토지·건물을 따로 파는 물건) · collective(집합건물 호실)
+export const RIGHTS77_DEFAULT = {
+  law: '도시 및 주거환경정비법 제77조제1항',
+  rules: [
+    { ho: 1, text: '1필지의 토지가 여러 필지로 분할', date: 'splitDate', dateLabel: '토지 분할일', applies: 'all' },
+    { ho: 2, text: '집합건물이 아닌 건축물이 집합건물로 전환', date: 'collectiveDate', dateLabel: '집합건물 전환일(구분등기일)', applies: 'collective' },
+    { ho: 3, text: '하나의 대지 범위의 동일인 소유 토지와 건축물을 각각 분리 소유', date: 'separatedDate', dateLabel: '토지·건물 분리 소유 시점', applies: 'building' },
+    { ho: 4, text: '나대지 신축 또는 기존 건축물 철거 후 다세대·공동주택 건축으로 토지등소유자 수 증가', date: 'useAprDate', dateLabel: '사용승인일', applies: 'building' },
+    { ho: 5, text: '집합건물법 제2조제3호 전유부분 분할로 토지등소유자 수 증가', date: 'unitSplitDate', dateLabel: '전유부분 분할일', applies: 'collective' },
+  ],
+  // 시·도 조례 기준 메모(분양 대상·면적 기준 등) — 판정 화면에 함께 보여 준다
+  ordinance: { '서울특별시': '', '인천광역시': '', '경기도': '' },
 };
 
 export const SIDO = ['서울특별시', '인천광역시', '경기도'];

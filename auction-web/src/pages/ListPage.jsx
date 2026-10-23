@@ -62,7 +62,7 @@ export default function ListPage({ mode }) {
       if (!done && f.onlyOpen && /(낙찰|취소|종결|매각)/.test(it.status || '') && !/진행/.test(it.status || '')) return false;
       if (f.q && !`${it.title} ${it.address} ${it.caseNo}`.includes(f.q)) return false;
       return true;
-    }).sort((x, y) => (villa && f.sort === 'verdict' ? NUM(y.a.renoMoney?.profit ?? y.a.money?.profit) - NUM(x.a.renoMoney?.profit ?? x.a.money?.profit) : 0) || (done && f.sort === 'verdict' ? endOf(y.it).localeCompare(endOf(x.it)) : 0) || (opp && f.sort === 'verdict' ? NUM(y.a.opportunity?.profit) - NUM(x.a.opportunity?.profit) : 0) || sorter(f.sort)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
+    }).sort((x, y) => (villa && f.sort === 'verdict' ? NUM(y.a.renoMoney?.profit ?? y.a.money?.profit) - NUM(x.a.renoMoney?.profit ?? x.a.money?.profit) : 0) || (done && f.sort === 'verdict' ? endOf(y.it).localeCompare(endOf(x.it)) : 0) || (opp && f.sort === 'verdict' ? NUM(y.a.opportunity?.profit) - NUM(x.a.opportunity?.profit) : 0) || sorter(f.sort)(x, y) || order(x.a.verdict) - order(y.a.verdict) || (f.sort === 'verdict' ? Number(Boolean(y.a.zoneInfo?.before)) - Number(Boolean(x.a.zoneInfo?.before)) : 0) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
   }, [items, settings, dealsMap, f, opp, done, villa]);
 
   // 예상 낙찰가(=우리 입찰가) 기준표: 불러온 물건 중 낙찰가가 있는 완료 물건으로 만든다
@@ -147,9 +147,11 @@ export default function ListPage({ mode }) {
               {a.member.status === 'member' && a.member.rank >= 3 && <Badge tone="now">입주권형</Badge>}
               {a.member.status === 'check' && <Badge tone="wait">분양자격 확인</Badge>}
               {it.manual?.zone ? <Badge tone="brand">{it.manual.zone.stage || '정비구역'}</Badge>
-                : it.redevMatch?.status === 'listed' ? <Badge tone="brand">{it.redevMatch.name} · {it.redevMatch.stage}</Badge>
-                  : it.redevMatch?.status === 'unlisted' ? <Badge tone="wait">정비구역(목록 미등록)</Badge>
-                    : a.redev.length > 0 && !a.cashType && <Badge tone="brand">정비구역</Badge>}
+                : it.redevMatch?.status === 'unlisted' ? <Badge tone="wait">정비구역(목록 미등록)</Badge>
+                  : !a.zoneInfo?.name && a.redev.length > 0 && !a.cashType && <Badge tone="brand">정비구역</Badge>}
+              {/* 정비구역 목록 태그: [지정 전·○○구역/후보지] [기준일] [허가구역] [분양권 판정] */}
+              {a.zoneInfo?.tags.map((t) => <Badge key={t.key} tone={t.tone}>{t.text}</Badge>)}
+              {a.zoneInfo?.corpPermit && <Badge tone="hard">법인 취득 제약 확인 필요</Badge>}
               {a.farm && <Badge tone="wait">농지</Badge>}
               {a.excluded && <Badge>관심 제외</Badge>}
               {it.otherRounds > 0 && <Badge>다른 회차 {it.otherRounds}건</Badge>}

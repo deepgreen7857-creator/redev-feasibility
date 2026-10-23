@@ -1,7 +1,7 @@
-import { listRuleSuggestions } from '../lib/store.js';
+import { listRuleSuggestions, listRecalcReports } from '../lib/store.js';
 import { useEffect, useState } from 'react';
 import { getSettings, saveSettings, getStatus, callFn, saveListing, signIn, isAdmin, DEMO } from '../lib/store.js';
-import { DEFAULT_COURTS, SIDO } from '../data/defaults.js';
+import { DEFAULT_COURTS, SIDO, RIGHTS77_DEFAULT } from '../data/defaults.js';
 import { Card, Field, Row, Badge } from '../components/ui.jsx';
 import { parseCourtText } from '../lib/parseCourt.js';
 import ZoneUpload from '../components/ZoneUpload.jsx';
@@ -21,6 +21,7 @@ export default function AdminPage({ user }) {
       <Status />
       <RuleSuggestions />
       <ZoneList />
+      <RecalcReport />
       <ZoneUpload />
       <Settings />
       <CourtForm />
@@ -144,6 +145,7 @@ function Settings() {
         <Field label="대출 비율(%) — 토지·농지"><input className="input num" value={Math.round((s.landLoanRatio ?? 0.4) * 100)} onChange={(e) => setS({ ...s, landLoanRatio: Number(e.target.value) / 100 })} /></Field>
         <Field label="대출 비율(%) — 현금청산형"><input className="input num" value={Math.round((s.cashLoanRatio ?? 0.5) * 100)} onChange={(e) => setS({ ...s, cashLoanRatio: Number(e.target.value) / 100 })} /></Field>
         <Field label="대출 금리(%)"><input className="input num" value={((s.interestRate ?? 0.045) * 100).toFixed(1)} onChange={(e) => setS({ ...s, interestRate: Number(e.target.value) / 100 })} /></Field>
+        <Field label="브이월드 도메인" hint="인증키에 등록한 서비스 URL과 같게. 'API 연결 시험'의 도메인 후보별 결과를 보고 고르세요"><input className="input" placeholder="https://jbslab.co.kr (기본값)" value={s.vworldDomain || ''} onChange={(e) => setS({ ...s, vworldDomain: e.target.value.trim() })} /></Field>
         <Field label="보유 기간(개월)" hint="이자 계산 기간"><input className="input num" value={s.holdMonths ?? 12} onChange={(e) => setS({ ...s, holdMonths: Number(e.target.value) || 12 })} /></Field>
         <div className="space-y-1.5 pt-6 text-sm">
           <label className="flex items-center gap-2"><input type="checkbox" checked={s.excludeDirect !== false} onChange={(e) => setS({ ...s, excludeDirect: e.target.checked })} /> 시세에서 직거래 제외</label>
@@ -176,6 +178,8 @@ function Settings() {
         <textarea className="input h-32 font-mono text-xs" value={(s.overheated || []).map((r) => `${r.sido} ${r.sgg}`).join('\n')} onChange={(e) => setS({ ...s, overheated: e.target.value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const [sido, ...rest] = l.split(/\s+/); return { sido, sgg: rest.join(' ') || '*' }; }) })} />
       </div>
 
+      <Rights77Editor s={s} setS={setS} />
+
       <div className="mt-5">
         <div className="mb-1 text-sm font-bold">법원별 유찰 저감률</div>
         <p className="mb-2 text-xs text-ink/60">확인 전 값은 공고문에서 확인한 뒤 "확인"을 체크하세요. (출처: 서울 20%, 인천·경기 30%, 안양지원 20% — 2022년 기사 기준)</p>
@@ -190,6 +194,42 @@ function Settings() {
         </div>
       </div>
     </Card>
+  );
+}
+
+// 권리산정기준일 판정 규칙(도시정비법 제77조①) — 법이 바뀌면 여기만 고친다(코드 수정 없이)
+const APPLIES = [['all', '모든 물건'], ['building', '건물 있음·토지/건물 따로 매각'], ['collective', '집합건물 호실']];
+function Rights77Editor({ s, setS }) {
+  const cfg = s.rights77?.rules?.length ? s.rights77 : RIGHTS77_DEFAULT;
+  const put = (patch) => setS({ ...s, rights77: { ...cfg, ...patch } });
+  const setRule = (i, patch) => put({ rules: cfg.rules.map((r, j) => (i === j ? { ...r, ...patch } : r)) });
+  return (
+    <div className="mt-5">
+      <div className="mb-1 text-sm font-bold">권리산정기준일 판정 규칙 ({cfg.law})</div>
+      <p className="mb-2 text-xs text-ink/60">기준일 '다음 날' 이후 아래 사유가 생기면 분양권 제한(현금청산 위험). 비교 날짜 이름(splitDate 등)은 물건 상세에서 넣는 날짜 칸과 이어집니다(useAprDate는 건축물대장 사용승인일 자동). 법 개정 때 사유를 고치거나 더하세요.</p>
+      <Field label="근거 법조문"><input className="input" value={cfg.law} onChange={(e) => put({ law: e.target.value })} /></Field>
+      {cfg.rules.map((r, i) => (
+        <div key={i} className="mt-1.5 grid grid-cols-[3rem_1fr_9rem_8rem_10rem_auto] gap-1.5 text-xs">
+          <input className="input py-1" value={r.ho} onChange={(e) => setRule(i, { ho: Number(e.target.value) || e.target.value })} title="호" />
+          <input className="input py-1" value={r.text} onChange={(e) => setRule(i, { text: e.target.value })} title="사유" />
+          <input className="input py-1" value={r.dateLabel} onChange={(e) => setRule(i, { dateLabel: e.target.value })} title="비교 날짜 이름(화면)" />
+          <input className="input py-1 font-mono" value={r.date} onChange={(e) => setRule(i, { date: e.target.value })} title="비교 날짜 칸(영문)" />
+          <select className="input py-1" value={r.applies} onChange={(e) => setRule(i, { applies: e.target.value })}>{APPLIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+          <button className="btn-danger py-1" onClick={() => put({ rules: cfg.rules.filter((_, j) => j !== i) })}>삭제</button>
+        </div>
+      ))}
+      <div className="mt-1.5 flex gap-2">
+        <button className="btn-ghost" onClick={() => put({ rules: [...cfg.rules, { ho: cfg.rules.length + 1, text: '', date: `ho${cfg.rules.length + 1}Date`, dateLabel: '', applies: 'all' }] })}>+ 사유 추가</button>
+        <button className="btn-ghost" onClick={() => setS({ ...s, rights77: { ...RIGHTS77_DEFAULT, ordinance: { ...RIGHTS77_DEFAULT.ordinance, ...(cfg.ordinance || {}) } } })}>사유를 기본값(현행 1~5호)으로</button>
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+        {SIDO.map((sido) => (
+          <Field key={sido} label={`${sido} 조례 기준 메모`} hint="분양 대상·면적 기준 등(판정 화면에 표시)">
+            <textarea className="input h-20 text-xs" value={cfg.ordinance?.[sido] || ''} onChange={(e) => put({ ordinance: { ...(cfg.ordinance || {}), [sido]: e.target.value } })} />
+          </Field>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -235,6 +275,60 @@ function CourtForm() {
         <Field label="원문 주소(선택)"><input className="input" value={v.url} onChange={set('url')} /></Field>
       </div>
       <button className="btn-primary mt-3" onClick={submit}>등록</button>
+    </Card>
+  );
+}
+
+// 분석기 재계산(수정 후 참고값) — 기록된 예측은 보존, 크게 달라진 물건·새로 연결된 정비구역 목록
+const VL = { now: '지금 매력', wait: '유찰 대기', check: '권리 확인', suspect: '오류 의심', shareUnknown: '지분비율 미확인', hard: '가격 안 맞음', unknown: '시세 부족' };
+function RecalcReport() {
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const load = () => listRecalcReports().then(setRows).catch((e) => { setRows([]); setMsg(e.message); });
+  useEffect(() => { load(); }, []);
+  const run = async (reset) => {
+    setBusy(true); setMsg('');
+    try { const r = await callFn('recalcNow', { reset }); setMsg(r.partial ? '시간이 모자라 중간에 멈췄습니다 — 한 번 더 누르면 이어서 합니다.' : '재계산을 마쳤습니다.'); } catch (e) { setMsg(e.message); }
+    setBusy(false); load();
+  };
+  const r = rows?.[0];
+  const won = (v) => (v === null || v === undefined ? '없음' : `${Math.round(v / 1e4).toLocaleString('ko-KR')}만`);
+  return (
+    <Card title="분석기 재계산 (수정 후 참고값)" right={<span className="flex gap-2"><button className="btn-primary" disabled={busy} onClick={() => run(false)}>{busy ? '계산 중…(최대 9분)' : r && !r.done ? '이어서 재계산' : '전체 재계산'}</button><button className="btn-ghost" disabled={busy} onClick={() => run(true)}>처음부터</button></span>}>
+      <p className="mb-2 text-xs text-ink/60">계산식을 고친 뒤 기존 물건 전체를 지금 분석기로 다시 계산해 <b>수정 후 참고값</b>(forecastRevised)에만 넣습니다. 입찰 전 기록(forecast·이전 회차 기록)은 그대로이고 완료 물건 채점도 기록된 값 그대로입니다.</p>
+      {msg && <p className="mb-2 text-sm text-brand">{msg}</p>}
+      {!r ? <p className="text-sm text-ink/50">{rows ? '아직 재계산하지 않았습니다.' : '불러오는 중…'}</p> : (
+        <div className="space-y-3 text-sm">
+          <div className="flex flex-wrap gap-1.5 text-xs">
+            <Badge tone={r.done ? 'now' : 'wait'}>{r.analyzerVersion} · {r.done ? '완료' : `진행 중(${r.phase})`}</Badge>
+            <Badge>계산 {r.counts?.processed ?? 0}건</Badge><Badge>참고값 저장 {r.counts?.written ?? 0}</Badge><Badge>이미 최신 {r.counts?.current ?? 0}</Badge><Badge>기록 없음 {r.counts?.noBaseline ?? 0}</Badge>
+            <Badge tone="hard">크게 달라짐 {r.counts?.bigChanges ?? 0}</Badge><Badge tone="brand">정비구역 새로 연결 {r.counts?.newZoneLinks ?? 0}</Badge><Badge tone="hard">계산 이상 {r.counts?.calcAnomaly ?? 0}</Badge>{r.counts?.errors > 0 && <Badge tone="hard">오류 {r.counts.errors}</Badge>}
+          </div>
+          <div className="text-xs text-ink/70">지분 물건 {r.share?.total ?? 0}건 중 지분비율 미확인 <b>{r.share?.unknown ?? 0}</b>건 · 읽은 곳: {Object.entries(r.share?.bySource || {}).map(([k, v]) => `${k} ${v}`).join(', ') || '—'}</div>
+          <div className="text-xs text-ink/70">감정가 없는 물건 {r.noAppraisal?.total ?? 0}건 · 추정 기준: {Object.entries(r.noAppraisal?.by || {}).map(([k, v]) => `${{ none: '추정 못 함', official: '공시지가', trade: '실거래', jeonse: '전세', asking: '호가' }[k] || k} ${v}`).join(', ') || '—'}</div>
+          <div>
+            <div className="mb-1 font-bold">수정 전/후 크게 달라진 물건 ({r.bigChanges?.length ?? 0})</div>
+            <div className="max-h-80 overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="text-left text-ink/50"><tr><th>물건</th><th>수정 전(기록)</th><th>수정 후(참고)</th><th>무엇이</th></tr></thead>
+                <tbody>{(r.bigChanges || []).map((x) => (
+                  <tr key={x.id} className="border-t border-line/50 align-top">
+                    <td><a className="text-brand underline" href={`#/item/${encodeURIComponent(x.id)}`}>{x.title?.slice(0, 30) || x.id}</a></td>
+                    <td>{VL[x.before.verdict] || x.before.verdict} · {won(x.before.value)} · 상한 {won(x.before.cap)}<div className="text-ink/40">{x.before.version}</div></td>
+                    <td>{VL[x.after.verdict] || x.after.verdict} · {won(x.after.value)} · 상한 {won(x.after.cap)}</td>
+                    <td>{(x.why || []).join(' · ')}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div className="mb-1 font-bold">정비구역이 새로 연결된 물건 ({r.newZoneLinks?.length ?? 0})</div>
+            <ul className="max-h-60 overflow-auto text-xs">{(r.newZoneLinks || []).map((x) => <li key={x.id} className="border-b border-line/50 py-0.5"><a className="text-brand underline" href={`#/item/${encodeURIComponent(x.id)}`}>{x.title?.slice(0, 30) || x.id}</a> → <b>{x.zone}</b> · {x.stage} ({x.by} 일치, 전: {x.before}){x.rights ? ` · 권리산정 ${x.rights}` : ''}</li>)}</ul>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

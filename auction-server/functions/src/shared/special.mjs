@@ -66,9 +66,9 @@ export function shareInfo(item) {
   const ms = item.manual?.share;
   let hit = null; let source = null;
   if (ms?.num > 0 && ms?.den > 0 && ms.num < ms.den) { hit = { num: Number(ms.num), den: Number(ms.den), how: `${ms.num}/${ms.den}` }; source = '관리자 원문 확인'; }
-  if (!hit && item.shareRatio?.num > 0 && item.shareRatio?.den > 0) { hit = { ...item.shareRatio, how: item.shareRatio.text || `${item.shareRatio.num}/${item.shareRatio.den}` }; source = '원문(수집기)'; }
+  if (!hit && item.shareRatio?.num > 0 && item.shareRatio?.den > 0 && item.shareRatio.num < item.shareRatio.den) { hit = { ...item.shareRatio, how: item.shareRatio.text || `${item.shareRatio.num}/${item.shareRatio.den}` }; source = '원문(수집기)'; }
   if (!hit) for (const a of d.areas || []) { const r = ratioIn(a.share, { needWord: false }); if (r) { hit = r; source = '온비드 면적표 지분'; break; } }
-  if (!hit) { const r = ratioIn([d.shareText, item.title, d.conditions, d.cautions, d.extraNotes, d.location].filter(Boolean).join('\n')); if (r) { hit = r; source = '공고 글'; } }
+  if (!hit) { const r = ratioIn([d.shareText, d.itemsText, item.title, d.conditions, d.cautions, d.extraNotes, d.location].filter(Boolean).join('\n')); if (r) { hit = r; source = '공고 글'; } }
   const coOwners = coOwnersOf(item);
   const isLand = LANDISH.test(`${item.usage || ''} ${item.usageSmall || ''} ${item.land?.jimok || ''}`) && !item.buildingArea;
   if (!hit) return { share: true, ratio: null, source: null, coOwners, isLand, area: item.landArea || item.buildingArea || null };

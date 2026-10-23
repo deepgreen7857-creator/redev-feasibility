@@ -34,14 +34,18 @@ export async function checkBlocked(page) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const num = (s) => { const d = String(s || '').replace(/[^\d]/g, ''); return d ? Number(d) : undefined; };
 const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
-// 지분비율(분자/분모): '지분' 이 들어간 줄의 'N분의 M'(대지권 비율 줄은 제외) → { num, den, text }
+// 지분비율(분자/분모): '지분'·'공유' 가 들어간 줄(대지권 비율 줄은 제외)에서
+//  'N분의 M'(분모 먼저) · '36,364㎡ 중 (지분) 909.1㎡' · 'M/N' → { num, den, text, totalArea?, shareArea? }
 export function shareRatioOf(text) {
+  const n = (x) => Number(String(x).replace(/,/g, ''));
   for (const line of String(text || '').split(/\n/)) {
-    if (!/지분/.test(line) || /대지권/.test(line)) continue;
-    const m = line.match(/([\d,.]+)\s*분의\s*([\d,.]+)/);
-    if (!m) continue;
-    const den = Number(m[1].replace(/,/g, '')); const num = Number(m[2].replace(/,/g, ''));
-    if (den > 0 && num > 0 && num < den) return { num, den, text: clean(line).slice(0, 120) };
+    if (!/지분|공유/.test(line) || /대지권/.test(line)) continue;
+    let m = line.match(/([\d,.]+)\s*분의\s*([\d,.]+)/);
+    if (m && n(m[1]) > 0 && n(m[2]) > 0 && n(m[2]) < n(m[1])) return { num: n(m[2]), den: n(m[1]), text: clean(line).slice(0, 120) };
+    m = line.match(/([\d,]+(?:\.\d+)?)\s*㎡\s*중\s*(?:지분\s*)?([\d,]+(?:\.\d+)?)\s*㎡/);
+    if (m && n(m[1]) > 0 && n(m[2]) > 0 && n(m[2]) < n(m[1])) return { num: n(m[2]), den: n(m[1]), totalArea: n(m[1]), shareArea: n(m[2]), text: clean(line).slice(0, 120) };
+    m = line.match(/(?<![\d./-])(\d{1,7}(?:\.\d+)?)\s*\/\s*(\d{1,9}(?:\.\d+)?)(?![\d./-])/);
+    if (m && n(m[1]) > 0 && n(m[2]) > 0 && n(m[1]) < n(m[2])) return { num: n(m[1]), den: n(m[2]), text: clean(line).slice(0, 120) };
   }
   return undefined;
 }
@@ -253,6 +257,7 @@ export async function readDetail(page) {
     share: /지분|공유자\s*우선매수/.test(`${remarks} ${items} ${Object.values(f).join(' ')}`),
     shareText: (`${remarks} ${items} ${Object.values(f).join(' ')}`.match(/[^\n]{0,40}(?:지분|공유자\s*우선매수)[^\n]{0,40}/) || [])[0]?.trim() || undefined,
     shareRatio: shareRatioOf(`${remarks}\n${items}`),
+    itemsText: items ? items.slice(0, 3000) : undefined, // 목록내역 원문(지분·필지 다시 읽기용)
     bulk: addrKeys.length > 1 || /일괄매각/.test(remarks),
     photos: [],
     appraisalSummary: raw.appraisal || undefined,

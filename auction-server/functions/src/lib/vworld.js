@@ -1,6 +1,13 @@
 // 브이월드(국토교통부 공간정보) — 토지이용계획·개별공시지가·토지특성 조회 → 정비구역/농지/규제 판정
 const BASE = 'https://api.vworld.kr/ned/data';
-const DOMAIN = process.env.VWORLD_DOMAIN || 'https://jbslab.co.kr';
+// 인증키에 등록한 서비스 URL과 같아야 한다(다르면 빈 응답·INCORRECT_KEY). 사이트는 www.jbslab.co.kr(CNAME)인데
+// 서버는 그동안 https://jbslab.co.kr 로 보냈다 — 관리자 설정 vworldDomain 또는 환경변수 VWORLD_DOMAIN 으로 바꾼다.
+// 어느 값이 맞는지는 관리자 'API 연결 시험'이 후보 도메인을 하나씩 불러 원문과 함께 보여 준다.
+const DEFAULT_DOMAIN = process.env.VWORLD_DOMAIN || 'https://jbslab.co.kr';
+let DOMAIN = DEFAULT_DOMAIN;
+const DOMAIN_CANDIDATES = ['https://www.jbslab.co.kr', 'https://jbslab.co.kr', 'www.jbslab.co.kr', 'jbslab.co.kr'];
+function setDomain(d) { DOMAIN = String(d || '').trim() || DEFAULT_DOMAIN; return DOMAIN; }
+const getDomain = () => DOMAIN;
 
 function firstArray(obj) {
   if (!obj || typeof obj !== 'object') return [];
@@ -150,6 +157,12 @@ function parcelAddress(address) {
   return m ? m[1].replace(/\s산(\d)/, ' 산 $1') : null;
 }
 
+// 주소 끝의 지번: { mountain, no: '56' | '56-1' } — '산 56', '산56', '산56번지' 모두 같게
+function jibunKey(address) {
+  const m = String(address || '').replace(/\s+/g, ' ').trim().match(/(?:^|\s)(산\s?)?(\d+(?:-\d+)?)(?:\s*번지)?$/);
+  return m ? { mountain: Boolean(m[1]), no: m[2] } : null;
+}
+
 // 지번 주소 → PNU(19자리). 브이월드 주소검색(지번)에서 지번이 정확히 같은 결과만 쓴다.
 async function findPnu({ address, key, fetcher = fetch }) {
   const q = parcelAddress(address);
@@ -161,11 +174,14 @@ async function findPnu({ address, key, fetcher = fetch }) {
   if (!res.ok) throw new Error(`브이월드 주소검색 HTTP_${res.status}`);
   const data = await res.json();
   const items = (data && data.response && data.response.result && data.response.result.items) || [];
-  const lastToken = (s) => String(s || '').trim().split(/\s+/).pop();
-  const isMountain = (s) => /\s산\s?\d/.test(s);
+  // '산 56'·'산56' 모두 같은 지번으로 본다(전에는 질의를 '산 56'으로 바꾼 뒤 끝 글자만 비교해 '산56' 결과와 어긋났음).
+  // PNU 11번째 자리(2 = 산)도 맞아야 한다.
   const hit = items.find((it) => {
     const p = String((it.address && it.address.parcel) || '');
-    return /^\d{19}$/.test(String(it.id)) && lastToken(p) === lastToken(q) && isMountain(p) === isMountain(q);
+    const id = String(it.id);
+    if (!/^\d{19}$/.test(id)) return false;
+    const a = jibunKey(p); const b = jibunKey(q);
+    return Boolean(a && b) && a.no === b.no && a.mountain === b.mountain && (id[10] === '2') === b.mountain;
   });
   return hit ? { pnu: String(hit.id), parcel: hit.address.parcel, query: q } : null;
 }
@@ -225,5 +241,20 @@ async function neighbors({ pnu, key, fetcher = fetch, year, max = 25 }) {
   };
 }
 
-module.exports = { lookup, housingPrice, analyzeLandUse, firstArray, parcelAddress, findPnu, neighbors, bboxOf, centroid, isEmptyLand, DOMAIN };
+// 진단: 같은 PNU를 후보 도메인마다 불러 어느 도메인이 인증키에 등록돼 있는지 본다(응답 원문 포함)
+async function probeDomains({ pnu, key, fetcher = fetch, candidates = DOMAIN_CANDIDATES }) {
+  const keep = DOMAIN; const out = [];
+  try {
+    for (const d of [...new Set([keep, ...candidates])]) {
+      DOMAIN = d;
+      try {
+        const rows = await get('getLandUseAttr', { pnu }, key, fetcher);
+        out.push({ domain: d, ok: rows.length > 0, rows: rows.length, raw: rows.raw || null });
+      } catch (e) { out.push({ domain: d, ok: false, rows: 0, raw: e.message.slice(0, 300) }); }
+    }
+  } finally { DOMAIN = keep; }
+  return out;
+}
+
+module.exports = { lookup, housingPrice, analyzeLandUse, firstArray, parcelAddress, jibunKey, findPnu, neighbors, bboxOf, centroid, isEmptyLand, setDomain, getDomain, probeDomains, DOMAIN_CANDIDATES, get DOMAIN() { return DOMAIN; } };
 

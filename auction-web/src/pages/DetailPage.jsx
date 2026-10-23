@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getListing, getSettings, getDeals, callFn, saveListing, getZones } from '../lib/store.js';
 import { zonesForListing, stageForAnalysis } from '../lib/redevZones.js';
-import { ZONE_STATUS_LABEL, ART77, rightsCheck } from '../lib/zoneMatch.js';
+import { ZONE_STATUS_LABEL, rightsCheck, rights77Of } from '../lib/zoneMatch.js';
 import { analyze, tradeTypeOf, courtRate, eok, won, pct, SOURCE_LABEL, typeLabel, areaText } from '../lib/analyze.js';
 import { shareInfo } from '../lib/special.js';
 import { lawdOf } from '../data/defaults.js';
@@ -209,7 +209,7 @@ export default function DetailPage({ admin }) {
             ) : <Empty>{item.pnu ? '아직 조회 전입니다(상세 수집 때 함께 조회).' : '필지번호(PNU)가 없습니다 — 상세 수집 때 주소로 찾아 조회합니다.'}</Empty>}
           </div>
           <div>
-            <ZoneMatchBox item={item} admin={admin} onSave={updateManual} />
+            <ZoneMatchBox item={item} a={a} settings={settings} admin={admin} onSave={updateManual} />
             <div className="mt-3 rounded-lg bg-paper p-3">
               <div className="mb-1 text-sm font-bold">정비사업 현황 엑셀(참고)에서 같은 동 구역</div>
               {item.manual?.zone ? (
@@ -705,16 +705,24 @@ function ShareForm({ item, onSave }) {
 }
 
 // 정비구역 목록 연계 결과(서버가 매일 붙임) + 권리산정기준일(도시정비법 제77조①) 판정
-function ZoneMatchBox({ item, admin, onSave }) {
+//  결과: 분양권 가능 / 분양권 제한(현금청산 위험) / 판단불가(날짜 미확인) + 판정 근거 날짜
+function ZoneMatchBox({ item, a, settings, admin, onSave }) {
   const m = item.redevMatch;
-  const r = m?.status === 'listed' ? rightsCheck(item, m) : null;
+  const cfg = rights77Of(settings);
+  const r = m?.status === 'listed' ? a?.rights77 || rightsCheck(item, m, cfg) : null;
   const m77 = item.manual?.rights77 || {};
+  const [dates, setDates] = useState(() => Object.fromEntries(cfg.rules.map((x) => [x.date, m77[x.date] || ''])));
   const tone = { listed: 'brand', unlisted: 'wait', none: 'muted', unchecked: 'muted' }[m?.status] || 'muted';
+  const rTone = { restricted: 'bg-hard/5 text-hard', risk: 'bg-wait/10', unknown: 'bg-wait/10', ok: 'bg-now/5', pending: 'bg-paper' }[r?.status] || 'bg-paper';
+  const flagKey = (ho) => ({ 1: 'split', 2: 'toCollective', 3: 'separated', 4: 'newBuild', 5: 'unitSplit' }[ho] || `ho${ho}`);
   const setFlag = (k, v) => onSave({ rights77: { ...m77, [k]: v } });
-  const FLAG = [['split', 1], ['toCollective', 2], ['separated', 3], ['newBuild', 4]];
+  const saveDates = () => onSave({ rights77: { ...m77, ...Object.fromEntries(Object.entries(dates).map(([k, v]) => [k, v || null])), datesAt: new Date().toISOString() } });
   return (
     <div className="rounded-lg border border-brand/20 p-3 text-sm">
-      <div className="mb-1 flex flex-wrap items-center gap-1.5 font-bold">정비구역 목록 연계 <Badge tone={tone}>{m ? ZONE_STATUS_LABEL[m.status] : '연결 전(새벽 수집 때)'}</Badge></div>
+      <div className="mb-1 flex flex-wrap items-center gap-1.5 font-bold">정비구역 목록 연계 <Badge tone={tone}>{m ? ZONE_STATUS_LABEL[m.status] : '연결 전(새벽 수집 때)'}</Badge>
+        {a?.zoneInfo?.tags.map((t) => <Badge key={t.key} tone={t.tone}>{t.text}</Badge>)}
+        {a?.zoneInfo?.corpPermit && <Badge tone="hard">법인 취득 제약 확인 필요</Badge>}
+      </div>
       {m?.status === 'listed' && (
         <>
           <div><b>{m.name}</b> · {m.type || '유형 미상'} · 단계 <b>{m.stage}</b> <span className="text-xs text-ink/50">({m.by} 일치)</span></div>
@@ -724,26 +732,34 @@ function ZoneMatchBox({ item, admin, onSave }) {
           </div>
           {m.sourceUrls?.length > 0 && <div className="mt-0.5 text-xs">{m.sourceUrls.map((u, i) => <a key={u} className="mr-2 text-brand underline" href={u} target="_blank" rel="noreferrer">근거{i + 1}</a>)}</div>}
           {r && (
-            <div className={`mt-2 rounded-md p-2 text-xs ${r.status === 'restricted' ? 'bg-hard/5 text-hard' : r.status === 'risk' ? 'bg-wait/10' : 'bg-paper'}`}>
-              <div className="font-bold">권리산정기준일{r.basisDate ? ` ${r.basisDate}(${r.basisFrom || '—'}) → ${r.effectiveFrom}부터 적용` : ''}</div>
+            <div className={`mt-2 rounded-md p-2 text-xs ${rTone}`}>
+              <div className="font-bold">{r.label}{r.basisDate ? ` · 권리산정기준일 ${r.basisDate}(${r.basisFrom || '—'}) → ${r.effectiveFrom}부터 적용` : ''}</div>
               <div>{r.text}</div>
-              {[...(r.hits || []), ...(r.risks || [])].map((h, i) => <div key={i}>· 제{h.ho}호 {h.text} — {h.evidence}</div>)}
+              {r.dates?.length > 0 && (
+                <table className="mt-1 w-full">
+                  <thead className="text-left text-ink/50"><tr><th>사유</th><th>비교 날짜</th><th>판정 근거</th></tr></thead>
+                  <tbody>{r.dates.map((d) => <tr key={d.ho} className="border-t border-line/40 align-top"><td>제{d.ho}호 {d.text}</td><td className="whitespace-nowrap">{d.label} {d.date || '—'}{d.source && d.source !== '직접 확인' ? ` (${d.source})` : ''}</td><td>{d.cmp}</td></tr>)}</tbody>
+                </table>
+              )}
+              {[...(r.hits || []), ...(r.risks || [])].map((h, i) => <div key={i}>· 제{h.ho}호 — {h.evidence}</div>)}
               {r.checks?.length > 0 && <div className="mt-1 text-ink/60">확인할 서류: {r.checks.join(', ')}</div>}
-              <div className="mt-1 text-[11px] text-ink/50">{r.law}: 기준일 다음 날 이후 분할·집합건물 전환·토지/건물 분리 소유·신축이면 분양받을 권리를 제한</div>
+              {r.ordinance && <div className="mt-1 text-ink/70">조례 메모({m.sido}): {r.ordinance}</div>}
+              <div className="mt-1 text-[11px] text-ink/50">{r.law}: 기준일 다음 날 이후 아래 사유가 생기면 분양받을 권리를 제한(사유 목록은 관리자 설정값)</div>
             </div>
           )}
           {admin && r && r.status !== 'pending' && (
             <div className="mt-2 grid gap-1 text-xs">
-              <div className="font-bold">서류로 확인한 값(기준일 다음 날 이후 생겼나)</div>
-              {FLAG.map(([k, ho]) => (
-                <label key={k} className="flex items-center gap-2">
-                  <select className="input w-24 py-0.5" value={m77[k] === true ? 'y' : m77[k] === false ? 'n' : ''} onChange={(e) => setFlag(k, e.target.value === 'y' ? true : e.target.value === 'n' ? false : undefined)}>
-                    <option value="">모름</option><option value="y">해당</option><option value="n">아님</option>
+              <div className="font-bold">서류로 확인한 날짜·값 (토지대장·건축물대장·등기부)</div>
+              {cfg.rules.map((x) => (
+                <label key={x.ho} className="grid grid-cols-[auto_9rem_1fr] items-center gap-2">
+                  <select className="input w-20 py-0.5" value={m77[flagKey(x.ho)] === true ? 'y' : m77[flagKey(x.ho)] === false ? 'n' : ''} onChange={(e) => setFlag(flagKey(x.ho), e.target.value === 'y' ? true : e.target.value === 'n' ? false : undefined)}>
+                    <option value="">날짜로</option><option value="y">해당</option><option value="n">아님</option>
                   </select>
-                  제{ho}호 {ART77[ho]}
+                  <input className="input py-0.5" type="date" value={dates[x.date] || ''} onChange={(e) => setDates({ ...dates, [x.date]: e.target.value })} title={x.dateLabel} />
+                  <span>제{x.ho}호 {x.dateLabel} — {x.text}</span>
                 </label>
               ))}
-              <p className="text-ink/50">바꾸면 분양자격 판정에 바로 반영됩니다.</p>
+              <div><button className="btn-ghost py-1 text-xs" onClick={saveDates}>날짜 저장</button> <span className="text-ink/50">사용승인일은 비워 두면 건축물대장 값을 씁니다. 바꾸면 분양자격 판정에 바로 반영됩니다.</span></div>
             </div>
           )}
         </>
@@ -751,6 +767,7 @@ function ZoneMatchBox({ item, admin, onSave }) {
       {m?.status === 'unlisted' && <div className="text-xs">브이월드 토지이용계획: {m.vworld.join(', ')} — 관리자 정비구역 목록에 아직 없음(관리자 화면 알림).</div>}
       {m?.status === 'none' && <div className="text-xs text-ink/60">목록·토지이용계획 모두 정비구역 아님. 지정 전 구역(후보지 등)은 목록에 있어야만 잡힙니다.</div>}
       {m?.status === 'unchecked' && <div className="text-xs text-ink/60">토지이용계획 조회 전이고 목록과도 맞지 않음 — 조회 뒤 다시 판정.</div>}
+      {a?.extraParcels > 0 && <div className="mt-1 text-xs text-wait">외 {a.extraParcels}필지 — 첫 필지로만 연결·조회했습니다. 나머지 필지가 구역에 드는지 원문으로 확인하세요.</div>}
     </div>
   );
 }
@@ -763,6 +780,9 @@ function ForecastCard({ item }) {
     <Card title="예측 기록">
       {f && <div className="text-sm"><b>기록된 예측</b> ({f.analyzerVersion || `규칙 ${f.rules}`}): {line(f)} <span className="text-xs text-ink/50">— 완료 채점은 이 값 그대로</span></div>}
       {r && <div className="mt-1 text-sm text-ink/70"><b>수정 후 참고값</b> ({r.analyzerVersion}): {line(r)}</div>}
+      {item.forecastHistory?.length > 0 && (
+        <div className="mt-2 text-xs text-ink/60"><b>이전 회차 기록</b>(그대로 보존): {item.forecastHistory.map((x, i) => <div key={i}>· {x.round ? `${x.round}회차 ` : ''}{x.bidEnd ? `${String(x.bidEnd).slice(0, 10)} ` : ''}{line(x)} ({x.analyzerVersion || `규칙 ${x.rules}`})</div>)}</div>
+      )}
     </Card>
   );
 }

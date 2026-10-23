@@ -298,6 +298,18 @@ test('입찰 전 예측: 기일 전 물건만 판정하고, 기일이 된 물건
   assert.equal(st2.revised, 1); assert.equal(st2.forecast, 0);
   assert.equal(written.a.forecast, undefined); assert.equal(written.a.forecastFirst, undefined);
   assert.ok(written.a.forecastRevised.analyzerVersion);
+  // 법원 물건: 유찰 뒤 다음 회차(기일이 바뀜) → 지난 회차 기록은 forecastHistory 로 그대로 옮기고 새 회차를 기록
+  const prevRound = { at: '2026-10-01', rules: '2026-10-23b', verdict: 'wait', value: 4e8, cap: 3.2e8, minBid: 4.2e8, bidEnd: '2026.10.10' };
+  docs[0].data = { ...docs[0].data, forecast: prevRound, forecastFirst: prevRound, forecastHistory: [{ at: '2026-09-01', verdict: 'hard' }] };
+  for (const k of Object.keys(written)) delete written[k];
+  const st3 = await forecast.run({ db, log: () => {} });
+  assert.equal(st3.newRound, 1);
+  assert.deepEqual(written.a.forecastHistory.map((x) => x.at), ['2026-09-01', '2026-10-01']);
+  assert.equal(written.a.forecastHistory[1].value, 4e8); // 값 그대로
+  assert.equal(written.a.forecast.bidEnd, '2099.01.01');
+  assert.equal(written.a.forecastFirst, undefined);
+  assert.equal(forecast.sameRound({ minBid: 3e8, round: 2 }, { minBid: 3e8, round: 2 }), true);
+  assert.equal(forecast.sameRound({ minBid: 3e8 }, { minBid: 2.1e8 }), false);
 });
 
 test('브이월드: 빈 응답은 원문을 붙여 empty 로 표시(캐시하지 않음), resultCode 오류는 예외', async () => {
@@ -369,4 +381,36 @@ test('Claude 검토: 원자료·사이트 계산을 보내고 JSON 결과를 읽
   assert.equal(out.verdict, '보류'); assert.equal(out.disagree[0].step, '시세'); assert.equal(out.ruleSuggestions.length, 1);
   assert.equal(sent.headers['x-api-key'], 'k'); assert.ok(sent.body.messages[0].content.includes('[사이트 자동 검토 결과]'));
   await assert.rejects(() => ai.review({ item: {}, analysis: null, apiKey: '' }));
+});
+
+test('브이월드 주소검색: 산 지번은 "산 56"·"산56" 모두 같은 지번, PNU 11번째 자리(2=산)도 맞아야', async () => {
+  const vworld = require('../src/lib/vworld');
+  const res = (items) => async () => ({ ok: true, json: async () => ({ response: { result: { items } } }) });
+  const mt = { id: '4146125032200560000', address: { parcel: '경기도 용인시 처인구 포곡읍 삼계리 산56' } };
+  const flat = { id: '4146125032100560000', address: { parcel: '경기도 용인시 처인구 포곡읍 삼계리 56' } };
+  const hit = await vworld.findPnu({ address: '경기도 용인시 처인구 포곡읍 삼계리 산56 외 2필지', key: 'k', fetcher: res([flat, mt]) });
+  assert.equal(hit.pnu, mt.id); // 전에는 '산56'과 질의 끝 글자 '56'이 달라 못 찾았음
+  assert.equal((await vworld.findPnu({ address: '경기도 용인시 처인구 포곡읍 삼계리 56', key: 'k', fetcher: res([mt, flat]) })).pnu, flat.id);
+  assert.equal(await vworld.findPnu({ address: '삼계리 산57', key: 'k', fetcher: res([mt]) }), null);
+});
+
+test('브이월드 도메인: 설정으로 바꾸고, 후보 도메인별로 응답을 비교', async () => {
+  const vworld = require('../src/lib/vworld');
+  const before = vworld.DOMAIN;
+  vworld.setDomain('https://www.jbslab.co.kr'); assert.equal(vworld.DOMAIN, 'https://www.jbslab.co.kr');
+  const fetcher = async (u) => ({ ok: true, status: 200, text: async () => (u.searchParams.get('domain') === 'https://www.jbslab.co.kr'
+    ? JSON.stringify({ landUses: { field: [{ prposAreaDstrcCodeNm: '제2종일반주거지역' }] } })
+    : JSON.stringify({ landUses: { field: [], resultCode: 'INCORRECT_KEY', resultMsg: '인증키 도메인 불일치' } })) });
+  const rows = await vworld.probeDomains({ pnu: '2823710100100010000', key: 'k', fetcher });
+  assert.deepEqual(rows.filter((x) => x.ok).map((x) => x.domain), ['https://www.jbslab.co.kr']);
+  assert.match(rows.find((x) => x.domain === 'https://jbslab.co.kr').raw, /도메인 불일치/);
+  vworld.setDomain(''); assert.equal(vworld.DOMAIN, before); // 비우면 기본값
+});
+
+test('재계산: 수정 전(기록)과 수정 후가 크게 달라진 물건만 골라 이유를 붙임', () => {
+  const { bigChange } = require('../src/lib/recalc');
+  assert.deepEqual(bigChange({ verdict: 'now', value: 9.5e9, cap: 8e9 }, { verdict: 'shareUnknown', value: null, cap: null, shareUnknown: true }),
+    ['판정 now → shareUnknown', '가치 950,000만 → 없음', '매수상한 800,000만 → 없음', '지분비율 미확인으로 금액 계산 중단']);
+  assert.equal(bigChange({ verdict: 'wait', value: 3e8, cap: 2.5e8 }, { verdict: 'wait', value: 3.2e8, cap: 2.6e8 }), null);
+  assert.equal(bigChange(null, { verdict: 'now' }), null);
 });
