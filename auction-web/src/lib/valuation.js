@@ -62,6 +62,14 @@ export function valuation(item, { type, market, marketValue, jeonse, settings, s
     add({ key: 'jeonse', label: '전세 환산', value: Math.round(jeonse.value / r), basis: `${jeonse.basis} ${eok(jeonse.value)} ÷ 전세가율 ${Math.round(r * 100)}% (추정)` });
   }
 
+  // ⑤ 현재 호가(정민 님이 직접 확인해 넣은 값) — 호가는 실제 거래보다 높게 나오므로 95%로
+  const ask = item.manual?.asking;
+  if (ask?.low) {
+    const mid = ask.high ? (ask.low + ask.high) / 2 : ask.low;
+    const days = ask.at ? Math.floor((Date.now() - new Date(ask.at).getTime()) / 86400e3) : null;
+    add({ key: 'asking', label: '현재 호가(직접 확인)', value: Math.round(mid * (cfg.askingRatio ?? 0.95)), low: ask.low, high: ask.high || ask.low, basis: `호가 ${eok(ask.low)}${ask.high && ask.high !== ask.low ? `~${eok(ask.high)}` : ''} × ${Math.round((cfg.askingRatio ?? 0.95) * 100)}%${days !== null ? ` (${days}일 전 확인)` : ''}${ask.memo ? ` · ${ask.memo}` : ''}`, stale: days !== null && days > 30 });
+  }
+
   // 참고: 경매 시장가(감정가 × 낙찰가율)
   let auction = null;
   if (item.appraisal) {
