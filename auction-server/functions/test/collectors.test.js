@@ -319,3 +319,21 @@ test('온비드 물건 입찰결과목록: 물건명에서 시도·시군구·�
   const f = onbid.mapResultRow({ cltrMngNo: 'x', pbctCdtnNo: '1', prptDivCd: '0013', onbidCltrNm: '서울특별시 강남구 역삼동 1', pbctStatNm: '유찰', scfbAmt: '' });
   assert.equal(f.result.soldPrice, null); assert.equal(f.category, 'bankrupt');
 });
+
+test('건축HUB 조회 키와 상업업무용 실거래 압축', async () => {
+  const building = require('../src/lib/building');
+  assert.deepEqual(building.keyOf('2823710100100120004'), { sigunguCd: '28237', bjdongCd: '10100', platGbCd: '0', bun: '0012', ji: '0004' });
+  assert.equal(building.keyOf('2823710100200120004').platGbCd, '1');
+  assert.equal(building.hoOf('부평동 1-2 제3층 제301호'), '301');
+  const json = (o) => JSON.stringify({ response: { header: { resultCode: '00' }, body: { totalCount: 1, items: { item: o } } } });
+  const fetcher = fakeFetch((u) => (u.pathname.includes('getBrTitleInfo') ? json([{ bldNm: '샘플빌라', mainPurpsCdNm: '공동주택', useAprDay: '19950101', grndFlrCnt: '4' }])
+    : u.pathname.includes('Expos') ? json([{ exposPubuseGbCdNm: '전유', area: '49.5', mainPurpsCdNm: '다세대주택', flrNoNm: '3층' }, { exposPubuseGbCdNm: '공용', area: '10' }])
+      : json([{ archGbCdNm: '신축', archPmsDay: '20260301', platPlc: '인천광역시 부평구 부평동 12-3', mainPurpsCdNm: '공동주택' }])));
+  const lg = await building.ledger({ pnu: '2823710100100120004', address: '제301호', serviceKey: 'k', fetcher });
+  assert.equal(lg.unit.exclusiveArea, 49.5); assert.ok(lg.age >= 30);
+  const pm = await building.permits({ pnu: '2823710100100120004', serviceKey: 'k', fetcher });
+  assert.equal(pm.newBuild, 1);
+  const trades = require('../src/lib/trades');
+  const c = trades.compact('nrg', { dealAmount: '45,000', buildingAr: '60.5', buildingType: '집합', buildingUse: '제2종근린생활', umdNm: '부평동', cdealtype: 'O' });
+  assert.equal(c[0], 450000000); assert.equal(c[1], 60.5); assert.equal(c[7], true); assert.equal(c[10], '집합');
+});

@@ -183,6 +183,7 @@ export default function DetailPage({ admin }) {
       </Card>
 
       {item.bidInfo?.history?.length > 0 && <BidHistory info={item.bidInfo} appraisal={item.appraisal} />}
+      {(item.ledger?.titles?.length > 0 || item.permits?.total !== undefined) && <BuildingCard item={item} />}
 
       {/* ③ 토지이용·정비구역·분양자격 */}
       <Card title="③ 토지이용·정비구역·분양자격" right={admin && item.pnu && <button className="btn-ghost no-print" disabled={busy === 'land'} onClick={checkLand}>{busy === 'land' ? '조회 중…' : '브이월드 조회'}</button>}>
@@ -625,6 +626,33 @@ function BidHistory({ info, appraisal }) {
             <td className="text-right num">{h.rateToAppraisal ? `${Math.round(h.rateToAppraisal)}%` : h.soldPrice && appraisal ? pct(h.soldPrice / appraisal) : '—'}</td></tr>
         ))}</tbody>
       </table>
+    </Card>
+  );
+}
+
+// 건축HUB: 건축물대장(교차 확인)·같은 동 최근 건축 허가
+function BuildingCard({ item }) {
+  const lg = item.ledger; const pm = item.permits; const t = lg?.titles?.[0];
+  return (
+    <Card title="건축물대장·주변 건축 허가" right={<span className="text-xs text-ink/50">국토교통부 건축HUB</span>}>
+      {t && (
+        <div className="grid gap-x-6 sm:grid-cols-2">
+          <Row k="건물" v={[t.bldNm, t.dongNm].filter(Boolean).join(' ') || '—'} />
+          <Row k="주용도" v={t.mainPurpose || '—'} />
+          <Row k="사용승인" v={lg.useApr ? `${lg.useApr} (${lg.age}년)` : '—'} />
+          <Row k="구조·층수" v={`${t.structure || '—'} · 지상 ${t.floors ?? '—'}층${t.basements ? ` / 지하 ${t.basements}층` : ''}`} />
+          {lg.unit && <Row k={`${lg.unit.dong ? lg.unit.dong + '동 ' : ''}${lg.unit.ho}호 전유면적`} v={`${lg.unit.exclusiveArea}㎡${item.buildingArea ? ` (읽어 온 면적 ${item.buildingArea}㎡)` : ''}`} strong />}
+          <Row k="건폐율·용적률" v={`${t.bcRat ?? '—'}% · ${t.vlRat ?? '—'}%`} />
+        </div>
+      )}
+      {lg?.error && <p className="text-xs text-hard">건축물대장 조회 실패: {lg.error}</p>}
+      {pm && !pm.error && (
+        <div className="mt-2 text-sm">
+          <div className="font-bold">같은 법정동 최근 {pm.years}년 건축 허가 {pm.total}건 (신축 {pm.newBuild}건)</div>
+          {pm.recent?.length > 0 && <ul className="mt-1 space-y-0.5 text-xs text-ink/70">{pm.recent.map((r, i) => <li key={i}>{r.permitDay} · {r.kind} · {r.purpose || ''} · {r.place}{r.totArea ? ` · ${Math.round(r.totArea)}㎡` : ''}</li>)}</ul>}
+        </div>
+      )}
+      {pm?.error && <p className="text-xs text-hard">건축 허가 조회 실패: {pm.error}</p>}
     </Card>
   );
 }

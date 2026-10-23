@@ -24,6 +24,8 @@ export function tradeTypeOf(item) {
   if (/오피스텔/.test(s)) return 'offi';
   if (/아파트/.test(s)) return 'apt';
   if (/다세대|연립|빌라|도시형/.test(s)) return 'rh';
+  if (/공장|창고/.test(s)) return 'indu';
+  if (/(상가|근린|점포|판매|업무시설|사무|숙박)/.test(s) && !/주택/.test(s)) return 'nrg';
   if (/단독|다가구|주택/.test(s)) return 'sh';
   if (/토지|대지|임야|전답|농지|잡종지|(^|\s)(전|답|대|과수원)(\s|$)/.test(s) || (!item.buildingArea && item.landArea)) return 'land';
   return 'rh';
@@ -57,6 +59,7 @@ export function renovation(item, deals, settings, market) {
   if (!['rh', 'apt', 'sh'].includes(type) || !item.buildingArea || !market?.value) return null;
   const year = new Date().getFullYear();
   if (item.buildYear && year - item.buildYear < 10) return null; // 새 집은 대상 아님
+  if (item.ledger?.age !== undefined && item.ledger?.age !== null && item.ledger.age < 10) return null; // 건축물대장 사용승인 10년 미만
   const area = item.buildingArea;
   let pool = (deals || []).filter((d) => d[0] && d[1] && !d[7] && d[8] !== '직거래');
   const sameDong = pool.filter((d) => item.emd && d[9] === item.emd);
@@ -276,6 +279,10 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   }
   // ── 오류 의심 걸러내기: 원본(감정가·공시가격)과 크게 어긋나면 계산을 믿지 않는다 ──
   const anomalies = [];
+  // 건축물대장 교차 확인: 전유면적이 읽어 온 면적과 30% 넘게 다르면 오류 의심
+  const ua = item.ledger?.unit?.exclusiveArea;
+  const uaDiff = ua && item.buildingArea ? Math.abs(ua - item.buildingArea) / ua : null;
+  if (uaDiff !== null && uaDiff > 0.3) anomalies.push(`건축물대장 전유면적 ${ua}㎡와 읽어 온 면적 ${item.buildingArea}㎡가 크게 다름 — 자료 확인`);
   const mixed = /,/.test(item.usage || '') || /,/.test(item.title || '') && /(상가|근린|오피스텔|아파트|다세대|주택).*,.*(상가|근린|오피스텔|아파트|다세대|주택)/.test(item.title || '');
   if (item.bulk || mixed) anomalies.push('여러 물건·용도 일괄 매각 — 시세 하나로 계산할 수 없음');
   if (value && item.appraisal && !cashType && !rightType) {
@@ -318,6 +325,8 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   if (member.status === 'member' && /임박/.test(member.reason || '')) warnings.push(member.reason);
   if (member.status === 'member' && member.rank >= 3 && !rightType) warnings.push('입주권형 — 구역의 비례율·조합원분양가를 넣으면 입주권 가치로 계산합니다');
   if (member.status !== 'none') warnings.push('권리산정기준일 이후 신축·지분분할 물건이거나 한 세대가 여러 채를 가지면 분양자격이 달라질 수 있음');
+  if (uaDiff !== null && uaDiff > 0.1 && uaDiff <= 0.3) warnings.push(`건축물대장 전유면적 ${item.ledger.unit.exclusiveArea}㎡ ≠ 읽어 온 면적 ${item.buildingArea}㎡`);
+  if (item.ledger?.age >= 30) warnings.push(`사용승인 ${item.ledger.age}년 경과(${item.ledger.useApr}) — 노후, 수리비·누수 확인`);
   const jeonse = jeonseEstimate(item, rentDeals);
   if (jeonse) {
     (item.detail?.leases || []).forEach((l) => {

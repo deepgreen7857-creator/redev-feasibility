@@ -15,6 +15,7 @@ const bankrupt = require('./lib/bankrupt');
 const vworld = require('./lib/vworld');
 const incheonZones = require('./lib/incheonZones');
 const forecast = require('./lib/forecast');
+const building = require('./lib/building');
 const { COURTS } = require('./data/courts');
 
 initializeApp();
@@ -122,6 +123,23 @@ async function enrichLand(item) {
   let land = c.exists && Date.now() - new Date(c.data().checkedAt).getTime() < 30 * 86400e3 ? c.data() : null;
   if (!land) { land = await vworld.lookup({ pnu, key }); await ref.set(land); }
   const out = { ...found, land };
+  // 건축HUB: 건물이 있으면 건축물대장(면적·용도·사용승인일 교차 확인), 토지·도로·맹지면 같은 법정동 최근 건축 허가
+  let dkey = null; try { dkey = DATA_GO_KR_KEY.value(); } catch { dkey = null; }
+  if (dkey) {
+    const quota = new Quota(db);
+    const addr = `${item.address || ''} ${item.title || ''} ${(item.detail && item.detail.addressFull) || ''}`;
+    const cached = async (id, days, fn) => {
+      const ref = db.collection('landCache').doc(id); const c = await ref.get();
+      if (c.exists && Date.now() - new Date(c.data().checkedAt).getTime() < days * 86400e3) return c.data();
+      const v = await fn(); if (v) await ref.set(v); return v;
+    };
+    const hasBuilding = Boolean(item.buildingArea) || !/토지|대지|임야|전|답|잡종지|도로|구거/.test(item.usageSmall || '');
+    if (hasBuilding) {
+      try { const lg = await cached(`bld_${pnu}_${building.hoOf(addr) || '0'}`, 90, () => building.ledger({ pnu, address: addr, serviceKey: dkey, quota })); if (lg) out.ledger = lg; } catch (e) { out.ledger = { error: e.message, checkedAt: new Date().toISOString() }; }
+    } else {
+      try { const pm = await cached(`pms_${String(pnu).slice(0, 10)}`, 30, () => building.permits({ pnu, serviceKey: dkey, quota })); if (pm) out.permits = pm; } catch (e) { out.permits = { error: e.message, checkedAt: new Date().toISOString() }; }
+    }
+  }
   // 도로·구거·맹지 물건은 주변 필지가 맹지인지 확인(30일 캐시)
   const roadish = /도로|구거|맹지/.test(`${item.usage || ''} ${item.usageSmall || ''} ${land.jimok || ''} ${(item.detail && item.detail.usageStatus) || ''}`);
   if (roadish) {
@@ -394,6 +412,13 @@ exports.testApis = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORL
     const m = p.rows.slice(0, 3).map(onbid.mapResultRow);
     return { total: p.total, fields: Object.keys(p.rows[0] || {}).slice(0, 40), sample: m.map((x) => `${x.title} · ${x.result.status} · 낙찰 ${x.result.soldPrice || '—'} · ${x.result.rate ? Math.round(x.result.rate * 100) + '%' : '—'} · 입찰자 ${x.result.bidders ?? '—'}`).join(' / ') };
   });
+  await tryOne('건축HUB 건축물대장·인허가', async () => {
+    const any = (await db.collection('listings').where('source', '==', 'onbid').limit(30).get()).docs.map((d) => d.data()).find((x) => x.pnu);
+    const pnu = (any && any.pnu) || '2823710100100010000';
+    const lg = await building.ledger({ pnu, address: any ? any.address : '', serviceKey: key, quota });
+    const pm = await building.permits({ pnu, serviceKey: key, quota });
+    return { total: (lg?.titles?.length || 0) + (pm?.total || 0), sample: `${pnu} · 대장 ${lg?.titles?.length || 0}동 ${lg?.titles?.[0]?.mainPurpose || ''} ${lg?.useApr || ''} · 같은 동 허가 ${pm?.total ?? '—'}건(신축 ${pm?.newBuild ?? '—'})` };
+  });
   await tryOne('온비드 파산자산(전국)', async () => {
     const r = await onbid.fetchListPage({ part: { sido: null, prptDivCd: onbid.BANKRUPT_CODE, pvctTrgtYn: 'N' }, pageNo: 1, serviceKey: key, quota });
     return { total: r.total, sample: r.rows[0] ? onbid.mapListRow(r.rows[0]).title : null };
@@ -510,7 +535,7 @@ function cleanCourtItem(raw) {
   return item;
 }
 
-exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY], timeoutSeconds: 300, memory: '512MiB', cors: false }, async (req, res) => {
+exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY, DATA_GO_KR_KEY], timeoutSeconds: 300, memory: '512MiB', cors: false }, async (req, res) => {
   if (req.method !== 'POST') { res.status(405).send('POST만 받습니다'); return; }
   const auth = String(req.get('authorization') || '');
   if (!COURT_INGEST_TOKEN.value() || auth !== `Bearer ${COURT_INGEST_TOKEN.value()}`) { res.status(401).send('토큰이 맞지 않습니다'); return; }

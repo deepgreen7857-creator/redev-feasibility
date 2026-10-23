@@ -12,6 +12,9 @@ const TYPES = {
   land: { name: '토지', api: 'rt-land', url: `${BASE}/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade` },
   // 분양권·입주권(활용신청: 국토교통부_아파트 분양권전매 신고 자료) — 정비구역 입주권 가치 비교용
   silv: { name: '분양권·입주권', api: 'rt-silv', url: `${BASE}/RTMSDataSvcSilvTrade/getRTMSDataSvcSilvTrade` },
+  // 상가·업무용(상업업무용)·공장·창고 매매 — 상가·공장 물건 시세용. 면적=건물면적, 추가=건물유형(집합/일반)
+  nrg: { name: '상업업무용', api: 'rt-nrg', url: `${BASE}/RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade` },
+  indu: { name: '공장·창고', api: 'rt-indu', url: `${BASE}/RTMSDataSvcInduTrade/getRTMSDataSvcInduTrade` },
   // 전월세 — 임차인 보증금이 시세에 맞는지(가장 임차인·깡통 의심), 세 놓을 때 수익 계산용
   aptRent: { name: '아파트 전월세', api: 'rt-apt-rent', url: `${BASE}/RTMSDataSvcAptRent/getRTMSDataSvcAptRent`, rent: true },
   rhRent: { name: '연립다세대 전월세', api: 'rt-rh-rent', url: `${BASE}/RTMSDataSvcRHRent/getRTMSDataSvcRHRent`, rent: true },
@@ -37,10 +40,11 @@ function compact(type, r) {
   if (type === 'rh') extra = num(r.landAr);
   if (type === 'sh') { area = num(r.totalFloorAr); extra = num(r.plottageAr); }
   if (type === 'land') { area = num(r.dealArea); extra = text(r.jimok); }
-  const name = text(r.aptNm) || text(r.mhouseNm) || text(r.offiNm) || text(r.houseType) || text(r.landUse) || null;
+  if (type === 'nrg' || type === 'indu') { area = num(r.buildingAr); extra = text(r.buildingType); }
+  const name = text(r.aptNm) || text(r.mhouseNm) || text(r.offiNm) || text(r.houseType) || text(r.buildingUse) || text(r.landUse) || null;
   return [
     won, area, num(r.floor), num(r.dealDay), text(r.jibun), name, num(r.buildYear),
-    text(r.cdealType) === 'O' || Boolean(text(r.cdealDay)), text(r.dealingGbn), text(r.umdNm), extra,
+    (text(r.cdealType) || text(r.cdealtype)) === 'O' || Boolean(text(r.cdealDay)), text(r.dealingGbn), text(r.umdNm), extra,
   ];
 }
 

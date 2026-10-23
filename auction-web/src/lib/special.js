@@ -104,7 +104,7 @@ function build(key, item, full, ctx) {
       sc.push({
         name: '통행이 필요한 인접 필지에 매도', value: v(0.7), months: 12, prob: nbProb(item),
         basis: '이 길 외에 진입로가 없는 필지·신축 예정지가 있으면 협상력 생김',
-        conditions: [nbText(item), '인접 필지가 이 도로로만 건축법상 접도 가능한지', '주변 신축·개발 움직임'],
+        conditions: [nbText(item), '인접 필지가 이 도로로만 건축법상 접도 가능한지', pmText(item)],
       });
       if (ctx.roadPlan) sc.push({ name: '도시계획도로 개설 보상', value: v(1), months: 48, prob: '보통', basis: '계획도로 집행 시 보상', conditions: ['도로 사업 집행계획·예산 여부', '실효 시점'] });
       return { floor: s.roadFloor, floorBasis: `인근 같은 구 토지 시세의 ${Math.round(s.roadFloor * 100)}%(사실상 사도 기준)`, scenarios: sc,
@@ -177,6 +177,14 @@ function nbText(item) {
   if (!nb.landlocked) return `✔ 확인됨: 주변 ${nb.checked}필지 중 맹지 없음 — 이 시나리오는 약함`;
   const names = nb.list.filter((x) => x.landlocked).slice(0, 5).map((x) => x.jibun).join(', ');
   return `✔ 확인됨: 주변 ${nb.checked}필지 중 맹지 ${nb.landlocked}필지 (${names}) — 이 땅 주인들이 매수 후보`;
+}
+
+// 같은 법정동 최근 건축 허가(건축HUB 인허가)
+function pmText(item) {
+  const pm = item.permits;
+  if (!pm) return '주변 신축·개발 움직임(자동 확인 전)';
+  if (pm.error) return `주변 건축 허가 자동 확인 실패: ${pm.error}`;
+  return pm.newBuild ? `✔ 확인됨: 같은 동 최근 ${pm.years}년 신축 허가 ${pm.newBuild}건(같은 번지대 ${pm.nearby}건) — 개발 수요 있음` : `✔ 확인됨: 같은 동 최근 ${pm.years}년 신축 허가 없음 — 개발 수요 약함`;
 }
 
 const PROB_PT = { 높음: 20, 보통: 13, '확인 필요': 9, 낮음: 5 };
