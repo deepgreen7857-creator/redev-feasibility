@@ -117,7 +117,8 @@ async function enrichLand(item) {
   let pnu = vworld.normalizePnu(item.pnu);
   if (pnu && pnu !== item.pnu) Object.assign(found, { pnu, pnuSource: `온비드 필지번호 보정(${item.pnu} → ${pnu})` });
   if (!pnu) {
-    const hit = await vworld.findPnu({ address: (item.detail && item.detail.addressFull) || item.address || item.title, key });
+    // 온비드 '주소' 칸은 읍면동까지만 있고 지번은 제목에 있다 → 상세 주소, 제목, 주소 순으로 찾는다
+    const hit = await vworld.findPnu({ address: (item.detail && item.detail.addressFull) || item.title || item.address, key });
     if (!hit) return {};
     pnu = hit.pnu;
     Object.assign(found, { pnu, pnuSource: `주소검색: ${hit.parcel}` });
