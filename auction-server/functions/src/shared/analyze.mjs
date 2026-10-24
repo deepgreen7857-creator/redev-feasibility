@@ -102,7 +102,40 @@ export function emdOf(item, label) {
 }
 
 // deals: 압축 거래 [가격, 면적, 층, 일, 지번, 이름, 건축년도, 해제, 거래유형, 읍면동, 추가]
-export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
+// 물건의 층: 제목·주소의 '제1층', '1층', '지층·지하' (모르면 null)
+export function floorOf(item) {
+  const t = `${item.title || ''} ${item.address || ''} ${item.detail?.addressFull || ''}`;
+  if (/지하|제?지층|비\d{2}호/.test(t)) return 0;
+  const m = t.match(/제?\s?(\d{1,2})\s?층/);
+  return m ? Number(m[1]) : null;
+}
+
+// 저층(1~2층) 보정: 같은 거래 묶음에 저층 거래가 3건 이상이면 저층 거래만, 아니면 시군구 전체의 '저층 ÷ 전체' ㎡당 비율을 곱한다.
+// 단지·동 중앙값은 중층 위주라 저층 물건을 그대로 쓰면 가치가 높게 나온다.
+function lowFloorAdjust(item, est, pool, allDeals) {
+  const f = floorOf(item);
+  if (!est || !est.value || f === null || f > 2 || !['apt', 'rh', 'offi'].includes(est.type)) return est;
+  const low = (arr) => arr.filter((d) => d[2] !== null && d[2] !== undefined && d[2] >= 1 && d[2] <= 2);
+  const lowHere = low(pool);
+  if (lowHere.length >= 3) {
+    const unit = median(lowHere.map((d) => d[0] / d[1]));
+    return { ...est, unit, value: Math.round(unit * est.area), floor: f, floorNote: `저층(1~2층) 거래 ${lowHere.length}건만`, basis: `${est.basis} · 저층(1~2층) 거래 ${lowHere.length}건만` };
+  }
+  const all = (allDeals || []).filter((d) => d[0] && d[1] && !d[7]);
+  const lowAll = low(all);
+  if (lowAll.length >= 5 && all.length >= 20) {
+    const ratio = Math.min(1, median(lowAll.map((d) => d[0] / d[1])) / median(all.map((d) => d[0] / d[1])));
+    return { ...est, unit: est.unit * ratio, value: Math.round(est.value * ratio), low: est.low ? Math.round(est.low * ratio) : est.low, high: est.high ? Math.round(est.high * ratio) : est.high, floor: f, floorNote: `저층 보정 ×${Math.round(ratio * 1000) / 10}%`, basis: `${est.basis} · 저층 보정 ×${Math.round(ratio * 1000) / 10}%(시군구 저층 ${lowAll.length}건 ÷ 전체 ${all.length}건)` };
+  }
+  return { ...est, floor: f, floorNote: '저층인데 저층 거래 부족 — 보정 못 함', basis: `${est.basis} · 저층 물건(보정 자료 부족)` };
+}
+
+export function marketEstimate(item, deals, opts = {}) {
+  const r = marketEstimateRaw(item, deals, opts);
+  return r.value ? lowFloorAdjust(item, r, r.samplesAll || r.samples || [], deals) : r;
+}
+
+function marketEstimateRaw(item, deals, { excludeDirect = true } = {}) {
   const type = tradeTypeOf(item);
   const area = type === 'land' ? item.landArea : item.buildingArea || item.landArea;
   if (!area || !deals || !deals.length) return { type, area, value: null, count: 0, basis: '시세 자료 없음' };
@@ -120,7 +153,7 @@ export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
     const pick = sameArea.length ? { arr: sameArea, grade: 'A', scope: `같은 단지(${sameArea[0][5]})·같은 평형` } : same.length >= 2 ? { arr: same, grade: 'B', scope: `같은 단지(${same[0][5]})·다른 평형 포함` } : null;
     if (pick) {
       const unit = median(pick.arr.map((d) => d[0] / d[1])); const r = q(pick.arr);
-      return { type, area, unit, value: Math.round(unit * area), low: Math.round(r.p25 * area), high: Math.round(r.p75 * area), count: pick.arr.length, grade: pick.grade, basis: `${pick.scope} 실거래 ${pick.arr.length}건 ㎡당 중앙값`, samples: pick.arr.slice(0, 12) };
+      return { type, area, unit, value: Math.round(unit * area), low: Math.round(r.p25 * area), high: Math.round(r.p75 * area), count: pick.arr.length, grade: pick.grade, basis: `${pick.scope} 실거래 ${pick.arr.length}건 ㎡당 중앙값`, samples: pick.arr.slice(0, 12), samplesAll: pick.arr };
     }
   }
   let jimokNote = '';
@@ -144,7 +177,7 @@ export function marketEstimate(item, deals, { excludeDirect = true } = {}) {
   return {
     type, area, unit, value: Math.round(unit * area), low: Math.round(r.p25 * area), high: Math.round(r.p75 * area), count: pool.length, grade: scope.startsWith('같은 동') ? 'C' : 'D',
     basis: `${scope}${jimokNote} 실거래 ${pool.length}건 ㎡당 중앙값 (해제${excludeDirect ? '·직거래' : ''} 제외)`,
-    samples: pool.slice(0, 12),
+    samples: pool.slice(0, 12), samplesAll: pool,
   };
 }
 

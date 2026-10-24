@@ -17,7 +17,7 @@ export default function ListPage({ mode }) {
   const [items, setItems] = useState(null);
   const [settings, setSettings] = useState(null);
   const [dealsMap, setDealsMap] = useState({});
-  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: 'verdict', corpOnly: false, showExcluded: false, onlyOpen: true });
+  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: 'verdict', corpOnly: false, under1: false, showExcluded: false, onlyOpen: true });
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -59,6 +59,8 @@ export default function ListPage({ mode }) {
       const ownOf = opp ? a.opportunity?.own : a.money?.own;
       if (f.maxOwn && (!ownOf || ownOf > Number(f.maxOwn) * 1e4)) return false;
       if (f.corpOnly && !['A', 'B'].includes(fitOf(it, a))) return false;
+      // 공시가격 1억 이하 주택(법인 취득세 중과 제외, 정비구역 밖) — 공시가격을 모르면 빼지 않고 최저가 1억 5천 이하만 남겨 '확인 필요'로 둔다
+      if (f.under1 && !under1(it, a)) return false;
       if (!done && f.onlyOpen && /(낙찰|취소|종결|매각)/.test(it.status || '') && !/진행/.test(it.status || '')) return false;
       if (f.q && !`${it.title} ${it.address} ${it.caseNo}`.includes(f.q)) return false;
       return true;
@@ -121,6 +123,7 @@ export default function ListPage({ mode }) {
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink/70">
           <label className="flex items-center gap-1.5 font-bold text-brand"><input type="checkbox" checked={f.corpOnly} onChange={set('corpOnly')} /> 법인 단타 적합만(A·B)</label>
+          <label className="flex items-center gap-1.5 font-bold text-brand" title="수도권 공시가격 1억 이하 주택은 법인도 취득세 중과(12%) 제외 — 정비구역 안은 예외 없음"><input type="checkbox" checked={f.under1} onChange={set('under1')} /> 공시가격 1억 이하 주택만</label>
           {!done && <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>}
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.showExcluded} onChange={set('showExcluded')} /> 관심 제외 물건도 보기</label>
           <span className="ml-auto flex gap-1.5">
@@ -231,6 +234,16 @@ export function notVilla(it) {
   if (it.buildingArea && it.buildingArea > 200) return '건물 200㎡ 초과';
   if (/(기타용도|복합건물|근린|상가|사무소|오피스|업무시설|숙박|공장|창고)/.test(`${text} ${it.usage || ''}`)) return '주거 외 용도';
   return null;
+}
+
+// 공시가격 1억 이하 주택: 아파트·빌라·단독·오피스텔(주거) 중 공시가격 1억 이하(정비구역 밖).
+// 공시가격을 아직 못 받은 물건은 최저가 1억 5천 이하일 때만 '확인 필요'로 남긴다.
+function under1(it, a) {
+  if (!['apt', 'rh', 'sh', 'offi'].includes(tradeTypeOf(it))) return false;
+  if (a.redev?.length || it.manual?.zone) return false;
+  const hp = it.housePrice?.matched ? it.housePrice.price : null;
+  if (hp !== null && hp !== undefined) return hp <= 1e8;
+  return (it.minBid || Infinity) <= 1.5e8;
 }
 
 // 판정이 '해결 안 됨'이어도 법인 적합도는 물건 성격으로 정해진다

@@ -50,3 +50,15 @@ test('건물면적이 없으면 건축물대장 전유면적으로 전세 시세
   const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: [], rentDeals: rent });
   assert.ok(a.jeonse && a.jeonse.value > 0);
 });
+
+import { marketEstimate, floorOf } from './analyze.js';
+test('저층 아파트: 같은 단지 저층 거래가 있으면 저층 거래만으로 시세', () => {
+  assert.equal(floorOf({ title: '○○아파트 제101동 제1층 제102호' }), 1);
+  assert.equal(floorOf({ title: '○○ 제지층 제비01호' }), 0);
+  const d = (price, floor) => [price, 59, floor, 1, '1', '한양', 1990, false, '중개거래', '선부동'];
+  const deals = [d(2e8, 10), d(2.1e8, 12), d(2e8, 8), d(2.05e8, 9), d(1.6e8, 1), d(1.7e8, 2), d(1.65e8, 1)];
+  const it = { usage: '아파트', title: '선부동 한양아파트 제1층 제101호', emd: '선부동', buildingArea: 59 };
+  const m = marketEstimate(it, deals);
+  assert.ok(m.value < 1.8e8 && m.value > 1.5e8, String(m.value));
+  assert.ok(/저층/.test(m.basis));
+});
