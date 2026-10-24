@@ -359,13 +359,14 @@ export default function DetailPage({ admin }) {
         {a.market.value ? (
           <>
             <Row k="비교 면적" v={`${a.market.area}㎡`} />
-            <Row k="㎡당 중앙값" v={won(a.market.unit)} />
+            <Row k={a.market.compWhy ? "㎡당 시세(닮은 거래 가중)" : "㎡당 중앙값"} v={won(a.market.unit)} />
+            {a.market.low && a.market.high && <Row k="닮은 거래끼리 범위" v={`${won(a.market.low)} ~ ${won(a.market.high)}${a.market.wide ? " — 폭 큼, 개별 확인" : ""}`} />}
             <Row k="추정 시세" v={won(a.market.value)} strong />
             <p className="mt-2 text-xs text-ink/50">{a.market.basis}</p>
             <div className="mt-3 max-h-56 overflow-auto text-xs">
               <table className="w-full num">
-                <thead className="text-ink/50"><tr><th className="text-left">계약</th><th className="text-left">이름/동</th><th className="text-right">면적</th><th className="text-right">가격</th></tr></thead>
-                <tbody>{a.market.samples.map((x, i) => <tr key={i} className="border-t border-line/50"><td>{String(x[11] || '').slice(2, 4)}.{String(x[11] || '').slice(4)}.{x[3]}</td><td>{x[5]} {x[9]}</td><td className="text-right">{x[1]}</td><td className="text-right">{eok(x[0])}</td></tr>)}</tbody>
+                <thead className="text-ink/50"><tr><th className="text-left">계약</th><th className="text-left">이름/동</th><th className="text-right">면적</th><th className="text-right">층</th><th className="text-right">연식</th><th className="text-right">가격</th><th className="text-left">이 물건과 다른 점</th></tr></thead>
+                <tbody>{a.market.samples.map((x, i) => <tr key={i} className="border-t border-line/50"><td>{String(x[11] || '').slice(2, 4)}.{String(x[11] || '').slice(4)}.{x[3]}</td><td>{x[5]} {x[9]}</td><td className="text-right">{x[1]}</td><td className="text-right">{x[2] ?? ''}</td><td className="text-right">{x[6] ?? ''}</td><td className="text-right">{eok(x[0])}</td><td className="pl-2 text-ink/60">{a.market.compWhy?.[i] || (a.market.compWhy ? '거의 같음' : '')}</td></tr>)}</tbody>
               </table>
             </div>
           </>

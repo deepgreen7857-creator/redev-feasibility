@@ -109,29 +109,68 @@ export function floorOf(item) {
   return m ? Number(m[1]) : null;
 }
 
-// 저층(1~2층) 보정: 같은 거래 묶음에 저층 거래가 3건 이상이면 저층 거래만, 아니면 시군구 전체의 '저층 ÷ 전체' ㎡당 비율을 곱한다.
-// 단지·동 중앙값은 중층 위주라 저층 물건을 그대로 쓰면 가치가 높게 나온다.
-function lowFloorAdjust(item, est, pool, allDeals) {
-  const f = floorOf(item);
-  if (!est || !est.value || f === null || f > 2 || !['apt', 'rh', 'offi'].includes(est.type)) return est;
-  const low = (arr) => arr.filter((d) => d[2] !== null && d[2] !== undefined && d[2] >= 1 && d[2] <= 2);
-  const lowHere = low(pool);
-  if (lowHere.length >= 3) {
-    const unit = median(lowHere.map((d) => d[0] / d[1]));
-    return { ...est, unit, value: Math.round(unit * est.area), floor: f, floorNote: `저층(1~2층) 거래 ${lowHere.length}건만`, basis: `${est.basis} · 저층(1~2층) 거래 ${lowHere.length}건만` };
-  }
-  const all = (allDeals || []).filter((d) => d[0] && d[1] && !d[7]);
-  const lowAll = low(all);
-  if (lowAll.length >= 5 && all.length >= 20) {
-    const ratio = Math.min(1, median(lowAll.map((d) => d[0] / d[1])) / median(all.map((d) => d[0] / d[1])));
-    return { ...est, unit: est.unit * ratio, value: Math.round(est.value * ratio), low: est.low ? Math.round(est.low * ratio) : est.low, high: est.high ? Math.round(est.high * ratio) : est.high, floor: f, floorNote: `저층 보정 ×${Math.round(ratio * 1000) / 10}%`, basis: `${est.basis} · 저층 보정 ×${Math.round(ratio * 1000) / 10}%(시군구 저층 ${lowAll.length}건 ÷ 전체 ${all.length}건)` };
-  }
-  return { ...est, floor: f, floorNote: '저층인데 저층 거래 부족 — 보정 못 함', basis: `${est.basis} · 저층 물건(보정 자료 부족)` };
+// ── 비교 거래 방식 시세 ────────────────────────────────────────────
+// 중앙값 하나로 찍지 않는다. 거래 하나하나를 이 물건과 얼마나 닮았는지(같은 단지·면적·층·연식·거래 시점)로 점수를 매겨
+// 가장 닮은 거래들로 시세를 잡고, ① 시점 차이는 그 묶음의 월별 흐름으로 지금 값으로 맞추고 ② 닮은 거래끼리의 폭을 함께 보여 준다.
+const monthsAgoOf = (ym) => { const s = String(ym || ''); if (!/^\d{6}$/.test(s)) return 6; const n = new Date(); return (n.getFullYear() - Number(s.slice(0, 4))) * 12 + (n.getMonth() + 1 - Number(s.slice(4))); };
+function itemBuildYear(item) {
+  if (item.buildYear) return Number(item.buildYear);
+  const u = item.ledger?.useApr; return u ? Number(String(u).slice(0, 4)) : null;
+}
+// 월별 흐름: ㎡당 가격(로그)을 경과 개월로 회귀한 기울기(월 ±1.5% 안으로 자름)
+function monthlyTrend(deals) {
+  const pts = deals.map((d) => [monthsAgoOf(d[11]), Math.log(d[0] / d[1])]).filter(([m, y]) => Number.isFinite(y));
+  if (pts.length < 10) return 0;
+  const mx = pts.reduce((s, p) => s + p[0], 0) / pts.length; const my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  const sxx = pts.reduce((s, p) => s + (p[0] - mx) ** 2, 0); if (sxx < 4) return 0;
+  const b = pts.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / sxx; // 경과 개월 1 늘 때 로그가격 변화(값이 음수면 오르는 중)
+  return Math.max(-0.015, Math.min(0.015, b));
+}
+const wq = (arr, r) => { // 가중 분위수 [[값, 가중치]]
+  const a = [...arr].sort((x, y) => x[0] - y[0]); const tot = a.reduce((s, x) => s + x[1], 0); let c = 0;
+  for (const [v, w] of a) { c += w; if (c >= tot * r) return v; } return a.length ? a[a.length - 1][0] : null;
+};
+export function comparableValue(item, pool, { area, sameName } = {}) {
+  const f = floorOf(item); const by = itemBuildYear(item);
+  const b = monthlyTrend(pool);
+  const scored = pool.map((d) => {
+    const ago = monthsAgoOf(d[11]);
+    const adjUnit = (d[0] / d[1]) * Math.exp(-b * ago); // 지금 시점으로 맞춘 ㎡당 가격
+    const parts = [];
+    let dist = Math.abs(Math.log(d[1] / area)) / 0.1; // 면적 10% 차이 = 1점
+    if (sameName && !sameName(d)) { dist += 1.5; parts.push('다른 단지'); }
+    if (f !== null && d[2] !== null && d[2] !== undefined) {
+      const lowI = f <= 2; const lowD = d[2] <= 2;
+      if (lowI !== lowD) { dist += 1.2; parts.push(lowD ? '저층' : '중·고층'); }
+      dist += Math.min(1, Math.abs(d[2] - f) / 15);
+    }
+    if (by && d[6]) { const gap = Math.abs(Number(d[6]) - by); dist += gap / 8; if (gap >= 8) parts.push(`연식 ${gap}년 차`); }
+    dist += ago / 12; // 1년 전 거래 = 1점
+    return { d, adjUnit, dist, w: 1 / (1 + dist), why: parts.join('·') };
+  }).sort((x, y) => x.dist - y.dist);
+  const k = Math.min(scored.length, Math.max(5, Math.min(10, Math.round(scored.length / 3))));
+  const top = scored.slice(0, k);
+  const pairs = top.map((x) => [x.adjUnit, x.w]);
+  const unit = wq(pairs, 0.5); const lowU = wq(pairs, 0.25); const highU = wq(pairs, 0.75);
+  const allUnits = scored.map((x) => x.adjUnit).sort((x, y) => x - y);
+  const pick = (r) => allUnits[Math.min(allUnits.length - 1, Math.round((allUnits.length - 1) * r))];
+  const spread = unit ? (highU - lowU) / unit : null; // 닮은 거래끼리의 폭(25~75%)
+  const wideAll = unit ? (pick(0.9) - pick(0.1)) / unit : null; // 전체 거래 폭(10~90%)
+  return {
+    unit, value: Math.round(unit * area), low: Math.round(lowU * area), high: Math.round(highU * area),
+    comps: top.length, spread, wideAll, trend: b,
+    samples: top.map((x) => x.d), compWhy: top.map((x) => x.why),
+    note: `닮은 거래 ${top.length}건(전체 ${scored.length}건 중) 가중 중앙값${Math.abs(b) >= 0.002 ? ` · 시점 보정 월 ${b < 0 ? '+' : '−'}${Math.round(Math.abs(b) * 1000) / 10}%` : ''} · 닮은 거래끼리 폭 ±${Math.round((spread || 0) * 50)}%${wideAll ? `(전체 폭 ±${Math.round(wideAll * 50)}%)` : ''}`,
+  };
 }
 
 export function marketEstimate(item, deals, opts = {}) {
   const r = marketEstimateRaw(item, deals, opts);
-  return r.value ? lowFloorAdjust(item, r, r.samplesAll || r.samples || [], deals) : r;
+  if (!r.value || r.type === 'land' || !(r.samplesAll && r.samplesAll.length >= 3)) return r;
+  const c = comparableValue(item, r.samplesAll, { area: r.area, sameName: r.sameName });
+  const wide = c.spread !== null && c.spread > 0.3; // 닮은 거래끼리도 ±15% 넘게 갈리면 시세를 믿기 어렵다
+  return { ...r, unit: c.unit, value: c.value, low: c.low, high: c.high, samples: c.samples, compWhy: c.compWhy, spread: c.spread, wideAll: c.wideAll, trend: c.trend,
+    wide, basis: `${r.scopeLabel} · ${c.note}${wide ? ' — 닮은 거래끼리도 값이 크게 갈림(개별 확인 필요)' : ''}` };
 }
 
 function marketEstimateRaw(item, deals, { excludeDirect = true } = {}) {
@@ -152,7 +191,7 @@ function marketEstimateRaw(item, deals, { excludeDirect = true } = {}) {
     const pick = sameArea.length ? { arr: sameArea, grade: 'A', scope: `같은 단지(${sameArea[0][5]})·같은 평형` } : same.length >= 2 ? { arr: same, grade: 'B', scope: `같은 단지(${same[0][5]})·다른 평형 포함` } : null;
     if (pick) {
       const unit = median(pick.arr.map((d) => d[0] / d[1])); const r = q(pick.arr);
-      return { type, area, unit, value: Math.round(unit * area), low: Math.round(r.p25 * area), high: Math.round(r.p75 * area), count: pick.arr.length, grade: pick.grade, basis: `${pick.scope} 실거래 ${pick.arr.length}건 ㎡당 중앙값`, samples: pick.arr.slice(0, 12), samplesAll: pick.arr };
+      return { type, area, unit, value: Math.round(unit * area), low: Math.round(r.p25 * area), high: Math.round(r.p75 * area), count: pick.arr.length, grade: pick.grade, basis: `${pick.scope} 실거래 ${pick.arr.length}건 ㎡당 중앙값`, scopeLabel: `${pick.scope} 실거래 ${pick.arr.length}건`, samples: pick.arr.slice(0, 12), samplesAll: pick.arr };
     }
   }
   let jimokNote = '';
@@ -176,6 +215,7 @@ function marketEstimateRaw(item, deals, { excludeDirect = true } = {}) {
   return {
     type, area, unit, value: Math.round(unit * area), low: Math.round(r.p25 * area), high: Math.round(r.p75 * area), count: pool.length, grade: scope.startsWith('같은 동') ? 'C' : 'D',
     basis: `${scope}${jimokNote} 실거래 ${pool.length}건 ㎡당 중앙값 (해제${excludeDirect ? '·직거래' : ''} 제외)`,
+    scopeLabel: `${scope}${jimokNote} 실거래 ${pool.length}건(해제${excludeDirect ? '·직거래' : ''} 제외)`,
     samples: pool.slice(0, 12), samplesAll: pool,
   };
 }

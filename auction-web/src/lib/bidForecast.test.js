@@ -60,5 +60,17 @@ test('저층 아파트: 같은 단지 저층 거래가 있으면 저층 거래�
   const it = { usage: '아파트', title: '선부동 한양아파트 제1층 제101호', emd: '선부동', buildingArea: 59 };
   const m = marketEstimate(it, deals);
   assert.ok(m.value < 1.8e8 && m.value > 1.5e8, String(m.value));
-  assert.ok(/저층/.test(m.basis));
+  assert.ok(/닮은 거래/.test(m.basis));
+});
+
+test('거래 폭이 커도 면적·층·연식·시점이 닮은 거래 위주로 시세', () => {
+  // 같은 동 거래: 새 대형(비쌈)과 오래된 소형(쌈)이 섞여 중앙값은 의미 없음 → 물건(1995년·40㎡·3층)과 닮은 거래로
+  const now = new Date(); const ym = (k) => { const d = new Date(now.getFullYear(), now.getMonth() - k, 1); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`; };
+  const deals = [];
+  for (let i = 0; i < 8; i++) deals.push([4e8 + i * 1e7, 84, 10 + i, 1, '1', '새아파트', 2018, false, '중개거래', '부평동', null, ym(i)]);
+  for (let i = 0; i < 6; i++) deals.push([1.2e8 + i * 2e6, 40, 2 + i, 1, '1', '오래된아파트', 1995, false, '중개거래', '부평동', null, ym(i)]);
+  const it = { usage: '아파트', title: '부평동 어느아파트 제3층 제301호', emd: '부평동', buildingArea: 40, buildYear: 1995 };
+  const m = marketEstimate(it, deals.filter((d) => d[1] >= 32 && d[1] <= 48).concat(deals.filter((d) => d[1] === 84)));
+  // 40㎡ ±20%만 남는 기존 단계 때문에 대형은 빠지고, 남은 소형끼리 비교
+  assert.ok(m.value > 1.1e8 && m.value < 1.4e8, String(m.value));
 });
