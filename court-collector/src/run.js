@@ -312,63 +312,79 @@ async function main() {
   try {
     // 지난번에 못 올린 첨부부터 보낸다(물건은 이미 서버에 있음)
     if (files.pending.length) { log(`밀린 첨부 ${files.pending.length}개 올리기`); await files.upload(); }
-    // 지난번에 멈춘 법원부터 이어서
-    const start = Math.max(0, cfg.courts.indexOf(progress.court || ''));
-    const courts = [...cfg.courts.slice(start), ...cfg.courts.slice(0, start)];
-    outer: for (let ci = 0; ci < courts.length; ci++) {
-      const court = courts[ci];
-      progress.court = court; saveProgress();
-      log(`법원: ${court}`);
-      for await (const row of listCourt(page, court, pace)) {
-        // 한동안 봤으면 끊고 쉰다: 올릴 것 올리고, 브라우저 닫고, 쉬었다가 같은 법원 처음부터 다시(이미 본 물건은 상세를 안 엶)
-        if (!DRY && pace.sessionOver()) {
-          await flush(); await browser.close(); browser = null;
-          await pace.restBetweenSessions();
-          if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
-          await open(); ci--; continue outer;
-        }
-        if (!row) continue;
-        stats.listed++;
-        const key = `${row.court}_${row.caseNo}_${row.itemNo || 1}`;
-        const prev = seen[key];
-        const stale = !prev || prev.v !== DETAIL_V || prev.minBid !== row.minBid || prev.status !== row.status || Date.now() - (prev.at || 0) > cfg.refreshDetailAfterDays * 86400e3;
-        let detail = null;
-        if (stale) {
-          if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
-          await pace.beforePage();
-          await row.open();
-          detail = await readDetail(page);
-          // 상세가 이 물건 것인지 확인: 사건번호가 다르면 상세를 버리고 목록 정보만 올린다(다음에 다시 읽음)
-          const cn = (x) => String(x || '').replace(/\s/g, '');
-          if (detail && detail.caseText && !cn(detail.caseText).includes(cn(row.caseNo))) {
-            log(`상세 어긋남: 목록 ${row.caseNo} ↔ 상세 ${detail.caseText} — 상세 버림`);
-            detail = null;
+    // 법원 사이트가 잠깐 느려 화면이 안 뜨는 오류(waitFor… Timeout 등)로 회차를 통째로 접지 않는다:
+    //  5분 쉬고 브라우저를 새로 열어 같은 법원부터 이어감(이미 읽은 물건은 상세를 안 엶). 한 회차에 3번까지.
+    const collect = async () => {
+      // 지난번에 멈춘 법원부터 이어서
+      const start = Math.max(0, cfg.courts.indexOf(progress.court || ''));
+      const courts = [...cfg.courts.slice(start), ...cfg.courts.slice(0, start)];
+      outer: for (let ci = 0; ci < courts.length; ci++) {
+        const court = courts[ci];
+        progress.court = court; saveProgress();
+        log(`법원: ${court}`);
+        for await (const row of listCourt(page, court, pace)) {
+          // 한동안 봤으면 끊고 쉰다: 올릴 것 올리고, 브라우저 닫고, 쉬었다가 같은 법원 처음부터 다시(이미 본 물건은 상세를 안 엶)
+          if (!DRY && pace.sessionOver()) {
+            await flush(); await browser.close(); browser = null;
+            await pace.restBetweenSessions();
+            if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
+            await open(); ci--; continue outer;
           }
-          // 매각물건명세서(새 창 PDF) — 말소기준권리·임차인·인수 권리·지상권·비고를 여기서만 알 수 있다
-          if (detail) {
+          if (!row) continue;
+          stats.listed++;
+          const key = `${row.court}_${row.caseNo}_${row.itemNo || 1}`;
+          const prev = seen[key];
+          const stale = !prev || prev.v !== DETAIL_V || prev.minBid !== row.minBid || prev.status !== row.status || Date.now() - (prev.at || 0) > cfg.refreshDetailAfterDays * 86400e3;
+          let detail = null;
+          if (stale) {
+            if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
             await pace.beforePage();
-            const spec = await readSpecDoc(page, { log });
-            detail.spec = spec;
-            if (spec.read) {
-              detail.baseRightDate = spec.baseRightDate || detail.baseRightDate;
-              detail.leases = spec.leases || [];
-              detail.survivingRights = spec.survivingRights;
-              if (spec.superficies) detail.superficies = spec.superficies;
-              stats.specRead = (stats.specRead || 0) + 1;
-            } else { stats.specMissed = (stats.specMissed || 0) + 1; log(`명세서 못 읽음 ${row.caseNo}: ${spec.why}`); }
-            // 첨부 원본: 사진 + 감정평가서·현황조사서(팝업) — 사람이 버튼을 눌러 보는 것과 같은 요청, 화면 수에 넣어 셈
-            await keepAttachments(page, pace, row, detail);
+            await row.open();
+            detail = await readDetail(page);
+            // 상세가 이 물건 것인지 확인: 사건번호가 다르면 상세를 버리고 목록 정보만 올린다(다음에 다시 읽음)
+            const cn = (x) => String(x || '').replace(/\s/g, '');
+            if (detail && detail.caseText && !cn(detail.caseText).includes(cn(row.caseNo))) {
+              log(`상세 어긋남: 목록 ${row.caseNo} ↔ 상세 ${detail.caseText} — 상세 버림`);
+              detail = null;
+            }
+            // 매각물건명세서(새 창 PDF) — 말소기준권리·임차인·인수 권리·지상권·비고를 여기서만 알 수 있다
+            if (detail) {
+              await pace.beforePage();
+              const spec = await readSpecDoc(page, { log });
+              detail.spec = spec;
+              if (spec.read) {
+                detail.baseRightDate = spec.baseRightDate || detail.baseRightDate;
+                detail.leases = spec.leases || [];
+                detail.survivingRights = spec.survivingRights;
+                if (spec.superficies) detail.superficies = spec.superficies;
+                stats.specRead = (stats.specRead || 0) + 1;
+              } else { stats.specMissed = (stats.specMissed || 0) + 1; log(`명세서 못 읽음 ${row.caseNo}: ${spec.why}`); }
+              // 첨부 원본: 사진 + 감정평가서·현황조사서(팝업) — 사람이 버튼을 눌러 보는 것과 같은 요청, 화면 수에 넣어 셈
+              await keepAttachments(page, pace, row, detail);
+            }
+            await backToList(page);
+            stats.detailed++;
+            if (detail) { seen[key] = { minBid: row.minBid, status: row.status, at: Date.now(), v: DETAIL_V }; saveSeen(); }
           }
-          await backToList(page);
-          stats.detailed++;
-          if (detail) { seen[key] = { minBid: row.minBid, status: row.status, at: Date.now(), v: DETAIL_V }; saveSeen(); }
+          buffer.push(toItem(row, detail));
+          if (buffer.length >= flushAt) await flush();
+          if (stats.detailed >= LIMIT) { stats.stoppedBy = 'test-limit'; break outer; }
+          if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
         }
-        buffer.push(toItem(row, detail));
-        if (buffer.length >= flushAt) await flush();
-        if (stats.detailed >= LIMIT) { stats.stoppedBy = 'test-limit'; break outer; }
-        if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
+        progress.court = cfg.courts[(cfg.courts.indexOf(court) + 1) % cfg.courts.length]; saveProgress();
       }
-      progress.court = cfg.courts[(cfg.courts.indexOf(court) + 1) % cfg.courts.length]; saveProgress();
+    };
+    for (let retries = 0; ; retries++) {
+      try { await collect(); break; } catch (e) {
+        if (DRY || e instanceof Blocked || e instanceof UploadDown || e.retry === false || retries >= 3) throw e;
+        log(`화면 오류(${retries + 1}/3): ${e.message.split('\n')[0]} — 5분 쉬고 브라우저를 새로 열어 이어감`);
+        try { await flush(); } catch (e2) { log(`업로드 오류: ${e2.message}`); }
+        if (browser) await browser.close().catch(() => {});
+        browser = null;
+        await sleep(300e3);
+        if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break; }
+        await open();
+      }
     }
     await flush();
   } catch (e) {

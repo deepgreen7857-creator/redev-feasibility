@@ -38,7 +38,11 @@ const env = Object.fromEntries((fs.existsSync(path.join(ROOT, '.env')) ? fs.read
 
 const STATE = path.join(ROOT, 'state'); const LOGS = path.join(ROOT, 'logs');
 const PROFILE = path.join(STATE, 'myauction-profile');
-const PDF_DIR = env.REGISTRY_DIR || cfg.dir || path.join(STATE, 'registry');
+// PDF 원본 보관: D:\법원경매원본\법원\연도\사건번호\물건번호\ (C드라이브는 작음 — 이 폴더는 매일 새벽 E:로 백업됨)
+//  그 폴더가 없는 PC(시험 등)에서는 state/registry 에 둔다
+const ARCHIVE = env.ORIGINALS_DIR || cfg.archiveDir || 'D:\\법원경매원본';
+const USE_ARCHIVE = fs.existsSync(ARCHIVE);
+const PDF_DIR = env.REGISTRY_DIR || cfg.dir || (USE_ARCHIVE ? ARCHIVE : path.join(STATE, 'registry'));
 fs.mkdirSync(STATE, { recursive: true }); fs.mkdirSync(LOGS, { recursive: true }); fs.mkdirSync(PDF_DIR, { recursive: true });
 const kstNow = () => new Date(Date.now() + 9 * 3600e3);
 const kstDay = () => kstNow().toISOString().slice(0, 10);
@@ -160,6 +164,14 @@ async function fetchPdf(page, view, type) {
   return buf;
 }
 
+function pdfPathOf(item, kind, viewedAt, type) {
+  const day = String(viewedAt || '').replace(/\D/g, '').slice(0, 8) || kstDay().replace(/-/g, '');
+  if (!USE_ARCHIVE || env.REGISTRY_DIR || cfg.dir) return path.join(PDF_DIR, `${fileSafe(item.id)}_${fileSafe(kind)}_${fileSafe(type)}.pdf`);
+  const caseNo = String(item.caseNo).replace(/\s/g, '');
+  const dir = path.join(ARCHIVE, String(item.court).trim(), caseNo.slice(0, 4), caseNo, String(item.itemNo || 1));
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, `등기부_${fileSafe(kind)}_마이옥션열람_${day}.pdf`);
+}
 const kindOf = (label, parsed) => parsed.kind || (label.match(/\((건물|토지|집합건물)\)/) || [])[1] || label;
 const fileSafe = (s) => String(s).replace(/[\\/:*?"<>|\s]/g, '');
 
@@ -176,13 +188,14 @@ async function processItem(page, item) {
     const pages = await pdfRows(buf);
     const parsed = parseRegistry(pages);
     const kind = kindOf(l.label, parsed);
-    const file = path.join(PDF_DIR, `${fileSafe(item.id)}_${fileSafe(kind)}_${fileSafe(l.type)}.pdf`);
+    let file = pdfPathOf(item, kind, parsed.viewedAt, l.type);
+    if (fs.existsSync(file) && fs.statSync(file).size !== buf.length) file = file.replace(/\.pdf$/, `_${fileSafe(l.type)}.pdf`); // 같은 종류가 둘이면 덮어쓰지 않음
     fs.writeFileSync(file, buf);
     docs.push({
       listingId: item.id, kind, label: l.label, source: 'myauction', sourceView: found.view, sourceType: l.type,
       title: parsed.title, uniqueNo: parsed.uniqueNo, address: parsed.address, viewedAt: parsed.viewedAt,
       sections: parsed.sections, summary: parsed.summary, flags: parsed.flags,
-      text: plainText(pages).slice(0, 200000), pdf: { bytes: buf.length, file: path.basename(file) }, fetchedAt: new Date().toISOString(),
+      text: plainText(pages).slice(0, 200000), pdf: { bytes: buf.length, file: path.relative(PDF_DIR, file) }, fetchedAt: new Date().toISOString(),
     });
   }
   return { docs, view: found.view };
