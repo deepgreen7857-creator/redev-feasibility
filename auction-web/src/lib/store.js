@@ -235,3 +235,24 @@ export async function getRegistry(listingId) {
   const snap = await getDocs(query(collection(f.db, 'registry'), where('listingId', '==', listingId)));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
+
+// 미니PC 수집기 상태(휴대폰으로 확인용): 법원경매 수집기가 마지막으로 보낸 때, 등기부 수집기 오늘 저장 수·마지막 저장·마지막 회차 결과
+export async function getMiniPcStatus() {
+  const f = await firebase();
+  if (!f) return { demo: true, court: {}, registry: {}, regToday: 0, regLast: null };
+  const { collection, query, where, orderBy, limit, getDocs, getDoc, doc, getCountFromServer } = f.fs;
+  const kst = new Date(Date.now() + 9 * 3600e3);
+  const since = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - 9 * 3600e3).toISOString(); // 오늘 0시(한국)
+  const regQ = query(collection(f.db, 'listings'), where('registryAt', '>=', since));
+  const [court, registry, cnt, last] = await Promise.all([
+    getDoc(doc(f.db, 'state', 'court')), getDoc(doc(f.db, 'state', 'registry')),
+    getCountFromServer(regQ).catch(() => null),
+    getDocs(query(collection(f.db, 'listings'), where('registryAt', '>=', since), orderBy('registryAt', 'desc'), limit(1))).catch(() => null),
+  ]);
+  const l = last?.docs[0]?.data();
+  return {
+    court: court.data() || {}, registry: registry.data() || {},
+    regToday: cnt ? cnt.data().count : null,
+    regLast: l ? { at: l.registryAt, caseNo: l.caseNo, court: l.court } : null,
+  };
+}

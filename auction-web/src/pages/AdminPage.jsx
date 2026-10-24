@@ -1,5 +1,6 @@
 import { listRuleSuggestions } from '../lib/store.js';
 import { useEffect, useState } from 'react';
+import MiniPcStatus from '../components/MiniPcStatus.jsx';
 import { getSettings, saveSettings, getStatus, callFn, saveListing, signIn, isAdmin, DEMO } from '../lib/store.js';
 import { DEFAULT_COURTS, SIDO } from '../data/defaults.js';
 import { Card, Field, Row, Badge } from '../components/ui.jsx';
@@ -18,6 +19,7 @@ export default function AdminPage({ user }) {
   }
   return (
     <div className="space-y-4">
+      <MiniPcStatus />
       <Status />
       <RuleSuggestions />
       <ZoneList />
