@@ -85,10 +85,12 @@ export function renovation(item, deals, settings, market) {
     const cap = median(newer.map((d) => d[0] / d[1]));
     if (cap < unit) { unit = cap; basis += ` — 10년 이내 신축 ${newer.length}건 중앙값으로 상한`; }
   }
-  const after = Math.round(unit * area);
+  let after = Math.round(unit * area);
+  // 같은 단지·닮은 거래의 '수리된 상태' 가격대(위쪽 20%)가 있으면 그걸 수리 후 가격으로(동 전체 상위 25%보다 이 집에 가까움)
+  if (market.top && market.compWhy) { after = Math.min(after, market.top); basis = `닮은 거래 위쪽 20%(수리된 집 가격대) — ${basis}`; }
   const perPyeong = settings?.renoPerPyeong ?? 1200000;
   const cost = Math.round((area / 3.3058) * perPyeong);
-  const uplift = after - market.value;
+  const uplift = after - (market.basic || market.value);
   return { after, cost, uplift, months: settings?.renoMonths ?? 5, basis, perPyeong, area, worth: uplift > cost * 1.3 };
 }
 
@@ -152,12 +154,13 @@ export function comparableValue(item, pool, { area, sameName } = {}) {
   const top = scored.slice(0, k);
   const pairs = top.map((x) => [x.adjUnit, x.w]);
   const unit = wq(pairs, 0.5); const lowU = wq(pairs, 0.25); const highU = wq(pairs, 0.75);
+  const topU = wq(pairs, 0.8); // 수리된 집·로열층이 몰리는 위쪽
   const allUnits = scored.map((x) => x.adjUnit).sort((x, y) => x - y);
   const pick = (r) => allUnits[Math.min(allUnits.length - 1, Math.round((allUnits.length - 1) * r))];
   const spread = unit ? (highU - lowU) / unit : null; // 닮은 거래끼리의 폭(25~75%)
   const wideAll = unit ? (pick(0.9) - pick(0.1)) / unit : null; // 전체 거래 폭(10~90%)
   return {
-    unit, value: Math.round(unit * area), low: Math.round(lowU * area), high: Math.round(highU * area),
+    unit, value: Math.round(unit * area), low: Math.round(lowU * area), high: Math.round(highU * area), top: Math.round(topU * area),
     comps: top.length, spread, wideAll, trend: b,
     samples: top.map((x) => x.d), compWhy: top.map((x) => x.why),
     note: `닮은 거래 ${top.length}건(전체 ${scored.length}건 중) 가중 중앙값${Math.abs(b) >= 0.002 ? ` · 시점 보정 월 ${b < 0 ? '+' : '−'}${Math.round(Math.abs(b) * 1000) / 10}%` : ''} · 닮은 거래끼리 폭 ±${Math.round((spread || 0) * 50)}%${wideAll ? `(전체 폭 ±${Math.round(wideAll * 50)}%)` : ''}`,
@@ -169,7 +172,9 @@ export function marketEstimate(item, deals, opts = {}) {
   if (!r.value || r.type === 'land' || !(r.samplesAll && r.samplesAll.length >= 3)) return r;
   const c = comparableValue(item, r.samplesAll, { area: r.area, sameName: r.sameName });
   const wide = c.spread !== null && c.spread > 0.3; // 닮은 거래끼리도 ±15% 넘게 갈리면 시세를 믿기 어렵다
-  return { ...r, unit: c.unit, value: c.value, low: c.low, high: c.high, samples: c.samples, compWhy: c.compWhy, spread: c.spread, wideAll: c.wideAll, trend: c.trend,
+  // 실거래에는 그 집의 상태(수리·노후·향·급매 사정)가 안 적혀 있다. 시점·면적·층·연식을 맞춘 뒤에도 남는 차이는 대부분 '집 상태' 차이로 보고
+  // 닮은 거래의 아래쪽(25%)을 '기본 상태' 가격, 위쪽(80%)을 '수리된 상태' 가격으로 읽는다.
+  return { ...r, basic: c.low, top: c.top, unit: c.unit, value: c.value, low: c.low, high: c.high, samples: c.samples, compWhy: c.compWhy, spread: c.spread, wideAll: c.wideAll, trend: c.trend,
     wide, basis: `${r.scopeLabel} · ${c.note}${wide ? ' — 닮은 거래끼리도 값이 크게 갈림(개별 확인 필요)' : ''}` };
 }
 
@@ -422,6 +427,11 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   const shareUnknown = sh.share && !sh.ratio && !cashType && !rightType;
   let value = market.value;
   let valueBasis = market.basis;
+  // 경매 물건은 내부를 못 보고 사니 '기본 상태' 가격으로 판단한다(올수리하면 '수리된 상태' 가격 — 올수리 계산에서 따로 봄)
+  if (market.basic && ['apt', 'rh', 'sh', 'offi'].includes(market.type) && market.basic < market.value) {
+    value = market.basic;
+    valueBasis = `${market.basis} → 내부 상태를 모르는 경매 물건이라 '기본 상태' 가격(닮은 거래 아래쪽 25%) ${Math.round(market.basic / 1e4).toLocaleString('ko-KR')}만으로 판단`;
+  }
   let fromAppraisal = false;
   if (cashType) {
     value = Math.round((item.appraisal || 0) * (settings?.settlementRatio ?? 0.9));

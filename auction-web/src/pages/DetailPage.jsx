@@ -360,7 +360,9 @@ export default function DetailPage({ admin }) {
           <>
             <Row k="비교 면적" v={`${a.market.area}㎡`} />
             <Row k={a.market.compWhy ? "㎡당 시세(닮은 거래 가중)" : "㎡당 중앙값"} v={won(a.market.unit)} />
-            {a.market.low && a.market.high && <Row k="닮은 거래끼리 범위" v={`${won(a.market.low)} ~ ${won(a.market.high)}${a.market.wide ? " — 폭 큼, 개별 확인" : ""}`} />}
+            {a.market.basic && <Row k="기본 상태 가격(닮은 거래 아래쪽)" v={won(a.market.basic)} strong />}
+            {a.market.top && <Row k="수리된 상태 가격(닮은 거래 위쪽)" v={`${won(a.market.top)}${a.market.wide ? " — 폭 큼, 개별 확인" : ""}`} />}
+            {a.market.basic && <p className="text-[11px] text-ink/50">실거래에는 그 집의 상태(수리·노후·급매 사정)가 안 적혀 있습니다. 시점·면적·층·연식을 맞춘 뒤에도 남는 차이를 집 상태 차이로 보고, 내부를 못 보는 경매 물건은 기본 상태 가격으로 판단합니다.</p>}
             <Row k="추정 시세" v={won(a.market.value)} strong />
             <p className="mt-2 text-xs text-ink/50">{a.market.basis}</p>
             <div className="mt-3 max-h-56 overflow-auto text-xs">
