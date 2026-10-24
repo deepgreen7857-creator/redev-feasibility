@@ -22,5 +22,9 @@ service cloud.firestore {
     match /ruleSuggestions/{id} { allow read: if isAdmin(); allow write: if isAdmin(); }
     // 등기부 열람본(이름·주소 포함) — 관리자만 읽음, 쓰기는 수집 서버만
     match /registry/{id}        { allow read: if isAdmin(); allow write: if false; }
+    // 법원 첨부 PDF 열기 주소(감정평가서·현황조사서·매각물건명세서) — 관리자만 읽음, 쓰기는 수집 서버만
+    match /courtFiles/{id}      { allow read: if isAdmin(); allow write: if false; }
+    // 여러 물건이 함께 쓰는 문서(병합·중복사건) — 관리자 전용
+    match /courtDocShared/{id}  { allow read: if isAdmin(); allow write: if false; }
   }
 }

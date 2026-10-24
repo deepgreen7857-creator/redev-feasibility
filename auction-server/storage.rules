@@ -1,0 +1,8 @@
+rules_version = '2';
+// 저장소는 화면에서 직접 읽거나 쓰지 않는다. 파일은 수집 서버(관리자 SDK)만 올리고,
+// 열기는 서버가 만든 주소로만 한다(PDF 주소는 관리자만 읽는 courtFiles 에만 있음).
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { getListing, getSettings, getDeals, callFn, saveListing, getZones } from '../lib/store.js';
+import { getListing, getSettings, getDeals, callFn, saveListing, getZones, getCourtFiles } from '../lib/store.js';
 import { zonesForListing, stageForAnalysis } from '../lib/redevZones.js';
 import { ZONE_STATUS_LABEL, ART77, rightsCheck } from '../lib/zoneMatch.js';
 import { analyze, tradeTypeOf, courtRate, eok, won, pct, SOURCE_LABEL, typeLabel, areaText } from '../lib/analyze.js';
@@ -115,7 +115,7 @@ export default function DetailPage({ admin }) {
       </Card>
 
       {/* ① 물건 기본현황 */}
-      <BasicSection item={item} d={d} dv={dv} waitText={waitText} />
+      <BasicSection item={item} d={d} dv={dv} waitText={waitText} admin={admin} />
 
       {/* ② 권리 */}
       <div className="grid gap-4 lg:grid-cols-2">
@@ -414,9 +414,11 @@ function roadOf(item, d) {
 }
 
 // ① 물건 기본현황 — 사진 칸은 항상, 상세가 없는 값은 '수집 대기'
-function BasicSection({ item, d, dv, waitText }) {
+function BasicSection({ item, d, dv, waitText, admin }) {
   // 예전 해석기로 받은 상세에는 '[object Object]' 같은 깨진 값이 있어 http 주소만 쓴다(밤 수집 때 다시 받음)
-  const photos = (d?.photos || []).filter(isUrl);
+  // 법원경매 사진은 미니PC 수집기가 줄여 올린 것(courtPhotoMap: 사진01, 사진02 … 순서대로)
+  const courtPhotos = Object.keys(item.courtPhotoMap || {}).sort().map((k) => item.courtPhotoMap[k]);
+  const photos = [...courtPhotos, ...(d?.photos || [])].filter(isUrl);
   const shown = photos.length ? photos : item.thumbnail ? [item.thumbnail] : [];
   const maps = (d?.mapUrls || []).filter(isUrl);
   return (
@@ -468,8 +470,10 @@ function BasicSection({ item, d, dv, waitText }) {
       </div>
       <div className="mt-2 flex flex-wrap gap-3 text-sm">
         {d?.appraisalFile && <a href={d.appraisalFile} target="_blank" rel="noreferrer" className="text-brand underline">감정평가서 보기{d.appraisalOrg ? ` (${d.appraisalOrg})` : ''}</a>}
-        {(d?.documents || []).map((doc, i) => <a key={i} href={doc.url} target="_blank" rel="noreferrer" className="text-brand underline">{doc.name}</a>)}
+        {item.source !== 'court' && (d?.documents || []).filter((doc) => isUrl(doc.url)).map((doc, i) => <a key={i} href={doc.url} target="_blank" rel="noreferrer" className="text-brand underline">{doc.name}</a>)}
       </div>
+      {/* 법원 첨부 원본 — 관리자 로그인에서만 열기 버튼(일반 회원 화면에는 없음) */}
+      {admin && item.source === 'court' && <CourtFiles item={item} d={d} />}
     </Card>
   );
 }
@@ -771,5 +775,58 @@ function ForecastCard({ item }) {
       {f && <div className="text-sm"><b>기록된 예측</b> ({f.analyzerVersion || `규칙 ${f.rules}`}): {line(f)} <span className="text-xs text-ink/50">— 완료 채점은 이 값 그대로</span></div>}
       {r && <div className="mt-1 text-sm text-ink/70"><b>수정 후 참고값</b> ({r.analyzerVersion}): {line(r)}</div>}
     </Card>
+  );
+}
+
+// 법원 첨부 원본(감정평가서·현황조사서·매각물건명세서) — 관리자 전용. 열기 주소는 관리자만 읽는 courtFiles 에 있다.
+//  병합·중복사건: 한 문서에 여러 사건·물건이 함께 들어 있으면 '함께 든 사건'과 '이 물건 관련 쪽'을 보여 준다.
+function CourtFiles({ item, d }) {
+  const [files, setFiles] = useState(null);
+  const [showText, setShowText] = useState(false);
+  useEffect(() => { getCourtFiles(item.id).then(setFiles).catch(() => setFiles({})); }, [item.id]);
+  const names = ['감정평가서', '현황조사서', '매각물건명세서'];
+  const listed = new Set((d?.documents || []).map((x) => x.name));
+  const mb = (n) => (n ? `${(n / 1048576).toFixed(1)}MB` : '');
+  const caseNo = String(item.caseNo || '').replace(/\s/g, '');
+  return (
+    <div className="mt-3 rounded-lg border border-line bg-paper px-3 py-2 text-sm">
+      <div className="mb-1 text-xs font-bold text-ink/60">첨부 원본 <span className="font-normal text-ink/45">· 관리자 전용 · 원본은 미니PC 하드에도 보관</span></div>
+      {files === null ? <span className="text-ink/50">불러오는 중…</span> : (
+        <div className="space-y-1.5">
+          {names.map((n) => {
+            const f = files[n];
+            const pages = f?.pages || d?.docPages?.[n] || [];
+            const others = (f?.cases || d?.sharedDocs?.[n]?.cases || []).filter((c) => c !== caseNo);
+            const shared = (f?.sharedWith || []).length;
+            return (
+              <div key={n}>
+                {f?.url ? <a href={f.url} target="_blank" rel="noreferrer" className="text-brand underline">{n} 열기 <span className="text-xs text-ink/45">{mb(f.size)}{f.totalPages ? ` · ${f.totalPages}쪽` : ''}</span></a>
+                  : f?.local ? <span className="text-ink/60">{n}: 용량이 커서 미니PC 하드에만 보관({mb(f.size)})</span>
+                  : d && !listed.has(n) ? <span className="text-ink/40">{n}: 법원 화면에 없음</span>
+                  : <span className="text-ink/50">{n}: 수집 대기</span>}
+                {(others.length > 0 || shared > 0) && (
+                  <div className="mt-0.5 rounded bg-wait/10 px-2 py-1 text-xs text-ink/75">
+                    여러 사건이 함께 든 문서{others.length ? `: ${others.slice(0, 8).join(', ')}${others.length > 8 ? ` 외 ${others.length - 8}건` : ''}` : ''}{shared ? ` · 이 문서를 같이 쓰는 물건 ${shared}건` : ''} — 다른 물건 내용과 섞어 읽지 않게 아래 쪽부터 보세요.
+                  </div>
+                )}
+                {pages.length > 0 && f?.url && (
+                  <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs">
+                    <span className="text-ink/55">이 물건 주소가 나오는 쪽:</span>
+                    {pages.map((p) => <a key={p} href={`${f.url}#page=${p}`} target="_blank" rel="noreferrer" className="text-brand underline">{p}쪽</a>)}
+                  </div>
+                )}
+                {(others.length > 0 || shared > 0) && !pages.length && f?.url && <div className="mt-0.5 text-xs text-hard">이 물건 주소가 나오는 쪽을 자동으로 찾지 못했습니다 — 문서 전체에서 이 물건 기호·주소를 확인하세요.</div>}
+              </div>
+            );
+          })}
+          {files['현황조사서글자'] && (
+            <div>
+              <button className="text-xs text-brand underline" onClick={() => setShowText((v) => !v)}>{showText ? '현황조사서 원문 글자 닫기' : '현황조사서 원문 글자 보기'}</button>
+              {showText && <pre className="mt-1 max-h-96 overflow-auto whitespace-pre-wrap rounded border border-line bg-white p-2 text-xs leading-relaxed">{files['현황조사서글자']}</pre>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

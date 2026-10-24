@@ -7,7 +7,10 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
 // PDF → 줄 단위 글자(같은 높이의 글자를 한 줄로, 왼쪽부터)
-export async function pdfText(buf) {
+export async function pdfText(buf) { return (await pdfPages(buf)).join('\n'); }
+
+// PDF → 쪽마다 글자(배열, 0번이 1쪽) — 여러 사건이 한 문서에 든 경우 이 물건 쪽을 찾는 데 씀
+export async function pdfPages(buf) {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const base = path.dirname(require.resolve('pdfjs-dist/package.json'));
   const doc = await pdfjs.getDocument({
@@ -32,7 +35,7 @@ export async function pdfText(buf) {
     pages.push(rows.map((r) => r.cells.sort((a, b) => a.x - b.x).map((c) => c.s).join(' ').replace(/\s+/g, ' ').trim()).join('\n'));
   }
   await doc.destroy();
-  return pages.join('\n');
+  return pages;
 }
 
 const ymd = (s) => {

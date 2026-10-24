@@ -236,6 +236,14 @@ export async function getRegistry(listingId) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+// 법원 첨부 PDF 열기 주소(감정평가서·현황조사서·매각물건명세서) — 관리자만 읽을 수 있음(일반 회원은 권한 없음)
+export async function getCourtFiles(listingId) {
+  const f = await firebase();
+  if (!f) return {};
+  const snap = await f.fs.getDoc(f.fs.doc(f.db, 'courtFiles', listingId));
+  return snap.exists() ? snap.data() : {};
+}
+
 // 미니PC 수집기 상태(휴대폰으로 확인용): 법원경매 수집기가 마지막으로 보낸 때, 등기부 수집기 오늘 저장 수·마지막 저장·마지막 회차 결과
 export async function getMiniPcStatus() {
   const f = await firebase();

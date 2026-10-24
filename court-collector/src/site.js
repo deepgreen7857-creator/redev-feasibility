@@ -174,8 +174,9 @@ export async function* listCourt(page, court, pace) {
 
 /**
  * 지금 열려 있는 물건 상세 화면을 읽는다.
- * ※ 사진은 화면에 이미지 데이터(data:, 장당 수백 KB)로만 들어 있어 주소가 없으므로 photos 는 비워 둔다.
- * ※ 감정평가서·현황조사서·매각물건명세서는 버튼(팝업)으로만 열려 주소가 없으므로 documents 에 이름만 적는다.
+ * ※ 사진은 화면에 이미지 데이터(data:)로만 들어 있어 주소가 없다 → photoData 로 원본·줄인 것을 함께 돌려주고
+ *   run.js 가 원본은 이 PC 하드에, 줄인 것은 사이트 저장소에 올린다(photos 는 비워 둠, 사이트 주소는 서버가 붙임).
+ * ※ 감정평가서·현황조사서·매각물건명세서는 버튼(팝업)으로만 열린다 → documents 에 이름을 적고 run.js 가 팝업 PDF를 받는다.
  *   임차인·말소기준권리·인수권리는 매각물건명세서 팝업 안에 있어 이 화면에서는 읽지 않는다(비워 둠).
  * @returns {{
  *   title, usage, address, pnu?, landArea?, buildingArea?, share?: boolean, bulk?: boolean,
@@ -263,7 +264,50 @@ export async function readDetail(page) {
     superficies: /법정지상권/.test(remarks + raw.appraisal) ? (remarks.match(/[^.\n]*법정지상권[^.\n]*/) || raw.appraisal.match(/[^.\n]*법정지상권[^.\n]*/) || [])[0] : undefined,
     rounds,
     documents: raw.docs.map((name) => ({ name, url: undefined })),
+    photoData: await readPhotos(page).catch(() => []),
   };
+}
+
+/**
+ * 상세 화면의 사진(현황사진·위치도·지적도 등 — 화면에 data: 이미지로 박혀 있음)을 꺼낸다.
+ * 아이콘·버튼 그림을 빼려고 가로 200·세로 150 픽셀 이상만, 최대 12장.
+ * 사이트용은 브라우저 안에서 가로·세로 긴 쪽 1000픽셀, JPEG 품질 0.72로 줄인다(장당 100~200KB).
+ * → [{ orig: Buffer, origExt, small: Buffer }]
+ */
+export async function readPhotos(page, { max = 12 } = {}) {
+  // page 는 화면(Page)이나 그 안의 틀(Frame) 모두 됨 — 현황조사서 팝업처럼 틀 안에 사진이 있는 경우
+  const list = await page.evaluate((max) => {
+    const out = [];
+    const seen = new Set();
+    for (const img of document.querySelectorAll('img')) {
+      const src = img.currentSrc || img.src || '';
+      if (!src || seen.has(src) || img.offsetParent === null) continue;
+      if (!img.complete || img.naturalWidth < 200 || img.naturalHeight < 150) continue;
+      seen.add(src);
+      try {
+        const draw = (k, type, q) => {
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+          const g = c.getContext('2d');
+          g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+          g.drawImage(img, 0, 0, c.width, c.height);
+          return c.toDataURL(type, q);
+        };
+        // 원본: data: 이미지는 그대로, 주소로 된 이미지는 원래 크기 고화질 JPEG로
+        const orig = src.startsWith('data:image') ? src : draw(1, 'image/jpeg', 0.92);
+        const small = draw(Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight)), 'image/jpeg', 0.72);
+        out.push({ orig, small });
+      } catch { /* 다른 사이트 그림이라 읽을 수 없음 — 건너뜀 */ }
+      if (out.length >= max) break;
+    }
+    return out;
+  }, max);
+  const dec = (u) => Buffer.from(u.slice(u.indexOf(',') + 1), 'base64');
+  return list.map(({ orig, small }) => ({
+    orig: dec(orig),
+    origExt: (orig.match(/^data:image\/(\w+)/) || [])[1]?.replace('jpeg', 'jpg') || 'jpg',
+    small: dec(small),
+  }));
 }
 
 /** 상세 화면에서 목록으로 돌아간다(화면 아래 '이전' 버튼 — 사이트가 보던 쪽 번호를 기억해 목록을 다시 그림). */

@@ -6,7 +6,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pace, kstDay } from './pace.js';
 import { listCourt, readDetail, backToList, Blocked } from './site.js';
-import { readSpecDoc } from './specFetch.js';
+import { readSpecDoc, fetchDocPdf } from './specFetch.js';
+import { FileStore, listingIdOf } from './files.js';
+import { pdfText, pdfPages } from './spec.js';
+import { slimPdf } from './slim.js';
 
 // 브라우저는 AppData 가 아니라 이 폴더의 node_modules 안에 둔다(npm run setup-browser 와 같은 위치).
 // AppData 에 두면 설치한 프로그램과 작업 스케줄러가 서로 다른 곳을 볼 수 있다(MSIX 앱 안에서 설치한 경우 등).
@@ -35,8 +38,9 @@ const progressFile = path.join(STATE, 'progress.json');
 const progress = fs.existsSync(progressFile) ? JSON.parse(fs.readFileSync(progressFile, 'utf8')) : {};
 const saveProgress = () => fs.writeFileSync(progressFile, JSON.stringify(progress));
 
-// 상세 읽기 판: 2 = 사건번호로 상세가 이 물건 것인지 확인한 뒤 읽음 / 3 = 매각물건명세서(PDF)까지 읽음(그 전 판은 다시 읽는다)
-const DETAIL_V = 3;
+// 상세 읽기 판: 2 = 사건번호로 상세가 이 물건 것인지 확인한 뒤 읽음 / 3 = 매각물건명세서(PDF)까지 읽음
+//  4 = 첨부 원본(감정평가서·현황조사서·매각물건명세서 PDF)과 사진까지 받아 하드에 보관·사이트에 올림(그 전 판은 다시 읽는다)
+const DETAIL_V = 4;
 const SIDO = (court) => (/서울/.test(court) ? '서울특별시' : /^인천지방법원$/.test(court) ? '인천광역시' : '경기도');
 
 function toItem(row, detail) {
@@ -55,6 +59,9 @@ function toItem(row, detail) {
     detail: detail ? {
       photos: detail.photos || [], location: detail.appraisalSummary, shareText: detail.shareText, conditions: detail.specialConditions, baseRightDate: detail.baseRightDate,
       leases: detail.leases || [], survivingRights: detail.survivingRights, superficies: detail.superficies, documents: detail.documents || [],
+      photoCount: detail.photoCount, appraisalPdf: detail.appraisalPdf, sharedDocs: detail.sharedDocs,
+      // 문서별 이 물건 관련 쪽(여러 물건이 든 문서일 때 분석·화면이 이 쪽만 보게)
+      docPages: detail.docInfo ? Object.fromEntries(Object.entries(detail.docInfo).filter(([, v]) => v?.pages?.length).map(([k, v]) => [k, v.pages])) : undefined,
       // 매각물건명세서: specRead=true 일 때만 '권리 확인됨'(아니면 분석기는 권리 미확인으로 봄)
       specRead: Boolean(detail.spec?.read), specWhy: detail.spec?.read ? undefined : detail.spec?.why,
       baseRightType: detail.spec?.baseRightType, distributionDeadline: detail.spec?.distributionDeadline,
@@ -120,6 +127,155 @@ function releaseLock() {
   try { if (Number(fs.readFileSync(lockFile, 'utf8')) === process.pid) fs.unlinkSync(lockFile); } catch { /* 없음 */ }
 }
 
+const files = new FileStore({ root: ROOT, stateDir: STATE, env, log, dry: DRY });
+const slimStats = { n: 0, before: 0, after: 0 }; // 사이트용으로 줄인 PDF 수·줄이기 전후 용량
+const appraisalKinds = {}; // 감정평가서: text=글자 PDF, scan=스캔본(글자 없음), broken=글꼴 깨짐
+
+// 상세를 읽은 물건의 첨부를 받는다: 사진(화면에 있음) + 감정평가서·현황조사서 팝업 PDF + 명세서 PDF(이미 받은 것)
+
+// 사이트에 올릴 PDF: 글자·쪽은 그대로 두고 사진만 화면용으로 줄인 것. 쪽 수나 글자가 원본과 다르면 원본 그대로 올린다.
+async function sitePdf(buf, name, caseNo) {
+  try {
+    const r = await slimPdf(buf);
+    if (!r.changed) return null;
+    const [a, b] = await Promise.all([pdfText(buf), pdfText(r.buf)]);
+    if (a.replace(/\s/g, '') !== b.replace(/\s/g, '')) { log(`${name} 줄이기 후 글자가 달라 원본 사용 ${caseNo}`); return null; }
+    slimStats.before += r.before; slimStats.after += r.after; slimStats.n++;
+    return r.buf;
+  } catch (e) { log(`${name} 줄이기 실패(원본 사용) ${caseNo}: ${e.message}`); return null; }
+}
+
+// 병합·중복사건: 감정평가서·현황조사서 하나에 여러 사건·여러 물건이 함께 들어 있을 수 있다.
+//  → 문서에 나오는 사건번호들(cases)과 이 물건 주소(지번·도로명·동호수)가 나오는 쪽(pages)을 찾아 둔다.
+//    분석·화면은 이 쪽을 보고, 다른 물건 내용을 이 물건 것으로 읽지 않게 한다.
+const squash = (t) => String(t || '').replace(/\s+/g, '');
+function addrKeys(addr) {
+  const a = String(addr || '');
+  const keys = [];
+  const j = a.match(/([가-힣][가-힣0-9]*(?:동|가|리))\s+(산\s*)?(\d+(?:-\d+)?)/); // '101동 1203호'의 동은 제외(한글로 시작하는 동만)
+  if (j) keys.push(`${j[1]}${j[2] ? '산' : ''}${j[3]}`);
+  const r = a.match(/([가-힣][가-힣0-9]*(?:로|길))\s*(\d+(?:-\d+)?)/);
+  if (r) keys.push(`${r[1]}${r[2]}`);
+  const ho = (a.match(/(?:제\s*)?(\d+)\s*호/) || [])[1];
+  const dong = (a.match(/(?:제\s*)?(\d+)\s*동(?!\S*[가-힣]동)/) || [])[1];
+  return { keys, ho, dong };
+}
+function docInfo(pages, addr) {
+  const all = pages.join('\n');
+  const cases = [...new Set((all.match(/\d{4}\s*타경\s*\d+/g) || []).map(squash))];
+  const { keys, ho, dong } = addrKeys(addr);
+  const hit = []; const strong = [];
+  pages.forEach((t, i) => {
+    const q = squash(t);
+    if (!keys.some((k) => q.includes(k))) return;
+    hit.push(i + 1);
+    if (ho && q.includes(`${ho}호`) && (!dong || q.includes(`${dong}동`))) strong.push(i + 1);
+  });
+  return { cases, pages: (strong.length ? strong : hit).slice(0, 40), multi: cases.length > 1, totalPages: pages.length };
+}
+
+// 같은 사건의 다른 물건번호가 최근에 받은 문서 — 다시 열지 않고 이어 쓴다(하루 화면 수 아낌)
+const docSeenFile = path.join(STATE, 'doc-seen.json');
+const docSeen = fs.existsSync(docSeenFile) ? JSON.parse(fs.readFileSync(docSeenFile, 'utf8')) : {};
+const saveDocSeen = () => fs.writeFileSync(docSeenFile, JSON.stringify(docSeen));
+
+async function keepAttachments(page, pace, row, detail) {
+  const base = { court: row.court, caseNo: row.caseNo, itemNo: row.itemNo || '1' };
+  const addr = detail.address || row.address;
+  (detail.photoData || []).forEach((ph, i) => {
+    const kind = `사진${String(i + 1).padStart(2, '0')}`;
+    files.keep({ ...base, kind, buf: ph.orig, ext: ph.origExt, upBuf: ph.small, upExt: 'jpg' });
+  });
+  const got = {};
+  detail.docInfo = {};
+  const pdfMeta = async (buf, name) => {
+    try { const info = docInfo(await pdfPages(buf), addr); detail.docInfo[name] = info; return info; } catch { return {}; }
+  };
+  if (detail.spec?.pdf) {
+    const meta = await pdfMeta(detail.spec.pdf, '매각물건명세서');
+    const small = await sitePdf(detail.spec.pdf, '매각물건명세서', row.caseNo);
+    files.keepDoc({ ...base, kind: '매각물건명세서', buf: detail.spec.pdf, upBuf: small, meta });
+    got['매각물건명세서'] = detail.spec.how;
+  }
+  const base2 = path.join(files.dir, String(row.court).replace(/\s/g, ''), `${String(row.caseNo).replace(/\s/g, '')}_${row.itemNo || '1'}`);
+  let photoNo = (detail.photoData || []).length;
+  for (const name of ['감정평가서', '현황조사서']) {
+    if (!(detail.documents || []).some((d) => d.name === name)) continue;
+    const seenKey = `${row.court}_${squash(row.caseNo)}_${name}`;
+    const prev = docSeen[seenKey];
+    // 같은 사건 다른 물건번호가 7일 안에 받은 것이 있으면 그대로 쓴다(쪽 찾기는 이 물건 주소로 다시)
+    if (prev && Date.now() - prev.at < cfg.refreshDetailAfterDays * 86400e3) {
+      let ok = false;
+      if (prev.hash) {
+        let meta = prev.meta || {};
+        try { const ent = files.index[prev.hash]; if (ent && fs.existsSync(ent.orig)) meta = await pdfMeta(fs.readFileSync(ent.orig), name); } catch { /* 쪽 찾기 실패 — 전체 문서로 */ }
+        ok = files.reuseDoc({ ...base, kind: name, hash: prev.hash, meta });
+      }
+      if (prev.textFile && fs.existsSync(prev.textFile)) { files.keepText({ ...base, kind: name, file: prev.textFile }); detail.docInfo[name] = prev.textInfo; ok = true; }
+      for (const ph of prev.photos || []) {
+        if (photoNo >= 30 || !fs.existsSync(ph.up)) continue;
+        photoNo++; files.keepFile({ ...base, kind: `사진${String(photoNo).padStart(2, '0')}`, path: ph.up, contentType: 'image/jpeg' });
+      }
+      if (ok) { got[name] = 'reuse'; continue; }
+    }
+    if (!pace.canContinue()) break;
+    await pace.beforePage();
+    const r = await fetchDocPdf(page, name, { log, waitSec: name === '감정평가서' ? 45 : 25, html: name === '현황조사서' });
+    const seen = { at: Date.now(), photos: [] };
+    if (r.pdf) {
+      const meta = await pdfMeta(r.pdf, name);
+      const small = await sitePdf(r.pdf, name, row.caseNo);
+      seen.hash = files.keepDoc({ ...base, kind: name, buf: r.pdf, upBuf: small, meta });
+      got[name] = r.how;
+    }
+    // 현황조사서 글자 화면: 원문 글자를 그대로 저장(OCR 없음)하고, 팝업 안 사진도 사진 번호를 이어서 받는다
+    if (r.text) {
+      fs.mkdirSync(base2, { recursive: true });
+      const tf = path.join(base2, `${name}.txt`);
+      fs.writeFileSync(tf, r.text);
+      // 점유자 이름 등이 있어 공개 물건 정보에는 넣지 않고 관리자 전용(courtFiles)으로만 보낸다
+      files.keepText({ ...base, kind: name, file: tf });
+      const cases = [...new Set((r.text.match(/\d{4}\s*타경\s*\d+/g) || []).map(squash))];
+      detail.docInfo[name] = { cases, multi: cases.length > 1 };
+      seen.textFile = tf; seen.textInfo = detail.docInfo[name];
+      got[name] = got[name] || 'html';
+    }
+    for (const ph of r.photos || []) {
+      if (photoNo >= 30) break;
+      photoNo++;
+      const kind = `사진${String(photoNo).padStart(2, '0')}`;
+      files.keep({ ...base, kind, buf: ph.orig, ext: ph.origExt, upBuf: ph.small, upExt: 'jpg' });
+      seen.photos.push({ up: path.join(base2, `${kind}_사이트용.jpg`) });
+    }
+    if (seen.hash || seen.textFile) { docSeen[seenKey] = seen; saveDocSeen(); }
+    // 감정평가서: 글자 PDF인지(드래그되는 문서) 스캔본인지 확인하고, 글자는 하드에 함께 저장(나중에 핵심 문장 걸러내기에 씀)
+    if (name === '감정평가서' && r.pdf) {
+      try {
+        const t = await pdfText(r.pdf);
+        const n = t.replace(/\s/g, '').length;
+        const hangul = (t.match(/[가-힣]/g) || []).length;
+        const kind = n < 500 ? 'scan' : hangul / n < 0.2 ? 'broken' : 'text';
+        detail.appraisalPdf = { textKind: kind, chars: n };
+        fs.mkdirSync(base2, { recursive: true });
+        if (kind !== 'scan') fs.writeFileSync(path.join(base2, '감정평가서.txt'), t);
+        appraisalKinds[kind] = (appraisalKinds[kind] || 0) + 1;
+      } catch (e) { appraisalKinds.error = (appraisalKinds.error || 0) + 1; log(`감정평가서 글자 확인 실패 ${row.caseNo}: ${e.message}`); }
+    }
+    if (!r.pdf && !r.text) log(`${name} 못 받음 ${row.caseNo}: ${r.why}`);
+  }
+  // 사이트에는 '무엇을 받았는지'만 적는다(열기 주소는 서버가 관리자 전용으로 따로 둠)
+  detail.documents = (detail.documents || []).map((d) => ({ name: d.name, got: Boolean(got[d.name]) }));
+  detail.photoCount = photoNo;
+  // 문서에 다른 사건이 함께 있으면 표시 — 분석기는 이 물건 쪽(pages)만 근거로 써야 함
+  const multi = Object.entries(detail.docInfo).filter(([, v]) => v?.multi);
+  if (multi.length) {
+    detail.sharedDocs = Object.fromEntries(multi.map(([k, v]) => [k, { cases: v.cases.slice(0, 20), pages: v.pages || [] }]));
+    log(`여러 사건이 든 문서 ${row.caseNo}: ${multi.map(([k, v]) => `${k}(${v.cases.join(',')})`).join(' / ')}`);
+  }
+  delete detail.photoData;
+  if (detail.spec) delete detail.spec.pdf;
+}
+
 async function main() {
   if (!cfg.enabled && !DRY) { log('config.json 의 enabled 가 false — 실행하지 않음'); return; }
   if (DRY) cfg.allowedHours = [0, 24]; // 시험(--dry)은 낮에도 돌려 볼 수 있게 시간대 제한을 풂(화면 간 쉬는 시간은 그대로)
@@ -148,10 +304,14 @@ async function main() {
         return;
       }
       uploadFails = 0; stats.uploaded += chunk.length; buffer = buffer.slice(chunk.length);
+      // 물건이 서버에 생긴 뒤에 그 물건의 첨부를 올린다
+      await files.upload(chunk.map((it) => listingIdOf(it.court, it.caseNo, it.itemNo)));
     }
     flushAt = cfg.uploadBatch;
   };
   try {
+    // 지난번에 못 올린 첨부부터 보낸다(물건은 이미 서버에 있음)
+    if (files.pending.length) { log(`밀린 첨부 ${files.pending.length}개 올리기`); await files.upload(); }
     // 지난번에 멈춘 법원부터 이어서
     const start = Math.max(0, cfg.courts.indexOf(progress.court || ''));
     const courts = [...cfg.courts.slice(start), ...cfg.courts.slice(0, start)];
@@ -196,6 +356,8 @@ async function main() {
               if (spec.superficies) detail.superficies = spec.superficies;
               stats.specRead = (stats.specRead || 0) + 1;
             } else { stats.specMissed = (stats.specMissed || 0) + 1; log(`명세서 못 읽음 ${row.caseNo}: ${spec.why}`); }
+            // 첨부 원본: 사진 + 감정평가서·현황조사서(팝업) — 사람이 버튼을 눌러 보는 것과 같은 요청, 화면 수에 넣어 셈
+            await keepAttachments(page, pace, row, detail);
           }
           await backToList(page);
           stats.detailed++;
@@ -222,7 +384,8 @@ async function main() {
       saveSeen();
       log(`못 보낸 ${buffer.length}건은 다음 회차에 다시 읽음`);
     }
-    log(`끝: ${JSON.stringify(stats)} / 오늘 연 화면 ${pace.count}`);
+    stats.files = { ...files.stats, pending: files.pending.length, appraisal: appraisalKinds, slim: { n: slimStats.n, beforeMB: +(slimStats.before / 1048576).toFixed(1), afterMB: +(slimStats.after / 1048576).toFixed(1) } };
+    log(`끝: ${JSON.stringify(stats)} / 오늘 연 화면 ${pace.count} / 원본 보관 폴더 ${files.dir}`);
   }
 }
 

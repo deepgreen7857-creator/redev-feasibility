@@ -7,6 +7,7 @@ const { defineSecret, defineString } = require('firebase-functions/params');
 const { setGlobalOptions, logger } = require('firebase-functions/v2');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getStorage, getDownloadURL } = require('firebase-admin/storage');
 
 const { Quota, kstDay } = require('./lib/dataGoKr');
 const onbid = require('./lib/onbid');
@@ -764,11 +765,100 @@ async function handleRegistry(body) {
   return { ok: false, error: '모르는 동작' };
 }
 
-exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY, DATA_GO_KR_KEY], timeoutSeconds: 300, memory: '512MiB', cors: false }, async (req, res) => {
+// ---------- 법원 첨부(미니PC 수집기) ----------
+//  file: PDF(감정평가서·현황조사서·매각물건명세서)·줄인 사진을 저장소 court/<물건>/ 에 저장
+//   · PDF 열기 주소는 courtFiles/<물건> (관리자만 읽음)에만 둔다 → 일반 회원 화면에는 열기 버튼이 없다
+//   · 물건(listings)에는 받았는지·크기만(courtDocs), 사진은 공개 주소(courtPhotoMap, 첫 장은 thumbnail)
+//  fileMeta: 너무 커서 미니PC 하드에만 둔 문서 표시
+const DOC_KIND = /^(감정평가서|현황조사서|매각물건명세서)$/;
+const PHOTO_KIND = /^사진\d{2}$/;
+const LISTING_ID = /^court_[가-힣A-Za-z0-9]+_\d{4}타경\d+_\d+$/;
+// 같은 문서(병합·중복사건, 한 사건의 여러 물건번호)는 내용 해시로 한 번만 저장하고 물건마다 연결만 한다.
+//  courtDocShared/<해시>: 이 문서를 쓰는 물건들(관리자 전용) → 화면에 '이 문서에 함께 든 사건' 표시
+const HASH = /^[0-9a-f]{20}$/;
+const cleanMeta = (m) => {
+  const o = {};
+  if (Array.isArray(m?.pages)) o.pages = m.pages.map(Number).filter((n) => n > 0 && n < 5000).slice(0, 40);
+  if (Array.isArray(m?.cases)) o.cases = m.cases.map(String).filter((c) => /^\d{4}타경\d+$/.test(c)).slice(0, 30);
+  if (Number(m?.totalPages)) o.totalPages = Number(m.totalPages);
+  return o;
+};
+async function linkDoc(lid, kind, info) {
+  const { hash } = info;
+  let sharedWith = [];
+  if (hash) {
+    const ref = db.collection('courtDocShared').doc(hash);
+    await ref.set({ kind, listingIds: FieldValue.arrayUnion(lid), updatedAt: info.at }, { merge: true });
+    sharedWith = ((await ref.get()).data()?.listingIds || []).filter((x) => x !== lid);
+  }
+  await db.collection('courtFiles').doc(lid).set({ [kind]: { ...info, sharedWith: sharedWith.slice(0, 50) } }, { merge: true });
+  await db.collection('listings').doc(lid).set({ courtDocs: { [kind]: plain({ size: info.size || null, at: info.at, local: info.local || undefined, shared: sharedWith.length || undefined, pages: info.pages?.length ? info.pages : undefined, cases: info.cases?.length > 1 ? info.cases : undefined }) } }, { merge: true });
+  return sharedWith.length;
+}
+
+async function handleCourtFile(body) {
+  const lid = String(body.listingId || ''); const kind = String(body.kind || '');
+  if (!LISTING_ID.test(lid)) return { ok: false, error: '물건 번호 형식' };
+  if (!DOC_KIND.test(kind) && !PHOTO_KIND.test(kind)) return { ok: false, error: '첨부 종류' };
+  const at = new Date().toISOString();
+  const hash = HASH.test(String(body.hash || '')) ? String(body.hash) : null;
+  const meta = cleanMeta(body.meta);
+  if (body.action === 'fileText') {
+    // 현황조사서 원문 글자(팝업 화면 글자, OCR 아님) — 점유자 이름 등이 있어 관리자 전용 courtFiles 에만
+    if (!DOC_KIND.test(kind)) return { ok: false, error: '첨부 종류' };
+    const text = String(body.text || '').slice(0, 200000);
+    if (!text.trim()) return { ok: false, error: '빈 글자' };
+    await db.collection('courtFiles').doc(lid).set({ [`${kind}글자`]: text, [`${kind}글자At`]: at }, { merge: true });
+    await db.collection('listings').doc(lid).set({ courtDocs: { [`${kind}글자`]: { chars: text.length, at } } }, { merge: true });
+    return { ok: true };
+  }
+  if (body.action === 'fileMeta') {
+    if (!DOC_KIND.test(kind)) return { ok: false, error: '첨부 종류' };
+    await linkDoc(lid, kind, { size: Number(body.size) || null, local: true, at, hash, ...meta });
+    return { ok: true };
+  }
+  if (body.action === 'fileRef') {
+    // 같은 내용 문서가 이미 올라와 있으면 파일 없이 연결만
+    if (!DOC_KIND.test(kind) || !hash) return { ok: false, error: '연결 정보' };
+    const file = getStorage().bucket().file(`court/docs/${kind}_${hash}.pdf`);
+    const [exists] = await file.exists();
+    if (!exists) return { ok: true, need: true };
+    const [md] = await file.getMetadata();
+    const shared = await linkDoc(lid, kind, { url: await getDownloadURL(file), size: Number(md.size) || null, at, hash, ...meta });
+    return { ok: true, linked: true, shared };
+  }
+  const buf = Buffer.from(String(body.data || ''), 'base64');
+  const isJpg = buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8;
+  const isPdfBuf = buf.length > 4 && buf.slice(0, 4).toString() === '%PDF';
+  if (!buf.length || buf.length > 23 * 1024 * 1024) return { ok: false, error: '크기' };
+  if (PHOTO_KIND.test(kind) ? !isJpg : !isPdfBuf) return { ok: false, error: '파일 형식' };
+  const bucket = getStorage().bucket();
+  if (PHOTO_KIND.test(kind)) {
+    const file = bucket.file(`court/${lid}/${kind}.jpg`);
+    await file.save(buf, { contentType: 'image/jpeg', resumable: false, metadata: { cacheControl: 'private, max-age=86400' } });
+    const url = await getDownloadURL(file);
+    const upd = { courtPhotoMap: { [kind]: url } };
+    if (kind === '사진01') upd.thumbnail = url;
+    await db.collection('listings').doc(lid).set(upd, { merge: true });
+    return { ok: true, kind, size: buf.length };
+  }
+  // PDF: 해시가 있으면 공유 경로(한 번만 저장), 없으면 물건 경로
+  const file = bucket.file(hash ? `court/docs/${kind}_${hash}.pdf` : `court/${lid}/${kind}.pdf`);
+  const [exists] = hash ? await file.exists() : [false];
+  if (!exists) await file.save(buf, { contentType: 'application/pdf', resumable: false, metadata: { cacheControl: 'private, max-age=86400' } });
+  const shared = await linkDoc(lid, kind, { url: await getDownloadURL(file), size: buf.length, at, hash, ...meta });
+  return { ok: true, kind, size: buf.length, shared };
+}
+
+exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY, DATA_GO_KR_KEY], timeoutSeconds: 300, memory: '1GiB', cors: false }, async (req, res) => {
   if (req.method !== 'POST') { res.status(405).send('POST만 받습니다'); return; }
   const auth = String(req.get('authorization') || '');
   if (!COURT_INGEST_TOKEN.value() || auth !== `Bearer ${COURT_INGEST_TOKEN.value()}`) { res.status(401).send('토큰이 맞지 않습니다'); return; }
   const body = req.body || {};
+  if (['file', 'fileMeta', 'fileText', 'fileRef'].includes(body.action)) {
+    try { res.json(await handleCourtFile(body)); } catch (e) { logger.error('court file', body.listingId, body.kind, e.message); res.status(500).json({ ok: false, error: e.message.slice(0, 200) }); }
+    return;
+  }
   if (body.action) { res.json(await handleRegistry(body)); return; }
   const items = (Array.isArray(body.items) ? body.items : []).slice(0, 200).map(cleanCourtItem).filter(Boolean);
   const { needDetail } = await saveListings(items);
