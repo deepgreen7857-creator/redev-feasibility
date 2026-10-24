@@ -41,3 +41,12 @@ test('인천 신설구는 개편 전 구 시세 코드로 연결', () => {
   assert.ok(lawdOf('인천광역시', '서구'));
   assert.equal(lawdOf('인천광역시', '남동구'), '28200');
 });
+
+import { analyze } from './analyze.js';
+import { DEFAULT_SETTINGS } from '../data/defaults.js';
+test('건물면적이 없으면 건축물대장 전유면적으로 전세 시세 계산', () => {
+  const rent = Array.from({ length: 6 }, (_, i) => [2e8 + i * 1e6, 50, 3, 1, '1', 'A빌라', 2005, false, '신규', '신월동', 0]);
+  const it = { source: 'court', usage: '다세대', sido: '서울특별시', sgg: '양천구', emd: '신월동', appraisal: 3.6e8, minBid: 3.6e8, ledger: { unit: { exclusiveArea: 50 } } };
+  const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: [], rentDeals: rent });
+  assert.ok(a.jeonse && a.jeonse.value > 0);
+});

@@ -332,6 +332,8 @@ export function liquidityOf(item, deals) {
 }
 
 export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
+  // 법원경매는 건물(전용)면적을 못 읽어 오는 경우가 많다 → 건축물대장 전유면적으로 채워야 시세·전월세·올수리 계산이 된다
+  if (!item.buildingArea && item.ledger?.unit?.exclusiveArea) item = { ...item, buildingArea: item.ledger.unit.exclusiveArea, buildingAreaSource: '건축물대장 전유면적' };
   const margin = settings?.marginRate ?? 0.1;
   const market = marketEstimate(item, deals, { excludeDirect: settings?.excludeDirect !== false });
   const rounds = projectRounds(item, settings);

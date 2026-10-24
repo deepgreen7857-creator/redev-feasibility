@@ -255,7 +255,7 @@ function VillaRow({ it, a }) {
 }
 
 // ── 완료 물건 ──────────────────────────────────────────────
-const VERDICT_LABEL = { now: '지금 매력', wait: '유찰 대기', check: '권리 확인 후 판단', suspect: '오류 의심', hard: '가격 안 맞음', unknown: '시세 부족' };
+const VERDICT_LABEL = { now: '지금 매력', wait: '유찰 대기', check: '권리 확인 후 판단', suspect: '오류 의심', hard: '가격 안 맞음', unknown: '시세 부족', shareUnknown: '지분비율 미확인' };
 // 입찰(매각)기일이 지났거나 상태가 낙찰·매각·유찰·종결·취소인 물건
 const endOf = (it) => String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10);
 function isEnded(it) {
