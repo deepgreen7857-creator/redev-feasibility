@@ -70,7 +70,12 @@ export function valuation(item, { type, market, marketValue, jeonse, settings, s
   if (ask?.low) {
     const mid = ask.high ? (ask.low + ask.high) / 2 : ask.low;
     const days = ask.at ? Math.floor((Date.now() - new Date(ask.at).getTime()) / 86400e3) : null;
-    add({ key: 'asking', label: '현재 호가(직접 확인)', value: Math.round(mid * (cfg.askingRatio ?? 0.95)), low: ask.low, high: ask.high || ask.low, basis: `호가 ${eok(ask.low)}${ask.high && ask.high !== ask.low ? `~${eok(ask.high)}` : ''} × ${Math.round((cfg.askingRatio ?? 0.95) * 100)}%${days !== null ? ` (${days}일 전 확인)` : ''}${ask.memo ? ` · ${ask.memo}` : ''}`, stale: days !== null && days > 30 });
+    // 경매 물건은 내부 상태를 모르니 '기본 상태' 매물 호가와 맞댄다: 설명에 '기본·수리 필요'라 적힌 매물 → 없으면 같은 면적 매물 중 가장 낮은 호가(대개 수리 안 된 집)
+    const bc = ask.auto?.byCond?.basic;
+    const base = bc ? (bc.low + bc.high) / 2 : ask.low;
+    const r = cfg.askingRatio ?? 0.97; // 호가 → 실제 팔리는 값(흥정분)
+    const condNote = bc ? `'기본 상태' 매물 ${bc.n}건 호가` : '같은 면적 최저 호가(대개 수리 안 된 집)';
+    add({ key: 'asking', label: '현재 호가(직접 확인)', value: Math.round(base * r), low: ask.low, high: ask.high || ask.low, top: ask.auto?.byCond?.top ? ask.auto.byCond.top.low : null, basis: `${condNote} ${eok(base)} × ${Math.round(r * 100)}% · 전체 호가 ${eok(ask.low)}${ask.high && ask.high !== ask.low ? `~${eok(ask.high)}` : ''} (중간 ${eok(mid)})${days !== null ? ` (${days}일 전 확인)` : ''}${ask.memo ? ` · ${ask.memo}` : ''}`, stale: days !== null && days > 30 });
   }
 
   // 참고: 경매 시장가(감정가 × 낙찰가율)

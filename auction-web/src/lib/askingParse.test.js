@@ -25,3 +25,13 @@ test('호갱노노 매물 글: 면적 같이 읽고 같은 면적만', () => {
 test('네이버 형식 115/84m²', () => {
   assert.deepEqual(parseAskingRows('매매 5억 2,000\n아파트 115/84m², 10/25층'), [{ price: 52000, area: 84 }]);
 });
+
+import { condOf } from './askingParse.js';
+test('호가 매물 설명에서 집 상태 읽기', () => {
+  assert.equal(condOf('15/20층 남향 올수리 입주가능'), 'top');
+  assert.equal(condOf('급매 저층'), 'urgent');
+  assert.equal(condOf('기본상태 수리필요'), 'basic');
+  assert.equal(condOf('남향 역세권'), null);
+  const rows = parseAskingRows('매매 3억 2,000 84m² 올수리 확장 매매 2억 8,000 84m² 기본 상태 저층 매매 2억 7,500 84m² 급매');
+  assert.deepEqual(rows.map((r) => r.cond), ['top', 'basic', 'urgent']);
+});

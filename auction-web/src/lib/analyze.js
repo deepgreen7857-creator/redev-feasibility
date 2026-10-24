@@ -558,6 +558,14 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   if (item.redevMatch?.status === 'unlisted') warnings.push(`브이월드 토지이용계획에 정비구역(${item.redevMatch.vworld.join(', ')}) — 관리자 정비구역 목록에 아직 없음`);
   if (member.status !== 'none') warnings.push('권리산정기준일 이후 신축·지분분할 물건이거나 한 세대가 여러 채를 가지면 분양자격이 달라질 수 있음');
   if (uaDiff !== null && uaDiff > 0.1 && uaDiff <= 0.3) warnings.push(`건축물대장 전유면적 ${item.ledger.unit.exclusiveArea}㎡ ≠ 읽어 온 면적 ${item.buildingArea}㎡`);
+  // 호가 ↔ 실거래 맞대기: 호가가 실거래 수리된 집 가격보다도 10% 넘게 높으면 '호가만 높음', 실거래 기본 상태보다 낮으면 '시장이 내려가는 중일 수 있음'
+  {
+    const ask = item.manual?.asking;
+    if (ask?.low && market?.basic && market?.top) {
+      if (ask.low > market.top * 1.1) warnings.push(`호가(최저 ${Math.round(ask.low / 1e4).toLocaleString('ko-KR')}만)가 실거래 '수리된 상태' 가격보다도 10% 넘게 높음 — 호가는 팔리는 값이 아님, 실거래 기준으로 판단`);
+      else if ((ask.high || ask.low) < market.basic * 0.95) warnings.push(`호가(최고 ${Math.round((ask.high || ask.low) / 1e4).toLocaleString('ko-KR')}만)가 실거래 '기본 상태' 가격보다 낮음 — 시장이 내려가는 중일 수 있음, 매도 가격을 낮춰 잡을 것`);
+    }
+  }
   if (item.ledger?.age >= 30) warnings.push(`사용승인 ${item.ledger.age}년 경과(${item.ledger.useApr}) — 노후, 수리비·누수 확인`);
   if (jeonse) {
     (item.detail?.leases || []).forEach((l) => {

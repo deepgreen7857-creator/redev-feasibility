@@ -1,4 +1,4 @@
-// 호가 글 읽기 — 네이버 부동산·호갱노노 등에서 "보이는 글"에서 매매 호가만 뽑는다.
+// 호가 글 읽기 — 네이버 부동산 등에서(호갱노노 웹은 매물 목록이 없어 실거래만 보임, 2026-10-25 확인) "보이는 글"에서 매매 호가만 뽑는다.
 // 우리 서버는 남의 사이트에 접속하지 않는다. 정민 님 브라우저에 떠 있는 화면 글(북마클릿) 또는 복사한 글만 읽는다.
 // 결과 단위: 만원
 
@@ -24,11 +24,26 @@ export function parseAskingRows(text) {
     if (!v || v < 1000 || v > 5000000) continue; // 1천만원~500억
     const tail = t.slice(m.index + m[0].length, m.index + m[0].length + 40).split(/매매|전세|월세/)[0];
     const a = tail.match(/(\d+(?:\.\d+)?)\s*(?:m²|㎡|m2)/);
-    out.push({ price: v, area: a ? Number(a[1]) : null });
+    // 매물 설명(다음 매물 전까지 120자)에서 집 상태·층을 읽는다 — 실거래엔 없는 정보라 호가에서 챙긴다
+    const desc = t.slice(m.index + m[0].length, m.index + m[0].length + 120).split(/매매|전세|월세/)[0];
+    const row = { price: v, area: a ? Number(a[1]) : null };
+    const c = condOf(desc); if (c) row.cond = c;
+    if (/저층|(?:^|\D)[12]\/\d+층?/.test(desc)) row.lowFloor = true;
+    out.push(row);
   }
   return out;
 }
 export const parseAsking = (text) => parseAskingRows(text).map((r) => r.price);
+
+// 매물 설명의 집 상태: 수리(올수리·리모델링·인테리어·특올수리) / 급매 / 기본(수리 필요·노후·기본형) / 모름
+export function condOf(desc) {
+  const d = String(desc || '');
+  if (/급매|급처|급하게/.test(d)) return 'urgent';
+  if (/올\s?수리|특올|리모델링|인테리어|수리\s?완|확장\s?올|새\s?집처럼/.test(d)) return 'top';
+  if (/수리\s?필요|기본\s?(?:상태|형)?|노후|올드|수리\s?안/.test(d)) return 'basic';
+  return null;
+}
+export const COND_LABEL = { top: '수리된 집', basic: '기본 상태', urgent: '급매' };
 
 // 물건 전용면적과 비슷한 것(±10%, 최소 ±3㎡)만 남긴다. 면적 모르는 매물은 같은 면적이 하나도 없을 때만 쓴다
 export function pickByArea(rows, area) {
@@ -50,6 +65,6 @@ export function summarize(prices) {
 
 // 북마클릿: 네이버 부동산 등 화면에서 누르면 매매 호가를 읽어 우리 호가 확인 화면으로 보낸다
 export function bookmarkletCode(siteUrl) {
-  const src = `(function(){var t=document.body.innerText;var re=${/매매(?:가|호가)?\s*:?\s*(\d+\s*억(?:\s*[\d,]{1,6})?|[\d,]{4,7}\s*만?)/g};var p=[],m;function v(s){s=s.replace(/\\s+/g,'').replace(/만원?$/,'');var a=s.match(/^(\\d+)억(?:([\\d,]+))?$/);if(a)return +a[1]*1e4+(a[2]?+a[2].replace(/,/g,''):0);var n=+s.replace(/,/g,'');return n>0?n:0}while(m=re.exec(t)){var x=v(m[1]);if(x<1000||x>5e6)continue;var tl=t.slice(m.index+m[0].length,m.index+m[0].length+40).split(/매매|전세|월세/)[0];var ar=tl.match(/(\\d+(?:\\.\\d+)?)\\s*(?:m²|㎡|m2)/);p.push(x+(ar?'@'+ar[1]:''))}if(!p.length){alert('이 화면에서 매매 호가를 못 찾았습니다. 단지를 눌러 매물 목록(이 단지 매물)이 보이게 한 뒤 다시 눌러 주세요.');return}window.open('${siteUrl}#/asking?prices='+p.join(',')+'&src='+encodeURIComponent(location.hostname),'jbslab_asking')})()`;
+  const src = `(function(){var t=document.body.innerText;var re=${/매매(?:가|호가)?\s*:?\s*(\d+\s*억(?:\s*[\d,]{1,6})?|[\d,]{4,7}\s*만?)/g};var p=[],m;function v(s){s=s.replace(/\\s+/g,'').replace(/만원?$/,'');var a=s.match(/^(\\d+)억(?:([\\d,]+))?$/);if(a)return +a[1]*1e4+(a[2]?+a[2].replace(/,/g,''):0);var n=+s.replace(/,/g,'');return n>0?n:0}while(m=re.exec(t)){var x=v(m[1]);if(x<1000||x>5e6)continue;var tl=t.slice(m.index+m[0].length,m.index+m[0].length+40).split(/매매|전세|월세/)[0];var ar=tl.match(/(\\d+(?:\\.\\d+)?)\\s*(?:m²|㎡|m2)/);var ds=t.slice(m.index+m[0].length,m.index+m[0].length+120).split(/매매|전세|월세/)[0];var c=/급매|급처|급하게/.test(ds)?'u':/올\\s?수리|특올|리모델링|인테리어|수리\\s?완/.test(ds)?'t':/수리\\s?필요|기본\\s?(?:상태|형)?|노후|올드/.test(ds)?'b':'';p.push(x+(ar?'@'+ar[1]:'')+(c?'~'+c:''))}if(!p.length){alert(/hogangnono/.test(location.hostname)?'호갱노노 웹 화면에는 매물(호가) 목록이 없습니다. 네이버 부동산에서 단지를 열고 매물 목록이 보이게 한 뒤 눌러 주세요.':'이 화면에서 매매 호가를 못 찾았습니다. 단지를 눌러 매물 목록(이 단지 매물)이 보이게 한 뒤 다시 눌러 주세요.');return}window.open('${siteUrl}#/asking?prices='+p.join(',')+'&src='+encodeURIComponent(location.hostname),'jbslab_asking')})()`;
   return 'javascript:' + encodeURIComponent(src);
 }

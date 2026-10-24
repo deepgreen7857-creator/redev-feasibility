@@ -28,7 +28,7 @@ function links(it) {
   return [
     ['네이버 매물', `https://search.naver.com/search.naver?query=${e(`${q} 매매`)}`],
     ['네이버 지도', `https://map.naver.com/p/search/${e(q)}`],
-    ['호갱노노', `https://hogangnono.com/search?q=${e(q)}`],
+    ['호갱노노(실거래만, 매물 없음)', `https://hogangnono.com/search?q=${e(q)}`],
     ['다음 검색', `https://search.daum.net/search?q=${e(`${q} 매물 호가`)}`],
   ];
 }
@@ -81,11 +81,13 @@ export default function AskingPage({ admin }) {
     const area = Number(it.ledger?.unit?.exclusiveArea || it.buildingArea) || null;
     const { rows: picked, mixed, noSame } = pickByArea(all, area);
     const sm = summarize(picked.map((r) => r.price));
+    // 집 상태별 호가(매물 설명에 '올수리'·'급매'·'기본'이 적힌 것) — 실거래엔 없는 상태 정보
+    const byCond = {}; ['top', 'basic', 'urgent'].forEach((c) => { const sc = summarize(picked.filter((r) => r.cond === c).map((r) => r.price)); if (sc) byCond[c] = { low: sc.low * 1e4, high: sc.high * 1e4, n: sc.n }; });
     if (!all.length) { setNotice({ bad: true, text: '매매 호가를 찾지 못했습니다. 단지를 눌러 매물 목록이 보이는 화면에서 다시 해 주세요.' }); return; }
     if (!sm) { setNotice({ bad: true, text: `매매 호가 ${all.length}건을 읽었지만 이 물건(전용 ${area}㎡)과 같은 면적 매물이 없어 저장하지 않았습니다.` }); return; }
     if (!admin) { setNotice({ bad: true, text: `호가 ${sm.n}건을 읽었지만 관리자 로그인이 안 돼 있어 저장하지 못했습니다.` }); return; }
     const areaNote = area ? `전용 ${area}㎡ ±10% ${sm.n}건/전체 ${all.length}건` : `${sm.n}건${mixed ? ', 면적 섞임 주의' : ''}`;
-    await save(it, sm.low, sm.high, `자동 입력(${src || '화면'} · ${areaNote})`, { src: src || '', n: sm.n, total: all.length, area, rows: all.slice(0, 50) });
+    await save(it, sm.low, sm.high, `자동 입력(${src || '화면'} · ${areaNote}${Object.keys(byCond).length ? ` · 상태 표시 ${Object.entries(byCond).map(([c, v]) => `${{ top: '수리', basic: '기본', urgent: '급매' }[c]} ${v.n}`).join(', ')}` : ''})`, { src: src || '', n: sm.n, total: all.length, area, rows: all.slice(0, 50), byCond });
     setNotice({ bad: mixed, text: `${it.title}: ${areaNote} → 호가 ${eok(sm.low * 1e4)}~${eok(sm.high * 1e4)} 저장${noSame ? ` (면적 다른 ${noSame}건 뺌)` : ''}${mixed ? ' — 물건 면적을 몰라 여러 면적이 섞였을 수 있습니다' : ''}` });
   };
 
@@ -95,7 +97,7 @@ export default function AskingPage({ admin }) {
     const raw = q.get('prices');
     if (!raw || !items || handled.current === loc.key) return;
     handled.current = loc.key;
-    const prices = raw.split(',').map((x) => { const [p, a] = x.split('@'); return { price: Number(p), area: a ? Number(a) : null }; }).filter((r) => r.price > 0);
+    const prices = raw.split(',').map((x) => { const [pa, c] = x.split('~'); const [p, a] = pa.split('@'); return { price: Number(p), area: a ? Number(a) : null, cond: { t: 'top', b: 'basic', u: 'urgent' }[c] || null }; }).filter((r) => r.price > 0);
     const src = q.get('src') || '';
     nav('/asking', { replace: true });
     const it = items.find((x) => x.id === getActive());
@@ -112,7 +114,7 @@ export default function AskingPage({ admin }) {
       </div>
       <div className="card text-sm">
         <div className="font-bold">처음 한 번만: 북마크 만들기</div>
-        <p className="mt-1 text-ink/70">아래 버튼을 마우스로 끌어 크롬 북마크바에 놓으세요(북마크바가 안 보이면 Ctrl+Shift+B). 그다음부터는 네이버 부동산·호갱노노 매물 화면에서 그 북마크만 누르면 됩니다.</p>
+        <p className="mt-1 text-ink/70">아래 버튼을 마우스로 끌어 크롬 북마크바에 놓으세요(북마크바가 안 보이면 Ctrl+Shift+B). 그다음부터는 <b>네이버 부동산 단지 매물 목록</b>을 연 화면에서 그 북마크만 누르면 됩니다. (호갱노노 웹 화면에는 매물·호가 목록이 없고 실거래만 나와서 읽을 호가가 없습니다)</p>
         <a href={bm} onClick={(e) => { e.preventDefault(); alert('이 버튼은 누르는 게 아니라 북마크바로 끌어다 놓는 버튼입니다.'); }} className="btn mt-2 inline-block bg-now text-white">⭐ 호가 가져오기</a>
       </div>
       {notice && <div className={`card text-sm ${notice.bad ? 'text-hard' : 'text-now'}`}>{notice.text}</div>}
