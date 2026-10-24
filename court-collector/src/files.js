@@ -1,6 +1,8 @@
 // 법원 첨부(감정평가서·현황조사서·매각물건명세서·사진) 보관과 서버 올리기
-//  · 원본은 이 PC 하드에 그대로 둔다: .env 의 ORIGINALS_DIR(예: E:\경매원본), 없으면 state/originals
-//    폴더: <ORIGINALS_DIR>/<법원>/<사건번호>_<물건번호>/감정평가서.pdf, 사진01.jpg ...
+//  · 원본은 이 PC 하드에 그대로 둔다: 등기부 수집기와 같은 폴더 D:\법원경매원본(매일 새벽 E:로 백업됨).
+//    .env 의 ORIGINALS_DIR 로 바꿀 수 있고, 그 폴더가 없는 PC(시험 등)에서는 state/originals.
+//    물건 폴더: <원본폴더>\<법원>\<연도>\<사건번호>\<물건번호>\ (등기부 PDF와 같은 자리) — 사진01.jpg, 감정평가서.json(공유문서 위치) …
+//    병합·중복사건이 함께 쓰는 문서: <원본폴더>\_공유문서\감정평가서_<해시>.pdf
 //  · 서버(사이트)에는 PDF는 그대로(관리자만 열림), 사진은 줄인 것만 올린다.
 //  · 못 올린 것은 state/files-pending.json 에 남겨 다음에 다시 보낸다(원본 파일 경로만 기억).
 import fs from 'node:fs';
@@ -17,7 +19,8 @@ const safe = (s) => String(s).replace(/[\\/:*?"<>|\s]/g, '');
 
 export class FileStore {
   constructor({ root, stateDir, env, log, dry }) {
-    this.dir = env.ORIGINALS_DIR ? path.resolve(env.ORIGINALS_DIR) : path.join(root, 'state', 'originals');
+    const archive = env.ORIGINALS_DIR || 'D:\\법원경매원본';
+    this.dir = fs.existsSync(archive) ? path.resolve(archive) : path.join(root, 'state', 'originals');
     this.pendingFile = path.join(stateDir, 'files-pending.json');
     this.pending = fs.existsSync(this.pendingFile) ? JSON.parse(fs.readFileSync(this.pendingFile, 'utf8')) : [];
     this.env = env; this.log = log; this.dry = dry;
@@ -46,7 +49,7 @@ export class FileStore {
     const ent = (this.index[hash] ||= { kind, orig, up, listings: [] });
     if (!ent.listings.includes(listingId)) ent.listings.push(listingId);
     ent.up = up; this.saveIndex();
-    const folder = path.join(this.dir, safe(court), `${safe(caseNo)}_${String(itemNo || '1')}`);
+    const folder = this.folderOf(court, caseNo, itemNo);
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(path.join(folder, `${kind}.json`), JSON.stringify({ hash, 원본: orig, 함께쓰는물건: ent.listings, ...meta }, null, 1));
     this.pending = this.pending.filter((p) => !(p.listingId === listingId && p.kind === kind));
@@ -61,7 +64,7 @@ export class FileStore {
     if (!ent || !fs.existsSync(ent.up)) return false;
     const listingId = listingIdOf(court, caseNo, itemNo);
     if (!ent.listings.includes(listingId)) { ent.listings.push(listingId); this.saveIndex(); }
-    const folder = path.join(this.dir, safe(court), `${safe(caseNo)}_${String(itemNo || '1')}`);
+    const folder = this.folderOf(court, caseNo, itemNo);
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(path.join(folder, `${kind}.json`), JSON.stringify({ hash, 원본: ent.orig, 함께쓰는물건: ent.listings, ...meta }, null, 1));
     this.pending = this.pending.filter((p) => !(p.listingId === listingId && p.kind === kind));
@@ -70,11 +73,17 @@ export class FileStore {
     return true;
   }
 
+  /** 물건 폴더 — 등기부 수집기(registry.js)와 같은 규칙: <법원>\<연도>\<사건번호>\<물건번호> */
+  folderOf(court, caseNo, itemNo) {
+    const cn = String(caseNo).replace(/\s/g, '');
+    return path.join(this.dir, String(court).trim(), cn.slice(0, 4), cn, String(itemNo || 1));
+  }
+
   savePending() { fs.writeFileSync(this.pendingFile, JSON.stringify(this.pending)); }
 
   /** 원본을 하드에 저장하고, 서버에 올릴 목록에 넣는다. upBuf 를 주면 그것을 올린다(사진은 줄인 것). */
   keep({ court, caseNo, itemNo, kind, buf, ext, upBuf, upExt }) {
-    const folder = path.join(this.dir, safe(court), `${safe(caseNo)}_${String(itemNo || '1')}`);
+    const folder = this.folderOf(court, caseNo, itemNo);
     fs.mkdirSync(folder, { recursive: true });
     const orig = path.join(folder, `${kind}.${ext}`);
     fs.writeFileSync(orig, buf);

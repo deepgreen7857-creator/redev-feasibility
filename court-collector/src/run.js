@@ -197,7 +197,7 @@ async function keepAttachments(page, pace, row, detail) {
     files.keepDoc({ ...base, kind: '매각물건명세서', buf: detail.spec.pdf, upBuf: small, meta });
     got['매각물건명세서'] = detail.spec.how;
   }
-  const base2 = path.join(files.dir, String(row.court).replace(/\s/g, ''), `${String(row.caseNo).replace(/\s/g, '')}_${row.itemNo || '1'}`);
+  const base2 = files.folderOf(row.court, row.caseNo, row.itemNo || '1');
   let photoNo = (detail.photoData || []).length;
   for (const name of ['감정평가서', '현황조사서']) {
     if (!(detail.documents || []).some((d) => d.name === name)) continue;
