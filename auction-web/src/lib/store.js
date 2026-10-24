@@ -45,13 +45,25 @@ function demoListings() {
   return mem.listings;
 }
 
-export async function listListings({ sido } = {}) {
+// 물건 목록. 전체 문서가 2만 건을 넘어 '아무거나 5,000건'만 오던 문제가 있었다 → 기일(bidEnd)로 범위를 잘라 받는다.
+//  bidEnd 는 '2026-10-28'(온비드)과 '2026.10.28'(법원) 두 형식이 섞여 있어 형식별로 따로 범위 질의를 하고 합친다.
+//  scope: 'open'(오늘 이후 기일, 기본) | 'recent'(최근 days일 ~ 오늘 이후 전부, 완료 물건 화면용)
+export async function listListings({ sido, scope = 'open', days = 120 } = {}) {
   const f = await firebase();
   if (!f) return demoListings().filter((x) => !sido || x.sido === sido);
-  const { collection, query, where, limit, getDocs } = f.fs;
-  const q = sido ? query(collection(f.db, 'listings'), where('sido', '==', sido), limit(5000)) : query(collection(f.db, 'listings'), limit(5000));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const { collection, query, where, getDocs } = f.fs;
+  const kst = (d) => new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
+  const from = kst(scope === 'recent' ? new Date(Date.now() - days * 86400e3) : new Date());
+  const col = collection(f.db, 'listings');
+  // 글자 순서상 '-'(45) < '.'(46): 같은 해에서 점 형식은 대시 형식보다 뒤에 온다
+  //  ① 올해 대시 형식: from ~ 'YYYY-~'   ② 점 형식(올해 이후)과 내년 이후 대시 형식: 'YYYY.MM.DD' 이상
+  const y = from.slice(0, 4);
+  const dash = query(col, where('bidEnd', '>=', from), where('bidEnd', '<', `${y}-~`));
+  const dot = query(col, where('bidEnd', '>=', from.replace(/-/g, '.')));
+  const [a, b] = await Promise.all([getDocs(dash), getDocs(dot)]);
+  const seen = new Set(); const out = [];
+  [...a.docs, ...b.docs].forEach((d) => { if (seen.has(d.id)) return; seen.add(d.id); const x = { id: d.id, ...d.data() }; if (!sido || x.sido === sido) out.push(x); });
+  return out;
 }
 
 // 온비드 입찰결과목록으로 받은 과거 완료 물건(우리가 진행 중에 모으지 않았던 것) — 완료 물건 채점용

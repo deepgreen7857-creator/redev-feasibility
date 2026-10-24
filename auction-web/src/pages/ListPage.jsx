@@ -15,6 +15,7 @@ export default function ListPage({ mode }) {
   const done = mode === 'done';
   const villa = mode === 'villa';
   const [items, setItems] = useState(null);
+  const [past, setPast] = useState([]); // 낙찰 결과(예상 낙찰가 기준표용) — 낙찰가는 이제 pastResults 에만 있다
   const [settings, setSettings] = useState(null);
   const [dealsMap, setDealsMap] = useState({});
   const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: 'verdict', corpOnly: false, under1: false, showExcluded: false, onlyOpen: true });
@@ -22,8 +23,8 @@ export default function ListPage({ mode }) {
 
   useEffect(() => {
     setItems(null);
-    Promise.all([listListings({ sido: f.sido || undefined }), getSettings(), mode === 'done' ? listPastResults({ sido: f.sido || undefined }).catch(() => []) : Promise.resolve([])])
-      .then(([list, s, past]) => { const ids = new Set(list.map((x) => x.id)); setItems([...list, ...past.filter((x) => !ids.has(x.id))]); setSettings(s); })
+    Promise.all([listListings({ sido: f.sido || undefined, scope: mode === 'done' ? 'recent' : 'open' }), getSettings(), listPastResults({ sido: f.sido || undefined }).catch(() => [])])
+      .then(([list, s, past]) => { const ids = new Set(list.map((x) => x.id)); setItems(mode === 'done' ? [...list, ...past.filter((x) => !ids.has(x.id))] : list); setPast(past); setSettings(s); })
       .catch((e) => setError(e.message));
   }, [f.sido, mode]);
 
@@ -68,7 +69,7 @@ export default function ListPage({ mode }) {
   }, [items, settings, dealsMap, f, opp, done, villa]);
 
   // 예상 낙찰가(=우리 입찰가) 기준표: 불러온 물건 중 낙찰가가 있는 완료 물건으로 만든다
-  const table = useMemo(() => (items ? premiumTable(items) : null), [items]);
+  const table = useMemo(() => (items ? premiumTable([...items, ...past]) : null), [items, past]);
 
   const counts = useMemo(() => {
     const c = { now: 0, wait: 0, check: 0, hard: 0, unknown: 0, special: 0, suspect: 0 };
