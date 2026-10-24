@@ -398,7 +398,7 @@ test('공공데이터 HTTP 403 + 키 미등록(30)이면 사유 코드로 멈추
   const saved = [];
   const sum = await trades.collect({ serviceKey: 'k', fetcher, types: ['rh'], codes: ['11740', '28237'], backfillMonths: 3, getProgress: async () => null, saveProgress: async () => {}, saveMonth: async (m) => saved.push(m), log: () => {} });
   assert.equal(sum.rh.ok, 0); assert.ok(/코드 30/.test(sum.rh.stopped)); assert.equal(saved.length, 0);
-  assert.ok(calls <= 4); // 첫 작업에서 바로 멈춤
+  assert.ok(calls <= 2 + 6); // 첫 작업에서 바로 멈춤(주소 후보 3개 × https·http 한 번씩까지만)
 });
 
 test('온비드 필지번호 11번째 자리 0 → 1 보정(산은 2 그대로)', () => {
@@ -407,4 +407,20 @@ test('온비드 필지번호 11번째 자리 0 → 1 보정(산은 2 그대로)'
   assert.equal(normalizePnu('1174010900102330022'), '1174010900102330022');
   assert.equal(normalizePnu('4146110100203210000'), '4146110100203210000');
   assert.equal(normalizePnu(null), null);
+});
+
+test('연립다세대 매매: RHTrade2 주소부터, 거절(30)이면 다음 주소로 넘어가고 되는 주소를 기억', async () => {
+  const trades = require('../src/lib/trades');
+  delete trades._workingUrl.rh;
+  const seen = [];
+  const ok = '<response><header><resultCode>000</resultCode><resultMsg>OK</resultMsg></header><body><items><item><dealAmount>30,000</dealAmount><excluUseAr>50</excluUseAr><umdNm>신월동</umdNm></item></items><totalCount>1</totalCount></body></response>';
+  const deny = '<OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</errMsg><returnReasonCode>30</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>';
+  const fetcher = async (u) => { const s = String(u); seen.push(s.split('?')[0].replace('http:', 'https:')); return /getRTMSDataSvcRHTrade2\?/.test(s) ? { ok: false, status: 403, text: async () => deny } : { ok: true, status: 200, text: async () => ok }; };
+  const deals = await trades.fetchMonth({ type: 'rh', lawd: '11470', ym: '202609', serviceKey: 'k', fetcher });
+  assert.equal(deals.length, 1);
+  assert.ok(seen[0].endsWith('/RTMSDataSvcRHTrade2/getRTMSDataSvcRHTrade2'));
+  assert.ok(trades._workingUrl.rh.endsWith('/RTMSDataSvcRHTrade2/getRTMSDataSvcRHTrade'));
+  const n = seen.length;
+  await trades.fetchMonth({ type: 'rh', lawd: '11470', ym: '202608', serviceKey: 'k', fetcher });
+  assert.equal(seen.length, n + 1); // 기억한 주소로 바로
 });

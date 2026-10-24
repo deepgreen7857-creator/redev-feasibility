@@ -5,8 +5,10 @@ const { REGIONS, PRIORITY_CODES } = require('../data/regions');
 
 const BASE = 'https://apis.data.go.kr/1613000';
 const TYPES = {
-  apt: { name: '아파트', api: 'rt-apt', url: `${BASE}/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev`, fallback: `${BASE}/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade` },
-  rh: { name: '연립다세대', api: 'rt-rh', url: `${BASE}/RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade` },
+  apt: { name: '아파트', api: 'rt-apt', url: `${BASE}/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev`, fallback: [`${BASE}/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade`] },
+  // 2026 현재 포털 활용신청 주소는 RTMSDataSvcRHTrade2(끝에 2). 옛 주소로 부르면 '등록되지 않은 서비스키(30)'가 난다.
+  // 기능(오퍼레이션) 이름은 기술문서 확인 전이라 두 가지를 차례로 시도하고, 되는 주소를 기억한다.
+  rh: { name: '연립다세대', api: 'rt-rh', url: `${BASE}/RTMSDataSvcRHTrade2/getRTMSDataSvcRHTrade2`, fallback: [`${BASE}/RTMSDataSvcRHTrade2/getRTMSDataSvcRHTrade`, `${BASE}/RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade`] },
   sh: { name: '단독/다가구', api: 'rt-sh', url: `${BASE}/RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade` },
   offi: { name: '오피스텔', api: 'rt-offi', url: `${BASE}/RTMSDataSvcOffiTrade/getRTMSDataSvcOffiTrade` },
   land: { name: '토지', api: 'rt-land', url: `${BASE}/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade` },
@@ -58,12 +60,25 @@ function ymList(months, from = new Date()) {
   return out;
 }
 
+// 종류별로 실제로 응답한 주소를 기억한다(주소가 바뀐 API는 처음 한 번만 여러 주소를 시도)
+const workingUrl = {};
+const SWITCH = ['30', '20', 'HTTP_404', 'HTTP_400'];
+async function callAny({ type, t, params, serviceKey, quota, fetcher }) {
+  const urls = workingUrl[type] ? [workingUrl[type]] : [t.url, ...(t.fallback || [])];
+  let last;
+  for (const url of urls) {
+    try { const page = await call({ api: t.api, url, serviceKey, quota, fetcher, params }); workingUrl[type] = url; return page; }
+    catch (e) { last = e; if (!SWITCH.includes(e.code)) throw e; }
+  }
+  throw last;
+}
+
 async function fetchMonth({ type, lawd, ym, serviceKey, quota, fetcher }) {
   const t = TYPES[type];
   const deals = [];
   let pageNo = 1; let total = 0;
   for (;;) {
-    const page = await call({ api: t.api, url: t.url, serviceKey, quota, fetcher, params: { LAWD_CD: lawd, DEAL_YMD: ym, pageNo, numOfRows: 1000 } });
+    const page = await callAny({ type, t, serviceKey, quota, fetcher, params: { LAWD_CD: lawd, DEAL_YMD: ym, pageNo, numOfRows: 1000 } });
     total = page.total;
     deals.push(...page.rows.map((r) => (t.rent ? compactRent(type, r) : compact(type, r))));
     if (!page.rows.length || pageNo * 1000 >= total) break;
@@ -120,4 +135,4 @@ async function collect({ serviceKey, quota, fetcher, getProgress, saveMonth, sav
   return summary;
 }
 
-module.exports = { TYPES, compact, ymList, plan, fetchMonth, collect };
+module.exports = { TYPES, compact, ymList, plan, fetchMonth, collect, _workingUrl: workingUrl };
