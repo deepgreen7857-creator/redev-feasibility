@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listListings, listPastResults, getSettings, getDeals } from '../lib/store.js';
-import { analyze, tradeTypeOf, eok, pct, SOURCE_LABEL, typeLabel, areaText, ANALYZER_VERSION } from '../lib/analyze.js';
+import { analyze, tradeTypeOf, courtRate, eok, pct, SOURCE_LABEL, typeLabel, areaText, ANALYZER_VERSION } from '../lib/analyze.js';
 import { lawdOf, SIDO } from '../data/defaults.js';
 import { corpFit, propertyKind } from '../lib/tax.js';
 import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
+import { soldRateTable, roundPlan } from '../lib/roundPlan.js';
 import { premiumTable, predictPrice, isFirstRound, scoreErrors, evidenceGroup, EVIDENCE_LABEL, bidOutcome, soldOf } from '../lib/bidForecast.js';
 
 const SOURCES = [['all', '전체'], ['court', '법원경매'], ['public', '공매'], ['bankrupt', '파산자산']];
@@ -70,6 +71,7 @@ export default function ListPage({ mode }) {
 
   // 예상 낙찰가(=우리 입찰가) 기준표: 불러온 물건 중 낙찰가가 있는 완료 물건으로 만든다
   const table = useMemo(() => (items ? premiumTable([...items, ...past]) : null), [items, past]);
+  const rates = useMemo(() => (items ? soldRateTable([...items, ...past]) : null), [items, past]);
 
   const counts = useMemo(() => {
     const c = { now: 0, wait: 0, check: 0, hard: 0, unknown: 0, special: 0, suspect: 0 };
@@ -179,6 +181,7 @@ export default function ListPage({ mode }) {
             )}
             {done && <ResultRow it={it} a={a} table={table} />}
             {!done && <BidRow it={it} a={a} table={table} />}
+            {!done && <RoundLine it={it} a={a} table={table} rates={rates} settings={settings} />}
             {villa && <VillaRow it={it} a={a} />}
             {a.opportunity && (
               <div className="mt-2 rounded-lg border border-now/30 bg-now/5 p-2 text-sm">
@@ -508,6 +511,22 @@ function AnalyzerScore({ rows, table }) {
       <T title="시도별" data={grp((x) => x.it.sido || '지역 없음')} />
       <button type="button" className="mt-2 text-xs text-brand underline" onClick={() => setOpen(!open)}>{open ? '시군구별 접기' : '시군구별 보기'}</button>
       {open && <T title="시군구별" data={grp((x) => `${x.it.sido || ''} ${x.it.sgg || ''}`.trim() || '지역 없음')} limit={60} />}
+    </div>
+  );
+}
+
+// 진행 물건 카드: 몇 회 더 유찰되면 살 만해지나 + 그때까지 남아 있을 확률(기대값이 가장 큰 회차)
+function RoundLine({ it, a, table, rates, settings }) {
+  if (!a.cap || a.special) return null;
+  const plan = roundPlan(it, a, { premium: table, rates, courtRate: courtRate(it, settings).rate });
+  if (!plan) return null;
+  const P = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`);
+  const b = plan.best; const f = plan.firstOk;
+  if (!f) return <div className="mt-1 text-xs text-hard">앞으로 {plan.rows.length}회차 안에는 예상 낙찰가가 우리 매수상한 아래로 안 내려옴 — 매력 전환 없음</div>;
+  return (
+    <div className="mt-1 text-xs">
+      <b>매력 전환</b>: {f.label}(최저가 {eok(f.price)}, 예상 낙찰가 {eok(f.bid)}){f.k > 0 ? ` · 그때까지 남아 있을 확률 ${P(f.survive)}` : ''}
+      {b && b.k !== f.k && <span className="ml-1 font-bold text-brand">→ 기대값 최대: {b.label}(남아 있을 확률 {P(b.survive)}, 남는 돈 {eok(b.room)})</span>}
     </div>
   );
 }
