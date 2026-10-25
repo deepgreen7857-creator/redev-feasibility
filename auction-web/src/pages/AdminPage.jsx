@@ -1,7 +1,9 @@
 import { listRuleSuggestions } from '../lib/store.js';
 import { useEffect, useState } from 'react';
 import MiniPcStatus from '../components/MiniPcStatus.jsx';
-import { getSettings, saveSettings, getStatus, callFn, saveListing, signIn, isAdmin, DEMO } from '../lib/store.js';
+import { getSettings, saveSettings, getStatus, callFn, saveListing, signIn, isAdmin, DEMO, listListings, TRADE_TYPES } from '../lib/store.js';
+import { SGG_CODES } from '../data/defaults.js';
+import { tradeTypeOf } from '../lib/analyze.js';
 import { DEFAULT_COURTS, SIDO } from '../data/defaults.js';
 import { Card, Field, Row, Badge } from '../components/ui.jsx';
 import { parseCourtText } from '../lib/parseCourt.js';
@@ -19,6 +21,7 @@ export default function AdminPage({ user }) {
   }
   return (
     <div className="space-y-4">
+      <DataCompleteness />
       <MiniPcStatus />
       <Status />
       <RuleSuggestions />
@@ -256,6 +259,49 @@ function RuleSuggestions() {
           <ul className="list-disc pl-5 text-xs">{xs.slice(0, 8).map((x, i) => <li key={i}>{x.rule} — {x.why} <a className="text-brand underline" href={`#/report/${encodeURIComponent(x.listingId)}`}>{x.title?.slice(0, 20)}</a></li>)}</ul>
         </div>
       ))}
+    </Card>
+  );
+}
+
+
+// 자료 완성도 — 자료는 한 가지씩 100% 받고 확인한 뒤 다음으로 간다(여러 개를 70%씩 걸쳐 두면 어느 것도 판단에 못 씀)
+const TRADE_NAME = { apt: '아파트 매매', rh: '연립다세대 매매', sh: '단독·다가구 매매', offi: '오피스텔 매매', land: '토지 매매', aptRent: '아파트 전월세', rhRent: '연립다세대 전월세', shRent: '단독·다가구 전월세', offiRent: '오피스텔 전월세', nrg: '상가·업무용 매매' };
+function DataCompleteness() {
+  const [st, setSt] = useState(null); const [items, setItems] = useState(null); const [err, setErr] = useState('');
+  const load = () => { setErr(''); Promise.all([getStatus(), listListings({ scope: 'open' })]).then(([s, l]) => { setSt(s); setItems(l); }).catch((e) => setErr(e.message)); };
+  useEffect(() => { load(); }, []);
+  const regions = Object.values(SGG_CODES).reduce((n, t) => n + Object.keys(t).length, 0);
+  const backMonths = 10; // 12개월 중 최근 2개월은 매일 다시 받으므로 '한 번만 받는' 과거 10개월 기준
+  const P = (x) => (x === null || x === undefined ? '—' : `${Math.round(x * 100)}%`);
+  const tradeRows = st ? TRADE_TYPES.map((t) => { const p = st.progress?.[t]; const pct = p ? Math.min(1, p.done / (regions * backMonths)) : 0; return { name: `실거래 · ${TRADE_NAME[t] || t}`, pct, note: p ? `${p.done}/${regions * backMonths}묶음 · 마지막 ${String(p.updatedAt || '').slice(5, 16).replace('T', ' ')}` : '아직 시작 안 함' }; }) : [];
+  const itemRows = [];
+  if (items) {
+    const cnt = (arr, f) => (arr.length ? arr.filter(f).length / arr.length : null);
+    const court = items.filter((x) => x.source === 'court'); const onbid = items.filter((x) => x.source !== 'court');
+    const house = items.filter((x) => ['apt', 'rh', 'sh'].includes(tradeTypeOf(x)));
+    const bld = items.filter((x) => tradeTypeOf(x) !== 'land');
+    itemRows.push(
+      { name: `토지 정보·공시지가 (진행 물건 ${items.length}건)`, pct: cnt(items, (x) => x.land?.officialPrice), note: '브이월드 — 밤마다 150건씩' },
+      { name: `건물(전용) 면적 (${bld.length}건)`, pct: cnt(bld, (x) => x.buildingArea || x.ledger?.unit?.exclusiveArea), note: '수집 원문 또는 건축물대장' },
+      { name: `공매 원문 — 임대차·인수 권리 (${onbid.length}건)`, pct: cnt(onbid, (x) => x.detail), note: '온비드 상세 — 하루 약 1,000건, 곧 입찰하는 것부터' },
+      { name: `법원 매각물건명세서 (${court.length}건)`, pct: cnt(court, (x) => x.detail?.specRead), note: '미니PC 수집기 — 하루 1,000화면' },
+      { name: `주택 공시가격 (${house.length}건)`, pct: cnt(house, (x) => x.housePrice?.matched), note: '법인 취득세 1억 기준 판단용' },
+    );
+  }
+  const Row = ({ r }) => (
+    <tr className="border-t border-line/50">
+      <td className="py-1">{r.name}</td>
+      <td className="w-40"><div className="h-3 rounded bg-paper"><div className={`h-3 rounded ${r.pct >= 0.999 ? 'bg-now' : 'bg-brand/60'}`} style={{ width: `${Math.round((r.pct || 0) * 100)}%` }} /></div></td>
+      <td className={`text-right font-bold ${r.pct >= 0.999 ? 'text-now' : ''}`}>{r.pct >= 0.999 ? '완료' : P(r.pct)}</td>
+      <td className="pl-2 text-ink/50">{r.note}</td>
+    </tr>
+  );
+  return (
+    <Card title="자료 완성도 — 한 가지씩 100% 받고 다음으로" right={<button className="btn-ghost" onClick={load}>새로고침</button>}>
+      <p className="mb-2 text-xs text-ink/60">판정은 자료가 다 모인 물건만 합니다(빠지면 '자료 수집 중'). 받는 순서: ① 실거래(매매·전월세) → ② 토지·공시지가 → ③ 건물 면적 → ④ 공매 원문 → ⑤ 법원 명세서 → ⑥ 주택 공시가격. 앞 단계가 '완료'가 되면 다음 단계를 확인합니다.</p>
+      {err && <div className="text-xs text-hard">{err}</div>}
+      {!st && !err && <div className="text-xs text-ink/50">불러오는 중…</div>}
+      <table className="w-full text-xs"><tbody>{tradeRows.map((r) => <Row key={r.name} r={r} />)}{itemRows.map((r) => <Row key={r.name} r={r} />)}</tbody></table>
     </Card>
   );
 }

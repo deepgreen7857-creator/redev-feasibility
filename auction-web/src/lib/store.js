@@ -121,6 +121,7 @@ export async function getDeals(type, lawd, months = 12) {
   });
 }
 
+export const TRADE_TYPES = ['apt', 'rh', 'sh', 'offi', 'land', 'aptRent', 'rhRent', 'shRent', 'offiRent', 'nrg'];
 export async function getStatus() {
   const f = await firebase();
   if (!f) {
@@ -136,10 +137,10 @@ export async function getStatus() {
     getDoc(doc(f.db, 'state', 'onbid')), getDoc(doc(f.db, 'state', 'bankrupt')), getDoc(doc(f.db, 'state', 'incheonZones')),
     getDocs(query(collection(f.db, 'runs'), orderBy('at', 'desc'), limit(10))),
     getDocs(query(collection(f.db, 'quota'), orderBy('updatedAt', 'desc'), limit(30))),
-    ...['apt', 'rh', 'sh', 'offi', 'land'].map((t) => getDoc(doc(f.db, 'tradeProgress', t))),
+    ...TRADE_TYPES.map((t) => getDoc(doc(f.db, 'tradeProgress', t))),
   ]);
   const progress = {};
-  ['apt', 'rh', 'sh', 'offi', 'land'].forEach((t, i) => { const d = prog[i].exists() ? prog[i].data() : null; progress[t] = d ? { remaining: d.remaining, updatedAt: d.updatedAt, done: Object.keys(d.done || {}).length } : null; });
+  TRADE_TYPES.forEach((t, i) => { const d = prog[i].exists() ? prog[i].data() : null; progress[t] = d ? { remaining: d.remaining, updatedAt: d.updatedAt, done: Object.keys(d.done || {}).length } : null; });
   return {
     state: { onbid: onbidS.data() || {}, bankrupt: bankS.data() || {}, zones: zonesS.data() || {} },
     progress,
