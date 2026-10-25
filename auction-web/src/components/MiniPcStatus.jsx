@@ -29,7 +29,7 @@ function regVerdict(r, today, last) {
   const on = h >= 8 && h < 23;
   if (r.stoppedBy === 'login' && r.lastDay && mins(r.lastRun) < 24 * 60) return { tone: 'hard', text: '확인 필요 — 마이옥션 로그인 풀림 (미니PC에서 npm run myauction-login)' };
   if (['errors', 'error'].includes(r.stoppedBy) && mins(r.lastRun) < 24 * 60) return { tone: 'hard', text: `확인 필요 — ${STOP[r.stoppedBy]}` };
-  if (today >= 120) return { tone: 'now', text: '정상 — 오늘 한도(120건) 채움' };
+  if (today >= 120 || (r.stoppedBy === 'limit' && r.lastDay === new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10))) return { tone: 'now', text: '정상 — 오늘 한도(120건) 채움' };
   if (!today && r.targets === 0 && mins(r.lastRun) < 12 * 60) return { tone: 'now', text: '정상 — 받을 물건 없음(모두 받음)' };
   if (on && h >= 9 && !today) return { tone: 'hard', text: '확인 필요 — 08시에 시작했어야 하는데 오늘 저장 0건' };
   if (on && last && mins(last.at) > 30) return { tone: 'hard', text: '확인 필요 — 30분 넘게 저장 없음' };
@@ -52,6 +52,8 @@ export default function MiniPcStatus() {
             <div className="mb-1 flex flex-wrap items-center gap-2 text-sm font-bold">법원경매 수집 <Badge tone={cv.tone} className="whitespace-normal">{cv.text}</Badge></div>
             <Row k="마지막 전송" v={c.lastRun ? `${time(c.lastRun)} (${ago(c.lastRun)})` : '—'} />
             <Row k="이번 회차" v={c.listed != null ? `목록 ${c.listed} · 상세 ${c.detailed} · 전송 ${c.uploaded}` : '—'} />
+            {c.files && <Row k="첨부" v={`원본 저장 ${c.files.saved ?? 0} · 같은 문서 재사용 ${c.files.sharedReuse ?? 0} · 사이트 올림 ${c.files.uploaded ?? 0}${c.files.failed ? ` · 올리기 실패 ${c.files.failed}` : ''}${c.attachErrors ? ` · 첨부 오류 ${c.attachErrors}` : ''}`} />}
+            {c.lastError && <div className="mt-1 break-all rounded bg-hard/10 px-2 py-1 text-xs text-hard">마지막 오류: {c.lastError}</div>}
             <div className="mt-1 text-xs text-ink/50">01~06 · 09~14 · 17~22시에 돎</div>
           </div>
           <div>

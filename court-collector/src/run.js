@@ -287,7 +287,8 @@ async function main() {
     page = await (await browser.newContext({ locale: 'ko-KR', viewport: { width: 1366, height: 900 } })).newPage();
   };
   await open();
-  const stats = { listed: 0, detailed: 0, uploaded: 0, stoppedBy: null };
+  // lastError: 이번 회차 마지막 오류(상태판에 보임, 없으면 null로 지움) · files: 첨부 저장·올리기 수
+  const stats = { listed: 0, detailed: 0, uploaded: 0, stoppedBy: null, lastError: null, attachErrors: 0, files: files.stats };
   let buffer = [];
   let uploadFails = 0;
   let flushAt = cfg.uploadBatch; // 실패한 뒤에는 한 묶음이 더 쌓였을 때 다시 시도(물건 하나마다 재시도하지 않게)
@@ -360,7 +361,13 @@ async function main() {
                 stats.specRead = (stats.specRead || 0) + 1;
               } else { stats.specMissed = (stats.specMissed || 0) + 1; log(`명세서 못 읽음 ${row.caseNo}: ${spec.why}`); }
               // 첨부 원본: 사진 + 감정평가서·현황조사서(팝업) — 사람이 버튼을 눌러 보는 것과 같은 요청, 화면 수에 넣어 셈
-              await keepAttachments(page, pace, row, detail);
+              // 첨부에서 오류가 나도 회차 전체를 멈추지 않는다(물건 정보는 그대로 올리고, 오류는 상태판에 남김)
+              try { await keepAttachments(page, pace, row, detail); } catch (e) {
+                stats.attachErrors++; stats.lastError = `첨부 ${row.caseNo}: ${e.message}`.slice(0, 300);
+                log(`첨부 받기 오류(건너뜀) ${row.caseNo}: ${e.stack || e.message}`);
+                delete detail.photoData; if (detail.spec) delete detail.spec.pdf;
+                for (const p of await page.context().pages()) if (p !== page) await p.close().catch(() => {}); // 열린 문서 창 정리
+              }
             }
             await backToList(page);
             stats.detailed++;
@@ -389,6 +396,7 @@ async function main() {
     await flush();
   } catch (e) {
     stats.stoppedBy = e instanceof Blocked ? 'blocked' : e instanceof UploadDown ? 'upload' : 'error';
+    stats.lastError = String(e.message || e).slice(0, 300);
     log(`${e instanceof Blocked ? '차단 감지' : e instanceof UploadDown ? '서버 전송 중단' : '오류'}: ${e.message}`);
     if (!(e instanceof UploadDown)) { try { await flush(); } catch (e2) { log(`업로드 오류: ${e2.message}`); } }
     if (e instanceof Blocked) fs.writeFileSync(path.join(STATE, 'blocked.txt'), `${new Date().toISOString()} ${e.message}\n`);
