@@ -437,7 +437,7 @@ exports.collectTick = onSchedule(
 
 // 매일 밤 11시 40분: 진행 중인 물건을 판정해 '입찰 전 예측'을 저장(기일이 된 물건은 그대로 굳힘)
 exports.forecastTick = onSchedule(
-  { schedule: '40 23 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '1GiB' },
+  { schedule: '40 23 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '2GiB' },
   async () => { await forecast.run({ db, log: logger.info, deadline: Date.now() + TICK_BUDGET_MS }); },
 );
 
@@ -456,7 +456,7 @@ exports.runNow = onCall({ timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_
 });
 
 // 관리자: 예측 기록 지금 실행
-exports.forecastNow = onCall({ timeoutSeconds: 540, memory: '1GiB' }, async (request) => {
+exports.forecastNow = onCall({ timeoutSeconds: 540, memory: '2GiB' }, async (request) => {
   requireAdmin(request);
   return forecast.run({ db, log: logger.info, deadline: Date.now() + TICK_BUDGET_MS });
 });

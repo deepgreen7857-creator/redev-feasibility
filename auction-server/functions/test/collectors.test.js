@@ -261,6 +261,21 @@ test('주변 필지 맹지 확인: 지적도 경계 → 주변 필지 → 도로
   assert.equal(nb.list.find((x) => x.jimok === '도').roadSide, null);
 });
 
+// 가짜 Firestore 질의: select·where(>=,<)·orderBy·startAfter·limit
+function fakeQuery(docs, f = []) {
+  const snap = (arr) => ({ size: arr.length, empty: !arr.length, docs: arr.map((d) => ({ id: d.id, ref: { id: d.id }, data: () => d.data })) });
+  const run = () => docs.filter((d) => f.every(([k, op, v]) => (op === '>=' ? String(d.data[k] || '') >= v : String(d.data[k] || '') < v)));
+  const q = {
+    select: () => q,
+    where: (k, op, v) => fakeQuery(docs, [...f, [k, op, v]]),
+    orderBy: () => q,
+    limit: () => q,
+    startAfter: () => ({ limit: () => ({ get: async () => snap([]) }) }),
+    get: async () => snap(run()),
+  };
+  return q;
+}
+
 test('입찰 전 예측: 기일 전 물건만 판정하고, 기일이 된 물건은 굳힘', async () => {
   const forecast = require('../src/lib/forecast');
   const now = { day: '2026-10-23', stamp: '2026-10-23 08:00' };
@@ -280,13 +295,13 @@ test('입찰 전 예측: 기일 전 물건만 판정하고, 기일이 된 물건
   const db = {
     collection: (name) => ({
       doc: (id) => ({ id, get: async () => ({ exists: name === 'settings' ? false : true, data: () => ({ d: deals }) }), _name: name }),
-      get: async () => ({ size: docs.length, docs: docs.map((d) => ({ id: d.id, ref: { id: d.id }, data: () => d.data })) }),
+      ...fakeQuery(docs),
     }),
     getAll: async (...refs) => refs.map(() => ({ exists: true, data: () => ({ d: deals }) })),
     batch: () => ({ set: (ref, v) => { written[ref.id] = v; }, commit: async () => {} }),
   };
   const st = await forecast.run({ db, log: () => {} });
-  assert.equal(st.forecast, 1); assert.equal(st.frozen, 1);
+  assert.equal(st.forecast, 1); assert.equal(st.scanned, 1); // 기일 지난 물건은 아예 읽지 않는다(메모리 아끼기)
   assert.ok(written.a.forecast.verdict && written.a.forecastFirst);
   assert.equal(written.b, undefined);
   assert.ok(written.a.forecast.analyzerVersion);

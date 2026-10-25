@@ -71,17 +71,43 @@ async function run({ db, log = console.log, deadline = Infinity }) {
   const s = await db.collection('settings').doc('main').get();
   const settings = { ...DEFAULT_SETTINGS, ...(s.exists ? s.data() : {}) };
   const now = kstNow();
-  const snap = await db.collection('listings').get();
-  // 예상 낙찰가 기준표: 낙찰가가 있는 완료 물건(진행 중 모은 것 + 과거 입찰결과) — 화면과 같은 방식
-  const past = await db.collection('pastResults').get().catch(() => ({ docs: [] }));
-  const ids = new Set(snap.docs.map((d) => d.id));
-  const doneItems = [...snap.docs.map((d) => d.data()), ...past.docs.filter((d) => !ids.has(d.id)).map((d) => d.data())];
+  // 메모리 아끼기(10-24부터 물건이 2만 7천 건으로 늘어 1GB를 넘겨 'internal' 오류로 죽던 문제):
+  //  ① 기준표(낙찰가÷최저가, 낙찰률)는 필요한 칸만 골라 읽는다(select)
+  //  ② 예측할 물건은 기일이 오늘 이후인 것만, 500건씩 나눠 읽으며 바로 처리한다(기일 빠른 것부터)
+  const TABLE_FIELDS = ['result', 'minBid', 'appraisal', 'status', 'failCount', 'round', 'source', 'usageSmall', 'usage', 'title', 'detail.landCategory', 'land.jimok', 'buildingArea', 'landArea'];
+  const [lsSnap, past] = await Promise.all([
+    db.collection('listings').select(...TABLE_FIELDS).get(),
+    db.collection('pastResults').select(...TABLE_FIELDS).get().catch(() => ({ docs: [] })),
+  ]);
+  const ids = new Set(lsSnap.docs.map((d) => d.id));
+  const doneItems = [...lsSnap.docs.map((d) => d.data()), ...past.docs.filter((d) => !ids.has(d.id)).map((d) => d.data())];
   const table = premiumTable(doneItems);
   const rates = soldRateTable(doneItems); // 회차별 '남아 있을 확률'용 낙찰률
+  const totalListings = lsSnap.size;
   const cache = new Map();
-  let batch = db.batch(); let n = 0; const stats = { total: snap.size, forecast: 0, revised: 0, frozen: 0, errors: 0, calcAnomaly: 0, analyzerVersion: ANALYZER_VERSION };
-  for (const doc of snap.docs) {
-    if (Date.now() > deadline) { stats.stoppedBy = 'time'; break; }
+  let batch = db.batch(); let n = 0; const stats = { total: totalListings, scanned: 0, forecast: 0, revised: 0, frozen: 0, errors: 0, calcAnomaly: 0, analyzerVersion: ANALYZER_VERSION };
+  // bidEnd 는 '2026-10-28 17:00'(온비드)과 '2026.10.28'(법원) 두 형식 — 웹 화면과 같은 방식으로 형식별 범위를 나눠 읽는다
+  const y = now.day.slice(0, 4);
+  const ranges = [
+    db.collection('listings').where('bidEnd', '>=', now.day).where('bidEnd', '<', `${y}-~`).orderBy('bidEnd'),
+    db.collection('listings').where('bidEnd', '>=', now.day.replace(/-/g, '.')).orderBy('bidEnd'),
+  ];
+  const seen = new Set();
+  async function* pages() {
+    for (const q of ranges) {
+      let last = null;
+      for (;;) {
+        const snap = await (last ? q.startAfter(last) : q).limit(500).get();
+        if (snap.empty) break;
+        yield snap.docs;
+        last = snap.docs[snap.docs.length - 1];
+        if (snap.size < 500) break;
+      }
+    }
+  }
+  outer: for await (const docs of pages()) for (const doc of docs) {
+    if (seen.has(doc.id)) continue; seen.add(doc.id); stats.scanned++;
+    if (Date.now() > deadline) { stats.stoppedBy = 'time'; break outer; }
     const it = { id: doc.id, ...doc.data() };
     if (!beforeBid(it, now)) { stats.frozen++; continue; }
     try {
