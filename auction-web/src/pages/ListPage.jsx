@@ -9,6 +9,7 @@ import { soldRateTable, roundPlan } from '../lib/roundPlan.js';
 import { dedupeRounds } from '../lib/rounds.js';
 import { premiumTable, predictPrice, isFirstRound, scoreErrors, evidenceGroup, EVIDENCE_LABEL, bidOutcome, soldOf } from '../lib/bidForecast.js';
 
+const PAGE = 60;
 const SOURCES = [['all', '전체'], ['court', '법원경매'], ['public', '공매'], ['bankrupt', '파산자산']];
 const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '유찰 대기'], ['check', '권리 확인 후 판단'], ['suspect', '오류 의심·계산 이상'], ['shareUnknown', '지분비율 미확인'], ['special', '특수물건 전체'], ['hard', '가격 안 맞음'], ['unknown', '시세 부족'], ['pending', '자료 수집 중']];
 
@@ -80,6 +81,9 @@ export default function ListPage({ mode }) {
     return () => { stop = true; };
   }, [items, settings, dealsMap, dealsReady, done, villa]);
 
+  // 카드는 처음 60개만 그린다(전에는 수천 개를 한 번에 그려 브라우저가 1분 넘게 멈췄다) — '더 보기'로 이어서
+  const [shown, setShown] = useState(PAGE);
+  useEffect(() => { setShown(PAGE); }, [f, mode]);
   const rows = useMemo(() => {
     if (!analyzed) return [];
     return analyzed.filter(({ it, a }) => {
@@ -177,7 +181,7 @@ export default function ListPage({ mode }) {
       {analyzed && !rows.length && <Empty>조건에 맞는 물건이 없습니다.</Empty>}
 
       {!schedule && <div className="grid gap-3 md:grid-cols-2">
-        {rows.map(({ it, a }) => (
+        {rows.slice(0, shown).map(({ it, a }) => (
           <Link key={it.id} to={`/item/${encodeURIComponent(it.id)}`} className="card block transition hover:border-brand/50 hover:shadow-sm">
             <div className="mb-2 flex flex-wrap items-center gap-1.5">
               <VerdictBadge verdict={a.verdict} />
@@ -254,6 +258,7 @@ export default function ListPage({ mode }) {
           </Link>
         ))}
       </div>}
+      {!schedule && rows.length > shown && <button className="btn w-full border border-line bg-white" onClick={() => setShown((n) => n + PAGE)}>더 보기 ({shown.toLocaleString('ko-KR')} / {rows.length.toLocaleString('ko-KR')}건)</button>}
     </div>
   );
 }
