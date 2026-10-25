@@ -41,6 +41,10 @@ export async function fetchDocPdf(page, name, { log = () => {}, waitSec = 25, ht
       }
       if (pdf) return { pdf, how: 'viewer-layer' };
       if (!(await hasLayer(page))) return { why: '문서 창이 열리지 않음' };
+      // 감정평가서: 화면 안 창 속 틀(iframe)이 한국감정평가사협회 뷰어(ca.kapanet.or.kr)를 띄우고, 그 안에서 PDF를 <embed>로 보여 준다.
+      //  창 없이 도는 브라우저는 PDF 보기 기능이 없어 embed가 PDF를 받지 않는다 → 틀 안의 PDF 주소를 읽어 사람이 연 것과 같은 요청으로 받는다
+      const outer = await embeddedPdf(page, { log, name });
+      if (outer) return { pdf: outer.pdf, how: outer.how };
       const text = await layerText(page);
       if (!html || text.replace(/\s/g, '').length < 100) return { why: '화면 안 창에 PDF·글자 없음' };
       const photos = await readPhotos(page, { max: 20, scope: '.w2window, .w2popup_window' }).catch(() => []);
@@ -106,6 +110,39 @@ export async function readSpecDoc(page, { log = () => {}, name = '매각물건�
     log(`${name} 읽기 실패: ${e.message}`);
     return { read: false, why: e.message.slice(0, 120), pdf: got.pdf, how: got.how };
   }
+}
+
+// 화면 안 창의 틀(iframe) → 그 안의 embed/object/iframe/링크 중 PDF를 찾아 받는다(감정평가서: ca.kapanet.or.kr)
+async function embeddedPdf(page, { log = () => {}, name = '' } = {}) {
+  const req = page.context().request;
+  const frameSrcs = await page.$$eval('.w2window iframe, .w2popup_window iframe', (fs) => fs.filter((f) => f.offsetParent !== null).map((f) => f.src).filter((u) => /^https?:/.test(u))).catch(() => []);
+  for (const src of frameSrcs) {
+    const cands = [src];
+    // 틀이 다른 사이트(협회)여도 Playwright는 안을 읽을 수 있다
+    const fr = page.frames().find((f) => f.url() === src) || page.frames().find((f) => f.url().startsWith(src.split('?')[0]));
+    if (fr) {
+      await fr.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+      const inner = await fr.evaluate(() => [...document.querySelectorAll('embed[src], object[data], iframe[src], a[href]')]
+        .map((e) => e.src || e.data || e.href).filter((u) => u && /^https?:/.test(u))).catch(() => []);
+      // PDF 같아 보이는 주소부터
+      inner.sort((a, b) => Number(/pdf|down|file|view/i.test(b)) - Number(/pdf|down|file|view/i.test(a)));
+      cands.push(...inner.slice(0, 6));
+    }
+    for (const u of cands) {
+      try {
+        const r = await req.get(u, { headers: { Referer: u === src ? page.url() : src }, timeout: 60000 });
+        const b = await r.body();
+        if (isPdf(b)) return { pdf: b, how: u === src ? 'frame' : 'embed' };
+        // 틀 주소가 HTML이면 그 안의 PDF 주소를 한 번 더 찾는다(틀을 못 읽은 경우)
+        if (u === src && !fr) {
+          const html = b.toString('utf8');
+          const m = [...html.matchAll(/(?:src|data|href)\s*=\s*["']([^"']+)["']/gi)].map((x) => new URL(x[1], src).href).filter((x) => /pdf|down|file/i.test(x));
+          cands.push(...m.slice(0, 6));
+        }
+      } catch (e) { log(`${name} 틀 PDF 받기 실패 ${u.slice(0, 80)}: ${e.message}`); }
+    }
+  }
+  return null;
 }
 
 // 팝업의 글자 — 틀(frame) 안에 본문이 있는 경우까지 모두 모은다

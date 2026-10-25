@@ -356,7 +356,10 @@ async function main() {
               detail = null;
             }
             // 매각물건명세서(새 창 PDF) — 말소기준권리·임차인·인수 권리·지상권·비고를 여기서만 알 수 있다
-            if (detail) {
+            // 명세서는 매각기일 1주 전쯤 올라온다 — 상세 화면에 버튼이 없으면 열지 않는다(화면 수 아낌, '버튼 없음' 실패로 세지 않음)
+            const specListed = detail && (detail.documents || []).some((d) => d.name === '매각물건명세서');
+            if (detail && !specListed) detail.spec = { read: false, why: '명세서 아직 게시 전' };
+            if (detail && specListed) {
               await pace.beforePage();
               const spec = await readSpecDoc(page, { log });
               detail.spec = spec;
@@ -367,6 +370,8 @@ async function main() {
                 if (spec.superficies) detail.superficies = spec.superficies;
                 stats.specRead = (stats.specRead || 0) + 1;
               } else { stats.specMissed = (stats.specMissed || 0) + 1; log(`명세서 못 읽음 ${row.caseNo}: ${spec.why}`); }
+            }
+            if (detail) {
               // 첨부 원본: 사진 + 감정평가서·현황조사서(팝업) — 사람이 버튼을 눌러 보는 것과 같은 요청, 화면 수에 넣어 셈
               // 첨부에서 오류가 나도 회차 전체를 멈추지 않는다(물건 정보는 그대로 올리고, 오류는 상태판에 남김)
               try { await keepAttachments(page, pace, row, detail); } catch (e) {
