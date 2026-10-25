@@ -159,6 +159,8 @@ export default function ListPage({ mode }) {
                   : it.redevMatch?.status === 'unlisted' ? <Badge tone="wait">정비구역(목록 미등록)</Badge>
                     : a.redev.length > 0 && !a.cashType && <Badge tone="brand">정비구역</Badge>}
               {a.farm && <Badge tone="wait">농지</Badge>}
+              {notVilla(it) === '지하층' && <Badge tone="hard">지하·반지하</Badge>}
+              {typeof it.failCount === 'number' && it.failCount >= 8 && <Badge tone="hard">유찰 {it.failCount}회 — 이유 확인</Badge>}
               {a.excluded && <Badge>관심 제외</Badge>}
               {it.otherRounds > 0 && <Badge>다른 회차 {it.otherRounds}건</Badge>}
               <span className="ml-auto text-xs text-ink/50">{it.caseNo}</span>
@@ -387,6 +389,7 @@ function DoneSummary({ rows: roundRows, table }) {
         </div>
         {judged > 0 && <div className="mt-1">일치율 <b>{pct((m.agreeBuy + m.agreePass) / judged)}</b> — 틀린 쪽 물건을 열어 왜 어긋났는지 보면 규칙을 고칠 곳이 보입니다.</div>}
       </div>
+      <RoundScore rows={rows} />
       <AnalyzerScore rows={rows} table={table} />
       <ScoreBreakdown rows={rows} />
     </div>
@@ -448,6 +451,41 @@ function ScoreBreakdown({ rows: allRows }) {
       <Table title="물건 종류별" data={group((it) => typeLabel(it))} />
       <Table title="지역별" data={group((it) => `${it.sido || ''} ${it.sgg || ''}`.trim() || '지역 없음')} />
       <Table title="개찰 월별" data={group(month).sort((p, q) => q[0].localeCompare(p[0]))} />
+    </div>
+  );
+}
+
+// 유찰 예측 성적표: 처음 봤을 때 '몇 회 더 유찰된 뒤 팔릴 것'이라고 기록한 예측 vs 실제로 몇 회 더 유찰된 뒤 팔렸나
+//  + '매력 전환 회차까지 남아 있을 확률'이 실제로 맞았나(그 회차 전에 팔려 버린 비율)
+function RoundScore({ rows }) {
+  const xs = [];
+  rows.forEach(({ it }) => {
+    const r = resultOf(it); if (r.kind !== 'sold') return;
+    const f = it.forecastFirst?.rounds || it.forecast?.rounds; if (!f) return;
+    const actual = typeof it.failCount === 'number' && typeof f.failCount === 'number' ? it.failCount - f.failCount : null;
+    xs.push({ it, f, actual });
+  });
+  const scored = xs.filter((x) => x.actual !== null && x.f.expectSale);
+  const exact = scored.filter((x) => x.actual === x.f.expectSale.k).length;
+  const near = scored.filter((x) => Math.abs(x.actual - x.f.expectSale.k) <= 1).length;
+  const early = scored.filter((x) => x.f.expectSale.k > x.actual).length; // 우리가 예상한 것보다 빨리 팔림(시장이 더 적극적)
+  const ok = xs.filter((x) => x.f.firstOk && x.actual !== null);
+  const goneBefore = ok.filter((x) => x.actual < x.f.firstOk.k).length; // 매력 회차 오기 전에 팔려 버림
+  const predSurvive = ok.length ? ok.reduce((s, x) => s + (x.f.firstOk.survive ?? 0), 0) / ok.length : null;
+  const P = (v) => (v === null || v === undefined || Number.isNaN(v) ? '—' : `${Math.round(v * 100)}%`);
+  return (
+    <div className="mt-4 rounded-md border border-line p-2 text-sm">
+      <div className="font-extrabold">유찰 예측 성적표 — "몇 번 더 유찰된 뒤 팔린다"가 맞았나</div>
+      <p className="text-xs text-ink/60">처음 본 날 기록한 예측(예상 낙찰 회차·매력 전환 회차·그때까지 남아 있을 확률)을 실제 결과와 맞춥니다. 예측은 매일 밤 기록되고 결과를 보고 고치지 않습니다. 법원은 유찰 횟수가 바로 비교되고, 공매는 회차별 결과가 붙는 대로 채점됩니다.</p>
+      {scored.length + ok.length === 0 ? <div className="mt-2 text-xs text-ink/50">아직 채점할 물건이 없습니다(예측 기록 {xs.length}건 — 기일이 지나 낙찰 결과가 붙으면 쌓입니다).</div> : (
+        <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg bg-paper p-2 text-xs sm:grid-cols-5">
+          <div><div className="text-ink/50">예상 낙찰 회차 정확히 맞힘</div><div className="num font-bold">{P(scored.length ? exact / scored.length : null)} <span className="text-ink/40">({scored.length})</span></div></div>
+          <div><div className="text-ink/50">±1회 안</div><div className="num font-bold">{P(scored.length ? near / scored.length : null)}</div></div>
+          <div><div className="text-ink/50">예상보다 빨리 팔림</div><div className="num font-bold">{P(scored.length ? early / scored.length : null)}</div></div>
+          <div><div className="text-ink/50">매력 회차까지 남아 있을 확률(예측)</div><div className="num font-bold">{P(predSurvive)}</div></div>
+          <div><div className="text-ink/50">실제로 남아 있던 비율</div><div className="num font-bold">{P(ok.length ? 1 - goneBefore / ok.length : null)} <span className="text-ink/40">({ok.length})</span></div></div>
+        </div>
+      )}
     </div>
   );
 }

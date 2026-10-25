@@ -60,5 +60,7 @@ export function roundPlan(item, a, { premium, rates, courtRate } = {}) {
   }
   const firstOk = rows.find((x) => x.room > 0) || null;
   const best = rows.reduce((m, x) => (x.ev > (m?.ev || 0) ? x : m), null);
-  return { rows, firstOk, best };
+  // 예상 낙찰 회차: 그 회차가 끝나면 '아직 남아 있을 확률'이 절반 아래로 떨어지는 첫 회차(= 유찰 몇 번 뒤에 팔릴 것 같나)
+  const expectSale = rows.find((x) => x.survive * (1 - (x.soldP ?? 0.15)) <= 0.5) || null;
+  return { rows, firstOk, best, expectSale };
 }

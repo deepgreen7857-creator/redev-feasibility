@@ -541,8 +541,16 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   //  — 전에는 검토 결과를 카드에 보여 주기만 하고 판정에는 반영하지 않아 '검토 보류'인데 '지금 매력'으로 뜨는 물건이 있었다
   const aiHold = /보류|제외/.test(item.aiReview?.verdict || '') && ['now', 'wait'].includes(verdict);
   if (aiHold) verdict = 'check';
+  // 유찰이 많이 된 물건은 이유가 있다(인수 권리·하자·점유·위치 등) — 이유를 확인하기 전에는 자동 '매력' 판정을 하지 않는다
+  //  · 유찰 8회 이상(법원·공매 모두)  · 공매인데 원문(상세: 임대차·인수 권리·유의사항)을 아직 못 받았고 유찰 5회 이상 또는 감정가 40% 이하
+  const fc = typeof item.failCount === 'number' ? item.failCount : null;
+  const deepFail = fc !== null && fc >= (settings?.deepFailCount ?? 8);
+  const onbidNoRaw = item.source === 'onbid' && !item.detail && ((fc !== null && fc >= 5) || (item.appraisal && item.minBid && item.minBid / item.appraisal <= 0.4));
+  const failReview = !special && !aiHold && ['now', 'wait'].includes(verdict) && (deepFail || onbidNoRaw);
+  if (failReview) verdict = 'check';
 
   const warnings = [];
+  if (failReview) warnings.push(deepFail ? `유찰 ${fc}회 — 이렇게 많이 유찰된 데는 이유(인수 권리·하자·점유·위치)가 있음, 이유 확인 전 자동 판정 안 함` : `공매 원문(임대차·인수 권리·유의사항) 아직 못 받음 + ${fc !== null && fc >= 5 ? `유찰 ${fc}회` : `감정가의 ${Math.round((item.minBid / item.appraisal) * 100)}%`} — 원문 확인 전 자동 판정 안 함`);
   if (aiHold) warnings.push(`Claude 검토 [${item.aiReview.verdict}] — ${String(item.aiReview.conclusion || '').slice(0, 120)} → 자동 판정 대신 '권리 확인 후 판단'`);
   if (rightsReview) warnings.push(`매각물건명세서 미확인${manyFails ? ` + 유찰 ${item.failCount}회` : ''}${jeonseOver ? ' + 주변 전세가가 가치의 90% 이상' : ''} — 대항력 임차인 보증금 인수 등 유찰 이유를 확인하기 전에는 자동 판정하지 않음`);
   else if (item.source === 'court' && !specRead) warnings.push('매각물건명세서 미확인 — 권리(말소기준·임차인·인수 권리)는 아직 안 봄');
@@ -670,7 +678,7 @@ function capGrade(x, max) {
   return { ...x, grade: max, capped: true };
 }
 
-export const SANITY = { maxRoi: 10, maxValueToBid: 100 }; // 수익률 1,000%, 가치/최저가 100배
+export const SANITY = { maxRoi: 5, maxValueToBid: 100 }; // 수익률 500%(2026-10-25 1,000%→500%), 가치/최저가 100배
 
 export function sanityOf(item, a) {
   const out = [];

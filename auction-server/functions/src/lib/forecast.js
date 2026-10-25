@@ -41,9 +41,12 @@ async function loadDeals(db, type, lawd, cache) {
 }
 
 // 저장할 예측 요약(작게)
-function summarize(it, a, day, bid = null) {
+function summarize(it, a, day, bid = null, plan = null) {
   const sp = a.special;
+  const R = (x) => (x ? { k: x.k, date: x.date || null, price: x.price, bid: x.bid, survive: Math.round(x.survive * 1000) / 1000 } : null);
   return {
+    // 유찰 예측 — 몇 회 더 유찰되면 매력인가, 몇 회 뒤에 팔릴 것 같나(완료 후 실제와 채점)
+    rounds: plan ? { failCount: typeof it.failCount === 'number' ? it.failCount : null, firstOk: R(plan.firstOk), best: R(plan.best), expectSale: R(plan.expectSale) } : null,
     // 우리 입찰가(예상 낙찰가, 가산 0%) — 완료 물건 채점은 이 값 그대로
     bid: bid?.price || null, bidPremium: bid?.premium || null, bidScope: bid?.scope || null,
     at: day, rules: RULES_VERSION, analyzerVersion: a.analyzerVersion || null,
@@ -63,6 +66,8 @@ async function run({ db, log = console.log, deadline = Infinity }) {
   const { analyze, tradeTypeOf, ANALYZER_VERSION } = await import('../shared/analyze.mjs');
   const { DEFAULT_SETTINGS, lawdOf } = await import('../shared/defaults.mjs');
   const { premiumTable, predictPrice } = await import('../shared/bidForecast.mjs');
+  const { roundPlan, soldRateTable } = await import('../shared/roundPlan.mjs');
+  const { courtRate } = await import('../shared/analyze.mjs');
   const s = await db.collection('settings').doc('main').get();
   const settings = { ...DEFAULT_SETTINGS, ...(s.exists ? s.data() : {}) };
   const now = kstNow();
@@ -70,7 +75,9 @@ async function run({ db, log = console.log, deadline = Infinity }) {
   // 예상 낙찰가 기준표: 낙찰가가 있는 완료 물건(진행 중 모은 것 + 과거 입찰결과) — 화면과 같은 방식
   const past = await db.collection('pastResults').get().catch(() => ({ docs: [] }));
   const ids = new Set(snap.docs.map((d) => d.id));
-  const table = premiumTable([...snap.docs.map((d) => d.data()), ...past.docs.filter((d) => !ids.has(d.id)).map((d) => d.data())]);
+  const doneItems = [...snap.docs.map((d) => d.data()), ...past.docs.filter((d) => !ids.has(d.id)).map((d) => d.data())];
+  const table = premiumTable(doneItems);
+  const rates = soldRateTable(doneItems); // 회차별 '남아 있을 확률'용 낙찰률
   const cache = new Map();
   let batch = db.batch(); let n = 0; const stats = { total: snap.size, forecast: 0, revised: 0, frozen: 0, errors: 0, calcAnomaly: 0, analyzerVersion: ANALYZER_VERSION };
   for (const doc of snap.docs) {
@@ -81,7 +88,8 @@ async function run({ db, log = console.log, deadline = Infinity }) {
       const lawd = lawdOf(it.sido, it.sgg);
       const deals = lawd ? await loadDeals(db, tradeTypeOf(it), lawd, cache) : [];
       const a = analyze(it, { settings, deals });
-      const f = summarize(it, { ...a, analyzerVersion: ANALYZER_VERSION }, now.day, predictPrice(it, table));
+      let plan = null; try { plan = roundPlan(it, a, { premium: table, rates, courtRate: courtRate(it, settings).rate }); } catch { plan = null; }
+      const f = summarize(it, { ...a, analyzerVersion: ANALYZER_VERSION }, now.day, predictPrice(it, table), plan);
       const upd = {};
       const recorded = it.forecast ? it.forecast.analyzerVersion || null : null;
       if (!it.forecast || recorded === ANALYZER_VERSION) { upd.forecast = f; stats.forecast++; } // 같은 분석기로 기록 중인 물건만 기일 전까지 갱신

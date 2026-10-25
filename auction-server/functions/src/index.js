@@ -185,11 +185,15 @@ async function enrichLand(item) {
 // 상세를 다시 받을 온비드 물건: 상세가 없거나 예전 판으로 받은 것. 응답이 비었던 물건은 7일 동안 건너뛴다.
 async function onbidDetailBacklog() {
   const snap = await db.collection('listings').where('source', '==', 'onbid')
-    .select('cltrMngNo', 'pbctCdtnNo', 'sgg', 'category', 'land', 'pnu', 'address', 'title', 'usageSmall', 'buildingArea', 'detailAt', 'detailVer', 'detailEmptyAt').get();
+    .select('cltrMngNo', 'pbctCdtnNo', 'sgg', 'category', 'land', 'pnu', 'address', 'title', 'usageSmall', 'buildingArea', 'detailAt', 'detailVer', 'detailEmptyAt', 'bidEnd', 'minBid', 'appraisal', 'failCount').get();
   const weekAgo = Date.now() - 7 * 86400e3;
+  const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  const end = (it) => String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10);
+  // 공매 원문(임대차·인수 권리·유의사항)은 하루 한도가 있으니 '곧 입찰하는 진행 물건'부터 받는다(끝난 물건은 뒤로)
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
     .filter((it) => it.cltrMngNo && (!it.detailAt || it.detailVer !== onbid.DETAIL_VERSION))
-    .filter((it) => !it.detailEmptyAt || new Date(it.detailEmptyAt).getTime() < weekAgo);
+    .filter((it) => !it.detailEmptyAt || new Date(it.detailEmptyAt).getTime() < weekAgo)
+    .sort((x, y) => (end(x) >= today ? 0 : 1) - (end(y) >= today ? 0 : 1) || end(x).localeCompare(end(y)));
 }
 
 async function runOnbid({ deadline, force = false, mode } = {}) {
