@@ -22,8 +22,20 @@ export default function ListPage({ mode }) {
   const [past, setPast] = useState([]); // 낙찰 결과(예상 낙찰가 기준표용) — 낙찰가는 이제 pastResults 에만 있다
   const [settings, setSettings] = useState(null);
   const [dealsMap, setDealsMap] = useState({});
-  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: 'verdict', corpOnly: false, under1: false, showExcluded: false, onlyOpen: true });
+  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: mode ? 'verdict' : 'end', corpOnly: false, under1: false, showExcluded: false, onlyOpen: true });
   const [error, setError] = useState('');
+  const [origin, setOrigin] = useState(null); // 거리 기준 위치
+  useEffect(() => { setF((x) => ({ ...x, sort: mode ? 'verdict' : 'end' })); }, [mode]);
+  useEffect(() => {
+    if (f.sort !== 'near' || origin) return;
+    setOrigin({ ...HOME, label: '미추홀구청(위치 확인 중)' });
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (p) => setOrigin({ lat: p.coords.latitude, lng: p.coords.longitude, label: '내 위치' }),
+        () => setOrigin(HOME), { timeout: 8000, maximumAge: 600000 },
+      );
+    } catch { setOrigin(HOME); }
+  }, [f.sort]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setItems(null);
@@ -104,8 +116,8 @@ export default function ListPage({ mode }) {
       if (!done && f.onlyOpen && /(낙찰|취소|종결|매각)/.test(it.status || '') && !/진행/.test(it.status || '')) return false;
       if (f.q && !`${it.title} ${it.address} ${it.caseNo}`.includes(f.q)) return false;
       return true;
-    }).sort((x, y) => (villa && f.sort === 'verdict' ? NUM(y.a.renoMoney?.profit ?? y.a.money?.profit) - NUM(x.a.renoMoney?.profit ?? x.a.money?.profit) : 0) || (done && f.sort === 'verdict' ? endOf(y.it).localeCompare(endOf(x.it)) : 0) || (opp && f.sort === 'verdict' ? NUM(y.a.opportunity?.profit) - NUM(x.a.opportunity?.profit) : 0) || sorter(f.sort)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
-  }, [analyzed, f, opp, done, villa]);
+    }).sort((x, y) => (villa && f.sort === 'verdict' ? NUM(y.a.renoMoney?.profit ?? y.a.money?.profit) - NUM(x.a.renoMoney?.profit ?? x.a.money?.profit) : 0) || (done && f.sort === 'verdict' ? endOf(y.it).localeCompare(endOf(x.it)) : 0) || (opp && f.sort === 'verdict' ? NUM(y.a.opportunity?.profit) - NUM(x.a.opportunity?.profit) : 0) || sorter(f.sort, origin)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
+  }, [analyzed, f, opp, done, villa, origin]);
 
   // 예상 낙찰가(=우리 입찰가) 기준표: 불러온 물건 중 낙찰가가 있는 완료 물건으로 만든다
   const table = useMemo(() => (items ? premiumTable([...items, ...past]) : null), [items, past]);
@@ -154,12 +166,13 @@ export default function ListPage({ mode }) {
           <input className="input" inputMode="numeric" placeholder="최저가 상한(만원)" value={f.maxPrice} onChange={set('maxPrice')} />
           <input className="input" inputMode="numeric" placeholder="내 돈 상한(만원)" value={f.maxOwn} onChange={set('maxOwn')} />
           <select className="input" value={f.sort} onChange={set('sort')}>
+            <option value="end">정렬: 입찰일 가까운 순(남은 기간)</option>
+            <option value="near">정렬: 거리 가까운 순</option>
+            <option value="roi">정렬: 수익률 높은 순</option>
             <option value="verdict">정렬: 판정·매력도</option>
             <option value="profit">정렬: 예상 수익 큰 순</option>
-            <option value="roi">정렬: 수익률 높은 순</option>
             <option value="own">정렬: 내 돈 적게 드는 순</option>
             <option value="certainty">정렬: 확실성 높은 순</option>
-            <option value="end">정렬: 마감 빠른 순</option>
           </select>
           <input className="input col-span-2 sm:col-span-6" placeholder="주소·사건번호 검색" value={f.q} onChange={set('q')} />
         </div>
@@ -168,6 +181,7 @@ export default function ListPage({ mode }) {
           <label className="flex items-center gap-1.5 font-bold text-brand" title="수도권 공시가격 1억 이하 주택은 법인도 취득세 중과(12%) 제외 — 정비구역 안은 예외 없음"><input type="checkbox" checked={f.under1} onChange={set('under1')} /> 공시가격 1억 이하 주택만</label>
           {!done && <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>}
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.showExcluded} onChange={set('showExcluded')} /> 관심 제외 물건도 보기</label>
+          {f.sort === 'near' && origin && <span className="text-xs text-ink/60">거리 기준: <b>{origin.label}</b> · 물건 위치는 법정동 중심(대략) — 위치가 아직 없는 물건은 맨 뒤</span>}
           <span className="ml-auto flex gap-1.5">
             <Badge tone="now">지금 {counts.now}</Badge><Badge tone="wait">대기 {counts.wait}</Badge><Badge tone="cash">특수 {counts.special}</Badge><Badge tone="hard">가격 안 맞음 {counts.hard}</Badge>{counts.suspect > 0 && <Badge tone="hard">오류 의심 {counts.suspect}</Badge>}{counts.pending > 0 && <Badge>자료 수집 중 {counts.pending}</Badge>}
           </span>
@@ -218,7 +232,7 @@ export default function ListPage({ mode }) {
               <div><div className="text-xs text-ink/50">감정가</div><div className="num font-bold">{eok(it.appraisal)}</div></div>
               <div><div className="text-xs text-ink/50">최저가</div><div className="num font-bold text-brand">{eok(it.minBid)}</div><div className="text-xs text-ink/50">감정가의 {pct(a.ratio)}</div></div>
               <div><div className="text-xs text-ink/50">유찰</div><div className="font-bold">{it.failCount ?? '—'}회</div>{it.roundList?.length > 1 && <div className="truncate text-xs text-ink/50">다음 {eok(it.roundList[1].minBid)}</div>}</div>
-              <div><div className="text-xs text-ink/50">마감</div><div className="font-bold">{String(it.bidEnd || '').replace(/\./g, '-').slice(5, 10) || '—'}</div></div>
+              <div><div className="text-xs text-ink/50">마감</div><div className="font-bold">{endOf(it).slice(5) || '—'}{daysLeft(it) !== null && <span className={`ml-1 text-xs ${daysLeft(it) <= 7 ? 'text-hard' : 'text-ink/50'}`}>D-{daysLeft(it)}</span>}</div>{origin && it.geo && <div className="text-xs text-ink/50">약 {Math.round(distKm(origin, it.geo) * 10) / 10}km</div>}</div>
             </div>
             {a.verdict !== 'pending' && (
               <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
@@ -276,12 +290,27 @@ export default function ListPage({ mode }) {
 // 목록 썸네일: 온비드 썸네일 → 상세 첫 사진(http 주소만 — 예전 상세의 깨진 값 제외)
 const thumbOf = (it) => [it.thumbnail, ...(it.detail?.photos || [])].find((u) => /^https?:\/\//.test(String(u || ''))) || null;
 const NUM = (v, dir = -1) => (v === null || v === undefined || Number.isNaN(v) ? (dir < 0 ? -Infinity : Infinity) : v);
-function sorter(key) {
+// 거리: 기준 위치(내 위치 → 허용 안 하면 미추홀구청)에서 물건의 법정동 중심까지(직선, km)
+export const HOME = { lat: 37.4638, lng: 126.6503, label: '미추홀구청' };
+export function distKm(o, g) {
+  if (!o || !g?.lat) return null;
+  const R = 6371; const r = (d) => (d * Math.PI) / 180;
+  const a = Math.sin(r(g.lat - o.lat) / 2) ** 2 + Math.cos(r(o.lat)) * Math.cos(r(g.lat)) * Math.sin(r(g.lng - o.lng) / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+export function daysLeft(it) {
+  const e = endOf(it); if (!e) return null;
+  const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  return Math.round((new Date(e) - new Date(today)) / 86400e3);
+}
+function sorter(key, origin) {
+  if (key === 'near') return (x, y) => NUM(distKm(origin, x.it.geo), 1) - NUM(distKm(origin, y.it.geo), 1);
   if (key === 'profit') return (x, y) => NUM(y.a.money?.profit) - NUM(x.a.money?.profit);
   if (key === 'roi') return (x, y) => NUM(y.a.money?.roi) - NUM(x.a.money?.roi);
   if (key === 'own') return (x, y) => NUM(x.a.money?.own, 1) - NUM(y.a.money?.own, 1);
   if (key === 'certainty') return (x, y) => NUM(y.a.certainty?.value) - NUM(x.a.certainty?.value);
-  if (key === 'end') return (x, y) => String(x.it.bidEnd || '9').localeCompare(String(y.it.bidEnd || '9'));
+  // 법원 '2026.10.28'과 공매 '2026-10-28 17:00' 형식이 섞여 글자 그대로 비교하면 순서가 틀렸다 → 날짜로 맞춰 비교
+  if (key === 'end') return (x, y) => (endOf(x.it) || '9').localeCompare(endOf(y.it) || '9');
   return () => 0;
 }
 

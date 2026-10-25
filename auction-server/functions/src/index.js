@@ -16,6 +16,7 @@ const bankrupt = require('./lib/bankrupt');
 const vworld = require('./lib/vworld');
 const incheonZones = require('./lib/incheonZones');
 const forecast = require('./lib/forecast');
+const geo = require('./lib/geo');
 const building = require('./lib/building');
 const aiReview = require('./lib/aiReview');
 const { COURTS } = require('./data/courts');
@@ -441,6 +442,12 @@ exports.forecastTick = onSchedule(
   async () => { await forecast.run({ db, log: logger.info, deadline: Date.now() + TICK_BUDGET_MS }); },
 );
 
+// 매일 아침 6시 40분: 진행 중 물건에 법정동 단위 위치를 붙인다(화면 '가까운 순' 정렬용)
+exports.geoTick = onSchedule(
+  { schedule: '40 6 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '1GiB', secrets: [VWORLD_KEY] },
+  async () => { await geo.run({ db, vworld, key: VWORLD_KEY.value(), log: logger.info, deadline: Date.now() + TICK_BUDGET_MS }); },
+);
+
 function requireAdmin(request) {
   const email = request.auth && request.auth.token && request.auth.token.email;
   const admins = ADMIN_EMAILS.value().split(',').map((s) => s.trim().toLowerCase());
@@ -462,6 +469,11 @@ exports.forecastNow = onCall({ timeoutSeconds: 540, memory: '2GiB' }, async (req
 });
 
 // 관리자: API 연결 시험 — 각 API를 한 번씩 불러 결과코드와 첫 줄의 항목 이름을 돌려준다
+exports.geoNow = onCall({ timeoutSeconds: 540, memory: '1GiB', secrets: [VWORLD_KEY] }, async (request) => {
+  requireAdmin(request);
+  return geo.run({ db, vworld, key: VWORLD_KEY.value(), log: logger.info, deadline: Date.now() + TICK_BUDGET_MS });
+});
+
 exports.testApis = onCall({ timeoutSeconds: 120, secrets: [DATA_GO_KR_KEY, VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
   const key = DATA_GO_KR_KEY.value();

@@ -81,6 +81,7 @@ function Status() {
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'bankrupt' }, 'bankrupt')}>{busy === 'bankrupt' ? '수집 중…' : '파산 공고 지금 수집'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'trades' }, 'trades')}>{busy === 'trades' ? '수집 중…(최대 8분)' : '실거래가 이어 받기'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('seedSettings', {}, 'seed')}>기본 설정 넣기</button>
+        <button className="btn-ghost" disabled={!!busy} onClick={() => run('geoNow', {}, 'geo')} title="매일 아침 6시 40분에 자동으로 돕니다 — 목록 '거리 가까운 순' 정렬용">{busy === 'geo' ? '위치 채우는 중…' : '물건 위치 채우기'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('forecastNow', {}, 'forecast')} title="매일 밤 11시 40분에 자동으로 돕니다">{busy === 'forecast' ? '기록 중…(최대 8분)' : '입찰 전 예측 지금 기록'}</button>
       </div>
       {out && (

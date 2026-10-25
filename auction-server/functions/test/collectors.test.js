@@ -439,3 +439,28 @@ test('연립다세대 매매: RHTrade2 주소부터, 거절(30)이면 다음 주
   await trades.fetchMonth({ type: 'rh', lawd: '11470', ym: '202608', serviceKey: 'k', fetcher });
   assert.equal(seen.length, n + 1); // 기억한 주소로 바로
 });
+
+test('물건 위치: 법정동 하나에 한 번만 지도 조회, PNU 없는 법원 물건은 같은 동 이름 좌표', async () => {
+  const geo = require('../src/lib/geo');
+  const docs = [
+    { id: 'a', pnu: '2817710100100010000', sido: '인천광역시', sgg: '미추홀구', emd: '용현동', bidEnd: '2099-01-01' },
+    { id: 'b', pnu: '2817710100100020000', sido: '인천광역시', sgg: '미추홀구', emd: '용현동', bidEnd: '2099.01.02' },
+    { id: 'c', sido: '인천광역시', sgg: '미추홀구', emd: '용현동', bidEnd: '2099.01.03' },
+    { id: 'd', pnu: '2817710100100030000', bidEnd: '2000-01-01' },
+  ];
+  const written = {}; const cache = {};
+  const db = {
+    collection: (name) => ({
+      select: () => ({ get: async () => ({ docs: docs.map((d) => ({ id: d.id, ref: { id: d.id }, data: () => d })) }) }),
+      doc: (id) => ({ id, set: async (v) => { cache[id] = v; } }),
+    }),
+    getAll: async (...refs) => refs.map((r) => ({ exists: Boolean(cache[r.id]), data: () => cache[r.id] })),
+    batch: () => ({ set: (ref, v) => { written[ref.id] = v; }, commit: async () => {} }),
+  };
+  let calls = 0;
+  const vworld = { centroid: async () => { calls++; return [126.65, 37.45]; } };
+  const st = await geo.run({ db, vworld, key: 'k', log: () => {} });
+  assert.equal(calls, 1); assert.equal(st.open, 3); assert.equal(st.set, 3);
+  assert.deepEqual(written.c.geo, { lng: 126.65, lat: 37.45, by: '법정동' });
+  assert.equal(written.d, undefined);
+});
