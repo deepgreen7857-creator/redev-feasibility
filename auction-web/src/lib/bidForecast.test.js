@@ -74,3 +74,9 @@ test('거래 폭이 커도 면적·층·연식·시점이 닮은 거래 위주�
   // 40㎡ ±20%만 남는 기존 단계 때문에 대형은 빠지고, 남은 소형끼리 비교
   assert.ok(m.value > 1.1e8 && m.value < 1.4e8, String(m.value));
 });
+
+test('Claude 검토가 보류면 지금 매력으로 두지 않음', () => {
+  const base = { source: 'onbid', category: 'public', usage: '다세대', sido: '경기도', sgg: '고양시 일산서구', emd: '덕이동', appraisal: 2.43e8, minBid: 9.72e7, buildingArea: 51, failCount: 3 };
+  const a1 = analyze({ ...base, aiReview: { verdict: '보류', conclusion: '권리 원문 미수집' } }, { settings: DEFAULT_SETTINGS, deals: [] });
+  assert.notEqual(a1.verdict, 'now');
+});

@@ -536,8 +536,13 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   const jeonseOver = Boolean(jeonse?.value && full && jeonse.value >= full * 0.9);
   const rightsReview = item.source === 'court' && !specRead && !special && ['now', 'wait'].includes(verdict) && (manyFails || jeonseOver);
   if (rightsReview) verdict = 'check';
+  // Claude 검토(관리자 화면·대화창에서 물건별로 원문을 보고 내린 판단)가 '보류'·'제외'면 자동 판정보다 우선한다
+  //  — 전에는 검토 결과를 카드에 보여 주기만 하고 판정에는 반영하지 않아 '검토 보류'인데 '지금 매력'으로 뜨는 물건이 있었다
+  const aiHold = /보류|제외/.test(item.aiReview?.verdict || '') && ['now', 'wait'].includes(verdict);
+  if (aiHold) verdict = 'check';
 
   const warnings = [];
+  if (aiHold) warnings.push(`Claude 검토 [${item.aiReview.verdict}] — ${String(item.aiReview.conclusion || '').slice(0, 120)} → 자동 판정 대신 '권리 확인 후 판단'`);
   if (rightsReview) warnings.push(`매각물건명세서 미확인${manyFails ? ` + 유찰 ${item.failCount}회` : ''}${jeonseOver ? ' + 주변 전세가가 가치의 90% 이상' : ''} — 대항력 임차인 보증금 인수 등 유찰 이유를 확인하기 전에는 자동 판정하지 않음`);
   else if (item.source === 'court' && !specRead) warnings.push('매각물건명세서 미확인 — 권리(말소기준·임차인·인수 권리)는 아직 안 봄');
   if (jeonseOver) warnings.push(`주변 전세 시세(${eok(jeonse.value)})가 가치(${eok(full)})의 ${Math.round((jeonse.value / full) * 100)}% — 깡통 전세 신호: 선순위 임차인 보증금이 낙찰가를 넘으면 매수인이 인수`);
