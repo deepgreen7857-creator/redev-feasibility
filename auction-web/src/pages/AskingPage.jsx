@@ -8,6 +8,8 @@ import { listListings, getSettings, getDeals, saveListing } from '../lib/store.j
 import { analyze, tradeTypeOf, eok, typeLabel, VERDICT } from '../lib/analyze.js';
 import { lawdOf } from '../data/defaults.js';
 import { Badge, Empty } from '../components/ui.jsx';
+import { dedupeRounds } from '../lib/rounds.js';
+import { useChunkedMap } from '../lib/chunked.js';
 
 const DAY = 86400e3;
 const ACTIVE_KEY = 'jbslab_asking_active';
@@ -45,30 +47,50 @@ export default function AskingPage({ admin }) {
   const bm = useMemo(() => bookmarkletCode(`${window.location.origin}${import.meta.env.BASE_URL}`), []);
   useEffect(() => { window.name = 'jbslab_asking'; }, []); // 북마크가 이 탭으로 호가를 보낸다
   useEffect(() => { Promise.all([listListings({}), getSettings()]).then(([l, s]) => { setItems(l); setSettings(s); }); }, []);
+  // 후보만 먼저 추린다(전에는 2만 건 전부를 판정했고, 시세는 첫 40개 지역만 받아 나머지는 시세 없이 판정됐다)
+  //  · 같은 물건의 회차는 하나로 합친다(공매는 회차마다 공고 번호가 따로라 같은 집이 두 줄로 나왔다)
+  //  · 마감 안 지난 것, 토지 아닌 것만
+  const cands = useMemo(() => {
+    if (!items) return null;
+    const t = today();
+    return dedupeRounds(items).filter((it) => endOf(it) >= t && tradeTypeOf(it) !== 'land');
+  }, [items]);
+  const needKeys = useMemo(() => (cands ? [...new Set(cands.map((it) => { const l = lawdOf(it.sido, it.sgg); return l ? `${tradeTypeOf(it)}|${l}` : null; }).filter(Boolean))] : []), [cands]);
+  const dealsReady = Boolean(cands) && needKeys.every((k) => k in dealsMap);
   useEffect(() => {
-    if (!items) return;
-    const keys = [...new Set(items.map((it) => { const l = lawdOf(it.sido, it.sgg); return l ? `${tradeTypeOf(it)}|${l}` : null; }).filter(Boolean))].filter((k) => !(k in dealsMap)).slice(0, 40);
-    if (!keys.length) return;
-    Promise.all(keys.map(async (k) => { const [t, l] = k.split('|'); return [k, await getDeals(t, l, 12)]; })).then((p) => setDealsMap((m) => ({ ...m, ...Object.fromEntries(p) })));
-  }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
+    const need = needKeys.filter((k) => !(k in dealsMap));
+    if (!need.length) return;
+    let stop = false;
+    (async () => {
+      const got = {};
+      for (let i = 0; i < need.length && !stop; i += 40) {
+        const part = await Promise.all(need.slice(i, i + 40).map(async (k) => { const [tt, l] = k.split('|'); return [k, await getDeals(tt, l, 12).catch(() => [])]; }));
+        part.forEach(([k, v]) => { got[k] = v; });
+      }
+      if (!stop) setDealsMap((m) => ({ ...m, ...got }));
+    })();
+    return () => { stop = true; };
+  }, [needKeys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const limit = settings?.askingDaily ?? 10;
   const minScore = settings?.askingMinScore ?? 70;
+  const [analyzed, anaProg] = useChunkedMap(cands && settings && dealsReady ? cands : null, (it) => ({ it, a: analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${lawdOf(it.sido, it.sgg)}`] }) }), [cands, settings, dealsMap, dealsReady]);
   const rows = useMemo(() => {
-    if (!items || !settings) return [];
-    const t = today();
-    return items.map((it) => ({ it, a: analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${lawdOf(it.sido, it.sgg)}`] }) }))
-      .filter(({ it, a }) => a.score && !a.anomalies?.length && !a.excluded && endOf(it) >= t && !['land'].includes(tradeTypeOf(it)))
+    if (!analyzed) return [];
+    return analyzed
+      // 판정이 '지금 매력'·'유찰 대기'인 것만 — 오류 의심·계산 이상·자료 수집 중·권리 확인 후 판단은 호가를 볼 단계가 아니다
+      //  (전에는 점수만 보고 골라, 계산 이상으로 '오류 의심'이 된 물건도 B등급 점수로 남아 목록에 섞였다)
+      .filter(({ a }) => ['now', 'wait'].includes(a.verdict) && a.score && !a.anomalies?.length && !a.calcAnomaly?.length && !a.excluded)
       .filter(({ a }) => a.score.total >= minScore || a.opportunity)
       .map((r) => {
         const asked = r.it.manual?.asking;
         const fresh = asked?.at && Date.now() - new Date(asked.at).getTime() < 14 * DAY;
         return { ...r, fresh };
       })
-      .filter((r) => !r.fresh) // 2주 안에 확인한 건 빼고
+      .filter((r) => !r.fresh) // 2주 안에 확인한 건 빼고(어느 회차에 넣었든)
       .sort((x, y) => (endOf(x.it) <= addDays(14) ? 0 : 1) - (endOf(y.it) <= addDays(14) ? 0 : 1) || (y.a.score.total - x.a.score.total))
       .slice(0, limit);
-  }, [items, settings, dealsMap, minScore, limit]);
+  }, [analyzed, minScore, limit]);
 
   const save = async (it, low, high, memo, auto) => {
     const asking = { low: Number(low) * 1e4 || null, high: Number(high) * 1e4 || Number(low) * 1e4 || null, memo: memo || '', at: new Date().toISOString(), ...(auto ? { auto } : {}) };
@@ -125,8 +147,8 @@ export default function AskingPage({ admin }) {
             <button className="btn text-ink/50" onClick={() => setPending(null)}>버리기</button></div>
         </div>
       )}
-      {!items && <div className="card text-sm text-ink/50">고르는 중…</div>}
-      {items && !rows.length && <Empty>오늘 확인할 물건이 없습니다.</Empty>}
+      {!analyzed && <div className="card text-sm text-ink/50">고르는 중…{items && !dealsReady ? ' (시세 받는 중 — 한 번 받으면 이 브라우저에 보관됩니다)' : ''}{anaProg ? ` (판정 ${anaProg.done.toLocaleString('ko-KR')}/${anaProg.total.toLocaleString('ko-KR')})` : ''}</div>}
+      {analyzed && !rows.length && <Empty>오늘 확인할 물건이 없습니다.</Empty>}
       {rows.map(({ it, a }) => <Row key={it.id} it={it} a={a} admin={admin} onSave={save} onPrices={applyPrices} saved={saved[it.id]} />)}
     </div>
   );
@@ -142,9 +164,10 @@ function Row({ it, a, admin, onSave, onPrices, saved }) {
         <Badge tone="now">{VERDICT[a.verdict]?.label}</Badge><Badge>{a.score.grade} · {a.score.total}점</Badge>
         <span className="rounded bg-ink px-1.5 py-0.5 text-xs font-bold text-white">{typeLabel(it)}</span>
         <Link to={`/report/${encodeURIComponent(it.id)}`} className="font-bold underline">{it.title}</Link>
+        {it.otherRounds > 0 && <Badge>다른 회차 {it.otherRounds}건</Badge>}
         <span className="ml-auto text-xs text-ink/50">마감 {endOf(it)}</span>
       </div>
-      <div className="mt-1 text-xs text-ink/60">{it.address} · 최저가 {eok(it.minBid)} · 판단용 가치 {eok(a.value)}{a.valuation ? ` (${a.valuation.low ? `${eok(a.valuation.low)}~${eok(a.valuation.high)}` : ''}, 신뢰도 ${a.valuation.confidence})` : ''}</div>
+      <div className="mt-1 text-xs text-ink/60">{it.address} · 최저가 {eok(it.minBid)}{it.roundList?.length > 1 ? ` (다음 회차 ${it.roundList.slice(1, 3).map((r) => `${endOf(r)} ${eok(r.minBid)}`).join(' · ')})` : ''} · 판단용 가치 {eok(a.value)}{a.valuation ? ` (${a.valuation.low ? `${eok(a.valuation.low)}~${eok(a.valuation.high)}` : ''}, 신뢰도 ${a.valuation.confidence})` : ''}</div>
       <div className="mt-2 flex flex-wrap gap-2">{links(it).map(([n, u]) => <a key={n} href={u} target="_blank" rel="opener" onClick={() => setActive(it.id)} className="btn border border-line bg-white">{n} ↗</a>)}
         {admin && !saved && <button className="btn border border-now text-now" onClick={async () => {
           setActive(it.id);

@@ -288,3 +288,15 @@ test('명세서를 읽어 인수 보증금(1.13억)이 있으면 바닥 가치 =
   assert.equal(a.special.assume, 113000000);
   assert.ok(a.value < a.full - 100000000);
 });
+test('헐값 물건(25b): 최저가가 감정가 15% 이하면 회차가 달라도 같은 판정 — 원문 없으면 자료 수집 중, 있으면 오류 의심', () => {
+  const offi = Array.from({ length: 12 }, (_, i) => [100000000 + i * 1e6, 19.74, 10, 1, '97', '로제리움2차', 2014, false, '중개거래', '구로동', null, '202607']);
+  const base = { source: 'onbid', category: 'public', sido: '서울특별시', sgg: '구로구', emd: '구로동', usage: '부동산 > 용도복합용건물 > 오피스텔', title: '서울특별시 구로구 구로동 97 로제리움2차 제12층 제1203호', buildingArea: 19.74, landArea: 3, appraisal: 126000000, failCount: 10 };
+  const r1 = analyze({ ...base, minBid: 7560000 }, { settings: DEFAULT_SETTINGS, deals: offi });
+  const r2 = analyze({ ...base, minBid: 6300000 }, { settings: DEFAULT_SETTINGS, deals: offi });
+  assert.equal(r1.verdict, 'pending'); assert.equal(r2.verdict, 'pending');
+  assert.ok(r1.deepDiscount && r1.score === null);
+  const r3 = analyze({ ...base, minBid: 7560000, detail: { cautions: '' } }, { settings: DEFAULT_SETTINGS, deals: offi });
+  assert.equal(r3.verdict, 'suspect');
+  // 보통 할인(감정가 60%)은 건드리지 않음
+  assert.equal(analyze({ ...base, minBid: 75600000, failCount: 4, detail: {} }, { settings: DEFAULT_SETTINGS, deals: offi }).deepDiscount, null);
+});

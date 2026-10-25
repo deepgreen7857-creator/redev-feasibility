@@ -19,8 +19,9 @@ export const VERDICT = {
 };
 
 // 분석기 버전 — 계산식을 바꿀 때마다 올리고 수정일·내용을 남긴다(예측 기록에 함께 저장)
-export const ANALYZER_VERSION = '2026-10-25a';
+export const ANALYZER_VERSION = '2026-10-25b';
 export const ANALYZER_CHANGES = [
+  { version: '2026-10-25b', date: '2026-10-25', note: '헐값 물건 걸러내기 한 가지만 추가(나머지 규칙은 25a 그대로): 최저가가 감정가의 15% 이하이거나 계산한 가치가 최저가의 8배 이상이면 지분·일부 매각·선순위 인수(임차보증금 등)를 먼저 의심 — 원문(법원 명세서·공매 상세)을 아직 못 받았으면 \'자료 수집 중\', 받았으면 \'오류 의심 — 원문 확인\'. 예: 구로동 로제리움2차 1203호(감정가 1.26억, 유찰 10회, 최저가 756만=6%, 가치 약 1억)가 \'지금 매력\'으로 뜨던 문제' },
   { version: '2026-10-25a', date: '2026-10-25', note: '시세·판정 개편(규칙 고정 기준판): ① 시세 = 중앙값 대신 닮은 거래 비교(같은 단지·면적·층·연식·시점), 월별 흐름 시점 보정, 닮은 거래끼리 폭 표시 ② 실거래에 없는 집 상태를 가격대로 — 기본 상태(아래 25%)로 판단, 올수리 후는 수리된 상태(위 20%) ③ 건물면적 없으면 건축물대장 전유면적 ④ 호가는 기본 상태 매물(없으면 최저 호가)×97%, 호가↔실거래 경고 ⑤ Claude 검토 보류·제외면 권리 확인 후 판단 ⑥ 유찰 8회↑·공매 원문 미수집(유찰 5회↑ 또는 감정가 40%↓)은 자동 매력 금지 ⑦ 계산 이상 수익률 1,000%→500% ⑧ 자료(최저가·감정가·면적·권리 원문·시세 근거) 하나라도 없으면 판정 안 함(자료 수집 중)' },
   { version: '2026-10-23e', date: '2026-10-23', note: 'Claude 직접 검토(2025타경4883) 반영: ① 같은 이름 다른 동 단지 실거래를 같은 단지로 쓰던 오류(대림동↔당산동6가) — 주소 괄호에서 동을 찾아 동이 같을 때만 같은 단지 ② 매각물건명세서를 못 읽은 법원 물건은 권리 점수 만점 불가(25→10), 3회 이상 유찰이거나 주변 전세가가 가치의 90% 이상이면 \'권리 확인 후 판단\' ③ 명세서의 인수 보증금이 있으면 전액 인수 전제로 바닥 가치 계산 ④ 수집기 3판(명세서 PDF 읽기) 물건을 초기 수집분으로 오인하지 않음' },
   { version: '2026-10-23d', date: '2026-10-23', note: '성적표 보정: ① 유찰 상한 — 같은 단지 실거래(A·B)가 없으면 판단 가치가 직전 회차 유찰가(아무도 안 산 값)를 넘지 않게, 2회 이상 유찰이면 지금 최저가와 직전 유찰가의 가운데로 ② 감정가 하나뿐인 물건은 감정가 대신 경매 시장가(감정가 × 낙찰가율) ③ 토지는 같은 단지 실거래가 없으면 \'지금 매력·유찰 대기\' 대신 \'권리 확인 후 판단\'(물건별 검토 대상) — 상가 적중률 34%·낙찰가÷우리 가치 60%, 대지 오차 F 대응' },
@@ -669,10 +670,24 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
     if (result.certainty) result.certainty = capGrade(result.certainty, 'B');
     result.opportunity = null; result.opportunities = [];
   }
+  // 헐값 물건(2026-10-25b): 최저가가 감정가의 15% 이하이거나, 계산한 가치가 최저가의 8배 이상이면 정상 거래로 보기 어렵다.
+  //  대개 지분·일부 매각, 선순위 임차보증금 등 인수 권리, 대지권 없음·위반건축물 같은 이유가 있다 → 원문으로 이유를 확인하기 전에는 판정하지 않는다.
+  //  회차가 내려가도(756만 → 630만) 같은 물건은 같은 판정이 나오도록 감정가 기준을 함께 쓴다.
+  const deep = deepDiscount(item, result);
+  result.deepDiscount = deep;
+  // 원본 오류 의심(anomalies)은 그대로 두고, 계산 이상(수익률 500%↑)은 헐값 판정이 더 정확한 이유이므로 덮어쓴다
+  if (deep && !result.special && !cashType && !rightType && !anomalies.length && result.verdict !== 'hard') {
+    const raw = item.source === 'court' ? Boolean(item.detail?.specRead) : Boolean(item.detail);
+    result.verdict = raw ? 'suspect' : 'pending';
+    result.calcAnomaly = [...(result.calcAnomaly || []), deep.text];
+    result.score = null; result.opportunity = null; result.opportunities = [];
+    result.warnings = [deep.text, ...warnings];
+  }
   // 자료가 다 모이기 전에는 판정하지 않는다 — 빈칸을 감정가·기본값으로 메워 그럴듯한 숫자를 만들지 않기 위해
   const gaps = dataGaps(item, result);
   result.gaps = gaps;
   // 이미 '판정 안 함' 성격인 결과(권리 확인 후·지분비율 미확인·오류 의심·가격 안 맞음)는 그대로 두고, 판정을 내리는 결과만 막는다
+  if (deep && result.verdict === 'pending' && !gaps.required.some((g) => /원문|명세서/.test(g))) gaps.required.push('원문(헐값 이유 확인)');
   if (gaps.required.length && ['now', 'wait', 'unknown'].includes(result.verdict)) {
     result.verdict = 'pending';
     result.score = null; result.opportunity = null; result.opportunities = [];
@@ -702,6 +717,21 @@ const GRADE_ORDER = ['A', 'B', 'C'];
 function capGrade(x, max) {
   if (!x?.grade || GRADE_ORDER.indexOf(x.grade) >= GRADE_ORDER.indexOf(max)) return x;
   return { ...x, grade: max, capped: true };
+}
+
+// 헐값 판정 기준(2026-10-25b)
+export const DEEP = { minBidToAppraisal: 0.15, valueToBid: 8 };
+export function deepDiscount(item, a) {
+  const bid = item.minBid;
+  if (!bid) return null;
+  const toApp = item.appraisal ? bid / item.appraisal : null;
+  const v = a?.anomalies?.length ? null : a?.full || null; // 이미 '오류 의심'이면 그 판정을 그대로 둔다
+  const toVal = v ? v / bid : null;
+  const parts = [];
+  if (toApp !== null && toApp <= DEEP.minBidToAppraisal) parts.push(`최저가가 감정가의 ${Math.round(toApp * 1000) / 10}%`);
+  if (toVal !== null && toVal >= DEEP.valueToBid) parts.push(`계산한 가치(${eok(v)})가 최저가의 ${Math.round(toVal)}배`);
+  if (!parts.length) return null;
+  return { toApp, toVal, text: `헐값 — ${parts.join(', ')}${item.failCount ? ` (유찰 ${item.failCount}회)` : ''}: 지분·일부 매각, 선순위 임차보증금 등 인수 권리, 대지권 없음 같은 이유를 원문으로 확인하기 전에는 판정하지 않음` };
 }
 
 export const SANITY = { maxRoi: 5, maxValueToBid: 100 }; // 수익률 500%(2026-10-25 1,000%→500%), 가치/최저가 100배

@@ -6,6 +6,7 @@ import { lawdOf, SIDO } from '../data/defaults.js';
 import { corpFit, propertyKind } from '../lib/tax.js';
 import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
 import { soldRateTable, roundPlan } from '../lib/roundPlan.js';
+import { dedupeRounds } from '../lib/rounds.js';
 import { premiumTable, predictPrice, isFirstRound, scoreErrors, evidenceGroup, EVIDENCE_LABEL, bidOutcome, soldOf } from '../lib/bidForecast.js';
 
 const SOURCES = [['all', '전체'], ['court', '법원경매'], ['public', '공매'], ['bankrupt', '파산자산']];
@@ -30,26 +31,58 @@ export default function ListPage({ mode }) {
       .catch((e) => setError(e.message));
   }, [f.sido, mode]);
 
-  // 물건이 있는 (종류·시군구)만 시세를 불러온다
-  useEffect(() => {
-    if (!items) return;
+  // 물건이 있는 (종류·시군구)만 시세를 불러온다.
+  //  전에는 40개 받을 때마다 화면 상태를 바꿔, 받을 때마다 물건 2만 건 판정을 처음부터 다시 했다(느림의 큰 원인).
+  //  이제 40개씩 나눠 받되(서버 부담) 모두 받은 뒤 한 번만 바꾼다. 브라우저에 보관된 시세는 거의 바로 나온다.
+  const [dealsProg, setDealsProg] = useState(null); // { done, total } — 받는 중일 때만
+  const needKeys = useMemo(() => {
+    if (!items) return [];
     const keys = new Set();
     items.forEach((it) => { const l = lawdOf(it.sido, it.sgg); if (!l) return; const t = tradeTypeOf(it); if (villa && t !== 'rh') return; keys.add(`${t}|${l}`); if (villa) keys.add(`${t}Rent|${l}`); });
-    const need = [...keys].filter((k) => !(k in dealsMap)).slice(0, 40);
-    // 받는 중인 키를 먼저 표시해 같은 키를 두 번 받지 않게
-    if (need.length) setDealsMap((m) => ({ ...m, ...Object.fromEntries(need.filter((k) => !(k in m)).map((k) => [k, undefined])) }));
+    return [...keys];
+  }, [items, villa]);
+  const dealsReady = Boolean(items) && needKeys.every((k) => k in dealsMap);
+  useEffect(() => {
+    const need = needKeys.filter((k) => !(k in dealsMap));
     if (!need.length) return;
-    Promise.all(need.map(async (k) => { const [t, l] = k.split('|'); return [k, await getDeals(t, l, 12)]; }))
-      .then((pairs) => setDealsMap((m) => ({ ...m, ...Object.fromEntries(pairs) })));
-  }, [items, dealsMap]); // 40개씩 받고, 받은 뒤 남은 지역을 이어서 받는다(전에는 첫 40개만 받고 멈췄음)
+    let stop = false;
+    (async () => {
+      const got = {};
+      setDealsProg({ done: 0, total: need.length });
+      for (let i = 0; i < need.length && !stop; i += 40) {
+        const part = await Promise.all(need.slice(i, i + 40).map(async (k) => { const [t, l] = k.split('|'); return [k, await getDeals(t, l, 12).catch(() => [])]; }));
+        part.forEach(([k, v]) => { got[k] = v; });
+        if (!stop) setDealsProg({ done: Math.min(need.length, i + 40), total: need.length });
+      }
+      if (!stop) { setDealsMap((m) => ({ ...m, ...got })); setDealsProg(null); }
+    })();
+    return () => { stop = true; };
+  }, [needKeys]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 판정은 물건 수천~수만 건이라 한 번에 돌리면 브라우저가 멈춘다 → 400건씩 나눠 계산하고 사이사이 화면을 그린다
+  const [analyzed, setAnalyzed] = useState(null);
+  const [anaProg, setAnaProg] = useState(null);
+  useEffect(() => {
+    setAnalyzed(null);
+    if (!items || !settings || !dealsReady) return;
+    const list = done ? items : dedupeRounds(items); // 완료 물건은 회차마다 따로 채점
+    const out = []; let i = 0; let stop = false;
+    const step = () => {
+      if (stop) return;
+      const end = Math.min(list.length, i + 400);
+      for (; i < end; i++) {
+        const it = list[i]; const l = lawdOf(it.sido, it.sgg);
+        out.push({ it, a: analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${l}`], rentDeals: villa ? dealsMap[`${tradeTypeOf(it)}Rent|${l}`] : undefined }) });
+      }
+      if (i < list.length) { setAnaProg({ done: i, total: list.length }); setTimeout(step, 0); } else { setAnaProg(null); setAnalyzed(out); }
+    };
+    step();
+    return () => { stop = true; };
+  }, [items, settings, dealsMap, dealsReady, done, villa]);
 
   const rows = useMemo(() => {
-    if (!items || !settings) return [];
-    return (done ? items : dedupeRounds(items)).map((it) => { // 완료 물건은 회차마다 따로 채점
-      const l = lawdOf(it.sido, it.sgg);
-      const a = analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${l}`], rentDeals: villa ? dealsMap[`${tradeTypeOf(it)}Rent|${l}`] : undefined });
-      return { it, a };
-    }).filter(({ it, a }) => {
+    if (!analyzed) return [];
+    return analyzed.filter(({ it, a }) => {
       const cat = it.source === 'court' ? 'court' : it.category;
       if (f.source !== 'all' && cat !== f.source) return false;
       if (f.verdict === 'special' ? !a.special : f.verdict !== 'all' && a.verdict !== f.verdict) return false;
@@ -68,7 +101,7 @@ export default function ListPage({ mode }) {
       if (f.q && !`${it.title} ${it.address} ${it.caseNo}`.includes(f.q)) return false;
       return true;
     }).sort((x, y) => (villa && f.sort === 'verdict' ? NUM(y.a.renoMoney?.profit ?? y.a.money?.profit) - NUM(x.a.renoMoney?.profit ?? x.a.money?.profit) : 0) || (done && f.sort === 'verdict' ? endOf(y.it).localeCompare(endOf(x.it)) : 0) || (opp && f.sort === 'verdict' ? NUM(y.a.opportunity?.profit) - NUM(x.a.opportunity?.profit) : 0) || sorter(f.sort)(x, y) || rank(x.a) - rank(y.a) || (y.a.score?.total ?? -1) - (x.a.score?.total ?? -1) || String(x.it.bidEnd || '').localeCompare(String(y.it.bidEnd || '')));
-  }, [items, settings, dealsMap, f, opp, done, villa]);
+  }, [analyzed, f, opp, done, villa]);
 
   // 예상 낙찰가(=우리 입찰가) 기준표: 불러온 물건 중 낙찰가가 있는 완료 물건으로 만든다
   const table = useMemo(() => (items ? premiumTable([...items, ...past]) : null), [items, past]);
@@ -139,7 +172,9 @@ export default function ListPage({ mode }) {
 
       {error && <div className="card text-sm text-hard">불러오기 실패: {error}</div>}
       {!items && !error && <div className="card text-sm text-ink/50">물건을 불러오는 중…</div>}
-      {items && !rows.length && <Empty>조건에 맞는 물건이 없습니다.</Empty>}
+      {items && !dealsReady && <div className="card text-sm text-ink/50">물건 {items.length.toLocaleString('ko-KR')}건 · 시세 받는 중 {dealsProg ? `${dealsProg.done}/${dealsProg.total}` : ''}… (한 번 받으면 이 브라우저에 보관돼 다음부터 빠릅니다)</div>}
+      {items && dealsReady && !analyzed && <div className="card text-sm text-ink/50">판정 계산 중 {anaProg ? `${anaProg.done.toLocaleString('ko-KR')}/${anaProg.total.toLocaleString('ko-KR')}` : ''}…</div>}
+      {analyzed && !rows.length && <Empty>조건에 맞는 물건이 없습니다.</Empty>}
 
       {!schedule && <div className="grid gap-3 md:grid-cols-2">
         {rows.map(({ it, a }) => (
@@ -653,23 +688,4 @@ function BidRow({ it, a, table }) {
 function rank(a) { return order(a.verdict) + (a.special ? 0.5 : 0); }
 
 // 공매는 같은 물건이 회차(공고)마다 따로 올라온다 → 물건번호·주소가 같으면 가장 가까운 진행 회차 하나만
-function dedupeRounds(items) {
-  const today = new Date().toISOString().slice(0, 10);
-  const groups = new Map();
-  items.forEach((it) => {
-    const key = `${it.source}|${it.caseNo}|${it.address || it.title}`;
-    const g = groups.get(key);
-    if (g) g.push(it); else groups.set(key, [it]);
-  });
-  return [...groups.values()].map((g) => {
-    if (g.length === 1) return g[0];
-    const end = (x) => String(x.bidEnd || '');
-    const upcoming = g.filter((x) => end(x) >= today).sort((p, q) => end(p).localeCompare(end(q)));
-    const pick = upcoming[0] || g.sort((p, q) => end(q).localeCompare(end(p)))[0];
-    // 공매는 공고에 회차별 날짜·최저가가 미리 나와 있다 → 고른 회차부터의 실제 일정표(일정표 화면에서 씀)
-    const roundList = upcoming.map((x) => ({ bidEnd: x.bidEnd, minBid: x.minBid }));
-    return { ...pick, otherRounds: g.length - 1, roundList };
-  });
-}
-
 function order(v) { return { now: 0, wait: 1, check: 2, unknown: 3, hard: 4, suspect: 5 }[v] ?? 6; }
