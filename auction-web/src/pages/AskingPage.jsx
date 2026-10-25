@@ -30,7 +30,9 @@ function links(it) {
   const q = queryOf(it);
   const e = encodeURIComponent;
   const t = tradeTypeOf(it);
-  const naver = ['네이버 매물', `https://search.naver.com/search.naver?query=${e(`${q} 매매`)}`];
+  // 네이버 통합검색은 아파트만 매물 칸이 뜬다(지식산업센터·상가·빌라는 광고만, 2026-10-25 확인) → 네이버 부동산 검색으로 바로 간다
+  const naver = ['네이버 부동산', `https://m.land.naver.com/search/result/${e(q)}`];
+  const naverSearch = ['네이버 검색', `https://search.naver.com/search.naver?query=${e(`${q} 매매`)}`];
   const map = ['네이버 지도', `https://map.naver.com/p/search/${e(q)}`];
   const hogang = ['호갱노노(아래 이 단지 매물)', `https://hogangnono.com/search?q=${e(q)}`];
   const disco = ['디스코(매물 탭)', 'https://www.disco.re/', true];
@@ -39,10 +41,10 @@ function links(it) {
   const dabang = ['다방', 'https://www.dabangapp.com/', true];
   // 모든 물건에 모든 사이트를 띄운다(어디에 매물이 있는지는 물건마다 열어 봐야 안다). 종류에 따라 순서만 바꾼다
   const zigAll = t === 'apt' || t === 'offi' ? zigApt : t === 'rh' || t === 'sh' ? zig : ['직방 상가·사무실(매매로)', 'https://www.zigbang.com/', true];
-  if (t === 'apt') return [naver, hogang, disco, zigAll, dabang, map];
-  if (t === 'offi') return [naver, dabang, zigAll, disco, hogang, map];
-  if (t === 'rh' || t === 'sh') return [naver, disco, zigAll, dabang, hogang, map];
-  return [disco, naver, zigAll, dabang, hogang, map];
+  if (t === 'apt') return [naver, naverSearch, hogang, disco, zigAll, dabang, map];
+  if (t === 'offi') return [naver, naverSearch, dabang, zigAll, disco, hogang, map];
+  if (t === 'rh' || t === 'sh') return [naver, disco, zigAll, dabang, naverSearch, hogang, map];
+  return [disco, naver, zigAll, dabang, naverSearch, hogang, map];
 }
 
 export default function AskingPage({ admin }) {
