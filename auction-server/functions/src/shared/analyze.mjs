@@ -16,6 +16,7 @@ export const VERDICT = {
   shareUnknown: { label: '지분비율 미확인', tone: 'muted' },
   hard: { label: '가격 안 맞음', tone: 'hard' },
   unknown: { label: '시세 부족', tone: 'muted' },
+  pending: { label: '자료 수집 중', tone: 'muted' },
 };
 
 // 분석기 버전 — 계산식을 바꿀 때마다 올리고 수정일·내용을 남긴다(예측 기록에 함께 저장)
@@ -668,7 +669,32 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
     if (result.certainty) result.certainty = capGrade(result.certainty, 'B');
     result.opportunity = null; result.opportunities = [];
   }
+  // 자료가 다 모이기 전에는 판정하지 않는다 — 빈칸을 감정가·기본값으로 메워 그럴듯한 숫자를 만들지 않기 위해
+  const gaps = dataGaps(item, result);
+  result.gaps = gaps;
+  // 이미 '판정 안 함' 성격인 결과(권리 확인 후·지분비율 미확인·오류 의심·가격 안 맞음)는 그대로 두고, 판정을 내리는 결과만 막는다
+  if (gaps.required.length && ['now', 'wait', 'unknown'].includes(result.verdict)) {
+    result.verdict = 'pending';
+    result.score = null; result.opportunity = null; result.opportunities = [];
+  }
   return result;
+}
+
+// 판정에 꼭 필요한 자료(빠지면 판정 안 함)와 보조 자료(빠지면 경고만)
+export function dataGaps(item, r) {
+  const t = tradeTypeOf(item);
+  const required = []; const soft = [];
+  const bankrupt = item.category === 'bankrupt';
+  if (!item.minBid) required.push('최저가');
+  if (!item.appraisal && !bankrupt) required.push('감정가');
+  if (t === 'land' ? !item.landArea : !item.buildingArea) required.push(t === 'land' ? '토지 면적' : '건물(전용) 면적');
+  if (item.source === 'court') { if (!item.detail?.specRead) required.push('매각물건명세서(권리·임차인)'); }
+  else if (!item.detail) required.push('공매 원문(임대차·인수 권리·유의사항)');
+  if (t === 'land') { if (!item.land?.officialPrice) required.push('공시지가·지목'); }
+  else if (!r?.market?.value && !r?.special) required.push('실거래 시세(비슷한 거래 3건 이상)');
+  if (['apt', 'rh', 'sh'].includes(t) && !item.housePrice?.matched) soft.push('주택 공시가격(법인 취득세 1억 기준 판단)');
+  if (t !== 'land' && !item.land?.officialPrice) soft.push('공시지가(땅값 바닥)');
+  return { required, soft };
 }
 
 // 등급 상한: A → B 처럼 grade 만 낮춘다(점수는 그대로 보여 줌)

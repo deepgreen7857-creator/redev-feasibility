@@ -21,12 +21,12 @@ test('시세 추정: 같은 동 5건 이상이면 동 기준, 해제 제외', ()
 });
 test('판정: 지금 매력 / 유찰 대기 / 해결 안 됨 (개인 기준)', () => {
   const DEFAULT_SETTINGS_P = { ...DEFAULT_SETTINGS, owner: 'person' };
-  const base = { source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000 };
+  const base = { source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', sgg: '부평구', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000, detail: { specRead: true } }; // 자료가 다 모인 물건
   assert.equal(analyze({ ...base, minBid: 300000000 }, { settings: DEFAULT_SETTINGS_P, deals }).verdict, 'now');
   const w = analyze({ ...base, minBid: 600000000 }, { settings: DEFAULT_SETTINGS_P, deals });
   assert.equal(w.verdict, 'wait'); assert.equal(w.entry.step, 1);
   // 지분 물건도 버리지 않음: 지분비율을 읽으면 바닥 가치(지분 할인)로 판정하고 상승 시나리오를 붙인다
-  const sh = analyze({ ...base, minBid: 120000000, appraisal: 300000000, share: true, detail: { shareText: '2분의 1 지분 매각' } }, { settings: DEFAULT_SETTINGS_P, deals });
+  const sh = analyze({ ...base, minBid: 120000000, appraisal: 300000000, share: true, detail: { specRead: true, shareText: '2분의 1 지분 매각' } }, { settings: DEFAULT_SETTINGS_P, deals });
   assert.ok(sh.special && sh.special.types[0].key === 'share');
   assert.ok(['now', 'wait'].includes(sh.verdict));
   assert.ok(sh.special.best.value > sh.value);
@@ -97,7 +97,7 @@ test('법원경매 붙여넣기 해석', () => {
 });
 
 test('매력도: 지금 매력 물건에 점수, 지역 가산 없음', () => {
-  const base = { source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000, minBid: 300000000 };
+  const base = { source: 'court', detailVer: 2, court: '인천지방법원', sido: '인천광역시', emd: '부평동', usage: '아파트', buildingArea: 84, appraisal: 600000000, minBid: 300000000, detail: { specRead: true } };
   const a1 = analyze({ ...base, sgg: '부평구' }, { settings: DEFAULT_SETTINGS, deals });
   const a2 = analyze({ ...base, sgg: '남동구' }, { settings: DEFAULT_SETTINGS, deals });
   assert.ok(a1.score && a1.score.total > 0);

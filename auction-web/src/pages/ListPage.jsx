@@ -9,7 +9,7 @@ import { soldRateTable, roundPlan } from '../lib/roundPlan.js';
 import { premiumTable, predictPrice, isFirstRound, scoreErrors, evidenceGroup, EVIDENCE_LABEL, bidOutcome, soldOf } from '../lib/bidForecast.js';
 
 const SOURCES = [['all', '전체'], ['court', '법원경매'], ['public', '공매'], ['bankrupt', '파산자산']];
-const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '유찰 대기'], ['check', '권리 확인 후 판단'], ['suspect', '오류 의심·계산 이상'], ['shareUnknown', '지분비율 미확인'], ['special', '특수물건 전체'], ['hard', '가격 안 맞음'], ['unknown', '시세 부족']];
+const VERDICTS = [['all', '전체 판정'], ['now', '지금 매력'], ['wait', '유찰 대기'], ['check', '권리 확인 후 판단'], ['suspect', '오류 의심·계산 이상'], ['shareUnknown', '지분비율 미확인'], ['special', '특수물건 전체'], ['hard', '가격 안 맞음'], ['unknown', '시세 부족'], ['pending', '자료 수집 중']];
 
 export default function ListPage({ mode }) {
   const opp = mode === 'opportunity';
@@ -132,7 +132,7 @@ export default function ListPage({ mode }) {
           {!done && <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>}
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.showExcluded} onChange={set('showExcluded')} /> 관심 제외 물건도 보기</label>
           <span className="ml-auto flex gap-1.5">
-            <Badge tone="now">지금 {counts.now}</Badge><Badge tone="wait">대기 {counts.wait}</Badge><Badge tone="cash">특수 {counts.special}</Badge><Badge tone="hard">가격 안 맞음 {counts.hard}</Badge>{counts.suspect > 0 && <Badge tone="hard">오류 의심 {counts.suspect}</Badge>}
+            <Badge tone="now">지금 {counts.now}</Badge><Badge tone="wait">대기 {counts.wait}</Badge><Badge tone="cash">특수 {counts.special}</Badge><Badge tone="hard">가격 안 맞음 {counts.hard}</Badge>{counts.suspect > 0 && <Badge tone="hard">오류 의심 {counts.suspect}</Badge>}{counts.pending > 0 && <Badge>자료 수집 중 {counts.pending}</Badge>}
           </span>
         </div>
       </div>
@@ -175,7 +175,8 @@ export default function ListPage({ mode }) {
             {a.estimateBasis && <div className="text-xs text-wait">{a.estimateBasis}</div>}
             {it.aiReview && <div className={`mt-1 rounded px-2 py-1 text-xs ${/제외|보류/.test(it.aiReview.verdict) ? 'bg-hard/10 text-hard' : 'bg-now/10 text-now'}`}><b>Claude 검토 [{it.aiReview.verdict}]</b> {String(it.aiReview.conclusion || '').slice(0, 90)}</div>}
             {!it.aiReview && it.source === 'court' && a.rightsReview && <div className="mt-1 text-xs text-wait">명세서 미확인 — Claude 검토 대기</div>}
-            {a.money && !a.money.upside && (
+            {a.verdict === 'pending' && <div className="mt-2 rounded-md bg-ink/5 p-2 text-xs text-ink/70"><b>자료 수집 중 — 판정 안 함</b>: {a.gaps.required.join(' · ')} 이(가) 아직 없습니다. 모이면 자동으로 판정합니다.</div>}
+            {a.verdict !== 'pending' && a.money && !a.money.upside && (
               <div className="mt-3 grid grid-cols-4 gap-2 rounded-lg bg-paper p-2 text-sm">
                 <div><div className="text-xs text-ink/50">{a.special ? '최악일 때 수익' : a.money.owner === 'corp' ? '세후 수익' : '예상 수익'}</div><div className={`num font-bold ${a.money.profit < 0 ? 'text-hard' : 'text-now'}`}>{eok(a.money.profit)}</div></div>
                 <div><div className="text-xs text-ink/50">수익률</div><div className="num font-bold">{a.money.roi === null ? '—' : `${Math.round(a.money.roi * 100)}%`}</div></div>
@@ -184,7 +185,7 @@ export default function ListPage({ mode }) {
               </div>
             )}
             {done && <ResultRow it={it} a={a} table={table} />}
-            {!done && <BidRow it={it} a={a} table={table} />}
+            {!done && a.verdict !== 'pending' && <BidRow it={it} a={a} table={table} />}
             {!done && <RoundLine it={it} a={a} table={table} rates={rates} settings={settings} />}
             {villa && <VillaRow it={it} a={a} />}
             {a.opportunity && (
@@ -276,7 +277,7 @@ function VillaRow({ it, a }) {
 }
 
 // ── 완료 물건 ──────────────────────────────────────────────
-const VERDICT_LABEL = { now: '지금 매력', wait: '유찰 대기', check: '권리 확인 후 판단', suspect: '오류 의심', hard: '가격 안 맞음', unknown: '시세 부족', shareUnknown: '지분비율 미확인' };
+const VERDICT_LABEL = { now: '지금 매력', wait: '유찰 대기', check: '권리 확인 후 판단', suspect: '오류 의심', hard: '가격 안 맞음', unknown: '시세 부족', shareUnknown: '지분비율 미확인', pending: '자료 수집 중' };
 // 입찰(매각)기일이 지났거나 상태가 낙찰·매각·유찰·종결·취소인 물건
 const endOf = (it) => String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10);
 function isEnded(it) {
@@ -565,7 +566,7 @@ function Schedule({ rows, table, rates, settings }) {
   const list = useMemo(() => {
     const out = [];
     rows.forEach(({ it, a }) => {
-      if (!a.cap || a.special || ['suspect', 'shareUnknown'].includes(a.verdict) || a.calcAnomaly) return;
+      if (!a.cap || a.special || ['suspect', 'shareUnknown', 'pending'].includes(a.verdict) || a.calcAnomaly) return;
       const plan = roundPlan(it, a, { premium: table, rates, courtRate: courtRate(it, settings).rate });
       const t = plan && (only === 'best' ? plan.best || plan.firstOk : plan.firstOk);
       if (!t || !t.date) return;
@@ -620,7 +621,7 @@ function Schedule({ rows, table, rates, settings }) {
 
 // 진행 물건 카드: 몇 회 더 유찰되면 살 만해지나 + 그때까지 남아 있을 확률(기대값이 가장 큰 회차)
 function RoundLine({ it, a, table, rates, settings }) {
-  if (!a.cap || a.special) return null;
+  if (!a.cap || a.special || a.verdict === 'pending') return null;
   const plan = roundPlan(it, a, { premium: table, rates, courtRate: courtRate(it, settings).rate });
   if (!plan) return null;
   const P = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`);

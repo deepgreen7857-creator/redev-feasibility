@@ -80,3 +80,11 @@ test('Claude 검토가 보류면 지금 매력으로 두지 않음', () => {
   const a1 = analyze({ ...base, aiReview: { verdict: '보류', conclusion: '권리 원문 미수집' } }, { settings: DEFAULT_SETTINGS, deals: [] });
   assert.notEqual(a1.verdict, 'now');
 });
+
+test('자료가 덜 모이면 판정하지 않음(자료 수집 중)', () => {
+  const it = { source: 'onbid', category: 'public', usage: '다세대', sido: '경기도', sgg: '고양시 일산서구', emd: '덕이동', appraisal: 2.43e8, minBid: 1.7e8, buildingArea: 51 };
+  const a = analyze(it, { settings: DEFAULT_SETTINGS, deals: [] });
+  assert.equal(a.verdict, 'pending');
+  assert.ok(a.gaps.required.some((g) => /공매 원문/.test(g)));
+  assert.ok(a.gaps.required.some((g) => /실거래/.test(g)));
+});
