@@ -29,7 +29,11 @@ function regVerdict(r, today, last) {
   const on = h >= 8 && h < 23;
   if (r.stoppedBy === 'login' && r.lastDay && mins(r.lastRun) < 24 * 60) return { tone: 'hard', text: '확인 필요 — 마이옥션 로그인 풀림 (미니PC에서 npm run myauction-login)' };
   if (['errors', 'error'].includes(r.stoppedBy) && mins(r.lastRun) < 24 * 60) return { tone: 'hard', text: `확인 필요 — ${STOP[r.stoppedBy]}` };
-  if (today >= 120 || (r.stoppedBy === 'limit' && r.lastDay === new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10))) return { tone: 'now', text: '정상 — 오늘 한도(120건) 채움' };
+  // 오늘 한도로 멈춤: 기록 날짜(lastDay)가 비어 있거나 달라도, 마지막 실행이 오늘(한국 시각)이면 정상으로 본다
+  //  (10-25: 저장 118건·'오늘 한도 채움'인데 lastDay가 안 맞아 '30분 넘게 저장 없음'으로 빨갛게 뜨던 문제 — 120건 중 2건은 받을 문서 없음 등으로 저장 안 됨)
+  const kstDay = (t) => new Date(new Date(t).getTime() + 9 * 3600e3).toISOString().slice(0, 10);
+  const todayKst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  if (today >= 120 || (r.stoppedBy === 'limit' && (r.lastDay === todayKst || (r.lastRun && kstDay(r.lastRun) === todayKst)))) return { tone: 'now', text: '정상 — 오늘 한도(120건) 채움' };
   if (!today && r.targets === 0 && mins(r.lastRun) < 12 * 60) return { tone: 'now', text: '정상 — 받을 물건 없음(모두 받음)' };
   if (on && h >= 9 && !today) return { tone: 'hard', text: '확인 필요 — 08시에 시작했어야 하는데 오늘 저장 0건' };
   if (on && last && mins(last.at) > 30) return { tone: 'hard', text: '확인 필요 — 30분 넘게 저장 없음' };
