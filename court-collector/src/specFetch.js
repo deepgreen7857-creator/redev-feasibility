@@ -3,7 +3,7 @@
 //  PDF를 못 잡으면 뷰어의 '파일저장' 버튼(사람이 저장 누르는 것과 같음)으로 받고,
 //  그래도 없으면(뷰어가 아니라 일반 화면으로 열리는 문서) 그 창을 PDF로 인쇄해 둔다.
 import { pdfText, parseSpec } from './spec.js';
-import { readPhotos } from './site.js';
+import { readPhotos, closeLayers, hasLayer, layerText } from './site.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const isPdf = (b) => b && b.length > 4 && b.slice(0, 4).toString() === '%PDF';
@@ -29,7 +29,23 @@ export async function fetchDocPdf(page, name, { log = () => {}, waitSec = 25, ht
   ctx.on('response', onResp);
   let popup = null;
   try {
-    [popup] = await Promise.all([ctx.waitForEvent('page', { timeout: 20000 }), btn.click()]);
+    // 새 창으로 열리는 문서(뷰어)와 화면 안에 뜨는 창(현황조사서 등) 둘 다 있다
+    const newPage = ctx.waitForEvent('page', { timeout: 15000 }).catch(() => null);
+    await btn.click();
+    popup = await newPage;
+    if (!popup) {
+      // 화면 안 창: 뷰어가 PDF를 받으면 그걸 쓰고, 글자 화면이면 창의 글자·사진을 읽는다. 끝나면 반드시 닫는다(finally)
+      for (let i = 0; i < waitSec && !pdf; i++) {
+        await sleep(1000);
+        if (html && i >= 3 && (await hasLayer(page)) && (await layerText(page)).replace(/\s/g, '').length > 300) break;
+      }
+      if (pdf) return { pdf, how: 'viewer-layer' };
+      if (!(await hasLayer(page))) return { why: '문서 창이 열리지 않음' };
+      const text = await layerText(page);
+      if (!html || text.replace(/\s/g, '').length < 100) return { why: '화면 안 창에 PDF·글자 없음' };
+      const photos = await readPhotos(page, { max: 20, scope: '.w2window, .w2popup_window' }).catch(() => []);
+      return { pdf: null, how: 'layer', text, photos };
+    }
     await popup.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
     let htmlDoc = false;
     for (let i = 0; i < waitSec && !pdf; i++) {
@@ -71,7 +87,9 @@ export async function fetchDocPdf(page, name, { log = () => {}, waitSec = 25, ht
     return { why: e.message.slice(0, 120) };
   } finally {
     ctx.off('response', onResp);
-    if (popup) { await sleep(3000 + Math.random() * 4000); await popup.close().catch(() => {}); } // 문서를 읽는 사람처럼 잠깐 보고 닫음
+    await sleep(3000 + Math.random() * 4000); // 문서를 읽는 사람처럼 잠깐 보고 닫음
+    if (popup) await popup.close().catch(() => {});
+    await closeLayers(page).catch(() => {}); // 화면 안에 뜬 문서 창도 닫는다(남으면 목록을 덮음)
   }
 }
 

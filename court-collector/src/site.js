@@ -63,6 +63,41 @@ async function closeNotices(page) {
   }
 }
 
+// 화면 안에 뜨는 창(WebSquare 레이어 팝업 — 현황조사서 등)
+const LAYER = '.w2window:visible, .w2popup_window:visible, [class*="w2window_content"]:visible';
+/** 화면 안에 떠 있는 창이 있는지 */
+export async function hasLayer(page) { return (await page.locator(LAYER).count()) > 0; }
+/**
+ * 화면 안에 떠 있는 창(문서 창·안내 창)을 모두 닫는다 — 사람이 '닫기'를 누르는 것과 같음.
+ * 닫지 않으면 목록을 덮어 다음 물건을 누를 수 없다(2026.10.25 저녁 회차가 이것 때문에 멈춤).
+ */
+export async function closeLayers(page) {
+  for (let i = 0; i < 6; i++) {
+    const btn = page.locator([
+      'input.w2window_close:visible', 'button.w2window_close:visible', '.w2window_close:visible',
+      '.w2window input[type=button][value="닫기"]:visible', '.w2window button:visible:has-text("닫기")',
+      '.w2popup_window input[type=button][value="닫기"]:visible', '.w2popup_window button:visible:has-text("닫기")',
+    ].join(', ')).last();
+    if (!(await btn.count())) break;
+    await btn.click({ timeout: 5000 }).catch(() => {});
+    await sleep(600);
+  }
+  if (await hasLayer(page)) { await page.keyboard.press('Escape').catch(() => {}); await sleep(400); }
+}
+/** 맨 위 화면 안 창의 글자(창 안 틀(iframe) 글자 포함) */
+export async function layerText(page) {
+  const box = page.locator(LAYER).last();
+  let t = await box.innerText({ timeout: 5000 }).catch(() => '');
+  for (const fr of page.frames()) {
+    if (fr === page.mainFrame()) continue;
+    const el = await fr.frameElement().catch(() => null);
+    if (!el || !(await el.isVisible().catch(() => false))) continue;
+    const ft = await fr.evaluate(() => (document.body ? document.body.innerText : '')).catch(() => '');
+    if (ft && ft.trim()) t += `\n\n${ft.trim()}`;
+  }
+  return t.trim();
+}
+
 // config.json 의 법원 이름 → 화면 선택칸의 이름 ('인천지방법원 부천지원' → '부천지원')
 async function selectCourt(page, court) {
   const labels = await page.$$eval(`${SEL.court} option`, (os) => os.map((o) => o.textContent.trim()));
@@ -159,8 +194,13 @@ export async function* listCourt(page, court, pace) {
         ...row,
         open: async () => {
           // 상세에서 돌아오면 목록이 다시 그려지므로, 같은 쪽인지 확인한 뒤 소재지를 누른다
+          await closeLayers(page); // 앞 물건에서 열린 문서 창이 목록을 덮고 있으면 닫는다
           if ((await currentPageNo(page)) !== p) await goToPage(page, p, pace);
-          await page.locator(`${SEL.grid} a[onclick="moveDtlPage(${row.index})"]`).first().click();
+          const link = page.locator(`${SEL.grid} a[onclick="moveDtlPage(${row.index})"]`).first();
+          try { await link.click({ timeout: 30000 }); } catch {
+            await closeLayers(page); await settle(page); // 덮인 것을 치우고 한 번만 다시
+            await link.click({ timeout: 30000 });
+          }
           await page.waitForSelector(SEL.rounds, { timeout: 30000 });
           // 직전 물건의 상세가 화면에 남아 있을 수 있다 → 이 물건의 사건번호가 화면에 뜰 때까지 기다린다
           // (기다리지 않으면 앞 물건의 주소·면적이 이 물건 가격에 붙는다 — 2026.10.23 잠실 사례)
@@ -274,12 +314,13 @@ export async function readDetail(page) {
  * 사이트용은 브라우저 안에서 가로·세로 긴 쪽 1000픽셀, JPEG 품질 0.72로 줄인다(장당 100~200KB).
  * → [{ orig: Buffer, origExt, small: Buffer }]
  */
-export async function readPhotos(page, { max = 12 } = {}) {
+export async function readPhotos(page, { max = 12, scope = null } = {}) {
   // page 는 화면(Page)이나 그 안의 틀(Frame) 모두 됨 — 현황조사서 팝업처럼 틀 안에 사진이 있는 경우
-  const list = await page.evaluate((max) => {
+  const list = await page.evaluate(([max, scope]) => {
     const out = [];
     const seen = new Set();
-    for (const img of document.querySelectorAll('img')) {
+    const roots = scope ? [...document.querySelectorAll(scope)] : [document];
+    for (const img of roots.flatMap((r) => [...r.querySelectorAll('img')])) {
       const src = img.currentSrc || img.src || '';
       if (!src || seen.has(src) || img.offsetParent === null) continue;
       if (!img.complete || img.naturalWidth < 200 || img.naturalHeight < 150) continue;
@@ -301,7 +342,7 @@ export async function readPhotos(page, { max = 12 } = {}) {
       if (out.length >= max) break;
     }
     return out;
-  }, max);
+  }, [max, scope]);
   const dec = (u) => Buffer.from(u.slice(u.indexOf(',') + 1), 'base64');
   return list.map(({ orig, small }) => ({
     orig: dec(orig),
@@ -313,6 +354,7 @@ export async function readPhotos(page, { max = 12 } = {}) {
 /** 상세 화면에서 목록으로 돌아간다(화면 아래 '이전' 버튼 — 사이트가 보던 쪽 번호를 기억해 목록을 다시 그림). */
 export async function backToList(page) {
   await sleep((10 + Math.random() * 10) * 1000); // 상세 화면을 읽는 사람처럼 10~20초 머문 뒤 돌아간다
+  await closeLayers(page); // 문서 창이 남아 있으면 '이전' 버튼을 덮으므로 먼저 닫는다
   const btn = page.locator(SEL.backBtn);
   if (await btn.count()) await btn.click();
   else await page.locator('input[type=button][value="이전으로"]:visible').first().click();
