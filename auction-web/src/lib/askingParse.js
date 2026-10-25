@@ -29,11 +29,18 @@ export function parseAskingRows(text) {
     const row = { price: v, area: a ? Number(a[1]) : null };
     const c = condOf(desc); if (c) row.cond = c;
     if (/저층|(?:^|\D)[12]\/\d+층?/.test(desc)) row.lowFloor = true;
+    if (isBasement(desc)) row.basement = true;
     out.push(row);
   }
   return out;
 }
 export const parseAsking = (text) => parseAskingRows(text).map((r) => r.price);
+
+// 지하·반지하 매물: "반지하", "지하1층", "B1/4층", "-1/4층". 디스코의 "7F / B1"(건물 층수)은 아님
+export function isBasement(desc) {
+  const d = String(desc || '');
+  return /반\s?지하|지하\s?\d?\s?층|(?:^|[^\w/])B\d\s*\/\s*\d|(?:^|[^\d/])-\d\s*\/\s*\d/.test(d);
+}
 
 // 매물 설명의 집 상태: 수리(올수리·리모델링·인테리어·특올수리) / 급매 / 기본(수리 필요·노후·기본형) / 모름
 export function condOf(desc) {
@@ -65,6 +72,6 @@ export function summarize(prices) {
 
 // 북마클릿: 네이버 부동산 등 화면에서 누르면 매매 호가를 읽어 우리 호가 확인 화면으로 보낸다
 export function bookmarkletCode(siteUrl) {
-  const src = `(function(){var t=document.body.innerText;var re=${/매매(?:가|호가)?\s*:?\s*(\d+\s*억(?:\s*[\d,]{1,6})?|[\d,]{4,7}\s*만?)/g};var p=[],m;function v(s){s=s.replace(/\\s+/g,'').replace(/만원?$/,'');var a=s.match(/^(\\d+)억(?:([\\d,]+))?$/);if(a)return +a[1]*1e4+(a[2]?+a[2].replace(/,/g,''):0);var n=+s.replace(/,/g,'');return n>0?n:0}while(m=re.exec(t)){var x=v(m[1]);if(x<1000||x>5e6)continue;var tl=t.slice(m.index+m[0].length,m.index+m[0].length+40).split(/매매|전세|월세/)[0];var ar=tl.match(/전용\\s*:?\\s*(\\d+(?:\\.\\d+)?)/)||tl.match(/(\\d+(?:\\.\\d+)?)\\s*(?:m²|㎡|m2)/);var ds=t.slice(m.index+m[0].length,m.index+m[0].length+120).split(/매매|전세|월세/)[0];var c=/급매|급처|급하게/.test(ds)?'u':/올\\s?수리|특올|리모델링|인테리어|수리\\s?완/.test(ds)?'t':/수리\\s?필요|기본\\s?(?:상태|형)?|노후|올드/.test(ds)?'b':'';p.push(x+(ar?'@'+ar[1]:'')+(c?'~'+c:''))}if(!p.length){alert(/hogangnono/.test(location.hostname)?'호갱노노는 단지를 연 뒤 화면을 아래로 내려 "이 단지 매물"이 보일 때 눌러 주세요(몇 건만 나옵니다).':'이 화면에서 매매 호가를 못 찾았습니다. 단지를 눌러 매물 목록(이 단지 매물)이 보이게 한 뒤 다시 눌러 주세요.');return}window.open('${siteUrl}#/asking?prices='+p.join(',')+'&src='+encodeURIComponent(location.hostname),'jbslab_asking')})()`;
+  const src = `(function(){var t=document.body.innerText;var re=${/매매(?:가|호가)?\s*:?\s*(\d+\s*억(?:\s*[\d,]{1,6})?|[\d,]{4,7}\s*만?)/g};var p=[],m;function v(s){s=s.replace(/\\s+/g,'').replace(/만원?$/,'');var a=s.match(/^(\\d+)억(?:([\\d,]+))?$/);if(a)return +a[1]*1e4+(a[2]?+a[2].replace(/,/g,''):0);var n=+s.replace(/,/g,'');return n>0?n:0}while(m=re.exec(t)){var x=v(m[1]);if(x<1000||x>5e6)continue;var tl=t.slice(m.index+m[0].length,m.index+m[0].length+40).split(/매매|전세|월세/)[0];var ar=tl.match(/전용\\s*:?\\s*(\\d+(?:\\.\\d+)?)/)||tl.match(/(\\d+(?:\\.\\d+)?)\\s*(?:m²|㎡|m2)/);var ds=t.slice(m.index+m[0].length,m.index+m[0].length+120).split(/매매|전세|월세/)[0];var c=/급매|급처|급하게/.test(ds)?'u':/올\\s?수리|특올|리모델링|인테리어|수리\\s?완/.test(ds)?'t':/수리\\s?필요|기본\\s?(?:상태|형)?|노후|올드/.test(ds)?'b':'';var bs=/반\\s?지하|지하\\s?\\d?\\s?층|(?:^|[^\\w/])B\\d\\s*\\/\\s*\\d|(?:^|[^\\d/])-\\d\\s*\\/\\s*\\d/.test(ds);p.push(x+(ar?'@'+ar[1]:'')+(c?'~'+c:'')+(bs?'!':''))}if(!p.length){alert(/hogangnono/.test(location.hostname)?'호갱노노는 단지를 연 뒤 화면을 아래로 내려 "이 단지 매물"이 보일 때 눌러 주세요(몇 건만 나옵니다).':'이 화면에서 매매 호가를 못 찾았습니다. 단지를 눌러 매물 목록(이 단지 매물)이 보이게 한 뒤 다시 눌러 주세요.');return}window.open('${siteUrl}#/asking?prices='+p.join(',')+'&src='+encodeURIComponent(location.hostname),'jbslab_asking')})()`;
   return 'javascript:' + encodeURIComponent(src);
 }

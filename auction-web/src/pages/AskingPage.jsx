@@ -24,7 +24,7 @@ function queryOf(it) {
   const place = `${it.sgg || ''} ${it.emd || ''}`.trim();
   return name ? `${place} ${name}` : String(it.address || it.title || '').split(/\s+/).slice(0, 5).join(' ');
 }
-// 물건 종류별로 호가를 볼 만한 곳(PC에서 매물 목록이 보이는 곳만). 아파트: 네이버·호갱노노(단지 화면 아래 '이 단지 매물'), 빌라·주택: 네이버·디스코·직방·다방, 상가·공장: 디스코·네이버
+// 호가를 볼 곳: 네이버·디스코·호갱노노·직방·다방·네이버 지도를 모든 물건에 띄우고 종류별로 순서만 바꾼다
 //  디스코·직방·다방은 주소로 바로 여는 주소가 없어 첫 화면을 열고, 누를 때 검색어를 클립보드에 복사해 둔다(검색창에 Ctrl+V)
 function links(it) {
   const q = queryOf(it);
@@ -37,10 +37,12 @@ function links(it) {
   const zig = ['직방 빌라(매매로)', 'https://www.zigbang.com/home/villa/map', true];
   const zigApt = ['직방', 'https://www.zigbang.com/home/apt/map', true];
   const dabang = ['다방', 'https://www.dabangapp.com/', true];
-  if (t === 'apt') return [naver, hogang, zigApt, map];
-  if (t === 'offi') return [naver, dabang, zigApt, map];
-  if (t === 'rh' || t === 'sh') return [naver, disco, zig, dabang, map];
-  return [disco, naver, map];
+  // 모든 물건에 모든 사이트를 띄운다(어디에 매물이 있는지는 물건마다 열어 봐야 안다). 종류에 따라 순서만 바꾼다
+  const zigAll = t === 'apt' || t === 'offi' ? zigApt : t === 'rh' || t === 'sh' ? zig : ['직방 상가·사무실(매매로)', 'https://www.zigbang.com/', true];
+  if (t === 'apt') return [naver, hogang, disco, zigAll, dabang, map];
+  if (t === 'offi') return [naver, dabang, zigAll, disco, hogang, map];
+  if (t === 'rh' || t === 'sh') return [naver, disco, zigAll, dabang, hogang, map];
+  return [disco, naver, zigAll, dabang, hogang, map];
 }
 
 export default function AskingPage({ admin }) {
@@ -109,16 +111,21 @@ export default function AskingPage({ admin }) {
   // 읽어 온 호가({price 만원, area ㎡})를 물건 전용면적과 같은 것만 골라 넣고 바로 저장
   const applyPrices = async (it, all, src) => {
     const area = Number(it.ledger?.unit?.exclusiveArea || it.buildingArea) || null;
-    const { rows: picked, mixed, noSame } = pickByArea(all, area);
+    const { rows: byArea, mixed, noSame } = pickByArea(all, area);
+    // 지하 물건은 지하 매물만, 지상 물건은 지하 매물을 뺀다(지하·반지하는 같은 면적이라도 값이 크게 낮음)
+    const under = /지하/.test(`${it.title || ''} ${it.address || ''}`);
+    const sameFloor = byArea.filter((r) => !!r.basement === under);
+    const picked = sameFloor.length ? sameFloor : byArea;
+    const floorNote = under ? (sameFloor.length ? ` · 지하 매물 ${sameFloor.length}건만` : ' · ⚠ 지하 매물이 없어 지상 매물 기준(실제보다 높음)') : (sameFloor.length < byArea.length ? ` · 지하 매물 ${byArea.length - sameFloor.length}건 뺌` : '');
     const sm = summarize(picked.map((r) => r.price));
     // 집 상태별 호가(매물 설명에 '올수리'·'급매'·'기본'이 적힌 것) — 실거래엔 없는 상태 정보
     const byCond = {}; ['top', 'basic', 'urgent'].forEach((c) => { const sc = summarize(picked.filter((r) => r.cond === c).map((r) => r.price)); if (sc) byCond[c] = { low: sc.low * 1e4, high: sc.high * 1e4, n: sc.n }; });
     if (!all.length) { setNotice({ bad: true, text: '매매 호가를 찾지 못했습니다. 단지를 눌러 매물 목록이 보이는 화면에서 다시 해 주세요.' }); return; }
     if (!sm) { setNotice({ bad: true, text: `매매 호가 ${all.length}건을 읽었지만 이 물건(전용 ${area}㎡)과 같은 면적 매물이 없어 저장하지 않았습니다.` }); return; }
     if (!admin) { setNotice({ bad: true, text: `호가 ${sm.n}건을 읽었지만 관리자 로그인이 안 돼 있어 저장하지 못했습니다.` }); return; }
-    const areaNote = area ? `전용 ${area}㎡ ±10% ${sm.n}건/전체 ${all.length}건` : `${sm.n}건${mixed ? ', 면적 섞임 주의' : ''}`;
+    const areaNote = (area ? `전용 ${area}㎡ ±10% ${sm.n}건/전체 ${all.length}건` : `${sm.n}건${mixed ? ', 면적 섞임 주의' : ''}`) + floorNote;
     await save(it, sm.low, sm.high, `자동 입력(${src || '화면'} · ${areaNote}${Object.keys(byCond).length ? ` · 상태 표시 ${Object.entries(byCond).map(([c, v]) => `${{ top: '수리', basic: '기본', urgent: '급매' }[c]} ${v.n}`).join(', ')}` : ''})`, { src: src || '', n: sm.n, total: all.length, area, rows: all.slice(0, 50), byCond });
-    setNotice({ bad: mixed, text: `${it.title}: ${areaNote} → 호가 ${eok(sm.low * 1e4)}~${eok(sm.high * 1e4)} 저장${noSame ? ` (면적 다른 ${noSame}건 뺌)` : ''}${mixed ? ' — 물건 면적을 몰라 여러 면적이 섞였을 수 있습니다' : ''}` });
+    setNotice({ bad: mixed || (under && !sameFloor.length), text: `${it.title}: ${areaNote} → 호가 ${eok(sm.low * 1e4)}~${eok(sm.high * 1e4)} 저장${noSame ? ` (면적 다른 ${noSame}건 뺌)` : ''}${mixed ? ' — 물건 면적을 몰라 여러 면적이 섞였을 수 있습니다' : ''}` });
   };
 
   // 북마크가 보낸 #/asking?prices=… 받기
@@ -127,7 +134,7 @@ export default function AskingPage({ admin }) {
     const raw = q.get('prices');
     if (!raw || !items || handled.current === loc.key) return;
     handled.current = loc.key;
-    const prices = raw.split(',').map((x) => { const [pa, c] = x.split('~'); const [p, a] = pa.split('@'); return { price: Number(p), area: a ? Number(a) : null, cond: { t: 'top', b: 'basic', u: 'urgent' }[c] || null }; }).filter((r) => r.price > 0);
+    const prices = raw.split(',').map((x) => { const bs = x.endsWith('!'); const [pa, c] = x.replace(/!$/, '').split('~'); const [p, a] = pa.split('@'); return { price: Number(p), area: a ? Number(a) : null, cond: { t: 'top', b: 'basic', u: 'urgent' }[c] || null, basement: bs }; }).filter((r) => r.price > 0);
     const src = q.get('src') || '';
     nav('/asking', { replace: true });
     const it = items.find((x) => x.id === getActive());

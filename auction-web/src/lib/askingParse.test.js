@@ -42,3 +42,13 @@ test('디스코·직방 형식(전용 우선)', () => {
   const z = parseAskingRows('매매 2억 3,000 관리비 5만 투룸 · 공급 52㎡ 전용 38.5㎡ · 3층');
   assert.equal(z[0].price, 23000); assert.equal(z[0].area, 38.5);
 });
+
+import { isBasement } from './askingParse.js';
+test('지하 매물 구분', () => {
+  assert.equal(isBasement('투룸 · 전용 38㎡ · 반지하'), true);
+  assert.equal(isBasement('전용 40㎡ B1/4층'), true);
+  assert.equal(isBasement('전용 40㎡ -1/4층'), true);
+  assert.equal(isBasement('대지 302m² · 연 805m² · 5F / B1'), false);
+  assert.equal(isBasement('전용 40㎡ 3/4층'), false);
+  assert.equal(parseAskingRows('매매 1억 2,000 전용 40㎡ 반지하 매매 1억 9,000 전용 41㎡ 3/4층').map((r) => !!r.basement).join(), 'true,false');
+});
