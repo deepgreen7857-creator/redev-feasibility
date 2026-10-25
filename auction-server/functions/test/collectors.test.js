@@ -464,3 +464,38 @@ test('물건 위치: 법정동 하나에 한 번만 지도 조회, PNU 없는 �
   assert.deepEqual(written.c.geo, { lng: 126.65, lat: 37.45, by: '법정동' });
   assert.equal(written.d, undefined);
 });
+
+// 아주 작은 PDF(글자 'Sale notice 1000') — 글자 뽑기 시험용
+function tinyPdf(text) {
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    null, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+  const stream = `BT /F1 12 Tf 20 100 Td (${text}) Tj ET`;
+  objs[3] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+  let out = '%PDF-1.4\n'; const offs = [];
+  objs.forEach((o, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const x = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offs.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${x}\n%%EOF`;
+  return Buffer.from(out, 'latin1');
+}
+
+test('파산 공고 첨부: 내려받기 인자, HWP 문단 글자, PDF 글자, 공고에 저장', async () => {
+  const bk = require('../src/lib/bankrupt');
+  const dt = require('../src/lib/docText');
+  assert.deepEqual(bk.attachArgs({ href: "javascript:download('1792729687579_132807.pdf','의정부 매각공고.pdf')" }), { file: '1792729687579_132807.pdf', name: '의정부 매각공고.pdf' });
+  // HWP 문단 레코드(tag 67): '소재지' + 문단끝(13)
+  const txt = Buffer.from('소재지 인천', 'utf16le'); const body = Buffer.concat([txt, Buffer.from([13, 0])]);
+  const head = Buffer.alloc(4); head.writeUInt32LE(67 | (body.length << 20));
+  assert.equal(dt.hwpRecords(Buffer.concat([head, body])).trim(), '소재지 인천');
+  const r = await dt.extract('a.pdf', tinyPdf('Sale notice 1000'));
+  assert.equal(r.kind, 'pdf'); assert.ok(/Sale notice 1000/.test(r.text), r.text + r.note);
+  const saved = {};
+  const texts = {};
+  const db = { collection: (name) => name === 'bankruptTexts' ? { doc: (id) => ({ set: async (v) => { texts[id] = v; } }) } : ({ orderBy: () => ({ limit: () => ({ get: async () => ({ docs: [
+    { id: 'scourt_1', data: () => ({ realEstate: true, attachments: [{ name: 'a.pdf', href: "javascript:download('x.pdf','a.pdf')" }] }), ref: { id: 'scourt_1', set: async (v) => Object.assign(saved, v) } },
+    { data: () => ({ realEstate: false, kind: '채권·동산 등', attachments: [{ name: 'b.pdf' }] }), ref: { set: async () => { throw new Error('안 받아야 함'); } } },
+  ] }) }) }) }) };
+  const fetcher = async (url, opt) => { assert.equal(String(opt.body.get('path')), '011'); return { ok: true, arrayBuffer: async () => tinyPdf('Land 500 sqm at Incheon minimum price 100000000') }; };
+  const st = await bk.fetchDocs({ db, fetcher, delayMs: 0, log: () => {} });
+  assert.equal(st.done, 1); assert.equal(saved.docStatus, 'ok'); assert.ok(/Land 500 sqm/.test(saved.docHead)); assert.ok(/Land 500 sqm/.test(texts.scourt_1.text));
+});

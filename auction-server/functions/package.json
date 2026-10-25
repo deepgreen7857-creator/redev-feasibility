@@ -12,10 +12,13 @@
     "logs": "firebase functions:log"
   },
   "dependencies": {
+    "cfb": "^1.2.2",
     "cheerio": "^1.0.0",
     "fast-xml-parser": "^4.5.0",
     "firebase-admin": "^13.0.0",
     "firebase-functions": "^6.1.0",
+    "jszip": "^3.10.2",
+    "pdfjs-dist": "^4.10.38",
     "xlsx": "^0.18.5"
   }
 }

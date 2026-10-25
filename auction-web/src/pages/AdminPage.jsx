@@ -79,6 +79,7 @@ function Status() {
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'land' }, 'land')} title="공시지가·토지이용이 없거나 빈 응답이었던 진행 물건을 다시 조회(최대 150건)">{busy === 'land' ? '조회 중…' : '토지이용 빈 값 다시 조회'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'zones' }, 'zones')}>{busy === 'zones' ? '받는 중…' : '인천 정비현황 지금 받기'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'bankrupt' }, 'bankrupt')}>{busy === 'bankrupt' ? '수집 중…' : '파산 공고 지금 수집'}</button>
+        <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'bankruptDocs' }, 'bankruptDocs')} title="부동산 공고의 첨부(PDF·HWP)를 받아 글자를 뽑아 둡니다 — 새벽 수집 때도 자동">{busy === 'bankruptDocs' ? '첨부 읽는 중…(최대 7분)' : '파산 공고 첨부 읽기'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('runNow', { job: 'trades' }, 'trades')}>{busy === 'trades' ? '수집 중…(최대 8분)' : '실거래가 이어 받기'}</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('seedSettings', {}, 'seed')}>기본 설정 넣기</button>
         <button className="btn-ghost" disabled={!!busy} onClick={() => run('geoNow', {}, 'geo')} title="매일 아침 6시 40분에 자동으로 돕니다 — 목록 '거리 가까운 순' 정렬용">{busy === 'geo' ? '위치 채우는 중…' : '물건 위치 채우기'}</button>

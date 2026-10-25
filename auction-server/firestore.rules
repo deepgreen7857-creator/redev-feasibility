@@ -8,6 +8,8 @@ service cloud.firestore {
     match /listings/{id}        { allow read: if true; allow write: if isAdmin(); }
     match /pastResults/{id}     { allow read: if true; allow write: if false; }
     match /bankruptNotices/{id} { allow read: if true; allow write: if false; }
+    // 파산 공고 첨부 원문 글자(대법원 공개 공고) — 누구나 읽기
+    match /bankruptTexts/{id}   { allow read: if true; allow write: if false; }
     match /tradeMonths/{id}     { allow read: if true; allow write: if false; }
     match /landCache/{id}       { allow read: if true; allow write: if false; }
     match /settings/{id}        { allow read: if true; allow write: if isAdmin(); }

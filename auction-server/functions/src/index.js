@@ -407,14 +407,15 @@ async function tick({ only, force } = {}) {
   const deadline = started + TICK_BUDGET_MS;
   const out = {};
   const settings = await getSettings();
-  const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, results: settings.collectOnbid !== false, resultList: settings.collectOnbid !== false, trades: settings.collectTrades !== false, land: settings.collectLand !== false, zoneMatch: true };
-  const jobs = only ? [only] : ['zones', 'bankrupt', 'onbid', 'land', 'zoneMatch', 'resultList', 'results', 'trades'];
+  const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, bankruptDocs: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, results: settings.collectOnbid !== false, resultList: settings.collectOnbid !== false, trades: settings.collectTrades !== false, land: settings.collectLand !== false, zoneMatch: true };
+  const jobs = only ? [only] : ['zones', 'bankrupt', 'bankruptDocs', 'onbid', 'land', 'zoneMatch', 'resultList', 'results', 'trades'];
   for (const job of jobs) {
     if (!enabled[job] && !only) continue;
     if (Date.now() > deadline) { out[job] = { stopped: 'time' }; continue; }
     try {
       if (job === 'zones') out[job] = await runIncheonZones({ force });
       if (job === 'bankrupt') out[job] = await runBankrupt({ force });
+      else if (job === 'bankruptDocs') out[job] = await bankrupt.fetchDocs({ db, log: logger.info, limit: only ? 60 : 25, deadline: Date.now() + (only ? 420 : 120) * 1000 });
       if (job === 'onbid') out[job] = await runOnbid({ deadline, force });
       if (job === 'results') out[job] = await runOnbidResults({ deadline });
       if (job === 'resultList') out[job] = await runOnbidResultList({ deadline, force });
@@ -458,7 +459,7 @@ function requireAdmin(request) {
 exports.runNow = onCall({ timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_GO_KR_KEY, VWORLD_KEY] }, async (request) => {
   requireAdmin(request);
   const job = request.data && request.data.job;
-  if (!['zones', 'bankrupt', 'onbid', 'resultList', 'results', 'trades', 'land', 'zoneMatch'].includes(job)) throw new HttpsError('invalid-argument', 'job 값이 잘못되었습니다.');
+  if (!['zones', 'bankrupt', 'bankruptDocs', 'onbid', 'resultList', 'results', 'trades', 'land', 'zoneMatch'].includes(job)) throw new HttpsError('invalid-argument', 'job 값이 잘못되었습니다.');
   return tick({ only: job, force: true });
 });
 

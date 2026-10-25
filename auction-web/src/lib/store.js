@@ -111,6 +111,14 @@ export async function listBankrupt() {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+// 파산 공고 첨부 원문 글자(대법원 공개 공고) — 펼칠 때만 받는다
+export async function getBankruptText(id) {
+  const f = await firebase();
+  if (!f) return null;
+  const snap = await f.fs.getDoc(f.fs.doc(f.db, 'bankruptTexts', id));
+  return snap.exists() ? snap.data().text : null;
+}
+
 // 실거래가: (종류·시군구) 최근 n개월 → 거래 배열
 export async function getDeals(type, lawd, months = 12) {
   if (!type || !lawd) return [];

@@ -133,4 +133,51 @@ async function collect({ fetcher = fetch, knownMaxSeq = 0, maxPages = 5, save, l
   return stats;
 }
 
-module.exports = { parseList, parseView, classify, sidoOfCourt, collect, decodeHtml, LIST, VIEW };
+// ── 첨부 원문 글자 받기 ─────────────────────────────────────────────
+// 상세 화면의 download('저장이름','원래이름') → file.scourt.go.kr/AttachDownload 로 POST(file, path=011, downFile)
+const FILE_URL = 'https://file.scourt.go.kr/AttachDownload';
+function attachArgs(a) {
+  const m = String(a.href || a.onclick || '').match(/download\(\s*'([^']+)'\s*,\s*'([^']*)'/);
+  return m ? { file: m[1], name: m[2] || a.name } : null;
+}
+async function downloadAttach(a, fetcher = fetch) {
+  const arg = attachArgs(a);
+  if (!arg) throw new Error('내려받기 주소를 못 찾음');
+  const body = new URLSearchParams({ file: arg.file, path: '011', downFile: arg.name });
+  const res = await fetcher(FILE_URL, { method: 'POST', body, headers: { 'User-Agent': 'Mozilla/5.0 (jbslab auction collector)', 'Content-Type': 'application/x-www-form-urlencoded', Referer: VIEW }, signal: AbortSignal.timeout(60000) });
+  if (!res.ok) throw new Error(`HTTP_${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > 25 * 1024 * 1024) throw new Error(`파일이 너무 큼 ${(buf.length / 1048576).toFixed(1)}MB`);
+  return buf;
+}
+
+// 부동산(또는 분류 '확인 필요') 공고의 첨부를 받아 글자를 뽑아 공고 문서에 docText 로 저장한다(공개 공고 원문)
+async function fetchDocs({ db, fetcher = fetch, limit = 40, deadline = Infinity, log = console.log, delayMs = 800 }) {
+  const { extract } = require('./docText');
+  const snap = await db.collection('bankruptNotices').orderBy('seq', 'desc').limit(600).get();
+  const todo = snap.docs.filter((d) => { const x = d.data(); return !x.docAt && (x.realEstate || x.kind === '확인 필요') && (x.attachments || []).length; }).slice(0, limit);
+  const stats = { todo: todo.length, done: 0, ok: 0, noText: 0, errors: 0 };
+  for (const d of todo) {
+    if (Date.now() > deadline) { stats.stoppedBy = 'time'; break; }
+    const x = d.data(); const docs = []; let text = '';
+    for (const a of (x.attachments || []).slice(0, 5)) {
+      try {
+        const buf = await downloadAttach(a, fetcher);
+        const r = await extract(a.name, buf);
+        docs.push({ name: a.name, kind: r.kind, size: buf.length, chars: r.text.length, status: r.status, ...(r.note ? { note: r.note } : {}), ...(r.pages ? { pages: r.pages } : {}) });
+        if (r.text) text += `\n\n[${a.name}]\n${r.text}`;
+      } catch (e) { docs.push({ name: a.name, status: 'error', note: String(e.message || e).slice(0, 200) }); stats.errors++; }
+      await sleep(delayMs);
+    }
+    const ok = docs.some((y) => y.status === 'ok');
+    // 원문 전체는 따로(bankruptTexts) — 공고 목록을 받을 때 무거워지지 않게. 공고에는 앞부분(첫 쪽쯤)만 붙인다
+    const full = text.trim().slice(0, 200000);
+    if (full) await db.collection('bankruptTexts').doc(d.id || d.ref.id).set({ text: full, at: new Date().toISOString() });
+    await d.ref.set({ docs, docHead: full.slice(0, 3000), docChars: full.length, docAt: new Date().toISOString(), docStatus: ok ? 'ok' : docs.some((y) => y.status === 'noText') ? 'noText' : 'error' }, { merge: true });
+    stats.done++; if (ok) stats.ok++; else if (docs.some((y) => y.status === 'noText')) stats.noText++;
+  }
+  log(`파산 공고 첨부: ${JSON.stringify(stats)}`);
+  return stats;
+}
+
+module.exports = { parseList, parseView, classify, sidoOfCourt, collect, decodeHtml, attachArgs, downloadAttach, fetchDocs, LIST, VIEW };
