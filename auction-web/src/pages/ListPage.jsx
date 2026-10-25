@@ -202,6 +202,7 @@ export default function ListPage({ mode }) {
               {typeof it.failCount === 'number' && it.failCount >= 8 && <Badge tone="hard">유찰 {it.failCount}회 — 이유 확인</Badge>}
               {a.excluded && <Badge>관심 제외</Badge>}
               {it.otherRounds > 0 && <Badge>다른 회차 {it.otherRounds}건</Badge>}
+              {docsLabel(it) && <Badge tone="brand">📎 {docsLabel(it)}</Badge>}
               <span className="ml-auto text-xs text-ink/50">{it.caseNo}</span>
             </div>
             <div className="flex items-start gap-2">
@@ -702,4 +703,15 @@ function BidRow({ it, a, table }) {
 function rank(a) { return order(a.verdict) + (a.special ? 0.5 : 0); }
 
 // 공매는 같은 물건이 회차(공고)마다 따로 올라온다 → 물건번호·주소가 같으면 가장 가까운 진행 회차 하나만
+// 카드에 '어떤 원본이 들어와 있나' 표시 — 누르면 상세 화면에서 열린다(법원 원본·등기부는 관리자 로그인에서만)
+function docsLabel(it) {
+  const out = [];
+  const cd = it.courtDocs || {};
+  if (cd['감정평가서'] || it.detail?.appraisalFile) out.push('감정평가서');
+  if (cd['현황조사서']) out.push('현황조사서');
+  if (cd['매각물건명세서']) out.push('명세서');
+  if (it.registryAt) out.push('등기부');
+  return out.join('·');
+}
+
 function order(v) { return { now: 0, wait: 1, check: 2, unknown: 3, hard: 4, suspect: 5 }[v] ?? 6; }
