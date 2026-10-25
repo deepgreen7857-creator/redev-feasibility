@@ -20,24 +20,22 @@ const NAV_GROUPS = [
   { label: '기준·관리', items: [['/rules', '판단 기준'], ['/admin', '관리자·자료 완성도']] },
 ];
 const groupOf = (path) => NAV_GROUPS.find((g) => g.items.some(([to]) => (to === '/' ? path === '/' : path.startsWith(to)))) || (path.startsWith('/item') || path.startsWith('/report') ? NAV_GROUPS[0] : null);
+// 메뉴를 숨기지 않는다: 네 묶음을 늘 다 펼쳐 놓고(묶음 이름은 작은 회색 글씨), 화면 10개를 한눈에 보이게
+//  (10-25 저녁 묶음만 보이고 아래 줄이 바뀌는 방식은 어디 있는지 헷갈린다고 하셔서 바꿈)
 function Nav() {
   const { pathname } = useLocation();
   const cur = groupOf(pathname);
   return (
-    <div className="w-full sm:ml-auto sm:w-auto">
-      <nav className="flex gap-1 overflow-x-auto text-sm">
-        {NAV_GROUPS.map((g) => (
-          <NavLink key={g.label} to={g.items[0][0]} end className={() => `whitespace-nowrap rounded-md px-3 py-1.5 ${cur === g ? 'bg-brand2 font-bold text-brand' : 'text-ink/70 hover:bg-paper'}`}>{g.label}</NavLink>
-        ))}
-      </nav>
-      {cur && cur.items.length > 1 && (
-        <nav className="mt-1 flex gap-1 overflow-x-auto text-xs">
-          {cur.items.map(([to, l]) => (
-            <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `whitespace-nowrap rounded px-2 py-1 ${isActive ? 'font-bold text-brand underline underline-offset-4' : 'text-ink/60 hover:text-ink'}`}>{l}</NavLink>
+    <nav className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 text-sm sm:ml-auto sm:w-auto sm:justify-end">
+      {NAV_GROUPS.map((g) => (
+        <div key={g.label} className={`flex flex-wrap items-center gap-0.5 rounded-md px-1 ${cur === g ? 'bg-brand2/60' : ''}`}>
+          <span className="mr-1 text-xs text-ink/40">{g.label}</span>
+          {g.items.map(([to, l]) => (
+            <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `whitespace-nowrap rounded px-1.5 py-1 ${isActive ? 'font-bold text-brand underline underline-offset-4' : 'text-ink/75 hover:text-ink'}`}>{l}</NavLink>
           ))}
-        </nav>
-      )}
-    </div>
+        </div>
+      ))}
+    </nav>
   );
 }
 
