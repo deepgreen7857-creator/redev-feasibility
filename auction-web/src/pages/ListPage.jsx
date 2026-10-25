@@ -212,6 +212,20 @@ export default function ListPage({ mode }) {
             <div className="mt-0.5 truncate text-xs text-ink/60">{it.address}</div>
             {areaText(it) && <div className="text-xs text-ink/60">{areaText(it)}</div>}
             {a.estimateBasis && <div className="text-xs text-wait">{a.estimateBasis}</div>}
+            {/* 가격부터: 감정가 → 최저가 → 유찰·마감 (10-25 '감정가·최저가를 먼저 써 줘야지') */}
+            <div className="mt-2 grid grid-cols-4 gap-2 rounded-lg border border-line p-2 text-sm">
+              <div><div className="text-xs text-ink/50">감정가</div><div className="num font-bold">{eok(it.appraisal)}</div></div>
+              <div><div className="text-xs text-ink/50">최저가</div><div className="num font-bold text-brand">{eok(it.minBid)}</div><div className="text-xs text-ink/50">감정가의 {pct(a.ratio)}</div></div>
+              <div><div className="text-xs text-ink/50">유찰</div><div className="font-bold">{it.failCount ?? '—'}회</div>{it.roundList?.length > 1 && <div className="truncate text-xs text-ink/50">다음 {eok(it.roundList[1].minBid)}</div>}</div>
+              <div><div className="text-xs text-ink/50">마감</div><div className="font-bold">{String(it.bidEnd || '').replace(/\./g, '-').slice(5, 10) || '—'}</div></div>
+            </div>
+            {a.verdict !== 'pending' && (
+              <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
+                <div><div className="text-xs text-ink/50">우리가 본 가치</div><div className="num font-bold">{eok(a.value)}</div></div>
+                <div><div className="text-xs text-ink/50">{a.special ? '매수상한(바닥 기준)' : '매수상한'}</div><div className="num font-bold">{eok(a.cap)}</div></div>
+                <div><div className="text-xs text-ink/50">진입 시점</div><div className="font-bold">{a.reasons.length || a.verdict === 'check' ? '—' : a.entry ? a.entry.label : '—'}</div></div>
+              </div>
+            )}
             {it.aiReview && <div className={`mt-1 rounded px-2 py-1 text-xs ${/제외|보류/.test(it.aiReview.verdict) ? 'bg-hard/10 text-hard' : 'bg-now/10 text-now'}`}><b>Claude 검토 [{it.aiReview.verdict}]</b> {String(it.aiReview.conclusion || '').slice(0, 90)}</div>}
             {!it.aiReview && it.source === 'court' && a.rightsReview && <div className="mt-1 text-xs text-wait">명세서 미확인 — Claude 검토 대기</div>}
             {a.verdict === 'pending' && <div className="mt-2 rounded-md bg-ink/5 p-2 text-xs text-ink/70"><b>자료 수집 중 — 판정 안 함</b>: {a.gaps.required.join(' · ')} 이(가) 아직 없습니다. 모이면 자동으로 판정합니다.</div>}
@@ -247,11 +261,6 @@ export default function ListPage({ mode }) {
                 <div><div className="text-xs text-ink/50">잘 풀리면 ({a.special.scenarios.length}개 시나리오)</div><div className="num font-bold text-now">{a.upMoney ? `${eok(a.upMoney.profit)} 수익` : a.special.best ? eok(a.special.best.value) : '—'}</div>{a.special.best && <div className="truncate text-[11px] text-ink/50">{a.special.best.name}</div>}</div>
               </div>
             )}
-            <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-              <div><div className="text-xs text-ink/50">최저가</div><div className="num font-bold">{eok(it.minBid)}</div><div className="text-xs text-ink/50">감정가의 {pct(a.ratio)}</div></div>
-              <div><div className="text-xs text-ink/50">{a.special ? "매수상한(바닥 기준)" : "매수상한"}</div><div className="num font-bold">{eok(a.cap)}</div><div className="text-xs text-ink/50">유찰 {it.failCount ?? '—'}회</div></div>
-              <div><div className="text-xs text-ink/50">진입 시점</div><div className="font-bold">{a.reasons.length || a.verdict === 'check' ? '—' : a.entry ? a.entry.label : '—'}</div><div className="text-xs text-ink/50">마감 {String(it.bidEnd || '').slice(5, 10) || '—'}</div></div>
-            </div>
             {a.reasons.length > 0 && <div className="mt-2 text-xs text-hard">{a.reasons.join(' · ')}</div>}
             {a.anomalies?.length > 0 && <div className="mt-2 rounded-md bg-hard/5 p-2 text-xs text-hard">{a.anomalies.join(' · ')}</div>}
             {a.calcAnomaly && <div className="mt-2 rounded-md bg-hard/5 p-2 text-xs text-hard"><b>계산 이상</b> — {a.calcAnomaly.join(' · ')} (지금 매력·A등급에서 제외)</div>}
