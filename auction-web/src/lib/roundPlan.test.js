@@ -13,3 +13,10 @@ test('회차별 진입: 몇 회 더 유찰되면 상한 아래로, 그때까지 
   assert.ok(plan.firstOk && plan.firstOk.k >= 1);
   assert.ok(plan.firstOk.survive < 1);
 });
+
+test('공매는 공고의 회차별 실제 날짜, 법원은 5주 간격 추정', () => {
+  const g = futureRounds({ source: 'onbid', minBid: 1e8, bidEnd: '2026-11-02', roundList: [{ bidEnd: '2026-11-02 10:00', minBid: 1e8 }, { bidEnd: '2026-11-09 10:00', minBid: 9e7 }] });
+  assert.equal(g[1].date, '2026-11-09'); assert.equal(g[1].actual, true);
+  const c = futureRounds({ source: 'court', minBid: 1e8, bidEnd: '2026.11.05' }, 0.3, 3);
+  assert.equal(c[1].date, '2026-12-10'); assert.equal(c[1].actual, false);
+});

@@ -30,12 +30,17 @@ function soldRate(table, it, price) {
 }
 
 // 앞으로 회차별 최저가(법원: 저감률, 공매: 처음 가격의 10%씩 최저 50%까지)
+const ymd = (v) => { const m = String(v || '').match(/(\d{4})[.-](\d{2})[.-](\d{2})/); return m ? `${m[1]}-${m[2]}-${m[3]}` : null; };
+const plusDays = (d, n) => { if (!d) return null; const t = new Date(`${d}T00:00:00+09:00`); t.setDate(t.getDate() + n); return new Date(t.getTime() + 9 * 3600e3).toISOString().slice(0, 10); };
+// 공매: 공고에 나온 회차별 일정(roundList)이 있으면 그대로(실제 날짜). 없으면 공매 1주·법원 5주 간격으로 날짜 추정
 export function futureRounds(item, courtRate = 0.3, count = 10) {
   const now = item.minBid || item.appraisal; if (!now) return [];
+  const base = ymd(item.bidEnd);
+  if (item.roundList && item.roundList.length > 1) return item.roundList.slice(0, count).map((r, k) => ({ k, price: r.minBid, date: ymd(r.bidEnd), actual: true }));
   const out = [];
-  if (item.source === 'court') { for (let k = 0; k < count; k++) out.push({ k, price: Math.round(now * (1 - courtRate) ** k) }); return out; }
+  if (item.source === 'court') { for (let k = 0; k < count; k++) out.push({ k, price: Math.round(now * (1 - courtRate) ** k), date: plusDays(base, 35 * k), actual: k === 0 }); return out; }
   const first = item.firstPrice || item.appraisal || now; const floor = first * 0.5; let p = now;
-  for (let k = 0; k < count; k++) { out.push({ k, price: Math.round(p), floor: p <= floor + 1 }); if (p <= floor + 1) break; p = Math.max(floor, p - first * 0.1); }
+  for (let k = 0; k < count; k++) { out.push({ k, price: Math.round(p), floor: p <= floor + 1, date: plusDays(base, 7 * k), actual: k === 0 }); if (p <= floor + 1) break; p = Math.max(floor, p - first * 0.1); }
   return out;
 }
 

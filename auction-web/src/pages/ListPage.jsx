@@ -15,6 +15,7 @@ export default function ListPage({ mode }) {
   const opp = mode === 'opportunity';
   const done = mode === 'done';
   const villa = mode === 'villa';
+  const schedule = mode === 'schedule';
   const [items, setItems] = useState(null);
   const [past, setPast] = useState([]); // 낙찰 결과(예상 낙찰가 기준표용) — 낙찰가는 이제 pastResults 에만 있다
   const [settings, setSettings] = useState(null);
@@ -84,6 +85,7 @@ export default function ListPage({ mode }) {
   return (
     <div className="space-y-4">
       {done && <DoneSummary rows={rows} table={table} />}
+      {schedule && <Schedule rows={rows} table={table} rates={rates} settings={settings} />}
       {villa && (
         <div className="card border-brand/30 text-sm">
           <div className="text-base font-extrabold">빌라 단타 — 땅값 수준에 사서 올수리 후 매도</div>
@@ -139,7 +141,7 @@ export default function ListPage({ mode }) {
       {!items && !error && <div className="card text-sm text-ink/50">물건을 불러오는 중…</div>}
       {items && !rows.length && <Empty>조건에 맞는 물건이 없습니다.</Empty>}
 
-      <div className="grid gap-3 md:grid-cols-2">
+      {!schedule && <div className="grid gap-3 md:grid-cols-2">
         {rows.map(({ it, a }) => (
           <Link key={it.id} to={`/item/${encodeURIComponent(it.id)}`} className="card block transition hover:border-brand/50 hover:shadow-sm">
             <div className="mb-2 flex flex-wrap items-center gap-1.5">
@@ -213,7 +215,7 @@ export default function ListPage({ mode }) {
             {a.calcAnomaly && <div className="mt-2 rounded-md bg-hard/5 p-2 text-xs text-hard"><b>계산 이상</b> — {a.calcAnomaly.join(' · ')} (지금 매력·A등급에서 제외)</div>}
           </Link>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -515,6 +517,69 @@ function AnalyzerScore({ rows, table }) {
   );
 }
 
+// 일정표: 물건마다 '매력으로 바뀌는 회차'의 날짜(공매는 공고상 실제 날짜, 법원은 다음 기일 약 5주 간격 추정)와
+// 세부 검토를 시작할 날(입찰 7일 전, 법원은 명세서·현장 확인 때문에 10일 전)을 모아 주 단위로 보여 준다.
+const addDays = (ymd, n) => { const d = new Date(`${ymd}T00:00:00+09:00`); d.setDate(d.getDate() + n); return new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10); };
+const weekOf = (ymd) => { const d = new Date(`${ymd}T00:00:00+09:00`); const day = (d.getDay() + 6) % 7; d.setDate(d.getDate() - day); return new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10); };
+function Schedule({ rows, table, rates, settings }) {
+  const [only, setOnly] = useState('best');
+  const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  const list = useMemo(() => {
+    const out = [];
+    rows.forEach(({ it, a }) => {
+      if (!a.cap || a.special || ['suspect', 'shareUnknown'].includes(a.verdict) || a.calcAnomaly) return;
+      const plan = roundPlan(it, a, { premium: table, rates, courtRate: courtRate(it, settings).rate });
+      const t = plan && (only === 'best' ? plan.best || plan.firstOk : plan.firstOk);
+      if (!t || !t.date) return;
+      const review = addDays(t.date, it.source === 'court' ? -10 : -7);
+      if (t.date < today) return;
+      out.push({ it, a, t, review: review < today ? today : review });
+    });
+    return out.sort((x, y) => x.review.localeCompare(y.review) || y.t.ev - x.t.ev);
+  }, [rows, table, rates, settings, only]);
+  const weeks = {}; list.forEach((x) => { (weeks[weekOf(x.review)] ||= []).push(x); });
+  const P = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`);
+  const ics = () => {
+    const ev = (d, title, desc) => `BEGIN:VEVENT\r\nUID:${d}-${Math.random().toString(36).slice(2)}@jbslab\r\nDTSTART;VALUE=DATE:${d.replace(/-/g, '')}\r\nSUMMARY:${title}\r\nDESCRIPTION:${desc}\r\nEND:VEVENT\r\n`;
+    const body = list.map((x) => ev(x.review, `[검토] ${x.it.title}`.slice(0, 70), `${x.t.label} 입찰 ${x.t.date} · 최저가 ${eok(x.t.price)} · 예상 낙찰가 ${eok(x.t.bid)}`) + ev(x.t.date, `[입찰] ${x.it.title}`.slice(0, 70), `최저가 ${eok(x.t.price)} · 우리 입찰가 ${eok(x.t.bid)} · 상한 ${eok(x.a.cap)}`)).join('');
+    const blob = new Blob([`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//jbslab//auction//KO\r\n${body}END:VCALENDAR\r\n`], { type: 'text/calendar' });
+    const u = URL.createObjectURL(blob); const el = document.createElement('a'); el.href = u; el.download = `경매일정_${today}.ics`; el.click(); URL.revokeObjectURL(u);
+  };
+  return (
+    <div className="card text-sm">
+      <div className="text-base font-extrabold">일정표 — 언제 매력으로 바뀌고, 언제 검토를 시작할지</div>
+      <p className="mt-1 text-xs text-ink/60">물건마다 앞으로 회차별 최저가 → 예상 낙찰가 → 우리 매수상한 대비 남는 돈과 <b>그 회차까지 안 팔리고 남아 있을 확률</b>(완료 물건 낙찰률)을 따져 들어갈 회차를 고릅니다. 공매는 공고에 나온 <b>실제 회차 날짜</b>, 법원은 다음 기일을 약 5주 간격으로 <b>추정</b>합니다. 세부 검토(권리분석·등기부·현장·중개사 확인)는 입찰 7일 전(법원 10일 전)부터.</p>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <button type="button" onClick={() => setOnly('best')} className={`rounded-full border px-2.5 py-1 ${only === 'best' ? 'border-brand bg-brand text-white' : 'border-line'}`}>기대값 최대 회차</button>
+        <button type="button" onClick={() => setOnly('first')} className={`rounded-full border px-2.5 py-1 ${only === 'first' ? 'border-brand bg-brand text-white' : 'border-line'}`}>처음 매력 되는 회차</button>
+        <span className="text-ink/50">{list.length}건</span>
+        <button type="button" className="btn ml-auto" onClick={ics} disabled={!list.length}>캘린더 파일 받기(.ics)</button>
+      </div>
+      {Object.entries(weeks).map(([w, xs]) => (
+        <div key={w} className="mt-3">
+          <div className="font-bold">{w} 주 — 검토 시작 {xs.length}건</div>
+          <table className="w-full text-xs">
+            <thead className="text-ink/50"><tr><th className="text-left">검토 시작</th><th className="text-left">입찰일</th><th className="text-left">물건</th><th className="text-right">회차</th><th className="text-right">최저가</th><th className="text-right">예상 낙찰가</th><th className="text-right">남는 돈</th><th className="text-right">남아 있을 확률</th></tr></thead>
+            <tbody>{xs.map(({ it, a, t, review }) => (
+              <tr key={it.id} className="border-t border-line/50">
+                <td>{review}</td>
+                <td>{t.date}{t.actual ? '' : <span className="text-ink/40"> 추정</span>}</td>
+                <td><Link className="text-brand underline" to={`/item/${encodeURIComponent(it.id)}`}>{typeLabel(it)} · {String(it.title || '').slice(0, 34)}</Link> <span className="text-ink/40">{SOURCE_LABEL[it.source === 'court' ? 'court' : it.category]}</span></td>
+                <td className="text-right">{t.label}</td>
+                <td className="text-right">{eok(t.price)}</td>
+                <td className="text-right">{eok(t.bid)}</td>
+                <td className="text-right text-now">{eok(t.room)}</td>
+                <td className="text-right">{P(t.survive)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ))}
+      {!list.length && <div className="mt-3 text-ink/50">앞으로 매력으로 바뀌는 회차가 있는 물건이 없습니다.</div>}
+    </div>
+  );
+}
+
 // 진행 물건 카드: 몇 회 더 유찰되면 살 만해지나 + 그때까지 남아 있을 확률(기대값이 가장 큰 회차)
 function RoundLine({ it, a, table, rates, settings }) {
   if (!a.cap || a.special) return null;
@@ -525,8 +590,8 @@ function RoundLine({ it, a, table, rates, settings }) {
   if (!f) return <div className="mt-1 text-xs text-hard">앞으로 {plan.rows.length}회차 안에는 예상 낙찰가가 우리 매수상한 아래로 안 내려옴 — 매력 전환 없음</div>;
   return (
     <div className="mt-1 text-xs">
-      <b>매력 전환</b>: {f.label}(최저가 {eok(f.price)}, 예상 낙찰가 {eok(f.bid)}){f.k > 0 ? ` · 그때까지 남아 있을 확률 ${P(f.survive)}` : ''}
-      {b && b.k !== f.k && <span className="ml-1 font-bold text-brand">→ 기대값 최대: {b.label}(남아 있을 확률 {P(b.survive)}, 남는 돈 {eok(b.room)})</span>}
+      <b>매력 전환</b>: {f.label}{f.date ? ` ${f.date.slice(5)}${f.actual ? '' : '(추정)'}` : ''}(최저가 {eok(f.price)}, 예상 낙찰가 {eok(f.bid)}){f.k > 0 ? ` · 그때까지 남아 있을 확률 ${P(f.survive)}` : ''}
+      {b && b.k !== f.k && <span className="ml-1 font-bold text-brand">→ 기대값 최대: {b.label}{b.date ? ` ${b.date.slice(5)}` : ''}(남아 있을 확률 {P(b.survive)}, 남는 돈 {eok(b.room)})</span>}
     </div>
   );
 }
@@ -562,7 +627,9 @@ function dedupeRounds(items) {
     const end = (x) => String(x.bidEnd || '');
     const upcoming = g.filter((x) => end(x) >= today).sort((p, q) => end(p).localeCompare(end(q)));
     const pick = upcoming[0] || g.sort((p, q) => end(q).localeCompare(end(p)))[0];
-    return { ...pick, otherRounds: g.length - 1 };
+    // 공매는 공고에 회차별 날짜·최저가가 미리 나와 있다 → 고른 회차부터의 실제 일정표(일정표 화면에서 씀)
+    const roundList = upcoming.map((x) => ({ bidEnd: x.bidEnd, minBid: x.minBid }));
+    return { ...pick, otherRounds: g.length - 1, roundList };
   });
 }
 
