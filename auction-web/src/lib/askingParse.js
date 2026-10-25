@@ -1,4 +1,4 @@
-// 호가 글 읽기 — 네이버 부동산 등에서(호갱노노 웹은 매물 목록이 없어 실거래만 보임, 2026-10-25 확인) "보이는 글"에서 매매 호가만 뽑는다.
+// 호가 글 읽기 — 네이버 부동산 등에서(호갱노노 PC는 단지 화면 아래 '이 단지 매물'에 몇 건만 보임 — 2026-10-23 용현자이크레스트로 확인, 디스코·직방도 PC 매물 목록 있음 2026-10-25) "보이는 글"에서 매매 호가만 뽑는다.
 // 우리 서버는 남의 사이트에 접속하지 않는다. 정민 님 브라우저에 떠 있는 화면 글(북마클릿) 또는 복사한 글만 읽는다.
 // 결과 단위: 만원
 
@@ -23,7 +23,7 @@ export function parseAskingRows(text) {
     const v = toManwon(m[1]);
     if (!v || v < 1000 || v > 5000000) continue; // 1천만원~500억
     const tail = t.slice(m.index + m[0].length, m.index + m[0].length + 40).split(/매매|전세|월세/)[0];
-    const a = tail.match(/(\d+(?:\.\d+)?)\s*(?:m²|㎡|m2)/);
+    const a = tail.match(/전용\s*:?\s*(\d+(?:\.\d+)?)/) || tail.match(/(\d+(?:\.\d+)?)\s*(?:m²|㎡|m2)/); // "전용 38.5㎡" 우선(디스코·직방)
     // 매물 설명(다음 매물 전까지 120자)에서 집 상태·층을 읽는다 — 실거래엔 없는 정보라 호가에서 챙긴다
     const desc = t.slice(m.index + m[0].length, m.index + m[0].length + 120).split(/매매|전세|월세/)[0];
     const row = { price: v, area: a ? Number(a[1]) : null };
@@ -65,6 +65,6 @@ export function summarize(prices) {
 
 // 북마클릿: 네이버 부동산 등 화면에서 누르면 매매 호가를 읽어 우리 호가 확인 화면으로 보낸다
 export function bookmarkletCode(siteUrl) {
-  const src = `(function(){var t=document.body.innerText;var re=${/매매(?:가|호가)?\s*:?\s*(\d+\s*억(?:\s*[\d,]{1,6})?|[\d,]{4,7}\s*만?)/g};var p=[],m;function v(s){s=s.replace(/\\s+/g,'').replace(/만원?$/,'');var a=s.match(/^(\\d+)억(?:([\\d,]+))?$/);if(a)return +a[1]*1e4+(a[2]?+a[2].replace(/,/g,''):0);var n=+s.replace(/,/g,'');return n>0?n:0}while(m=re.exec(t)){var x=v(m[1]);if(x<1000||x>5e6)continue;var tl=t.slice(m.index+m[0].length,m.index+m[0].length+40).split(/매매|전세|월세/)[0];var ar=tl.match(/(\\d+(?:\\.\\d+)?)\\s*(?:m²|㎡|m2)/);var ds=t.slice(m.index+m[0].length,m.index+m[0].length+120).split(/매매|전세|월세/)[0];var c=/급매|급처|급하게/.test(ds)?'u':/올\\s?수리|특올|리모델링|인테리어|수리\\s?완/.test(ds)?'t':/수리\\s?필요|기본\\s?(?:상태|형)?|노후|올드/.test(ds)?'b':'';p.push(x+(ar?'@'+ar[1]:'')+(c?'~'+c:''))}if(!p.length){alert(/hogangnono/.test(location.hostname)?'호갱노노 웹 화면에는 매물(호가) 목록이 없습니다. 네이버 부동산에서 단지를 열고 매물 목록이 보이게 한 뒤 눌러 주세요.':'이 화면에서 매매 호가를 못 찾았습니다. 단지를 눌러 매물 목록(이 단지 매물)이 보이게 한 뒤 다시 눌러 주세요.');return}window.open('${siteUrl}#/asking?prices='+p.join(',')+'&src='+encodeURIComponent(location.hostname),'jbslab_asking')})()`;
+  const src = `(function(){var t=document.body.innerText;var re=${/매매(?:가|호가)?\s*:?\s*(\d+\s*억(?:\s*[\d,]{1,6})?|[\d,]{4,7}\s*만?)/g};var p=[],m;function v(s){s=s.replace(/\\s+/g,'').replace(/만원?$/,'');var a=s.match(/^(\\d+)억(?:([\\d,]+))?$/);if(a)return +a[1]*1e4+(a[2]?+a[2].replace(/,/g,''):0);var n=+s.replace(/,/g,'');return n>0?n:0}while(m=re.exec(t)){var x=v(m[1]);if(x<1000||x>5e6)continue;var tl=t.slice(m.index+m[0].length,m.index+m[0].length+40).split(/매매|전세|월세/)[0];var ar=tl.match(/전용\\s*:?\\s*(\\d+(?:\\.\\d+)?)/)||tl.match(/(\\d+(?:\\.\\d+)?)\\s*(?:m²|㎡|m2)/);var ds=t.slice(m.index+m[0].length,m.index+m[0].length+120).split(/매매|전세|월세/)[0];var c=/급매|급처|급하게/.test(ds)?'u':/올\\s?수리|특올|리모델링|인테리어|수리\\s?완/.test(ds)?'t':/수리\\s?필요|기본\\s?(?:상태|형)?|노후|올드/.test(ds)?'b':'';p.push(x+(ar?'@'+ar[1]:'')+(c?'~'+c:''))}if(!p.length){alert(/hogangnono/.test(location.hostname)?'호갱노노는 단지를 연 뒤 화면을 아래로 내려 "이 단지 매물"이 보일 때 눌러 주세요(몇 건만 나옵니다).':'이 화면에서 매매 호가를 못 찾았습니다. 단지를 눌러 매물 목록(이 단지 매물)이 보이게 한 뒤 다시 눌러 주세요.');return}window.open('${siteUrl}#/asking?prices='+p.join(',')+'&src='+encodeURIComponent(location.hostname),'jbslab_asking')})()`;
   return 'javascript:' + encodeURIComponent(src);
 }

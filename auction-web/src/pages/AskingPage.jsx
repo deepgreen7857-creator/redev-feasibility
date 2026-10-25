@@ -24,15 +24,23 @@ function queryOf(it) {
   const place = `${it.sgg || ''} ${it.emd || ''}`.trim();
   return name ? `${place} ${name}` : String(it.address || it.title || '').split(/\s+/).slice(0, 5).join(' ');
 }
+// 물건 종류별로 호가를 볼 만한 곳(PC에서 매물 목록이 보이는 곳만). 아파트: 네이버·호갱노노(단지 화면 아래 '이 단지 매물'), 빌라·주택: 네이버·디스코·직방·다방, 상가·공장: 디스코·네이버
+//  디스코·직방·다방은 주소로 바로 여는 주소가 없어 첫 화면을 열고, 누를 때 검색어를 클립보드에 복사해 둔다(검색창에 Ctrl+V)
 function links(it) {
   const q = queryOf(it);
   const e = encodeURIComponent;
-  return [
-    ['네이버 매물', `https://search.naver.com/search.naver?query=${e(`${q} 매매`)}`],
-    ['네이버 지도', `https://map.naver.com/p/search/${e(q)}`],
-    ['호갱노노(실거래만, 매물 없음)', `https://hogangnono.com/search?q=${e(q)}`],
-    ['다음 검색', `https://search.daum.net/search?q=${e(`${q} 매물 호가`)}`],
-  ];
+  const t = tradeTypeOf(it);
+  const naver = ['네이버 매물', `https://search.naver.com/search.naver?query=${e(`${q} 매매`)}`];
+  const map = ['네이버 지도', `https://map.naver.com/p/search/${e(q)}`];
+  const hogang = ['호갱노노(아래 이 단지 매물)', `https://hogangnono.com/search?q=${e(q)}`];
+  const disco = ['디스코(매물 탭)', 'https://www.disco.re/', true];
+  const zig = ['직방 빌라(매매로)', 'https://www.zigbang.com/home/villa/map', true];
+  const zigApt = ['직방', 'https://www.zigbang.com/home/apt/map', true];
+  const dabang = ['다방', 'https://www.dabangapp.com/', true];
+  if (t === 'apt') return [naver, hogang, zigApt, map];
+  if (t === 'offi') return [naver, dabang, zigApt, map];
+  if (t === 'rh' || t === 'sh') return [naver, disco, zig, dabang, map];
+  return [disco, naver, map];
 }
 
 export default function AskingPage({ admin }) {
@@ -131,12 +139,12 @@ export default function AskingPage({ admin }) {
     <div className="space-y-4">
       <div className="card text-sm">
         <div className="text-base font-extrabold">오늘의 호가 확인 {rows.length}건</div>
-        <p className="mt-1 text-ink/70">매력도 {minScore}점 이상(또는 기회) 물건 중 입찰 마감 2주 안의 것부터 하루 {limit}건을 고릅니다. <b>링크를 눌러 매물 화면을 연 뒤, 북마크바의 "호가 가져오기"를 한 번 누르면</b> 화면의 매매 호가가 읽혀 <b>이 물건과 같은 면적(전용 ±10%)</b>만으로 최저·최고가 자동 저장됩니다. 호갱노노는 검색 목록에서 단지를 한 번 누르고, 아래 "이 단지 매물"까지 내려 매물이 보일 때 누르세요. (화면 글을 전체 복사한 뒤 "복사한 글로 자동 입력"을 눌러도 됩니다.) 넣은 호가는 가치 검토에 <b>"현재 호가(직접 확인)" × 95%</b>로 들어가 점수·매수상한이 다시 계산됩니다. 확인한 물건은 2주 동안 이 목록에서 빠집니다.</p>
+        <p className="mt-1 text-ink/70">매력도 {minScore}점 이상(또는 기회) 물건 중 입찰 마감 2주 안의 것부터 하루 {limit}건을 고릅니다. <b>링크를 눌러 매물 화면을 연 뒤, 북마크바의 "호가 가져오기"를 한 번 누르면</b> 화면의 매매 호가가 읽혀 <b>이 물건과 같은 면적(전용 ±10%)</b>만으로 최저·최고가 자동 저장됩니다. 호갱노노는 검색 목록에서 단지를 한 번 누르고, 아래 "이 단지 매물"까지 내려 매물이 보일 때 누르세요. 📋 표시(디스코·직방·다방)는 누를 때 주소가 복사되니 열린 화면 검색창에 Ctrl+V 하세요. 디스코는 왼쪽 "매물" 탭, 직방은 거래 유형을 "매매"로 바꿔야 매매 호가가 보입니다. (화면 글을 전체 복사한 뒤 "복사한 글로 자동 입력"을 눌러도 됩니다.) 넣은 호가는 가치 검토에 <b>"현재 호가(직접 확인)" × 95%</b>로 들어가 점수·매수상한이 다시 계산됩니다. 확인한 물건은 2주 동안 이 목록에서 빠집니다.</p>
         <p className="mt-1 text-xs text-ink/50">이 화면은 링크만 만들고 남의 사이트에 접속하지 않습니다. 직접 보기 번거로운 날은 대화창에서 "오늘 호가 10건 봐 줘"라고 시키시면 됩니다.</p>
       </div>
       <div className="card text-sm">
         <div className="font-bold">처음 한 번만: 북마크 만들기</div>
-        <p className="mt-1 text-ink/70">아래 버튼을 마우스로 끌어 크롬 북마크바에 놓으세요(북마크바가 안 보이면 Ctrl+Shift+B). 그다음부터는 <b>네이버 부동산 단지 매물 목록</b>을 연 화면에서 그 북마크만 누르면 됩니다. (호갱노노 웹 화면에는 매물·호가 목록이 없고 실거래만 나와서 읽을 호가가 없습니다)</p>
+        <p className="mt-1 text-ink/70">아래 버튼을 마우스로 끌어 크롬 북마크바에 놓으세요(북마크바가 안 보이면 Ctrl+Shift+B). 그다음부터는 <b>매매 매물 목록이 보이는 화면</b>(네이버 부동산 · 호갱노노 단지 아래 "이 단지 매물" · 디스코 매물 탭 · 직방/다방 매매)에서 그 북마크만 누르면 됩니다. 빌라·상가는 디스코·직방이 PC에서 매물이 보입니다.</p>
         <a href={bm} onClick={(e) => { e.preventDefault(); alert('이 버튼은 누르는 게 아니라 북마크바로 끌어다 놓는 버튼입니다.'); }} className="btn mt-2 inline-block bg-now text-white">⭐ 호가 가져오기</a>
       </div>
       {notice && <div className={`card text-sm ${notice.bad ? 'text-hard' : 'text-now'}`}>{notice.text}</div>}
@@ -168,7 +176,7 @@ function Row({ it, a, admin, onSave, onPrices, saved }) {
         <span className="ml-auto text-xs text-ink/50">마감 {endOf(it)}</span>
       </div>
       <div className="mt-1 text-xs text-ink/60">{it.address} · 최저가 {eok(it.minBid)}{it.roundList?.length > 1 ? ` (다음 회차 ${it.roundList.slice(1, 3).map((r) => `${endOf(r)} ${eok(r.minBid)}`).join(' · ')})` : ''} · 판단용 가치 {eok(a.value)}{a.valuation ? ` (${a.valuation.low ? `${eok(a.valuation.low)}~${eok(a.valuation.high)}` : ''}, 신뢰도 ${a.valuation.confidence})` : ''}</div>
-      <div className="mt-2 flex flex-wrap gap-2">{links(it).map(([n, u]) => <a key={n} href={u} target="_blank" rel="opener" onClick={() => setActive(it.id)} className="btn border border-line bg-white">{n} ↗</a>)}
+      <div className="mt-2 flex flex-wrap gap-2">{links(it).map(([n, u, copy]) => <a key={n} href={u} target="_blank" rel="opener" title={copy ? '주소가 복사됩니다 — 열린 화면 검색창에 Ctrl+V' : ''} onClick={() => { setActive(it.id); if (copy) { try { navigator.clipboard.writeText(queryOf(it)); } catch { /* 복사 불가 */ } } }} className="btn border border-line bg-white">{n}{copy ? ' 📋' : ''} ↗</a>)}
         {admin && !saved && <button className="btn border border-now text-now" onClick={async () => {
           setActive(it.id);
           let t = '';

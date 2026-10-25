@@ -35,3 +35,10 @@ test('호가 매물 설명에서 집 상태 읽기', () => {
   const rows = parseAskingRows('매매 3억 2,000 84m² 올수리 확장 매매 2억 8,000 84m² 기본 상태 저층 매매 2억 7,500 84m² 급매');
   assert.deepEqual(rows.map((r) => r.cond), ['top', 'basic', 'urgent']);
 });
+
+test('디스코·직방 형식(전용 우선)', () => {
+  const r = parseAskingRows('정원빌딩 매매 107억 3000만원 대지 302m² · 연 805m² · 5F');
+  assert.equal(r[0].price, 1073000); assert.equal(r[0].area, 302);
+  const z = parseAskingRows('매매 2억 3,000 관리비 5만 투룸 · 공급 52㎡ 전용 38.5㎡ · 3층');
+  assert.equal(z[0].price, 23000); assert.equal(z[0].area, 38.5);
+});
