@@ -34,6 +34,8 @@ const log = (m) => { const line = `[${new Date().toLocaleString('ko-KR', { timeZ
 const seenFile = path.join(STATE, 'seen.json');
 const seen = fs.existsSync(seenFile) ? JSON.parse(fs.readFileSync(seenFile, 'utf8')) : {};
 const saveSeen = () => fs.writeFileSync(seenFile, JSON.stringify(seen));
+const badFile = path.join(STATE, 'bad-rows.json');
+const badRows = fs.existsSync(badFile) ? JSON.parse(fs.readFileSync(badFile, 'utf8')) : {};
 const progressFile = path.join(STATE, 'progress.json');
 const progress = fs.existsSync(progressFile) ? JSON.parse(fs.readFileSync(progressFile, 'utf8')) : {};
 const saveProgress = () => fs.writeFileSync(progressFile, JSON.stringify(progress));
@@ -335,12 +337,17 @@ async function main() {
           stats.listed++;
           const key = `${row.court}_${row.caseNo}_${row.itemNo || 1}`;
           const prev = seen[key];
-          const stale = !prev || prev.v !== DETAIL_V || prev.minBid !== row.minBid || prev.status !== row.status || Date.now() - (prev.at || 0) > cfg.refreshDetailAfterDays * 86400e3;
+          let stale = !prev || prev.v !== DETAIL_V || prev.minBid !== row.minBid || prev.status !== row.status || Date.now() - (prev.at || 0) > cfg.refreshDetailAfterDays * 86400e3;
           let detail = null;
+          // 같은 물건에서 화면 오류가 두 번 나면 오늘은 건너뛴다(한 물건 때문에 회차가 계속 같은 자리에서 멈추던 문제 대비)
+          if (stale && (badRows[key]?.n || 0) >= 2 && Date.now() - badRows[key].at < 86400e3) { stale = false; log(`건너뜀(화면 오류 반복): ${row.caseNo}`); }
           if (stale) {
             if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
             await pace.beforePage();
-            await row.open();
+            try { await row.open(); } catch (e) {
+              badRows[key] = { n: (badRows[key]?.n || 0) + 1, at: Date.now() }; fs.writeFileSync(badFile, JSON.stringify(badRows));
+              throw e;
+            }
             detail = await readDetail(page);
             // 상세가 이 물건 것인지 확인: 사건번호가 다르면 상세를 버리고 목록 정보만 올린다(다음에 다시 읽음)
             const cn = (x) => String(x || '').replace(/\s/g, '');
