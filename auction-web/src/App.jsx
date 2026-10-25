@@ -9,7 +9,7 @@ import BankruptPage from './pages/BankruptPage.jsx';
 import MarketPage from './pages/MarketPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import { JbsMark } from './components/ui.jsx';
-import { DEMO, onUser, isAdmin, signOut } from './lib/store.js';
+import { DEMO, onUser, isAdmin, signOut, clearCache } from './lib/store.js';
 
 // 메뉴는 하는 일 기준 네 묶음 — 위는 묶음, 아래 줄은 그 묶음 안의 화면
 //  물건(고르기) · 일정(언제 볼지·오늘 할 일) · 성적(맞았나) · 기준·관리
@@ -58,6 +58,7 @@ export default function App() {
             </span>
           </div>
           <Nav />
+          <button className="whitespace-nowrap text-xs text-ink/50 hover:text-ink" title="이 브라우저에 보관해 둔 자료를 버리고 서버에서 새로 받습니다(평소엔 아침 7시 이후 한 번만 받음)" onClick={() => clearCache().then(() => window.location.reload())}>자료 새로 받기</button>
           {user && <button className="hidden text-xs text-ink/50 sm:block" onClick={() => signOut().then(() => setUser(null))}>로그아웃</button>}
         </div>
         {DEMO && <div className="bg-wait/10 px-4 py-1 text-center text-xs text-ink/80">데모 모드 — 샘플(가상) 물건과 시세로 동작합니다. Firebase를 연결하면 실제 수집 자료로 바뀝니다.</div>}

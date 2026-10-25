@@ -1,6 +1,8 @@
 // 데이터 창구 — Firebase 설정이 있으면 Firestore, 없으면 샘플(데모 모드)
 import { SAMPLE_LISTINGS, SAMPLE_BANKRUPT, SAMPLE_TRADES } from '../data/sample.js';
 import { DEFAULT_SETTINGS } from '../data/defaults.js';
+import { cached, forget, HOUR } from './cache.js';
+export { clearCache, cacheStamp } from './cache.js';
 
 const env = import.meta.env || {};
 export const DEMO = env.VITE_DEMO === '1' || !env.VITE_FIREBASE_PROJECT_ID;
@@ -51,6 +53,9 @@ function demoListings() {
 export async function listListings({ sido, scope = 'open', days = 120 } = {}) {
   const f = await firebase();
   if (!f) return demoListings().filter((x) => !sido || x.sido === sido);
+  return cached(`listings:${scope}:${days}`, 6 * HOUR, () => fetchListings(f, { scope, days })).then((all) => all.filter((x) => !sido || x.sido === sido));
+}
+async function fetchListings(f, { scope, days }) {
   const { collection, query, where, getDocs } = f.fs;
   const kst = (d) => new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
   const from = kst(scope === 'recent' ? new Date(Date.now() - days * 86400e3) : new Date());
@@ -62,7 +67,7 @@ export async function listListings({ sido, scope = 'open', days = 120 } = {}) {
   const dot = query(col, where('bidEnd', '>=', from.replace(/-/g, '.')));
   const [a, b] = await Promise.all([getDocs(dash), getDocs(dot)]);
   const seen = new Set(); const out = [];
-  [...a.docs, ...b.docs].forEach((d) => { if (seen.has(d.id)) return; seen.add(d.id); const x = { id: d.id, ...d.data() }; if (!sido || x.sido === sido) out.push(x); });
+  [...a.docs, ...b.docs].forEach((d) => { if (seen.has(d.id)) return; seen.add(d.id); out.push({ id: d.id, ...d.data() }); });
   return out;
 }
 
@@ -70,10 +75,9 @@ export async function listListings({ sido, scope = 'open', days = 120 } = {}) {
 export async function listPastResults({ sido } = {}) {
   const f = await firebase();
   if (!f) return [];
-  const { collection, query, where, orderBy, limit, getDocs } = f.fs;
-  const q = sido ? query(collection(f.db, 'pastResults'), where('sido', '==', sido), limit(5000)) : query(collection(f.db, 'pastResults'), orderBy('bidEnd', 'desc'), limit(5000));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const { collection, query, orderBy, limit, getDocs } = f.fs;
+  const all = await cached('past:all', 12 * HOUR, async () => (await getDocs(query(collection(f.db, 'pastResults'), orderBy('bidEnd', 'desc'), limit(5000)))).docs.map((d) => ({ id: d.id, ...d.data() })));
+  return all.filter((x) => !sido || x.sido === sido);
 }
 
 export async function getListing(id) {
@@ -96,6 +100,7 @@ export async function saveListing(item) {
     return;
   }
   await f.fs.setDoc(f.fs.doc(f.db, 'listings', item.id), doc, { merge: true });
+  forget('listings:'); // 고친 내용(호가 등)이 목록에 바로 보이게 보관본을 버린다
 }
 
 export async function listBankrupt() {
@@ -114,6 +119,9 @@ export async function getDeals(type, lawd, months = 12) {
   for (let i = 0; i < months; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); yms.push(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`); }
   const f = await firebase();
   if (!f) return yms.flatMap((ym) => (SAMPLE_TRADES[`${type}_${lawd}_${ym}`] || []).map((d) => [...d, ym]));
+  return cached(`deals:${type}:${lawd}:${months}`, 18 * HOUR, () => fetchDeals(f, yms, type, lawd));
+}
+async function fetchDeals(f, yms, type, lawd) {
   const snaps = await Promise.all(yms.map((ym) => f.fs.getDoc(f.fs.doc(f.db, 'tradeMonths', `${type}_${lawd}_${ym}`))));
   return snaps.flatMap((s, i) => {
     if (!s.exists()) return [];
