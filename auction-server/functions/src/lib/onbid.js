@@ -199,11 +199,13 @@ async function fetchDetail({ cltrMngNo, pbctCdtnNo, serviceKey, quota, fetcher, 
 
 // 전체 수집. mode: 'daily'(어제 이후 수정분) | 'full'(전부)
 // backfill: 예전에 상세를 못 받은 물건 목록을 돌려주는 함수(평일 수집 뒤 남은 상세 한도로 다시 받는다)
-async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log = console.log, maxDetails = 600, maxBackfill = 400, deadline = Infinity, enrich, backfill }) {
+async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log = console.log, maxDetails = 600, maxBackfill = 400, deadline = Infinity, enrich, backfill, skipList = false, onListed }) {
   const since = mode === 'daily' ? ymd(new Date(Date.now() - 2 * 86400e3)) : null;
   const stats = { pages: 0, rows: 0, saved: 0, details: 0, errors: [] };
   const fresh = [];
-  for (const part of partitions()) {
+  // 오늘 목록을 이미 다 받았으면 목록은 건너뛰고 원문(상세)만 이어 받는다 — 전에는 20분마다 목록을 처음부터 다시 받다가
+  // 상세 단계에서 시간이 끝나 '오늘 수집 완료'가 한 번도 안 찍혔다(10-24 이후)
+  for (const part of skipList ? [] : partitions()) {
     let pageNo = 1;
     for (;;) {
       if (Date.now() > deadline) return { ...stats, stopped: 'time' };
@@ -227,6 +229,8 @@ async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log =
       pageNo++;
     }
   }
+  if (!skipList && onListed) await onListed();
+  stats.listSkipped = skipList || undefined;
   // 새로 들어왔거나 바뀐 물건 상세 조회(권리·사진). 정비구역·부평·계양·파산자산 먼저.
   const ctx = { serviceKey, quota, fetcher, save, enrich, deadline, stats };
   fresh.sort((a, b) => score(b) - score(a));
@@ -234,7 +238,7 @@ async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log =
   const stop1 = await fetchDetails(fresh.slice(0, maxDetails), ctx, done);
   if (stop1 === 'time') return { ...stats, stopped: 'time' };
   // 평일(daily) 수집 뒤: 상세가 빠진 물건을 남은 상세 호출 한도 안에서 다시 받는다
-  if (mode === 'daily' && backfill && stop1 !== 'quota') {
+  if ((mode === 'daily' || skipList) && backfill && stop1 !== 'quota') {
     const left = quota ? await quota.remaining('onbid-detail') : maxBackfill;
     if (left > 0) {
       // 상세가 아예 없는 물건 먼저, 그다음 예전 판으로 받은 물건

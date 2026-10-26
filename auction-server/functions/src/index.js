@@ -206,6 +206,8 @@ async function runOnbid({ deadline, force = false, mode } = {}) {
   const res = await onbid.collect({
     serviceKey: DATA_GO_KR_KEY.value(), quota: new Quota(db), mode: m, deadline,
     save: saveListings, log: logger.info, enrich: enrichLand, backfill: onbidDetailBacklog,
+    skipList: !force && st.listedDay === today,
+    onListed: () => setState('onbid', { listedDay: today }),
   });
   // 오류만 나고 한 건도 못 받았으면(예: 키 오류) '오늘 수집함'으로 표시하지 않는다 → 다음 실행에서 다시 시도
   const failedAll = res.rows === 0 && res.errors && res.errors.length > 0;
