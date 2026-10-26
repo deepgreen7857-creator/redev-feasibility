@@ -64,7 +64,10 @@ async function fetchListings(f, { scope, days }) {
   //  ① 올해 대시 형식: from ~ 'YYYY-~'   ② 점 형식(올해 이후)과 내년 이후 대시 형식: 'YYYY.MM.DD' 이상
   const y = from.slice(0, 4);
   const dash = query(col, where('bidEnd', '>=', from), where('bidEnd', '<', `${y}-~`));
-  const dot = query(col, where('bidEnd', '>=', from.replace(/-/g, '.')));
+  // 법원(점 형식)은 50일 전부터 받는다: 법원 사이트는 매각기일 2주 안 물건만 보여 줘서, 유찰된 물건은 다음 기일(약 5주 뒤)이
+  //  2주 안으로 들어올 때까지 우리 자료에서 '지난 물건'으로 남는다 → 화면에서 '다음 기일 대기'로 이어 보여 준다
+  const courtFrom = scope === 'recent' ? from : kst(new Date(Date.now() - 50 * 86400e3));
+  const dot = query(col, where('bidEnd', '>=', courtFrom.replace(/-/g, '.')));
   const [a, b] = await Promise.all([getDocs(dash), getDocs(dot)]);
   const seen = new Set(); const out = [];
   [...a.docs, ...b.docs].forEach((d) => { if (seen.has(d.id)) return; seen.add(d.id); out.push({ id: d.id, ...d.data() }); });

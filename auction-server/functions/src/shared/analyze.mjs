@@ -271,9 +271,18 @@ export function roundSchedule(item, rate = 0.3, count = 10) {
   return out;
 }
 
+// 회차 이름(정민 님 표현): 최초 → 1회 유찰 → 2회 유찰 … (지금 회차의 유찰 횟수 + k)
+export function roundName(item, k = 0) {
+  const fc = typeof item.failCount === 'number' ? item.failCount : Number(item.failCount);
+  const base = Number.isFinite(fc) ? fc : (item.appraisal && item.minBid && item.minBid / item.appraisal >= 0.995 ? 0 : null);
+  if (base === null) return k === 0 ? '지금 회차' : `${k}회 더 유찰`;
+  const n = base + k;
+  return n === 0 ? '최초' : `${n}회 유찰`;
+}
+
 // 다음 회차들의 최저가 예상(진입 시점 계산용) — 회차표와 같은 값
 export function projectRounds(item, settings, count = 10) {
-  return roundSchedule(item, courtRate(item, settings).rate, count).map((r) => ({ step: r.k, label: r.k === 0 ? '현재' : `${r.k}회 더 유찰`, price: r.price, date: r.date, actual: r.actual, floor: r.floor }));
+  return roundSchedule(item, courtRate(item, settings).rate, count).map((r) => ({ step: r.k, label: roundName(item, r.k), price: r.price, date: r.date, actual: r.actual, floor: r.floor }));
 }
 
 // 직전 회차 유찰가: 이 값에는 공개 입찰에서 아무도 안 샀다(시장이 확인한 상한). 모르면 null

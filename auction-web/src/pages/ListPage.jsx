@@ -6,7 +6,7 @@ import { lawdOf, SIDO, inFocus, FOCUS_DEFAULT } from '../data/defaults.js';
 import { corpFit, propertyKind } from '../lib/tax.js';
 import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
 import { soldRateTable, roundPlan } from '../lib/roundPlan.js';
-import { dedupeRounds } from '../lib/rounds.js';
+import { dedupeRounds, withNextCourtRound } from '../lib/rounds.js';
 import { premiumTable, predictPrice, isFirstRound, scoreErrors, evidenceGroup, EVIDENCE_LABEL, bidOutcome, soldOf } from '../lib/bidForecast.js';
 
 const PAGE = 60;
@@ -22,7 +22,7 @@ export default function ListPage({ mode }) {
   const [past, setPast] = useState([]); // 낙찰 결과(예상 낙찰가 기준표용) — 낙찰가는 이제 pastResults 에만 있다
   const [settings, setSettings] = useState(null);
   const [dealsMap, setDealsMap] = useState({});
-  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: mode ? 'verdict' : 'end', corpOnly: false, under1: false, showExcluded: false, onlyOpen: true, focus: true });
+  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: mode ? 'verdict' : 'end', corpOnly: false, under1: true, showExcluded: false, onlyOpen: true, focus: true });
   const [error, setError] = useState('');
   const [origin, setOrigin] = useState(null); // 거리 기준 위치
   useEffect(() => { setF((x) => ({ ...x, sort: mode ? 'verdict' : 'end' })); }, [mode]);
@@ -49,7 +49,7 @@ export default function ListPage({ mode }) {
   //  이제 40개씩 나눠 받되(서버 부담) 모두 받은 뒤 한 번만 바꾼다. 브라우저에 보관된 시세는 거의 바로 나온다.
   const [dealsProg, setDealsProg] = useState(null); // { done, total } — 받는 중일 때만
   const focusCfg = settings?.focus || FOCUS_DEFAULT;
-  const scoped = useMemo(() => (items && f.focus ? items.filter((it) => inFocus(it, focusCfg)) : items), [items, f.focus, focusCfg]);
+  const scoped = useMemo(() => { if (!items) return items; const base = done ? items : withNextCourtRound(items); return f.focus ? base.filter((it) => inFocus(it, focusCfg)) : base; }, [items, f.focus, focusCfg, done]);
   const needKeys = useMemo(() => {
     if (!scoped) return [];
     const keys = new Set();
@@ -182,7 +182,7 @@ export default function ListPage({ mode }) {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink/70">
           <label className="flex items-center gap-1.5 rounded bg-brand2 px-2 py-0.5 font-bold text-brand"><input type="checkbox" checked={f.focus} onChange={set('focus')} /> 집중 지역만({focusCfg.label})</label>
           <label className="flex items-center gap-1.5 font-bold text-brand"><input type="checkbox" checked={f.corpOnly} onChange={set('corpOnly')} /> 법인 단타 적합만(A·B)</label>
-          <label className="flex items-center gap-1.5 font-bold text-brand" title="수도권 공시가격 1억 이하 주택은 법인도 취득세 중과(12%) 제외 — 정비구역 안은 예외 없음"><input type="checkbox" checked={f.under1} onChange={set('under1')} /> 공시가격 1억 이하 주택만</label>
+          <label className="flex items-center gap-1.5 font-bold text-brand" title="수도권 공시가격 1억 이하 주택은 법인도 취득세 중과(12%) 제외 — 정비구역 안은 예외 없음"><input type="checkbox" checked={f.under1} onChange={set('under1')} /> 법인 취득세 1.1%만(공시가격 1억 이하·정비구역 밖)</label>
           {!done && <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>}
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.showExcluded} onChange={set('showExcluded')} /> 관심 제외 물건도 보기</label>
           {f.sort === 'near' && origin && <span className="text-xs text-ink/60">거리 기준: <b>{origin.label}</b> · 물건 위치는 법정동 중심(대략) — 위치가 아직 없는 물건은 맨 뒤</span>}
@@ -219,6 +219,7 @@ export default function ListPage({ mode }) {
               {notVilla(it) === '지하층' && <Badge tone="hard">지하·반지하</Badge>}
               {typeof it.failCount === 'number' && it.failCount >= 8 && <Badge tone="hard">유찰 {it.failCount}회 — 이유 확인</Badge>}
               {a.excluded && <Badge>관심 제외</Badge>}
+              {it.nextEstimated && <Badge tone="wait">다음 기일 추정({it.nextEstimated.from.slice(5)} 유찰 가정)</Badge>}
               {it.otherRounds > 0 && <Badge>다른 회차 {it.otherRounds}건</Badge>}
               {docsLabel(it) && <Badge tone="brand">📎 {docsLabel(it)}</Badge>}
               <span className="ml-auto text-xs text-ink/50">{it.caseNo}</span>
@@ -332,7 +333,8 @@ export function notVilla(it) {
 // 공시가격을 아직 못 받은 물건은 최저가 1억 5천 이하일 때만 '확인 필요'로 남긴다.
 function under1(it, a) {
   if (!['apt', 'rh', 'sh', 'offi'].includes(tradeTypeOf(it))) return false;
-  if (a.redev?.length || it.manual?.zone) return false;
+  // 정비구역 안이면 1억 이하라도 법인 중과(12%) — 브이월드 토지이용계획·정비구역 목록·감정평가서 문구 모두 확인
+  if (a.redev?.length || it.manual?.zone || it.redevMatch?.status === 'listed' || it.redevMatch?.status === 'unlisted') return false;
   const hp = it.housePrice?.matched ? it.housePrice.price : null;
   if (hp !== null && hp !== undefined) return hp <= 1e8;
   return (it.minBid || Infinity) <= 1.5e8;
@@ -707,27 +709,28 @@ function RoundLine({ it, a, table, rates, settings }) {
   if (!a.cap || a.special || a.verdict === 'pending') return null;
   const plan = roundPlan(it, a, { premium: table, rates, courtRate: courtRate(it, settings).rate });
   if (!plan) return null;
-  const P = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`);
-  const b = plan.best; const f = plan.firstOk;
-  if (!f) return <div className="mt-1 text-xs text-hard">앞으로 {plan.rows.length}회차 안에는 예상 낙찰가가 우리 매수상한 아래로 안 내려옴 — 매력 전환 없음</div>;
+  const f = plan.firstOk;
+  // 정민 님 방식: 그 회차 최저가(근처 낙찰)가 매수상한(시세 − 세금·수리·마진) 아래로 처음 내려오는 회차에 들어간다
+  if (!f) return <div className="mt-1 text-xs text-hard">앞으로 {plan.rows.length}회차 안에는 최저가가 매수상한({eok(a.cap)}) 아래로 안 내려옴 — 들어갈 회차 없음</div>;
   return (
     <div className="mt-1 text-xs">
-      <b>매력 전환</b>: {f.label}{f.date ? ` ${f.date.slice(5)}${f.actual ? '' : '(추정)'}` : ''}(최저가 {eok(f.price)}, 예상 낙찰가 {eok(f.bid)}){f.k > 0 ? ` · 그때까지 남아 있을 확률 ${P(f.survive)}` : ''}
-      {b && b.k !== f.k && <span className="ml-1 font-bold text-brand">→ 기대값 최대: {b.label}{b.date ? ` ${b.date.slice(5)}` : ''}(남아 있을 확률 {P(b.survive)}, 남는 돈 {eok(b.room)})</span>}
+      <b>들어갈 회차</b>: {f.label}{f.date ? ` (${f.date.slice(5)}${f.actual ? '' : ' 추정'})` : ''} · 최저가 {eok(f.price)} → 매수상한 {eok(a.cap)} 안
     </div>
   );
 }
 
 // 진행 물건 카드: 예상 낙찰가(=우리 입찰가)
+// 입찰가 원칙(정민 님): 그 회차 최저가 + 1만 원으로만 쓴다. 매수상한(시세 − 세금·수리·마진) 안일 때만 입찰, 경쟁이 붙어도 올려 쓰지 않음
 function BidRow({ it, a, table }) {
+  if (!it.minBid) return null;
+  const bid = it.minBid + 10000;
+  const ok = a.cap && bid <= a.cap;
   const pred = predictPrice(it, table);
-  if (!pred) return null;
-  const over = a.cap && pred.price > a.cap;
   return (
     <div className="mt-2 flex flex-wrap items-baseline gap-x-2 rounded-md border border-brand/30 px-2 py-1 text-xs">
-      <span>우리 입찰가(예상 낙찰가)</span><b className="num text-sm">{eok(pred.price)}</b>
-      <span className="text-ink/50">최저가의 {Math.round(pred.premium * 1000) / 10}% · {pred.scope}</span>
-      {over && <span className="font-bold text-wait">매수상한보다 높음 — 이 회차는 입찰 안 함</span>}
+      <span>입찰가(최저가+1만)</span><b className="num text-sm">{eok(bid)}</b>
+      {a.cap ? (ok ? <span className="font-bold text-now">매수상한 {eok(a.cap)} 안 — 이 회차 입찰</span> : <span className="font-bold text-wait">매수상한 {eok(a.cap)} 넘음 — 이 회차는 안 씀</span>) : <span className="text-ink/50">매수상한 미정(시세 확인 필요)</span>}
+      {pred && <span className="text-ink/45">참고: 비슷한 물건은 최저가의 {Math.round(pred.premium * 1000) / 10}%에 낙찰</span>}
     </div>
   );
 }

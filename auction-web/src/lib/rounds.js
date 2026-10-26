@@ -26,3 +26,22 @@ export function dedupeRounds(items, today = KST()) {
     return out;
   });
 }
+
+// 법원 물건 '다음 기일 대기': 매각기일이 지났는데(50일 안) 매각·취하 표시가 없으면 유찰로 보고 다음 회차를 추정해 이어 보여 준다.
+//  법원 사이트가 2주 안 물건만 보여 줘서 다음 기일(보통 4~6주 뒤)이 아직 안 잡혀 보이는 동안 목록에서 사라지던 문제(2026-10-26)
+//  추정값: 최저가 × (1 − 저감률), 날짜 +35일. 실제 기일이 올라오면 그 자료로 바뀐다.
+export function withNextCourtRound(items, { today, rate = 0.3 } = {}) {
+  const t = today || new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  const end = (x) => String(x.bidEnd || '').replace(/\./g, '-').slice(0, 10);
+  const hasFuture = new Set(items.filter((x) => end(x) >= t).map((x) => `${x.source}|${x.caseNo}|${x.itemNo || 1}`));
+  return items.map((x) => {
+    if (x.source !== 'court' || end(x) >= t || x.result?.soldPrice) return x;
+    if (/(매각|낙찰|취하|취소|기각|정지|종국|종결|변경)/.test(x.status || '') && !/유찰/.test(x.status || '')) return x;
+    if (hasFuture.has(`${x.source}|${x.caseNo}|${x.itemNo || 1}`)) return x;
+    const d = new Date(`${end(x)}T00:00:00+09:00`); d.setDate(d.getDate() + 35);
+    let next = new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
+    if (next < t) return x; // 너무 오래된 것
+    const fc = (Number(x.failCount) || 0) + 1;
+    return { ...x, bidEnd: next, minBid: Math.round((x.minBid || 0) * (1 - rate)), failCount: fc, status: `유찰 ${fc}회(결과 확인 전 추정)`, nextEstimated: { from: end(x), prevMinBid: x.minBid } };
+  });
+}
