@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>경매 진입 회차</title>
+<title>입찰 판단표</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
 /* 한 줄에 물건 하나: 지금 회차 → 들어갈 회차, 펼치면 회차표·근거 */
@@ -22,7 +22,8 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--sans)}
 .wrap{max-width:1480px;margin:0 auto;padding-block:28px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-h1{font-size:24px;margin:0 0 4px;text-wrap:balance}
+h1{font-size:24px;margin:0 0 18px;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px}
+.rule{font-size:13px;font-weight:400;color:var(--muted)}
 .lead{color:var(--muted);margin:0 0 22px;font-size:14px;max-width:70ch}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
@@ -96,8 +97,7 @@ ul{margin:0;padding-left:18px} li{margin-bottom:3px}
 </head>
 <body>
 <div class="wrap">
-  <h1>경매 진입 회차</h1>
-  <p class="lead">물건마다 몇 번 더 유찰되면 들어가는지 보여 줍니다. 인천지방법원 저감률 30%, 입찰가는 그 회차 최저가 + 1만 원, 법인 취득세 1.1%로 계산합니다. 인수금액이 시세에서 비용과 목표수익을 뺀 금액보다 크면 몇 번을 유찰돼도 안 되므로 제외합니다.</p>
+  <h1>입찰 판단표 <span class="rule">최저입찰가: 입찰최저가 + 1만 원 · 법인 취득세 1.1% 물건만 검토</span></h1>
   <div id="list"><p class="note">물건을 불러오는 중입니다.</p></div>
 </div>
 <script>
@@ -106,22 +106,21 @@ const won=n=>(Math.round(n/10000)).toLocaleString('ko-KR')+'만';
 const wonFull=n=>n.toLocaleString('ko-KR');
 const rname=k=>k===0?'최초':k+'회 유찰';
 function calc(it){
-  const low=it.market.low, rows=[];
-  let min=it.appraisal;
+  const low=it.market.low, D=it.priorDeposit||0, A=it.assume||0;
+  const X=(low-it.costs-it.minProfit)/1.011;          // 총투입(낙찰가+인수) 한도
+  let hi=D? (X>=D?X:-1) : X-A;                          // 최고입찰가
+  hi=hi>0?Math.floor(hi/10000)*10000:0;
+  const rows=[]; let min=it.appraisal;
   for(let k=0;k<=MAXK;k++){
     if(k>0) min=Math.floor(Math.round(min*RATE)/1000)*1000;
-    const bid=min+10000, tax=Math.round(bid*0.011);
-    const limit=low-bid-tax-it.costs-it.minProfit;
-    rows.push({k,min,bid,tax,limit,profit:low-bid-tax-it.costs-it.assume});
+    const bid=min+10000, take=D?Math.max(0,D-bid):A, total=bid+take, tax=Math.round(total*0.011);
+    rows.push({k,min,bid,take,tax,profit:low-total-tax-it.costs,ok:hi>0&&bid<=hi});
   }
-  const cur=Math.max(0,it.rounds.findIndex(r=>r.result!=='유찰'));
+  const cur=it.rounds.findIndex(r=>r.result!=='유찰');
   const curK=cur<0?it.rounds.length:cur;
-  const ceiling=low-it.costs-it.minProfit;
-  let entry=null;
-  if(it.assume<=ceiling) entry=rows.find(r=>r.limit>=it.assume)||null;
-  return {rows,curK,entry,ceiling};
+  const entry=rows.find(r=>r.k>=curK&&r.ok)||null;
+  return {rows,curK,entry,hi,X,D};
 }
-
 function rank(it){const c=calc(it);if(!c.entry)return 999;return Math.max(0,c.entry.k-c.curK)}
 function sortItems(d){return d.slice().sort((a,b)=>rank(a)-rank(b)||String((a.rounds[calc(a).curK]||{}).date||'9').localeCompare(String((b.rounds[calc(b).curK]||{}).date||'9')))}
 function mini(it,c){const last=Math.min(MAXK,Math.max(c.entry?c.entry.k:c.curK,c.curK)+1);
@@ -136,7 +135,7 @@ function render(items){
   items.forEach((it,i)=>{
     const c=calc(it), cur=it.rounds[c.curK]||{};
     let chip,flow;
-    if(!c.entry){chip='<span class="chip no">제외</span>';flow='<div class="l3">인수금액이 시세 한도('+won(c.ceiling)+')보다 커서 몇 번을 유찰돼도 안 됨</div>'}
+    if(!c.entry){chip='<span class="chip no">제외</span>';flow='<div class="l2">'+(it.excludeNote||'')+'</div><div class="l3">비용·인수 합계가 시세 한도를 넘어 유찰돼도 안 됨</div>'}
     else{
       const left=c.entry.k-c.curK;
       chip=left<=0?'<span class="chip go">금회 진입</span>':'<span class="chip wait">'+left+'번 더 유찰</span>';
@@ -145,7 +144,7 @@ function render(items){
       const dstr=sh(cur.date), prev=c.curK>0?it.rounds[c.curK-1]:null;
       const past=prev?sh(prev.date)+' '+c.curK+'회 유찰됨 · ':'신건 · ';
       const when=left<=0?'금회':(left===1?'차회':(left===2?'차차회':left+'회 뒤'));
-      const lo=c.entry.bid, hi=Math.floor(lo*1.03/10000)*10000, chun=n=>Math.round(n/1000).toLocaleString('ko-KR')+'천원';
+      const lo=c.entry.bid, hi=c.hi, chun=n=>Math.round(n/1000).toLocaleString('ko-KR')+'천원';
       flow='<div class="l2">'+past+'금회 <b>'+dstr+'</b> <span class="num">'+(c.rows[c.curK].min/10000).toLocaleString('ko-KR')+'만원</span></div><div class="l3">입찰시점 <b>'+when+'</b> · 입찰예정가 <b class="num">'+(Math.round(lo/1000)).toLocaleString('ko-KR')+'~'+chun(hi)+'</b></div>';
     }
     const box=document.createElement('section');box.className='item';
@@ -154,11 +153,12 @@ function render(items){
       <div class="mid"><div class="l1"><span class="addr" title="${it.address}">${it.address.replace(/^인천\s+/,"")}</span></div>${flow}</div></button>
       <div class="body" hidden>
         <div class="sum">${it.summary}</div><div class="links"><a href="https://map.kakao.com/link/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">카카오맵·로드뷰</a><a href="https://map.naver.com/p/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">네이버지도</a></div>
-        <div><h3>회차표 (시세 하한 ${won(it.market.low)}, 비용 ${won(it.costs)}, 목표수익 ${won(it.minProfit)}, 인수 가정 ${won(it.assume)})</h3>
-        <div class="tbl"><table><thead><tr><th>회차</th><th>최저가</th><th>입찰가</th><th>취득세 1.1%</th><th>인수 한도</th><th>인수 가정 시 수익</th></tr></thead><tbody>
-        ${c.rows.map(r=>`<tr class="${c.entry&&r.k===c.entry.k?'entry':''} ${r.k<c.curK?'past':''}"><td>${rname(r.k)}${(it.rounds[r.k]&&it.rounds[r.k].date)?' · '+it.rounds[r.k].date:''}${r.k<c.curK?' (유찰)':''}</td><td class="num">${wonFull(r.min)}</td><td class="num">${wonFull(r.bid)}</td><td class="num">${wonFull(r.tax)}</td><td class="num">${r.limit>=0?won(r.limit):'없음'}</td><td class="num">${won(r.profit)}</td></tr>`).join('')}
+        <div><h3>회차표 · 시세 하한 ${won(it.market.low)}, 비용 ${won(it.costs)}, 목표수익 ${won(it.minProfit)}${c.D?', 선순위 보증금(집행비용 포함) '+won(c.D):''}${it.assume?', 인수 가정 '+won(it.assume):''}</h3>
+        <p class="sum" style="margin:0 0 6px">최고입찰가 <span class="num">${c.hi?wonFull(c.hi)+'원':'없음'}</span>${it.bidLo?' · 경쟁 판단: '+it.bidLo.why:''}</p>
+        <div class="tbl"><table><thead><tr><th>회차</th><th>최저가</th><th>최저가 입찰 시 인수</th><th>취득세 1.1%</th><th>최저가 입찰 시 수익</th><th>판정</th></tr></thead><tbody>
+        ${c.rows.map(r=>`<tr class="${c.entry&&r.k===c.entry.k?'entry':''} ${r.k<c.curK?'past':''}"><td>${rname(r.k)}${(it.rounds[r.k]&&it.rounds[r.k].date)?' · '+it.rounds[r.k].date:''}${r.k<c.curK?' (유찰)':''}</td><td class="num">${wonFull(r.min)}</td><td class="num">${r.take?won(r.take):'0'}</td><td class="num">${wonFull(r.tax)}</td><td class="num">${won(r.profit)}</td><td>${r.ok?'가능':'불가'}</td></tr>`).join('')}
         </tbody></table></div>
-        <p class="note">인수 한도: 그 회차에서 인수금액이 이 금액 이하면 목표수익이 남습니다. ${it.assumeNote||''}</p></div>
+        <p class="note">최고입찰가 = (시세 하한 − 비용 − 목표수익) ÷ 1.011 − 인수금액. 최저가가 이 금액 아래로 처음 내려오는 회차가 진입 회차입니다. ${it.assumeNote||''}</p></div>
         <div class="cols">
           <div><h3>시세 근거 (${won(it.market.low)} ~ ${won(it.market.high)})</h3><ul>${it.market.basis.map(x=>'<li>'+x+'</li>').join('')}</ul></div>
           <div><h3>권리</h3><ul>${it.rights.map(x=>'<li>'+x+'</li>').join('')}</ul></div>
