@@ -719,15 +719,17 @@ function RoundLine({ it, a, table, rates, settings }) {
 }
 
 // 진행 물건 카드: 예상 낙찰가(=우리 입찰가)
+// 입찰가 원칙(정민 님): 그 회차 최저가 + 1만 원으로만 쓴다. 매수상한(시세 − 세금·수리·마진) 안일 때만 입찰, 경쟁이 붙어도 올려 쓰지 않음
 function BidRow({ it, a, table }) {
+  if (!it.minBid) return null;
+  const bid = it.minBid + 10000;
+  const ok = a.cap && bid <= a.cap;
   const pred = predictPrice(it, table);
-  if (!pred) return null;
-  const over = a.cap && pred.price > a.cap;
   return (
     <div className="mt-2 flex flex-wrap items-baseline gap-x-2 rounded-md border border-brand/30 px-2 py-1 text-xs">
-      <span>우리 입찰가(예상 낙찰가)</span><b className="num text-sm">{eok(pred.price)}</b>
-      <span className="text-ink/50">최저가의 {Math.round(pred.premium * 1000) / 10}% · {pred.scope}</span>
-      {over && <span className="font-bold text-wait">매수상한보다 높음 — 이 회차는 입찰 안 함</span>}
+      <span>입찰가(최저가+1만)</span><b className="num text-sm">{eok(bid)}</b>
+      {a.cap ? (ok ? <span className="font-bold text-now">매수상한 {eok(a.cap)} 안 — 이 회차 입찰</span> : <span className="font-bold text-wait">매수상한 {eok(a.cap)} 넘음 — 이 회차는 안 씀</span>) : <span className="text-ink/50">매수상한 미정(시세 확인 필요)</span>}
+      {pred && <span className="text-ink/45">참고: 비슷한 물건은 최저가의 {Math.round(pred.premium * 1000) / 10}%에 낙찰</span>}
     </div>
   );
 }
