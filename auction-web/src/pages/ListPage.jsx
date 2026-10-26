@@ -707,13 +707,12 @@ function RoundLine({ it, a, table, rates, settings }) {
   if (!a.cap || a.special || a.verdict === 'pending') return null;
   const plan = roundPlan(it, a, { premium: table, rates, courtRate: courtRate(it, settings).rate });
   if (!plan) return null;
-  const P = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`);
-  const b = plan.best; const f = plan.firstOk;
-  if (!f) return <div className="mt-1 text-xs text-hard">앞으로 {plan.rows.length}회차 안에는 예상 낙찰가가 우리 매수상한 아래로 안 내려옴 — 매력 전환 없음</div>;
+  const f = plan.firstOk;
+  // 정민 님 방식: 그 회차 최저가(근처 낙찰)가 매수상한(시세 − 세금·수리·마진) 아래로 처음 내려오는 회차에 들어간다
+  if (!f) return <div className="mt-1 text-xs text-hard">앞으로 {plan.rows.length}회차 안에는 최저가가 매수상한({eok(a.cap)}) 아래로 안 내려옴 — 들어갈 회차 없음</div>;
   return (
     <div className="mt-1 text-xs">
-      <b>매력 전환</b>: {f.label}{f.date ? ` ${f.date.slice(5)}${f.actual ? '' : '(추정)'}` : ''}(최저가 {eok(f.price)}, 예상 낙찰가 {eok(f.bid)}){f.k > 0 ? ` · 그때까지 남아 있을 확률 ${P(f.survive)}` : ''}
-      {b && b.k !== f.k && <span className="ml-1 font-bold text-brand">→ 기대값 최대: {b.label}{b.date ? ` ${b.date.slice(5)}` : ''}(남아 있을 확률 {P(b.survive)}, 남는 돈 {eok(b.room)})</span>}
+      <b>들어갈 회차</b>: {f.label}{f.date ? ` (${f.date.slice(5)}${f.actual ? '' : ' 추정'})` : ''} · 최저가 {eok(f.price)} → 매수상한 {eok(a.cap)} 안
     </div>
   );
 }

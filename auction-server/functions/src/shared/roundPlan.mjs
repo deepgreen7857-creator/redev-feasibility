@@ -3,7 +3,7 @@
 // 회차마다: 최저가 → 그 회차 예상 낙찰가(같은 종류 '낙찰가÷최저가' 중앙값) → 우리 매수상한 대비 남는 돈
 //          × 그 회차까지 안 팔리고 남아 있을 확률(완료 물건에서 같은 종류·같은 '최저가÷감정가' 구간의 낙찰률)
 // 기대값이 가장 큰 회차가 '들어갈 회차'. 기다릴수록 싸지지만, 그 사이 남이 사 갈 확률이 커진다.
-import { typeLabel, roundSchedule } from './analyze.mjs';
+import { typeLabel, roundSchedule, roundName } from './analyze.mjs';
 import { predictPrice } from './bidForecast.mjs';
 
 const BUCKETS = [[0.9, '감정가 90%↑'], [0.7, '70~90%'], [0.5, '50~70%'], [0.3, '30~50%'], [0, '30% 미만']];
@@ -49,7 +49,7 @@ export function roundPlan(item, a, { premium, rates, courtRate } = {}) {
     const sr = soldRate(rates, item, r.price);
     // 이 회차까지 남아 있을 확률 × 이 회차에 우리가 이길 확률(예상 낙찰가를 쓰면 대략 반반) × 남는 돈
     const ev = room > 0 ? Math.round(survive * 0.5 * room) : 0;
-    rows.push({ ...r, bid, room, survive, soldP: sr ? sr.p : null, rateScope: sr?.scope, ev, label: r.k === 0 ? '지금 회차' : `${r.k}회 더 유찰` });
+    rows.push({ ...r, bid, room, survive, soldP: sr ? sr.p : null, rateScope: sr?.scope, ev, label: roundName(item, r.k) });
     survive *= sr ? 1 - sr.p : 0.85; // 모르면 회차마다 15%는 팔린다고 봄
   }
   const firstOk = rows.find((x) => x.room > 0) || null;
