@@ -6,7 +6,7 @@ import { lawdOf, SIDO, inFocus, FOCUS_DEFAULT } from '../data/defaults.js';
 import { corpFit, propertyKind } from '../lib/tax.js';
 import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
 import { soldRateTable, roundPlan } from '../lib/roundPlan.js';
-import { dedupeRounds } from '../lib/rounds.js';
+import { dedupeRounds, withNextCourtRound } from '../lib/rounds.js';
 import { premiumTable, predictPrice, isFirstRound, scoreErrors, evidenceGroup, EVIDENCE_LABEL, bidOutcome, soldOf } from '../lib/bidForecast.js';
 
 const PAGE = 60;
@@ -49,7 +49,7 @@ export default function ListPage({ mode }) {
   //  이제 40개씩 나눠 받되(서버 부담) 모두 받은 뒤 한 번만 바꾼다. 브라우저에 보관된 시세는 거의 바로 나온다.
   const [dealsProg, setDealsProg] = useState(null); // { done, total } — 받는 중일 때만
   const focusCfg = settings?.focus || FOCUS_DEFAULT;
-  const scoped = useMemo(() => (items && f.focus ? items.filter((it) => inFocus(it, focusCfg)) : items), [items, f.focus, focusCfg]);
+  const scoped = useMemo(() => { if (!items) return items; const base = done ? items : withNextCourtRound(items); return f.focus ? base.filter((it) => inFocus(it, focusCfg)) : base; }, [items, f.focus, focusCfg, done]);
   const needKeys = useMemo(() => {
     if (!scoped) return [];
     const keys = new Set();
@@ -219,6 +219,7 @@ export default function ListPage({ mode }) {
               {notVilla(it) === '지하층' && <Badge tone="hard">지하·반지하</Badge>}
               {typeof it.failCount === 'number' && it.failCount >= 8 && <Badge tone="hard">유찰 {it.failCount}회 — 이유 확인</Badge>}
               {a.excluded && <Badge>관심 제외</Badge>}
+              {it.nextEstimated && <Badge tone="wait">다음 기일 추정({it.nextEstimated.from.slice(5)} 유찰 가정)</Badge>}
               {it.otherRounds > 0 && <Badge>다른 회차 {it.otherRounds}건</Badge>}
               {docsLabel(it) && <Badge tone="brand">📎 {docsLabel(it)}</Badge>}
               <span className="ml-auto text-xs text-ink/50">{it.caseNo}</span>
