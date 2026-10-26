@@ -33,6 +33,7 @@ h1{font-size:24px;margin:0 0 4px;text-wrap:balance}
 .flow{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:14px;align-items:center}
 .chip{display:inline-block;padding:2px 10px;border-radius:99px;font-size:13px;font-weight:600;white-space:nowrap}
 .go{background:var(--go-bg);color:var(--go)} .wait{background:var(--wait-bg);color:var(--wait)} .no{background:var(--no-bg);color:var(--no)}
+.body[hidden]{display:none}
 .body{border-top:1px solid var(--line);padding:16px 18px;display:grid;gap:18px}
 .sum{font-weight:600}
 .tbl{overflow-x:auto}
@@ -63,8 +64,9 @@ const wonFull=n=>n.toLocaleString('ko-KR');
 const rname=k=>k===0?'최초':k+'회 유찰';
 function calc(it){
   const low=it.market.low, rows=[];
+  let min=it.appraisal;
   for(let k=0;k<=MAXK;k++){
-    const min=Math.floor(it.appraisal*Math.pow(RATE,k)/1000)*1000;
+    if(k>0) min=Math.floor(Math.round(min*RATE)/1000)*1000;
     const bid=min+10000, tax=Math.round(bid*0.011);
     const limit=low-bid-tax-it.costs-it.minProfit;
     rows.push({k,min,bid,tax,limit,profit:low-bid-tax-it.costs-it.assume});
