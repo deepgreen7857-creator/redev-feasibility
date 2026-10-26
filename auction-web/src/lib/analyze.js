@@ -19,8 +19,9 @@ export const VERDICT = {
 };
 
 // 분석기 버전 — 계산식을 바꿀 때마다 올리고 수정일·내용을 남긴다(예측 기록에 함께 저장)
-export const ANALYZER_VERSION = '2026-10-25b';
+export const ANALYZER_VERSION = '2026-10-25c';
 export const ANALYZER_CHANGES = [
+  { version: '2026-10-25c', date: '2026-10-26', note: '계산 착오 바로잡기(규칙은 25b 그대로): ① 진입 시점·수익과 매력 전환이 서로 다른 회차 가격을 쓰던 것 → 공고의 실제 회차표 하나로, 표 뒤는 표에서 보인 실제 내림 비율로(신탁 공매는 7%씩 등) ② 진입 시점도 매력 전환처럼 \'그 회차 예상 낙찰가(최저가×같은 종류 낙찰가율)\'가 매수상한 안일 때로, 수익도 그 값으로 계산 ③ 신탁 공매 경고. 예: 부평한라비발디 414호 \'3회 더 유찰·수익 1,404만\' ↔ \'4회차 안 전환 없음\'' },
   { version: '2026-10-25b', date: '2026-10-25', note: '헐값 물건 걸러내기 한 가지만 추가(나머지 규칙은 25a 그대로): 최저가가 감정가의 15% 이하이거나 계산한 가치가 최저가의 8배 이상이면 지분·일부 매각·선순위 인수(임차보증금 등)를 먼저 의심 — 원문(법원 명세서·공매 상세)을 아직 못 받았으면 \'자료 수집 중\', 받았으면 \'오류 의심 — 원문 확인\'. 예: 구로동 로제리움2차 1203호(감정가 1.26억, 유찰 10회, 최저가 756만=6%, 가치 약 1억)가 \'지금 매력\'으로 뜨던 문제' },
   { version: '2026-10-25a', date: '2026-10-25', note: '시세·판정 개편(규칙 고정 기준판): ① 시세 = 중앙값 대신 닮은 거래 비교(같은 단지·면적·층·연식·시점), 월별 흐름 시점 보정, 닮은 거래끼리 폭 표시 ② 실거래에 없는 집 상태를 가격대로 — 기본 상태(아래 25%)로 판단, 올수리 후는 수리된 상태(위 20%) ③ 건물면적 없으면 건축물대장 전유면적 ④ 호가는 기본 상태 매물(없으면 최저 호가)×97%, 호가↔실거래 경고 ⑤ Claude 검토 보류·제외면 권리 확인 후 판단 ⑥ 유찰 8회↑·공매 원문 미수집(유찰 5회↑ 또는 감정가 40%↓)은 자동 매력 금지 ⑦ 계산 이상 수익률 1,000%→500% ⑧ 자료(최저가·감정가·면적·권리 원문·시세 근거) 하나라도 없으면 판정 안 함(자료 수집 중)' },
   { version: '2026-10-23e', date: '2026-10-23', note: 'Claude 직접 검토(2025타경4883) 반영: ① 같은 이름 다른 동 단지 실거래를 같은 단지로 쓰던 오류(대림동↔당산동6가) — 주소 괄호에서 동을 찾아 동이 같을 때만 같은 단지 ② 매각물건명세서를 못 읽은 법원 물건은 권리 점수 만점 불가(25→10), 3회 이상 유찰이거나 주변 전세가가 가치의 90% 이상이면 \'권리 확인 후 판단\' ③ 명세서의 인수 보증금이 있으면 전액 인수 전제로 바닥 가치 계산 ④ 수집기 3판(명세서 PDF 읽기) 물건을 초기 수집분으로 오인하지 않음' },
@@ -236,24 +237,42 @@ export function courtRate(item, settings) {
   return { rate: 0.3, verified: false, name: '인천·경기 기본값' };
 }
 
-// 다음 회차들의 최저가 예상
-export function projectRounds(item, settings, count = 5) {
+// 회차표(2026-10-25c): 진입 시점·수익·매력 전환이 모두 이 표 하나를 쓴다
+//  ① 공고에 실제 회차표(roundList)가 있으면 그대로(실제 날짜·최저가)
+//  ② 표가 끝난 뒤나 표가 없으면: 표에서 보인 실제 내림 비율로 이어 계산(신탁 공매는 7%씩 등 기관마다 다름)
+//     표가 없으면 법원 = 저감률, 공매 = 처음 가격의 10%씩. 캠코 공매는 처음 가격의 50% 밑으로 안 내림(신탁 공매는 하한 모름 → 계속)
+const ymdOf = (v) => { const m = String(v || '').match(/(\d{4})[.-](\d{2})[.-](\d{2})/); return m ? `${m[1]}-${m[2]}-${m[3]}` : null; };
+const addDays = (d, n) => { if (!d) return null; const t = new Date(`${d}T00:00:00+09:00`); t.setDate(t.getDate() + n); return new Date(t.getTime() + 9 * 3600e3).toISOString().slice(0, 10); };
+export const isTrustSale = (item) => item.source !== 'court' && /신탁/.test(`${item.court || ''} ${item.seller || ''}`);
+export function roundSchedule(item, rate = 0.3, count = 10) {
+  const now = item.minBid || item.appraisal; if (!now) return [];
+  const gap = item.source === 'court' ? 35 : 7;
   const out = [];
-  const now = item.minBid || item.appraisal;
-  if (!now) return out;
-  if (item.source === 'court') {
-    const { rate } = courtRate(item, settings);
-    for (let k = 0; k < count; k++) out.push({ step: k, label: k === 0 ? '현재' : `${k}회 더 유찰`, price: Math.round(now * (1 - rate) ** k) });
-  } else {
-    const first = item.firstPrice || item.appraisal || now;
-    const floor = first * 0.5;
-    let p = now;
-    for (let k = 0; k < count; k++) {
-      out.push({ step: k, label: k === 0 ? '현재' : `${k}회 더 유찰`, price: Math.round(p), floor: p <= floor + 1 });
-      p = Math.max(floor, p - first * 0.1);
-    }
+  const list = (item.roundList && item.roundList.length > 1 ? item.roundList : []).filter((r) => r.minBid > 0);
+  list.slice(0, count).forEach((r, k) => out.push({ k, price: r.minBid, date: ymdOf(r.bidEnd), actual: true }));
+  if (!out.length) out.push({ k: 0, price: now, date: ymdOf(item.bidEnd), actual: true });
+  const first = item.firstPrice || item.appraisal || now;
+  const floor = item.source !== 'court' && !isTrustSale(item) ? first * 0.5 : 0;
+  let step; // 다음 값 = f(지금 값)
+  if (out.length >= 2) {
+    const rs = out.slice(1).map((r, i) => r.price / out[i].price).filter((x) => x > 0 && x < 1).sort((x, y) => x - y);
+    const ratio = rs.length ? rs[Math.floor(rs.length / 2)] : 1;
+    step = (p) => p * ratio;
+  } else if (item.source === 'court') step = (p) => p * (1 - rate);
+  else step = (p) => p - first * 0.1;
+  while (out.length < count) {
+    const last = out[out.length - 1];
+    if (floor && last.price <= floor + 1) break;
+    const p = Math.max(floor, step(last.price));
+    if (!(p > 0) || p >= last.price) break;
+    out.push({ k: out.length, price: Math.round(p), date: addDays(last.date, gap), actual: false, floor: floor && p <= floor + 1 });
   }
   return out;
+}
+
+// 다음 회차들의 최저가 예상(진입 시점 계산용) — 회차표와 같은 값
+export function projectRounds(item, settings, count = 10) {
+  return roundSchedule(item, courtRate(item, settings).rate, count).map((r) => ({ step: r.k, label: r.k === 0 ? '현재' : `${r.k}회 더 유찰`, price: r.price, date: r.date, actual: r.actual, floor: r.floor }));
 }
 
 // 직전 회차 유찰가: 이 값에는 공개 입찰에서 아무도 안 샀다(시장이 확인한 상한). 모르면 null
@@ -411,7 +430,7 @@ export function liquidityOf(item, deals) {
   return { sameDong: n, similar: near.length, level: n >= 24 ? '좋음' : n >= 8 ? '보통' : '낮음', basis: `같은 동 최근 12개월 ${n}건(비슷한 면적 ${near.length}건)` };
 }
 
-export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
+export function analyze(item, { settings, deals, aptDeals, rentDeals, bidPremium } = {}) {
   // 법원경매는 건물(전용)면적을 못 읽어 오는 경우가 많다 → 건축물대장 전유면적으로 채워야 시세·전월세·올수리 계산이 된다
   if (!item.buildingArea && item.ledger?.unit?.exclusiveArea) item = { ...item, buildingArea: item.ledger.unit.exclusiveArea, buildingAreaSource: '건축물대장 전유면적' };
   const margin = settings?.marginRate ?? 0.1;
@@ -517,7 +536,10 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   // 취득세는 가치가 아니라 사는 가격(상한)에 붙는다 → 상한 = (가치 × (1 − 마진) − 명도 − 수리) ÷ (1 + 취득세율)
   const cap = value ? Math.round((value * (1 - margin) - costs.eviction - costs.repair) / (1 + costs.taxRate)) : null;
   if (costs && cap) { costs.tax = Math.round(Math.max(0, cap) * costs.taxRate); costs.total = costs.tax + costs.eviction + costs.repair; }
-  const entry = special?.floorKnown ? special.floorEntry : cap ? rounds.find((r) => r.price <= cap) : null;
+  // 진입 = 그 회차에 이기려고 써야 할 값(예상 낙찰가 = 최저가 × 같은 종류 낙찰가율, 최저가 이상)이 매수상한 안인 첫 회차
+  const prem = Math.max(1, Number(bidPremium) || 1);
+  const bidAt = (r) => Math.round(r.price * prem);
+  const entry = special?.floorKnown ? special.floorEntry : cap ? (() => { const r = rounds.find((x) => bidAt(x) <= cap); return r ? { ...r, bid: bidAt(r) } : null; })() : null;
 
   let verdict = 'unknown';
   if (reasons.length) verdict = 'hard';
@@ -582,6 +604,7 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
       else if ((ask.high || ask.low) < market.basic * 0.95) warnings.push(`호가(최고 ${Math.round((ask.high || ask.low) / 1e4).toLocaleString('ko-KR')}만)가 실거래 '기본 상태' 가격보다 낮음 — 시장이 내려가는 중일 수 있음, 매도 가격을 낮춰 잡을 것`);
     }
   }
+  if (isTrustSale(item)) warnings.push('신탁 공매 — 명도는 매수인 책임, 체납 관리비·공과금·임차인 인수 조건이 공고마다 다름: 공고문·유의사항 원문 확인');
   if (item.ledger?.age >= 30) warnings.push(`사용승인 ${item.ledger.age}년 경과(${item.ledger.useApr}) — 노후, 수리비·누수 확인`);
   if (jeonse) {
     (item.detail?.leases || []).forEach((l) => {
@@ -596,7 +619,7 @@ export function analyze(item, { settings, deals, aptDeals, rentDeals } = {}) {
   if (market.count && market.count < 5 && !cashType && !rightType) warnings.push('비교 거래가 적음 — 시세 신뢰도 낮음');
 
   const result = {
-    verdict, market, jeonse, valuation: val, full, value, valueBasis, costs, cap, rounds, entry, reasons, warnings, special, anomalies, specRead, rightsReview,
+    verdict, market, jeonse, valuation: val, full, value, valueBasis, costs, cap, rounds, entry, bidPremium: prem, reasons, warnings, special, anomalies, specRead, rightsReview,
     farm, redev, cashType, rightType, right, member, stage, failCap, landReview, excluded: isExcluded(item, settings), share: sh, shareUnknown,
     ratio: item.appraisal && item.minBid ? item.minBid / item.appraisal : null,
   };
@@ -770,7 +793,9 @@ function estimateBasisOf(item, { market, val, valueBasis }) {
 export function moneyOf(item, a, settings) {
   if (!a.value || (a.verdict === 'hard' && a.reasons?.length)) return null;
   // 가격이 안 맞는 물건도 지금 최저가로 샀을 때 얼마나 손해인지 보여 준다
-  const price = a.verdict === 'wait' ? a.entry?.price : item.minBid || a.entry?.price;
+  // 사는 값: 유찰 대기면 진입 회차의 예상 낙찰가, 아니면(지금·시나리오 계산) 지금 회차의 예상 낙찰가(최저가 × 낙찰가율)
+  const nowBid = item.minBid ? Math.round(item.minBid * (a.bidPremium || 1)) : null;
+  const price = a.verdict === 'wait' ? (a.entry ? a.entry.bid || a.entry.price : null) : nowBid || (a.entry ? a.entry.bid || a.entry.price : null);
   if (!price) return null;
   const s = { ...TAX_DEFAULTS, ...settings };
   const kind = propertyKind(item, tradeTypeOf(item), a.farm);
@@ -806,7 +831,7 @@ export function certaintyOf(score) {
 // 매력도(100점): 안전마진 45 · 시세 신뢰도 20 · 권리 깨끗함 25 · 정비사업 10  (지역 가산 없음)
 export function scoreOf(item, a) {
   if (!['now', 'wait'].includes(a.verdict) || !a.cap) return null;
-  const price = a.verdict === 'now' ? item.minBid || a.entry?.price : a.entry?.price;
+  const price = a.entry ? a.entry.bid || a.entry.price : null;
   if (!price) return null;
   const margin = (a.cap - price) / price;
   const pMargin = Math.round(Math.max(0, Math.min(1, margin / 0.3)) * 45); // 안전마진 30% 이상이면 만점

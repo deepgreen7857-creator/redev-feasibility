@@ -12,7 +12,7 @@ test('법원경매 회차: 인천 30% 저감', () => {
 });
 test('공매 회차: 최초가 10%씩, 50% 하한', () => {
   const r = projectRounds({ source: 'onbid', minBid: 60000000, firstPrice: 100000000 }, DEFAULT_SETTINGS, 4);
-  assert.deepEqual(r.map((x) => x.price), [60000000, 50000000, 50000000, 50000000]);
+  assert.deepEqual(r.map((x) => x.price), [60000000, 50000000]); // 하한(50%)에 닿으면 더 늘리지 않음
 });
 test('시세 추정: 같은 동 5건 이상이면 동 기준, 해제 제외', () => {
   const m = marketEstimate({ emd: '부평동', buildingArea: 84, usage: '아파트' }, [...deals, [9e9, 84, 1, 1, '', '', 0, true, '중개거래', '부평동']]);
@@ -299,4 +299,15 @@ test('헐값 물건(25b): 최저가가 감정가 15% 이하면 회차가 달라�
   assert.equal(r3.verdict, 'suspect');
   // 보통 할인(감정가 60%)은 건드리지 않음
   assert.equal(analyze({ ...base, minBid: 75600000, failCount: 4, detail: {} }, { settings: DEFAULT_SETTINGS, deals: offi }).deepDiscount, null);
+});
+
+test('회차표(25c): 공고 회차표가 있으면 그 내림 비율로 이어 계산하고, 진입은 예상 낙찰가가 상한 안인 회차', async () => {
+  const { roundSchedule } = await import('./analyze.js');
+  const it = { source: 'onbid', court: '신영부동산신탁(주)', appraisal: 125000000, minBid: 124200000, bidEnd: '2026-10-26 18:00',
+    roundList: [{ minBid: 124200000, bidEnd: '2026-10-26 18:00' }, { minBid: 115510000, bidEnd: '2026-10-27 18:00' }, { minBid: 107420000, bidEnd: '2026-10-28 18:00' }] };
+  const r = roundSchedule(it, 0.3, 6);
+  assert.equal(r.length, 6);
+  assert.deepEqual(r.slice(0, 3).map((x) => x.price), [124200000, 115510000, 107420000]);
+  assert.ok(Math.abs(r[3].price / r[2].price - 0.93) < 0.005); // 표에서 보인 7% 내림을 이어 씀
+  assert.equal(r[3].actual, false); assert.equal(r[3].date, '2026-11-04');
 });

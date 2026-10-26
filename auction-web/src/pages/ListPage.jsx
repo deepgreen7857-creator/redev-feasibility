@@ -73,6 +73,7 @@ export default function ListPage({ mode }) {
   }, [needKeys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 판정은 물건 수천~수만 건이라 한 번에 돌리면 브라우저가 멈춘다 → 400건씩 나눠 계산하고 사이사이 화면을 그린다
+  const premTable = useMemo(() => (items ? premiumTable([...items, ...past]) : null), [items, past]);
   const [analyzed, setAnalyzed] = useState(null);
   const [anaProg, setAnaProg] = useState(null);
   useEffect(() => {
@@ -85,13 +86,13 @@ export default function ListPage({ mode }) {
       const end = Math.min(list.length, i + 400);
       for (; i < end; i++) {
         const it = list[i]; const l = lawdOf(it.sido, it.sgg);
-        out.push({ it, a: analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${l}`], rentDeals: villa ? dealsMap[`${tradeTypeOf(it)}Rent|${l}`] : undefined }) });
+        out.push({ it, a: analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${l}`], rentDeals: villa ? dealsMap[`${tradeTypeOf(it)}Rent|${l}`] : undefined, bidPremium: done ? undefined : predictPrice(it, premTable)?.premium }) });
       }
       if (i < list.length) { setAnaProg({ done: i, total: list.length }); setTimeout(step, 0); } else { setAnaProg(null); setAnalyzed(out); }
     };
     step();
     return () => { stop = true; };
-  }, [items, settings, dealsMap, dealsReady, done, villa]);
+  }, [items, settings, dealsMap, dealsReady, done, villa, premTable]);
 
   // 카드는 처음 60개만 그린다(전에는 수천 개를 한 번에 그려 브라우저가 1분 넘게 멈췄다) — '더 보기'로 이어서
   const [shown, setShown] = useState(PAGE);
@@ -120,7 +121,7 @@ export default function ListPage({ mode }) {
   }, [analyzed, f, opp, done, villa, origin]);
 
   // 예상 낙찰가(=우리 입찰가) 기준표: 불러온 물건 중 낙찰가가 있는 완료 물건으로 만든다
-  const table = useMemo(() => (items ? premiumTable([...items, ...past]) : null), [items, past]);
+  const table = premTable;
   const rates = useMemo(() => (items ? soldRateTable([...items, ...past]) : null), [items, past]);
 
   const counts = useMemo(() => {

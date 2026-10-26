@@ -2,7 +2,7 @@
 // 회차마다: 최저가 → 그 회차 예상 낙찰가(같은 종류 '낙찰가÷최저가' 중앙값) → 우리 매수상한 대비 남는 돈
 //          × 그 회차까지 안 팔리고 남아 있을 확률(완료 물건에서 같은 종류·같은 '최저가÷감정가' 구간의 낙찰률)
 // 기대값이 가장 큰 회차가 '들어갈 회차'. 기다릴수록 싸지지만, 그 사이 남이 사 갈 확률이 커진다.
-import { typeLabel } from './analyze.js';
+import { typeLabel, roundSchedule } from './analyze.js';
 import { predictPrice } from './bidForecast.js';
 
 const BUCKETS = [[0.9, '감정가 90%↑'], [0.7, '70~90%'], [0.5, '50~70%'], [0.3, '30~50%'], [0, '30% 미만']];
@@ -34,14 +34,7 @@ const ymd = (v) => { const m = String(v || '').match(/(\d{4})[.-](\d{2})[.-](\d{
 const plusDays = (d, n) => { if (!d) return null; const t = new Date(`${d}T00:00:00+09:00`); t.setDate(t.getDate() + n); return new Date(t.getTime() + 9 * 3600e3).toISOString().slice(0, 10); };
 // 공매: 공고에 나온 회차별 일정(roundList)이 있으면 그대로(실제 날짜). 없으면 공매 1주·법원 5주 간격으로 날짜 추정
 export function futureRounds(item, courtRate = 0.3, count = 10) {
-  const now = item.minBid || item.appraisal; if (!now) return [];
-  const base = ymd(item.bidEnd);
-  if (item.roundList && item.roundList.length > 1) return item.roundList.slice(0, count).map((r, k) => ({ k, price: r.minBid, date: ymd(r.bidEnd), actual: true }));
-  const out = [];
-  if (item.source === 'court') { for (let k = 0; k < count; k++) out.push({ k, price: Math.round(now * (1 - courtRate) ** k), date: plusDays(base, 35 * k), actual: k === 0 }); return out; }
-  const first = item.firstPrice || item.appraisal || now; const floor = first * 0.5; let p = now;
-  for (let k = 0; k < count; k++) { out.push({ k, price: Math.round(p), floor: p <= floor + 1, date: plusDays(base, 7 * k), actual: k === 0 }); if (p <= floor + 1) break; p = Math.max(floor, p - first * 0.1); }
-  return out;
+  return roundSchedule(item, courtRate, count); // 진입 시점과 같은 회차표
 }
 
 export function roundPlan(item, a, { premium, rates, courtRate } = {}) {

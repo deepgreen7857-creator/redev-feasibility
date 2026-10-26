@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 const web = new URL('../../auction-web/src/', import.meta.url);
 const out = new URL('../functions/src/shared/', import.meta.url);
 mkdirSync(out, { recursive: true });
-const files = { 'lib/analyze.js': 'analyze.mjs', 'lib/tax.js': 'tax.mjs', 'lib/special.js': 'special.mjs', 'lib/valuation.js': 'valuation.mjs', 'lib/zoneMatch.js': 'zoneMatch.mjs', 'data/defaults.js': 'defaults.mjs', 'lib/bidForecast.js': 'bidForecast.mjs', 'lib/roundPlan.js': 'roundPlan.mjs' };
+const files = { 'lib/analyze.js': 'analyze.mjs', 'lib/tax.js': 'tax.mjs', 'lib/special.js': 'special.mjs', 'lib/valuation.js': 'valuation.mjs', 'lib/zoneMatch.js': 'zoneMatch.mjs', 'data/defaults.js': 'defaults.mjs', 'lib/bidForecast.js': 'bidForecast.mjs', 'lib/roundPlan.js': 'roundPlan.mjs', 'lib/rounds.js': 'rounds.mjs' };
 for (const [src, dst] of Object.entries(files)) {
   let s = readFileSync(new URL(src, web), 'utf8');
   s = s.replace(/from '\.\/tax\.js'/g, "from './tax.mjs'").replace(/from '\.\/special\.js'/g, "from './special.mjs'").replace(/from '\.\/valuation\.js'/g, "from './valuation.mjs'")

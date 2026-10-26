@@ -74,7 +74,7 @@ async function run({ db, log = console.log, deadline = Infinity }) {
   // 메모리 아끼기(10-24부터 물건이 2만 7천 건으로 늘어 1GB를 넘겨 'internal' 오류로 죽던 문제):
   //  ① 기준표(낙찰가÷최저가, 낙찰률)는 필요한 칸만 골라 읽는다(select)
   //  ② 예측할 물건은 기일이 오늘 이후인 것만, 500건씩 나눠 읽으며 바로 처리한다(기일 빠른 것부터)
-  const TABLE_FIELDS = ['result', 'minBid', 'appraisal', 'status', 'failCount', 'round', 'source', 'usageSmall', 'usage', 'title', 'detail.landCategory', 'land.jimok', 'buildingArea', 'landArea'];
+  const TABLE_FIELDS = ['result', 'minBid', 'appraisal', 'status', 'failCount', 'round', 'source', 'usageSmall', 'usage', 'title', 'detail.landCategory', 'land.jimok', 'buildingArea', 'landArea', 'caseNo', 'address', 'bidEnd'];
   const [lsSnap, past] = await Promise.all([
     db.collection('listings').select(...TABLE_FIELDS).get(),
     db.collection('pastResults').select(...TABLE_FIELDS).get().catch(() => ({ docs: [] })),
@@ -84,6 +84,10 @@ async function run({ db, log = console.log, deadline = Infinity }) {
   const table = premiumTable(doneItems);
   const rates = soldRateTable(doneItems); // 회차별 '남아 있을 확률'용 낙찰률
   const totalListings = lsSnap.size;
+  // 같은 물건의 회차표(화면과 같은 방식) — 진입 시점을 공고의 실제 회차 가격으로 계산하게
+  const { dedupeRounds } = await import('../shared/rounds.mjs');
+  const roundsByKey = new Map();
+  dedupeRounds(lsSnap.docs.map((d) => ({ id: d.id, ...d.data() })), now.day).forEach((g) => { if (g.groupIds) g.groupIds.forEach((id) => roundsByKey.set(id, g.roundList)); });
   const cache = new Map();
   let batch = db.batch(); let n = 0; const stats = { total: totalListings, scanned: 0, forecast: 0, revised: 0, frozen: 0, errors: 0, calcAnomaly: 0, analyzerVersion: ANALYZER_VERSION };
   // bidEnd 는 '2026-10-28 17:00'(온비드)과 '2026.10.28'(법원) 두 형식 — 웹 화면과 같은 방식으로 형식별 범위를 나눠 읽는다
@@ -113,7 +117,10 @@ async function run({ db, log = console.log, deadline = Infinity }) {
     try {
       const lawd = lawdOf(it.sido, it.sgg);
       const deals = lawd ? await loadDeals(db, tradeTypeOf(it), lawd, cache) : [];
-      const a = analyze(it, { settings, deals });
+      const rl = roundsByKey.get(it.id);
+      // 이 회차부터의 회차표(앞 회차는 뺌)
+      if (rl) { const i = rl.findIndex((r) => r.id === it.id); if (i >= 0 && rl.length - i > 1) it.roundList = rl.slice(i); }
+      const a = analyze(it, { settings, deals, bidPremium: predictPrice(it, table)?.premium });
       let plan = null; try { plan = roundPlan(it, a, { premium: table, rates, courtRate: courtRate(it, settings).rate }); } catch { plan = null; }
       const f = summarize(it, { ...a, analyzerVersion: ANALYZER_VERSION }, now.day, predictPrice(it, table), plan);
       const upd = {};
