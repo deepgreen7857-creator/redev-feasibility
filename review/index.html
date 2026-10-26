@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>경매 진입 회차</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* 한 줄에 물건 하나: 지금 회차 → 들어갈 회차, 펼치면 회차표·근거 */
+:root{
+  --bg:#f5f6f3; --panel:#ffffff; --fg:#1d2420; --muted:#66706a; --line:#dde2dc;
+  --accent:#1f6b4f; --wait:#9a6a12; --wait-bg:#fbf1dc; --go:#1f6b4f; --go-bg:#e0f0e8; --no:#a33a2c; --no-bg:#f8e3df;
+  --sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif; --mono:"IBM Plex Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141916; --panel:#1c231f; --fg:#e4ebe6; --muted:#98a39c; --line:#2d3631;
+  --accent:#6cc39b; --wait:#e2b45a; --wait-bg:#3a2f18; --go:#6cc39b; --go-bg:#183326; --no:#ee8b7c; --no-bg:#3c1f1a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141916; --panel:#1c231f; --fg:#e4ebe6; --muted:#98a39c; --line:#2d3631;
+  --accent:#6cc39b; --wait:#e2b45a; --wait-bg:#3a2f18; --go:#6cc39b; --go-bg:#183326; --no:#ee8b7c; --no-bg:#3c1f1a; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--sans)}
+.wrap{max-width:1000px;margin:0 auto;padding-block:28px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1{font-size:24px;margin:0 0 4px;text-wrap:balance}
+.lead{color:var(--muted);margin:0 0 22px;font-size:14px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.item{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:12px}
+.head{display:grid;grid-template-columns:1fr auto;gap:12px;padding:16px 18px;cursor:pointer;width:100%;background:none;border:0;color:inherit;text-align:left;font:inherit}
+.head:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.addr{font-weight:600;font-size:16px}
+.sub{color:var(--muted);font-size:13px}
+.flow{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:14px;align-items:center}
+.chip{display:inline-block;padding:2px 10px;border-radius:99px;font-size:13px;font-weight:600;white-space:nowrap}
+.go{background:var(--go-bg);color:var(--go)} .wait{background:var(--wait-bg);color:var(--wait)} .no{background:var(--no-bg);color:var(--no)}
+.body{border-top:1px solid var(--line);padding:16px 18px;display:grid;gap:18px}
+.sum{font-weight:600}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:14px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600;font-size:12px;letter-spacing:.02em}
+tr.entry td{background:var(--go-bg)}
+tr.past td{color:var(--muted)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+.cols>div{min-width:0}
+h3{font-size:13px;color:var(--muted);margin:0 0 6px;letter-spacing:.03em}
+ul{margin:0;padding-left:18px} li{margin-bottom:3px}
+.note{font-size:13px;color:var(--muted)}
+.pred{font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>경매 진입 회차</h1>
+  <p class="lead">물건마다 몇 번 더 유찰되면 들어가는지 보여 줍니다. 인천지방법원 저감률 30%, 입찰가는 그 회차 최저가 + 1만 원, 법인 취득세 1.1%로 계산합니다. 인수금액이 시세에서 비용과 목표수익을 뺀 금액보다 크면 몇 번을 유찰돼도 안 되므로 제외합니다.</p>
+  <div id="list"><p class="note">물건을 불러오는 중입니다.</p></div>
+</div>
+<script>
+const RATE=0.7, MAXK=6;
+const won=n=>(Math.round(n/10000)).toLocaleString('ko-KR')+'만';
+const wonFull=n=>n.toLocaleString('ko-KR');
+const rname=k=>k===0?'최초':k+'회 유찰';
+function calc(it){
+  const low=it.market.low, rows=[];
+  for(let k=0;k<=MAXK;k++){
+    const min=Math.floor(it.appraisal*Math.pow(RATE,k)/1000)*1000;
+    const bid=min+10000, tax=Math.round(bid*0.011);
+    const limit=low-bid-tax-it.costs-it.minProfit;
+    rows.push({k,min,bid,tax,limit,profit:low-bid-tax-it.costs-it.assume});
+  }
+  const cur=Math.max(0,it.rounds.findIndex(r=>r.result!=='유찰'));
+  const curK=cur<0?it.rounds.length:cur;
+  const ceiling=low-it.costs-it.minProfit;
+  let entry=null;
+  if(it.assume<=ceiling) entry=rows.find(r=>r.limit>=it.assume)||null;
+  return {rows,curK,entry,ceiling};
+}
+function render(items){
+  const el=document.getElementById('list');
+  if(!items.length){el.innerHTML='<p class="note">아직 올린 물건이 없습니다.</p>';return}
+  el.innerHTML='';
+  items.forEach((it,i)=>{
+    const c=calc(it), cur=it.rounds[c.curK]||{};
+    let chip,flow;
+    if(!c.entry){chip='<span class="chip no">제외</span>';flow='인수금액이 시세 한도('+won(c.ceiling)+')보다 큼'}
+    else{
+      const left=c.entry.k-c.curK;
+      chip=left<=0?'<span class="chip go">이번 회차 진입</span>':'<span class="chip wait">'+left+'번 더 유찰 대기</span>';
+      flow='지금 <b>'+rname(c.curK)+'</b> '+(cur.date||'')+' 최저 <span class="num">'+won(c.rows[c.curK].min)+'</span> → 진입 <b>'+rname(c.entry.k)+'</b> 입찰가 <span class="num">'+wonFull(c.entry.bid)+'원</span>';
+    }
+    const box=document.createElement('section');box.className='item';
+    box.innerHTML=`<button class="head" id="h${i}" aria-expanded="false">
+      <div><div class="addr">${it.address}</div><div class="sub">${it.id} · ${it.court} · ${it.type} · ${it.area}</div>
+      <div class="flow">${flow}</div></div><div>${chip}</div></button>
+      <div class="body" hidden>
+        <div class="sum">${it.summary}</div>
+        <div><h3>회차표 (시세 하한 ${won(it.market.low)}, 비용 ${won(it.costs)}, 목표수익 ${won(it.minProfit)}, 인수 가정 ${won(it.assume)})</h3>
+        <div class="tbl"><table><thead><tr><th>회차</th><th>최저가</th><th>입찰가</th><th>취득세 1.1%</th><th>인수 한도</th><th>인수 가정 시 수익</th></tr></thead><tbody>
+        ${c.rows.map(r=>`<tr class="${c.entry&&r.k===c.entry.k?'entry':''} ${r.k<c.curK?'past':''}"><td>${rname(r.k)}${(it.rounds[r.k]&&it.rounds[r.k].date)?' · '+it.rounds[r.k].date:''}${r.k<c.curK?' (유찰)':''}</td><td class="num">${wonFull(r.min)}</td><td class="num">${wonFull(r.bid)}</td><td class="num">${wonFull(r.tax)}</td><td class="num">${r.limit>=0?won(r.limit):'없음'}</td><td class="num">${won(r.profit)}</td></tr>`).join('')}
+        </tbody></table></div>
+        <p class="note">인수 한도: 그 회차에서 인수금액이 이 금액 이하면 목표수익이 남습니다. ${it.assumeNote||''}</p></div>
+        <div class="cols">
+          <div><h3>시세 근거 (${won(it.market.low)} ~ ${won(it.market.high)})</h3><ul>${it.market.basis.map(x=>'<li>'+x+'</li>').join('')}</ul></div>
+          <div><h3>권리</h3><ul>${it.rights.map(x=>'<li>'+x+'</li>').join('')}</ul></div>
+          <div><h3>사건 타임라인</h3><ul>${it.timeline.map(x=>'<li>'+x+'</li>').join('')}</ul></div>
+          <div><h3>주의</h3><ul>${it.flags.map(x=>'<li>'+x+'</li>').join('')}</ul></div>
+          <div><h3>결론을 바꿀 확인사항</h3><ul>${it.checks.map(x=>'<li>'+x+'</li>').join('')}</ul></div>
+          <div><h3>법인 1.1%</h3><p style="margin:0">${it.tax11}</p></div>
+        </div>
+        <div class="pred"><h3>유찰 예측 기록</h3>${it.prediction.date} ${it.prediction.round}: 예측 <b>${it.prediction.predict}</b> · 실제 <b>${it.prediction.actual||'기일 전'}</b> <span class="note">(검토일 ${it.reviewed})</span></div>
+      </div>`;
+    el.appendChild(box);
+    const h=box.querySelector('.head'),b=box.querySelector('.body');
+    h.addEventListener('click',()=>{b.hidden=!b.hidden;h.setAttribute('aria-expanded',String(!b.hidden))});
+  });
+}
+fetch('items.json',{cache:'no-store'}).then(r=>r.json()).then(render)
+  .catch(()=>{document.getElementById('list').innerHTML='<p class="note">items.json을 읽지 못했습니다. 같은 폴더에 있는지 확인해 주세요.</p>'});
+</script>
+</body>
+</html>
