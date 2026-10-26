@@ -132,7 +132,9 @@ function render(items){
     else{
       const left=c.entry.k-c.curK;
       chip=left<=0?'<span class="chip go">이번 회차 진입</span>':'<span class="chip wait">'+left+'번 더 유찰 대기</span>';
-      flow='지금 <b>'+rname(c.curK)+'</b> '+(cur.date||'')+' 최저 <span class="num">'+won(c.rows[c.curK].min)+'</span> → 진입 <b>'+rname(c.entry.k)+'</b> 입찰가 <span class="num">'+wonFull(c.entry.bid)+'원</span>';
+      const fails=c.curK, md=(cur.date||'').slice(5).replace('-','/');
+      const state=fails===0?'신건':fails+'회 유찰됨';
+      flow=state+' · 다음 '+md+' 최저 <span class="num">'+won(c.rows[c.curK].min)+'</span> → '+(left<=0?'<b>이번 기일 <span class="num">'+wonFull(c.entry.bid)+'원</span> 입찰</b>':'패스, <b>'+(left===1?'한 번':left+'번')+' 더 유찰되면 <span class="num">'+wonFull(c.entry.bid)+'원</span> 입찰</b>');
     }
     const box=document.createElement('section');box.className='item';
     box.innerHTML=`<button class="head row" id="h${i}" aria-expanded="false">
