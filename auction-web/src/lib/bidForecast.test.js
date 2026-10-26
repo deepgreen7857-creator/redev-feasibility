@@ -37,7 +37,7 @@ test('입찰 결과: 유찰이면 단독 낙찰, 상한 넘으면 입찰 안 함
 import { lawdOf } from '../data/defaults.js';
 test('인천 신설구: 국토부 새 코드(서해구 28275·검단구 28290·영종구 28155·제물포구 28125)', () => {
   assert.equal(lawdOf('인천광역시', '서해구'), '28275'); assert.equal(lawdOf('인천광역시', '서구', '석남동'), '28275'); assert.equal(lawdOf('인천광역시', '서구', '마전동'), '28290');
-  assert.equal(lawdOf('인천광역시', '영종구'), lawdOf('인천광역시', '중구'));
+  assert.equal(lawdOf('인천광역시', '중구', '운서동'), '28155'); assert.equal(lawdOf('인천광역시', '중구', '신포동'), '28125');
   assert.ok(lawdOf('인천광역시', '서구'));
   assert.equal(lawdOf('인천광역시', '남동구'), '28200');
 });
