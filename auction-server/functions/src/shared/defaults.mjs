@@ -63,3 +63,15 @@ export function lawdOf(sido, sgg) {
   const key = Object.keys(table).find((k) => sgg.includes(k) || k.includes(sgg));
   return key ? table[key] : null;
 }
+
+// 집중 지역(2026-10-26): 자료가 다 모이기 전에 범위를 좁혀 먼저 100% 채우고 판정·성적을 본다 — 인천 서구(서해구) 가좌동·석남동
+//  관리자 설정(settings.focus)으로 바꿀 수 있다. 목록 '집중 지역만'을 끄면 수도권 전체.
+export const FOCUS_DEFAULT = { label: '인천 서구 가좌동·석남동', sido: '인천광역시', sgg: ['서구', '서해구'], emd: ['가좌동', '석남동'] };
+export function inFocus(item, focus = FOCUS_DEFAULT) {
+  if (!focus) return true;
+  if (focus.sido && item.sido && item.sido !== focus.sido) return false;
+  const text = `${item.sgg || ''} ${item.title || ''} ${item.address || ''} ${item.detail?.addressFull || ''} ${item.parcelAddress || ''}`;
+  if (focus.sgg?.length && !focus.sgg.some((g) => text.includes(g))) return false;
+  const emdText = `${item.emd || ''} ${text}`;
+  return !focus.emd?.length || focus.emd.some((d) => new RegExp(`${d}(\\s|\\d|,|\\)|$)`).test(emdText));
+}

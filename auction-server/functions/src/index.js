@@ -186,7 +186,7 @@ async function enrichLand(item) {
 // 상세를 다시 받을 온비드 물건: 상세가 없거나 예전 판으로 받은 것. 응답이 비었던 물건은 7일 동안 건너뛴다.
 async function onbidDetailBacklog() {
   const snap = await db.collection('listings').where('source', '==', 'onbid')
-    .select('cltrMngNo', 'pbctCdtnNo', 'sgg', 'category', 'land', 'pnu', 'address', 'title', 'usageSmall', 'buildingArea', 'detailAt', 'detailVer', 'detailEmptyAt', 'bidEnd', 'minBid', 'appraisal', 'failCount').get();
+    .select('cltrMngNo', 'pbctCdtnNo', 'sido', 'sgg', 'emd', 'category', 'land', 'pnu', 'address', 'title', 'usageSmall', 'buildingArea', 'detailAt', 'detailVer', 'detailEmptyAt', 'bidEnd', 'minBid', 'appraisal', 'failCount').get();
   const weekAgo = Date.now() - 7 * 86400e3;
   const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   const end = (it) => String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10);
@@ -739,12 +739,13 @@ async function handleRegistry(body) {
   if (body.action === 'registryTargets') {
     const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
     const weekAgo = Date.now() - 7 * 86400e3;
-    const snap = await db.collection('listings').where('source', '==', 'court').select('court', 'caseNo', 'itemNo', 'bidEnd', 'status', 'registryAt', 'registryMissAt').get();
+    const snap = await db.collection('listings').where('source', '==', 'court').select('court', 'caseNo', 'itemNo', 'bidEnd', 'status', 'registryAt', 'registryMissAt', 'sido', 'sgg', 'emd', 'address', 'title').get();
     const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
       .filter((it) => !it.registryAt && String(it.bidEnd || '').replace(/\./g, '-').slice(0, 10) >= today)
       .filter((it) => !/취하|기각|매각|종국/.test(it.status || ''))
       .filter((it) => !it.registryMissAt || new Date(it.registryMissAt).getTime() < weekAgo)
-      .sort((a, b) => String(a.bidEnd).localeCompare(String(b.bidEnd)))
+      // 집중 지역(가좌·석남) 먼저, 그다음 입찰일 가까운 순
+      .sort((a, b) => Number(onbid.inFocus(b)) - Number(onbid.inFocus(a)) || String(a.bidEnd).replace(/\./g, '-').localeCompare(String(b.bidEnd).replace(/\./g, '-')))
       .slice(0, Math.min(Number(body.limit) || 50, 200))
       .map(({ id, court, caseNo, itemNo, bidEnd }) => ({ id, court, caseNo, itemNo: itemNo || '1', bidEnd }));
     return { ok: true, items };

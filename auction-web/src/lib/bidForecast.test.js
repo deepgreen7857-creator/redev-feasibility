@@ -88,3 +88,12 @@ test('자료가 덜 모이면 판정하지 않음(자료 수집 중)', () => {
   assert.ok(a.gaps.required.some((g) => /공매 원문/.test(g)));
   assert.ok(a.gaps.required.some((g) => /실거래/.test(g)));
 });
+
+test('집중 지역: 인천 서구(서해구) 가좌동·석남동만', async () => {
+  const { inFocus } = await import('../data/defaults.js');
+  assert.equal(inFocus({ sido: '인천광역시', sgg: '서구', emd: '가좌동', title: '인천 서구 가좌동 123' }), true);
+  assert.equal(inFocus({ sido: '인천광역시', sgg: '서해구', address: '인천광역시 서해구 석남동 45-6 101호' }), true);
+  assert.equal(inFocus({ sido: '인천광역시', sgg: '서구', address: '인천광역시 서구 청라동 1' }), false);
+  assert.equal(inFocus({ sido: '인천광역시', sgg: '서구', address: '인천광역시 서구 염곡로 12 (가좌동, 한빛빌라)' }), true);
+  assert.equal(inFocus({ sido: '서울특별시', sgg: '구로구', address: '서울 구로구 가좌동' }), false);
+});

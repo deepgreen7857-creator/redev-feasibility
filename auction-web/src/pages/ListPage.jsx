@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listListings, listPastResults, getSettings, getDeals } from '../lib/store.js';
 import { analyze, tradeTypeOf, courtRate, eok, pct, SOURCE_LABEL, typeLabel, areaText, ANALYZER_VERSION } from '../lib/analyze.js';
-import { lawdOf, SIDO } from '../data/defaults.js';
+import { lawdOf, SIDO, inFocus, FOCUS_DEFAULT } from '../data/defaults.js';
 import { corpFit, propertyKind } from '../lib/tax.js';
 import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
 import { soldRateTable, roundPlan } from '../lib/roundPlan.js';
@@ -22,7 +22,7 @@ export default function ListPage({ mode }) {
   const [past, setPast] = useState([]); // 낙찰 결과(예상 낙찰가 기준표용) — 낙찰가는 이제 pastResults 에만 있다
   const [settings, setSettings] = useState(null);
   const [dealsMap, setDealsMap] = useState({});
-  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: mode ? 'verdict' : 'end', corpOnly: false, under1: false, showExcluded: false, onlyOpen: true });
+  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: mode ? 'verdict' : 'end', corpOnly: false, under1: false, showExcluded: false, onlyOpen: true, focus: true });
   const [error, setError] = useState('');
   const [origin, setOrigin] = useState(null); // 거리 기준 위치
   useEffect(() => { setF((x) => ({ ...x, sort: mode ? 'verdict' : 'end' })); }, [mode]);
@@ -48,13 +48,15 @@ export default function ListPage({ mode }) {
   //  전에는 40개 받을 때마다 화면 상태를 바꿔, 받을 때마다 물건 2만 건 판정을 처음부터 다시 했다(느림의 큰 원인).
   //  이제 40개씩 나눠 받되(서버 부담) 모두 받은 뒤 한 번만 바꾼다. 브라우저에 보관된 시세는 거의 바로 나온다.
   const [dealsProg, setDealsProg] = useState(null); // { done, total } — 받는 중일 때만
+  const focusCfg = settings?.focus || FOCUS_DEFAULT;
+  const scoped = useMemo(() => (items && f.focus ? items.filter((it) => inFocus(it, focusCfg)) : items), [items, f.focus, focusCfg]);
   const needKeys = useMemo(() => {
-    if (!items) return [];
+    if (!scoped) return [];
     const keys = new Set();
-    items.forEach((it) => { const l = lawdOf(it.sido, it.sgg); if (!l) return; const t = tradeTypeOf(it); if (villa && t !== 'rh') return; keys.add(`${t}|${l}`); if (villa) keys.add(`${t}Rent|${l}`); });
+    scoped.forEach((it) => { const l = lawdOf(it.sido, it.sgg); if (!l) return; const t = tradeTypeOf(it); if (villa && t !== 'rh') return; keys.add(`${t}|${l}`); if (villa) keys.add(`${t}Rent|${l}`); });
     return [...keys];
-  }, [items, villa]);
-  const dealsReady = Boolean(items) && needKeys.every((k) => k in dealsMap);
+  }, [scoped, villa]);
+  const dealsReady = Boolean(scoped) && needKeys.every((k) => k in dealsMap);
   useEffect(() => {
     const need = needKeys.filter((k) => !(k in dealsMap));
     if (!need.length) return;
@@ -78,8 +80,8 @@ export default function ListPage({ mode }) {
   const [anaProg, setAnaProg] = useState(null);
   useEffect(() => {
     setAnalyzed(null);
-    if (!items || !settings || !dealsReady) return;
-    const list = done ? items : dedupeRounds(items); // 완료 물건은 회차마다 따로 채점
+    if (!scoped || !settings || !dealsReady) return;
+    const list = done ? scoped : dedupeRounds(scoped); // 완료 물건은 회차마다 따로 채점
     const out = []; let i = 0; let stop = false;
     const step = () => {
       if (stop) return;
@@ -92,7 +94,7 @@ export default function ListPage({ mode }) {
     };
     step();
     return () => { stop = true; };
-  }, [items, settings, dealsMap, dealsReady, done, villa, premTable]);
+  }, [scoped, settings, dealsMap, dealsReady, done, villa, premTable]);
 
   // 카드는 처음 60개만 그린다(전에는 수천 개를 한 번에 그려 브라우저가 1분 넘게 멈췄다) — '더 보기'로 이어서
   const [shown, setShown] = useState(PAGE);
@@ -178,6 +180,7 @@ export default function ListPage({ mode }) {
           <input className="input col-span-2 sm:col-span-6" placeholder="주소·사건번호 검색" value={f.q} onChange={set('q')} />
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink/70">
+          <label className="flex items-center gap-1.5 rounded bg-brand2 px-2 py-0.5 font-bold text-brand"><input type="checkbox" checked={f.focus} onChange={set('focus')} /> 집중 지역만({focusCfg.label})</label>
           <label className="flex items-center gap-1.5 font-bold text-brand"><input type="checkbox" checked={f.corpOnly} onChange={set('corpOnly')} /> 법인 단타 적합만(A·B)</label>
           <label className="flex items-center gap-1.5 font-bold text-brand" title="수도권 공시가격 1억 이하 주택은 법인도 취득세 중과(12%) 제외 — 정비구역 안은 예외 없음"><input type="checkbox" checked={f.under1} onChange={set('under1')} /> 공시가격 1억 이하 주택만</label>
           {!done && <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>}
@@ -191,7 +194,7 @@ export default function ListPage({ mode }) {
 
       {error && <div className="card text-sm text-hard">불러오기 실패: {error}</div>}
       {!items && !error && <div className="card text-sm text-ink/50">물건을 불러오는 중…</div>}
-      {items && !dealsReady && <div className="card text-sm text-ink/50">물건 {items.length.toLocaleString('ko-KR')}건 · 시세 받는 중 {dealsProg ? `${dealsProg.done}/${dealsProg.total}` : ''}… (한 번 받으면 이 브라우저에 보관돼 다음부터 빠릅니다)</div>}
+      {items && !dealsReady && <div className="card text-sm text-ink/50">물건 {(scoped || items).length.toLocaleString('ko-KR')}건 · 시세 받는 중 {dealsProg ? `${dealsProg.done}/${dealsProg.total}` : ''}… (한 번 받으면 이 브라우저에 보관돼 다음부터 빠릅니다)</div>}
       {items && dealsReady && !analyzed && <div className="card text-sm text-ink/50">판정 계산 중 {anaProg ? `${anaProg.done.toLocaleString('ko-KR')}/${anaProg.total.toLocaleString('ko-KR')}` : ''}…</div>}
       {analyzed && !rows.length && <Empty>조건에 맞는 물건이 없습니다.</Empty>}
 

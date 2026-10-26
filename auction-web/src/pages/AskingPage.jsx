@@ -6,7 +6,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { parseAskingRows, pickByArea, summarize, bookmarkletCode } from '../lib/askingParse.js';
 import { listListings, getSettings, getDeals, saveListing } from '../lib/store.js';
 import { analyze, tradeTypeOf, eok, typeLabel, VERDICT } from '../lib/analyze.js';
-import { lawdOf } from '../data/defaults.js';
+import { lawdOf, inFocus, FOCUS_DEFAULT } from '../data/defaults.js';
 import { Badge, Empty } from '../components/ui.jsx';
 import { dedupeRounds } from '../lib/rounds.js';
 import { useChunkedMap } from '../lib/chunked.js';
@@ -65,8 +65,9 @@ export default function AskingPage({ admin }) {
   const cands = useMemo(() => {
     if (!items) return null;
     const t = today();
-    return dedupeRounds(items).filter((it) => endOf(it) >= t && tradeTypeOf(it) !== 'land');
-  }, [items]);
+    const focus = settings?.focus || FOCUS_DEFAULT;
+    return dedupeRounds(items.filter((it) => inFocus(it, focus))).filter((it) => endOf(it) >= t && tradeTypeOf(it) !== 'land');
+  }, [items, settings]);
   const needKeys = useMemo(() => (cands ? [...new Set(cands.map((it) => { const l = lawdOf(it.sido, it.sgg); return l ? `${tradeTypeOf(it)}|${l}` : null; }).filter(Boolean))] : []), [cands]);
   const dealsReady = Boolean(cands) && needKeys.every((k) => k in dealsMap);
   useEffect(() => {
@@ -147,7 +148,7 @@ export default function AskingPage({ admin }) {
   return (
     <div className="space-y-4">
       <div className="card text-sm">
-        <div className="text-base font-extrabold">오늘의 호가 확인 {rows.length}건</div>
+        <div className="text-base font-extrabold">오늘의 호가 확인 {rows.length}건 <span className="text-sm font-normal text-ink/60">· 집중 지역({(settings?.focus || FOCUS_DEFAULT).label})</span></div>
         <p className="mt-1 text-ink/70">매력도 {minScore}점 이상(또는 기회) 물건 중 입찰 마감 2주 안의 것부터 하루 {limit}건을 고릅니다. <b>링크를 눌러 매물 화면을 연 뒤, 북마크바의 "호가 가져오기"를 한 번 누르면</b> 화면의 매매 호가가 읽혀 <b>이 물건과 같은 면적(전용 ±10%)</b>만으로 최저·최고가 자동 저장됩니다. 호갱노노는 검색 목록에서 단지를 한 번 누르고, 아래 "이 단지 매물"까지 내려 매물이 보일 때 누르세요. 📋 표시(디스코·직방·다방)는 누를 때 주소가 복사되니 열린 화면 검색창에 Ctrl+V 하세요. 디스코는 왼쪽 "매물" 탭, 직방은 거래 유형을 "매매"로 바꿔야 매매 호가가 보입니다. (화면 글을 전체 복사한 뒤 "복사한 글로 자동 입력"을 눌러도 됩니다.) 넣은 호가는 가치 검토에 <b>"현재 호가(직접 확인)" × 95%</b>로 들어가 점수·매수상한이 다시 계산됩니다. 확인한 물건은 2주 동안 이 목록에서 빠집니다.</p>
         <p className="mt-1 text-xs text-ink/50">이 화면은 링크만 만들고 남의 사이트에 접속하지 않습니다. 직접 보기 번거로운 날은 대화창에서 "오늘 호가 10건 봐 줘"라고 시키시면 됩니다.</p>
       </div>

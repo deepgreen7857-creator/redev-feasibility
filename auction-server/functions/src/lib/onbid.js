@@ -275,8 +275,17 @@ async function fetchDetails(items, { serviceKey, quota, fetcher, save, enrich, d
 }
 
 // 상세 조회 우선순위: 정비구역 +3, 부평·계양 +2, 파산자산 +1
+// 집중 지역(2026-10-26 인천 서구 가좌동·석남동)은 원문을 가장 먼저 받는다 — 판정 가능한 물건을 먼저 100%로
+const FOCUS = { sido: '인천광역시', sgg: /서구|서해구/, emd: /(가좌동|석남동)(\s|\d|,|\)|$)/ };
+function inFocus(item) {
+  const t = `${item.sgg || ''} ${item.emd || ''} ${item.title || ''} ${item.address || ''}`;
+  return item.sido === FOCUS.sido && FOCUS.sgg.test(t) && FOCUS.emd.test(t);
+}
 function score(item) {
-  let s = 0;
+  let s = inFocus(item) ? 100 : 0;
+  // 입찰일이 가까운 것 먼저(2주 안 +5, 4주 안 +2)
+  const end = String(item.bidEnd || '').replace(/\./g, '-').slice(0, 10);
+  if (end) { const d = (new Date(end) - Date.now()) / 86400e3; if (d >= -1 && d <= 14) s += 5; else if (d <= 28) s += 2; }
   const redev = item.land && item.land.landUse && item.land.landUse.redevelopment;
   if (Array.isArray(redev) && redev.length) s += 3;
   if (/부평구|계양구/.test(item.sgg || '')) s += 2;
@@ -364,4 +373,4 @@ async function fetchResultPage({ sido, prptDivCd, from, to, pageNo, serviceKey, 
   });
 }
 
-module.exports = { placeOf, mapResultRow, fetchResultPage, CAPITAL_SIDO, mapBidInfo, fetchBidInfo, resultFor, DETAIL_VERSION, validPnu, ENDPOINTS, PROPERTY_CODES, BANKRUPT_CODE, partitions, mapListRow, mapDetail, fetchListPage, fetchDetail, fetchDetails, collect, listingId, score };
+module.exports = { inFocus, score, placeOf, mapResultRow, fetchResultPage, CAPITAL_SIDO, mapBidInfo, fetchBidInfo, resultFor, DETAIL_VERSION, validPnu, ENDPOINTS, PROPERTY_CODES, BANKRUPT_CODE, partitions, mapListRow, mapDetail, fetchListPage, fetchDetail, fetchDetails, collect, listingId, score };
