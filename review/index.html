@@ -25,6 +25,41 @@ body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--sans)}
 h1{font-size:24px;margin:0 0 4px;text-wrap:balance}
 .lead{color:var(--muted);margin:0 0 22px;font-size:14px}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-bottom:26px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer;text-align:left;color:inherit;font:inherit;padding:0}
+.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ph{position:relative;aspect-ratio:16/9;max-width:100%;background:var(--bg);display:grid;place-items:center;border-bottom:1px solid var(--line)}
+.ph img{width:100%;height:100%;object-fit:cover}
+.ph svg{width:46%;height:auto;color:var(--muted)}
+.ph .chip{position:absolute;top:10px;left:10px}
+.ph .dday{position:absolute;top:10px;right:10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:1px 8px;font-size:12px}
+.cbody{padding:12px 14px 14px;display:grid;gap:10px}
+.cbody .addr{font-size:15px;line-height:1.35}
+.ladder{display:flex;gap:3px}
+.step{flex:1;min-width:0;border-radius:5px;padding:4px 2px;text-align:center;font-size:10.5px;line-height:1.25;background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.step b{display:block;font-size:11.5px;font-family:var(--mono);font-weight:500}
+.step.past{text-decoration:line-through;opacity:.6}
+.step.cur{border-color:var(--fg);color:var(--fg)}
+.step.between{background:var(--wait-bg);color:var(--wait);border-color:transparent}
+.step.entry{background:var(--go);color:var(--panel);border-color:var(--go)}
+.gauge{position:relative;height:30px;margin-top:2px}
+.gbar{position:absolute;left:0;right:0;top:12px;height:6px;border-radius:3px;background:var(--line)}
+.gmk{position:absolute;top:12px;height:6px;background:var(--accent);opacity:.35;border-radius:3px}
+.gpin{position:absolute;top:6px;width:2px;height:18px;background:var(--fg)}
+.gpin.e{background:var(--go);width:3px}
+.glab{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted)}
+.links{display:flex;gap:12px;font-size:13px}
+.links a{color:var(--accent)}
+h2{font-size:15px;margin:0 0 10px;color:var(--muted)}
+
+.row{grid-template-columns:56px minmax(0,1fr) minmax(0,260px) auto!important;align-items:center;padding:10px 14px!important}
+.th{width:56px;height:56px;border-radius:6px;overflow:hidden;background:var(--bg);display:grid;place-items:center;border:1px solid var(--line)}
+.th img{width:100%;height:100%;object-fit:cover}.th svg{width:34px;color:var(--muted)}
+.row .addr{font-size:15px}.row .flow{margin-top:2px;font-size:13px}
+.ladder.mini .step{padding:3px 1px;font-size:10px}
+.item{margin-bottom:6px!important}
+@media (max-width:640px){.row{grid-template-columns:48px minmax(0,1fr) auto!important}.th{width:48px;height:48px}.ladder.mini{grid-column:1/-1}}
 .item{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:12px}
 .head{display:grid;grid-template-columns:1fr auto;gap:12px;padding:16px 18px;cursor:pointer;width:100%;background:none;border:0;color:inherit;text-align:left;font:inherit}
 .head:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
@@ -78,6 +113,14 @@ function calc(it){
   if(it.assume<=ceiling) entry=rows.find(r=>r.limit>=it.assume)||null;
   return {rows,curK,entry,ceiling};
 }
+
+function rank(it){const c=calc(it);if(!c.entry)return 999;return Math.max(0,c.entry.k-c.curK)}
+function sortItems(d){return d.slice().sort((a,b)=>rank(a)-rank(b)||String((a.rounds[calc(a).curK]||{}).date||'9').localeCompare(String((b.rounds[calc(b).curK]||{}).date||'9')))}
+function mini(it,c){const last=Math.min(MAXK,Math.max(c.entry?c.entry.k:c.curK,c.curK)+1);
+  return c.rows.slice(0,last+1).map(r=>{let cl='step';if(r.k<c.curK)cl+=' past';if(r.k===c.curK)cl+=' cur';
+  if(c.entry&&r.k===c.entry.k)cl+=' entry';else if(c.entry&&r.k>c.curK&&r.k<c.entry.k)cl+=' between';
+  return `<div class="${cl}" title="${rname(r.k)} ${wonFull(r.min)}원">${r.k===0?'최초':r.k+'회'}<b>${Math.round(r.min/1e5)/10}</b></div>`}).join('')}
+
 function render(items){
   const el=document.getElementById('list');
   if(!items.length){el.innerHTML='<p class="note">아직 올린 물건이 없습니다.</p>';return}
@@ -92,11 +135,13 @@ function render(items){
       flow='지금 <b>'+rname(c.curK)+'</b> '+(cur.date||'')+' 최저 <span class="num">'+won(c.rows[c.curK].min)+'</span> → 진입 <b>'+rname(c.entry.k)+'</b> 입찰가 <span class="num">'+wonFull(c.entry.bid)+'원</span>';
     }
     const box=document.createElement('section');box.className='item';
-    box.innerHTML=`<button class="head" id="h${i}" aria-expanded="false">
-      <div><div class="addr">${it.address}</div><div class="sub">${it.id} · ${it.court} · ${it.type} · ${it.area}</div>
-      <div class="flow">${flow}</div></div><div>${chip}</div></button>
+    box.innerHTML=`<button class="head row" id="h${i}" aria-expanded="false">
+      <div class="th">${it.photo?`<img src="${it.photo}" alt="">`:HOUSE}</div>
+      <div class="mid"><div class="addr">${it.address}</div><div class="sub">${it.type} · ${it.id} · ${(cur.date||'').slice(5).replace('-','/')} ${dday(cur.date)}</div><div class="flow">${flow}</div></div>
+      <div class="ladder mini">${mini(it,c)}</div>
+      <div class="st">${chip}</div></button>
       <div class="body" hidden>
-        <div class="sum">${it.summary}</div>
+        <div class="sum">${it.summary}</div><div class="links"><a href="https://map.kakao.com/link/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">카카오맵·로드뷰</a><a href="https://map.naver.com/p/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">네이버지도</a></div>
         <div><h3>회차표 (시세 하한 ${won(it.market.low)}, 비용 ${won(it.costs)}, 목표수익 ${won(it.minProfit)}, 인수 가정 ${won(it.assume)})</h3>
         <div class="tbl"><table><thead><tr><th>회차</th><th>최저가</th><th>입찰가</th><th>취득세 1.1%</th><th>인수 한도</th><th>인수 가정 시 수익</th></tr></thead><tbody>
         ${c.rows.map(r=>`<tr class="${c.entry&&r.k===c.entry.k?'entry':''} ${r.k<c.curK?'past':''}"><td>${rname(r.k)}${(it.rounds[r.k]&&it.rounds[r.k].date)?' · '+it.rounds[r.k].date:''}${r.k<c.curK?' (유찰)':''}</td><td class="num">${wonFull(r.min)}</td><td class="num">${wonFull(r.bid)}</td><td class="num">${wonFull(r.tax)}</td><td class="num">${r.limit>=0?won(r.limit):'없음'}</td><td class="num">${won(r.profit)}</td></tr>`).join('')}
@@ -117,7 +162,42 @@ function render(items){
     h.addEventListener('click',()=>{b.hidden=!b.hidden;h.setAttribute('aria-expanded',String(!b.hidden))});
   });
 }
-fetch('items.json',{cache:'no-store'}).then(r=>r.json()).then(render)
+
+const HOUSE='<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M8 30 32 10l24 20"/><path d="M14 26v28h36V26"/><rect x="21" y="32" width="8" height="8"/><rect x="35" y="32" width="8" height="8"/><path d="M28 54V44h8v10"/></svg>';
+function dday(d){if(!d)return'';const t=new Date(d+'T00:00:00+09:00'),n=new Date();const x=Math.ceil((t-n)/864e5);return x>0?'D-'+x:(x===0?'오늘':'')}
+function cards(items){
+  const el=document.getElementById('cards');el.innerHTML='';
+  items.forEach((it,i)=>{
+    const c=calc(it),cur=it.rounds[c.curK]||{};
+    const left=c.entry?c.entry.k-c.curK:null;
+    const chip=!c.entry?'<span class="chip no">제외</span>':(left<=0?'<span class="chip go">이번 회차 진입</span>':'<span class="chip wait">'+left+'번 더 유찰</span>');
+    const last=Math.max(c.entry?c.entry.k:c.curK,c.curK)+1;
+    const steps=c.rows.slice(0,Math.min(last+1,MAXK+1)).map(r=>{
+      let cl='step';
+      if(r.k<c.curK)cl+=' past'; if(r.k===c.curK)cl+=' cur';
+      if(c.entry&&r.k===c.entry.k)cl+=' entry'; else if(c.entry&&r.k>c.curK&&r.k<c.entry.k)cl+=' between';
+      return `<div class="${cl}">${r.k===0?'최초':r.k+'회'}<b>${Math.round(r.min/1e6*10)/10}</b></div>`}).join('');
+    const max=it.appraisal, pct=v=>Math.max(0,Math.min(100,v/max*100));
+    const curMin=c.rows[c.curK].min, eb=c.entry?c.entry.bid:null;
+    const q=encodeURIComponent(it.address.replace(/\s+\d+동\s+\d+호$/,'').replace(/\s+\S+호$/,''));
+    const card=document.createElement('button');card.className='card';card.type='button';
+    card.innerHTML=`<div class="ph">${it.photo?`<img src="${it.photo}" alt="${it.address} 사진">`:HOUSE}${chip}<span class="dday num">${dday(cur.date)} ${cur.date?cur.date.slice(5).replace('-','/'):''}</span></div>
+      <div class="cbody">
+        <div><div class="addr">${it.address}</div><div class="sub">${it.type} · ${it.id}</div></div>
+        <div><div class="sub" style="margin-bottom:4px">회차 사다리 (최저가, 백만 원)</div><div class="ladder">${steps}</div></div>
+        <div><div class="sub">시세 ${won(it.market.low)}~${won(it.market.high)} 대비</div>
+          <div class="gauge"><div class="gbar"></div><div class="gmk" style="left:${pct(it.market.low)}%;width:${pct(it.market.high)-pct(it.market.low)}%"></div>
+          <div class="gpin" style="left:${pct(curMin)}%" title="지금 최저가"></div>${eb?`<div class="gpin e" style="left:${pct(eb)}%" title="진입 입찰가"></div>`:''}</div>
+          <div class="glab"><span>지금 ${won(curMin)}</span><span>${eb?'진입 '+won(eb):'진입 없음'}</span><span>감정 ${won(max)}</span></div></div>
+        <div class="links"><span>${c.entry?'진입 <b>'+rname(c.entry.k)+'</b> · 입찰 <b class="num">'+wonFull(c.entry.bid)+'</b>':'인수금액 과다'}</span></div>
+        <div class="links"><a href="https://map.kakao.com/link/search/${q}" target="_blank" rel="noopener">카카오맵·로드뷰</a><a href="https://map.naver.com/p/search/${q}" target="_blank" rel="noopener">네이버지도</a></div>
+      </div>`;
+    card.addEventListener('click',e=>{if(e.target.closest('a'))return;const box=document.querySelectorAll('.item')[i];const h=box.querySelector('.head'),b=box.querySelector('.body');b.hidden=false;h.setAttribute('aria-expanded','true');box.scrollIntoView({behavior:'smooth',block:'start'})});
+    el.appendChild(card);
+  });
+}
+
+fetch('items.json',{cache:'no-store'}).then(r=>r.json()).then(d=>render(sortItems(d)))
   .catch(()=>{document.getElementById('list').innerHTML='<p class="note">items.json을 읽지 못했습니다. 같은 폴더에 있는지 확인해 주세요.</p>'});
 </script>
 </body>
