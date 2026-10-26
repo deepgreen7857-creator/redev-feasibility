@@ -10,15 +10,15 @@
 /* 한 줄에 물건 하나: 지금 회차 → 들어갈 회차, 펼치면 회차표·근거 */
 :root{
   --bg:#f5f6f3; --panel:#ffffff; --fg:#1d2420; --muted:#66706a; --line:#dde2dc;
-  --accent:#1f6b4f; --wait:#9a6a12; --wait-bg:#fbf1dc; --go:#1f6b4f; --go-bg:#e0f0e8; --no:#a33a2c; --no-bg:#f8e3df;
+  --accent:#1f6b4f; --wait:#9a6a12; --wait-bg:#fbf1dc; --go:#1f6b4f; --go-bg:#e0f0e8; --no:#a33a2c; --no-bg:#f8e3df; --chk:#2a5d9f;
   --sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif; --mono:"IBM Plex Mono",Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#141916; --panel:#1c231f; --fg:#e4ebe6; --muted:#98a39c; --line:#2d3631;
-  --accent:#6cc39b; --wait:#e2b45a; --wait-bg:#3a2f18; --go:#6cc39b; --go-bg:#183326; --no:#ee8b7c; --no-bg:#3c1f1a; color-scheme:dark}}
+  --accent:#6cc39b; --wait:#e2b45a; --wait-bg:#3a2f18; --go:#6cc39b; --go-bg:#183326; --no:#ee8b7c; --no-bg:#3c1f1a; --chk:#8db8ee; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#141916; --panel:#1c231f; --fg:#e4ebe6; --muted:#98a39c; --line:#2d3631;
-  --accent:#6cc39b; --wait:#e2b45a; --wait-bg:#3a2f18; --go:#6cc39b; --go-bg:#183326; --no:#ee8b7c; --no-bg:#3c1f1a; color-scheme:dark}
+  --accent:#6cc39b; --wait:#e2b45a; --wait-bg:#3a2f18; --go:#6cc39b; --go-bg:#183326; --no:#ee8b7c; --no-bg:#3c1f1a; --chk:#8db8ee; color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--sans)}
 .wrap{max-width:1480px;margin:0 auto;padding-block:28px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
@@ -59,8 +59,12 @@ h2{font-size:15px;margin:0 0 10px;color:var(--muted)}
 #list .item{margin:0!important}
 #list .item:has(.body:not([hidden])){grid-column:1/-1}
 .l1{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.th .ms{position:absolute;top:0;left:0;right:0;font-size:11px;font-weight:600;text-align:center;padding:1px 0}
+.th .ms.ok{background:var(--go);color:var(--panel)}
+.th .ms.est{background:var(--line);color:var(--muted)}
 .th .chip{position:absolute;left:0;right:0;bottom:0;border-radius:0;font-size:11px;padding:1px 0;text-align:center}
 .l1 .addr{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.weak{font-size:12px;font-weight:600;color:var(--chk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
 .l2,.l3{font-size:13px;line-height:1.5;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .l2{color:var(--muted)}
 .th{position:relative;width:96px;height:72px;border-radius:6px;overflow:hidden;background:var(--bg);display:grid;place-items:center;border:1px solid var(--line)}
@@ -122,7 +126,7 @@ function calc(it){
   return {rows,curK,entry,hi,X,D};
 }
 function rank(it){const c=calc(it);if(!c.entry)return 999;return Math.max(0,c.entry.k-c.curK)}
-function sortItems(d){return d.slice().sort((a,b)=>rank(a)-rank(b)||String((a.rounds[calc(a).curK]||{}).date||'9').localeCompare(String((b.rounds[calc(b).curK]||{}).date||'9')))}
+function sortItems(d){return d.slice().sort((a,b)=>(b.marketSure?1:0)-(a.marketSure?1:0)||rank(a)-rank(b)||String((a.rounds[calc(a).curK]||{}).date||'9').localeCompare(String((b.rounds[calc(b).curK]||{}).date||'9')))}
 function mini(it,c){const last=Math.min(MAXK,Math.max(c.entry?c.entry.k:c.curK,c.curK)+1);
   return c.rows.slice(0,last+1).map(r=>{let cl='step';if(r.k<c.curK)cl+=' past';if(r.k===c.curK)cl+=' cur';
   if(c.entry&&r.k===c.entry.k)cl+=' entry';else if(c.entry&&r.k>c.curK&&r.k<c.entry.k)cl+=' between';
@@ -149,10 +153,10 @@ function render(items){
     }
     const box=document.createElement('section');box.className='item';
     box.innerHTML=`<button class="head row" id="h${i}" aria-expanded="false">
-      <div class="th">${it.photo?`<img src="${it.photo}" alt="">`:HOUSE}${chip}</div>
-      <div class="mid"><div class="l1"><span class="addr" title="${it.address}">${it.address.replace(/^인천\s+/,"")}</span></div>${flow}</div></button>
+      <div class="th">${it.photo?`<img src="${it.photo}" alt="">`:HOUSE}<span class="ms ${it.marketSure?'ok':'est'}">${it.marketSure?'시세 확인':'시세 추정'}</span>${chip}</div>
+      <div class="mid">${it.checkLine?`<div class="weak" title="${it.checkLine}">확인 › ${it.checkLine}</div>`:''}<div class="l1"><span class="addr" title="${it.address}">${it.address.replace(/^인천\s+/,"")}</span></div>${flow}</div></button>
       <div class="body" hidden>
-        <div class="sum">${it.summary}</div><div class="links"><a href="https://map.kakao.com/link/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">카카오맵·로드뷰</a><a href="https://map.naver.com/p/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">네이버지도</a></div>
+        <div class="sum">${it.summary}</div>${it.marketReview?`<div><h3>시세 검토</h3><p style="margin:0">${it.marketReview}</p></div>`:''}<div class="links"><a href="https://map.kakao.com/link/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">카카오맵·로드뷰</a><a href="https://map.naver.com/p/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">네이버지도</a></div>
         <div><h3>회차표 · 시세 하한 ${won(it.market.low)}, 비용 ${won(it.costs)}, 목표수익 ${won(it.minProfit)}${c.D?', 선순위 보증금(집행비용 포함) '+won(c.D):''}${it.assume?', 인수 가정 '+won(it.assume):''}</h3>
         <p class="sum" style="margin:0 0 6px">최고입찰가 <span class="num">${c.hi?wonFull(c.hi)+'원':'없음'}</span>${it.bidLo?' · 경쟁 판단: '+it.bidLo.why:''}</p>
         <div class="tbl"><table><thead><tr><th>회차</th><th>최저가</th><th>최저가 입찰 시 인수</th><th>취득세 1.1%</th><th>최저가 입찰 시 수익</th><th>판정</th></tr></thead><tbody>
