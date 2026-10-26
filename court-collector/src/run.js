@@ -201,7 +201,11 @@ async function keepAttachments(page, pace, row, detail) {
   }
   const base2 = files.folderOf(row.court, row.caseNo, row.itemNo || '1');
   let photoNo = (detail.photoData || []).length;
-  for (const name of ['감정평가서', '현황조사서']) {
+  // 감정평가서는 받지 않는다(2026-10-26 결정): 법원 화면 안에서 한국감정평가사협회 뷰어로만 보여 주고
+  //  "무단 복제 및 링크하여 사용하는 경우 형사처벌" 경고가 붙어 있음 + 실제로도 거의 다 못 받으면서 화면 수만 썼음.
+  //  감정평가 내용은 상세 화면의 '감정평가요항표 요약'(appraisalSummary)으로 대신하고, 원문은 법원 사이트에서 직접 본다.
+  //  다시 켜려면 config.json 에 "fetchAppraisal": true (권하지 않음)
+  for (const name of cfg.fetchAppraisal ? ['감정평가서', '현황조사서'] : ['현황조사서']) {
     if (!(detail.documents || []).some((d) => d.name === name)) continue;
     const seenKey = `${row.court}_${squash(row.caseNo)}_${name}`;
     const prev = docSeen[seenKey];
