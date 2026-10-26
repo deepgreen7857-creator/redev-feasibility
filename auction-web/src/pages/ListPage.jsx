@@ -22,7 +22,7 @@ export default function ListPage({ mode }) {
   const [past, setPast] = useState([]); // 낙찰 결과(예상 낙찰가 기준표용) — 낙찰가는 이제 pastResults 에만 있다
   const [settings, setSettings] = useState(null);
   const [dealsMap, setDealsMap] = useState({});
-  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: mode ? 'verdict' : 'end', corpOnly: false, under1: false, showExcluded: false, onlyOpen: true, focus: true });
+  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: mode ? 'verdict' : 'end', corpOnly: false, under1: true, showExcluded: false, onlyOpen: true, focus: true });
   const [error, setError] = useState('');
   const [origin, setOrigin] = useState(null); // 거리 기준 위치
   useEffect(() => { setF((x) => ({ ...x, sort: mode ? 'verdict' : 'end' })); }, [mode]);
@@ -182,7 +182,7 @@ export default function ListPage({ mode }) {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink/70">
           <label className="flex items-center gap-1.5 rounded bg-brand2 px-2 py-0.5 font-bold text-brand"><input type="checkbox" checked={f.focus} onChange={set('focus')} /> 집중 지역만({focusCfg.label})</label>
           <label className="flex items-center gap-1.5 font-bold text-brand"><input type="checkbox" checked={f.corpOnly} onChange={set('corpOnly')} /> 법인 단타 적합만(A·B)</label>
-          <label className="flex items-center gap-1.5 font-bold text-brand" title="수도권 공시가격 1억 이하 주택은 법인도 취득세 중과(12%) 제외 — 정비구역 안은 예외 없음"><input type="checkbox" checked={f.under1} onChange={set('under1')} /> 공시가격 1억 이하 주택만</label>
+          <label className="flex items-center gap-1.5 font-bold text-brand" title="수도권 공시가격 1억 이하 주택은 법인도 취득세 중과(12%) 제외 — 정비구역 안은 예외 없음"><input type="checkbox" checked={f.under1} onChange={set('under1')} /> 법인 취득세 1.1%만(공시가격 1억 이하·정비구역 밖)</label>
           {!done && <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>}
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.showExcluded} onChange={set('showExcluded')} /> 관심 제외 물건도 보기</label>
           {f.sort === 'near' && origin && <span className="text-xs text-ink/60">거리 기준: <b>{origin.label}</b> · 물건 위치는 법정동 중심(대략) — 위치가 아직 없는 물건은 맨 뒤</span>}
@@ -333,7 +333,8 @@ export function notVilla(it) {
 // 공시가격을 아직 못 받은 물건은 최저가 1억 5천 이하일 때만 '확인 필요'로 남긴다.
 function under1(it, a) {
   if (!['apt', 'rh', 'sh', 'offi'].includes(tradeTypeOf(it))) return false;
-  if (a.redev?.length || it.manual?.zone) return false;
+  // 정비구역 안이면 1억 이하라도 법인 중과(12%) — 브이월드 토지이용계획·정비구역 목록·감정평가서 문구 모두 확인
+  if (a.redev?.length || it.manual?.zone || it.redevMatch?.status === 'listed' || it.redevMatch?.status === 'unlisted') return false;
   const hp = it.housePrice?.matched ? it.housePrice.price : null;
   if (hp !== null && hp !== undefined) return hp <= 1e8;
   return (it.minBid || Infinity) <= 1.5e8;
