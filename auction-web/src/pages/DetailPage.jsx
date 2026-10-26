@@ -30,7 +30,7 @@ export default function DetailPage({ admin }) {
       setItem(it); setSettings(s);
       if (it) {
         getZones(it.sido).then((z) => setZones(zonesForListing(it, z.zones))).catch(() => {});
-        const lawd = lawdOf(it.sido, it.sgg);
+        const lawd = lawdOf(it.sido, it.sgg, `${it.emd || ""} ${it.address || ""}`);
         const t = tradeTypeOf(it);
         const own = await getDeals(t, lawd, 12);
         setDeals(own);

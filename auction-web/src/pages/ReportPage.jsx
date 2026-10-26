@@ -38,7 +38,7 @@ export default function ReportPage({ admin }) {
     Promise.all([getListing(decodeURIComponent(id)), getSettings()]).then(async ([it, s]) => {
       if (!it) { setErr('물건을 찾지 못했습니다.'); return; }
       setItem(it); setSettings(s);
-      const lawd = lawdOf(it.sido, it.sgg); const t = tradeTypeOf(it);
+      const lawd = lawdOf(it.sido, it.sgg, `${it.emd || ""} ${it.address || ""}`); const t = tradeTypeOf(it);
       const own = await getDeals(t, lawd, 12); setDeals(own);
       setAptDeals(t === 'apt' ? own : await getDeals('apt', lawd, 12));
       if (['apt', 'rh', 'sh', 'offi'].includes(t)) getDeals(`${t}Rent`, lawd, 12).then(setRentDeals).catch(() => {});

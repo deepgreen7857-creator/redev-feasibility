@@ -622,7 +622,7 @@ exports.aiReviewNow = onCall({ timeoutSeconds: 180, memory: '1GiB', secrets: [AN
   const { analyze, tradeTypeOf } = await import('./shared/analyze.mjs');
   const { DEFAULT_SETTINGS, lawdOf } = await import('./shared/defaults.mjs');
   const st = { ...DEFAULT_SETTINGS, ...settings };
-  const lawd = lawdOf(item.sido, item.sgg); const t = tradeTypeOf(item); const cache = new Map();
+  const lawd = lawdOf(item.sido, item.sgg, `${item.emd || ""} ${item.address || ""}`); const t = tradeTypeOf(item); const cache = new Map();
   const deals = lawd ? await forecast.loadDeals(db, t, lawd, cache) : [];
   const rentDeals = lawd && ['apt', 'rh', 'sh', 'offi'].includes(t) ? await forecast.loadDeals(db, `${t}Rent`, lawd, cache) : [];
   const aptDeals = lawd ? (t === 'apt' ? deals : await forecast.loadDeals(db, 'apt', lawd, cache)) : [];

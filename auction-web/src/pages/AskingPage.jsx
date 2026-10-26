@@ -68,7 +68,7 @@ export default function AskingPage({ admin }) {
     const focus = settings?.focus || FOCUS_DEFAULT;
     return dedupeRounds(items.filter((it) => inFocus(it, focus))).filter((it) => endOf(it) >= t && tradeTypeOf(it) !== 'land');
   }, [items, settings]);
-  const needKeys = useMemo(() => (cands ? [...new Set(cands.map((it) => { const l = lawdOf(it.sido, it.sgg); return l ? `${tradeTypeOf(it)}|${l}` : null; }).filter(Boolean))] : []), [cands]);
+  const needKeys = useMemo(() => (cands ? [...new Set(cands.map((it) => { const l = lawdOf(it.sido, it.sgg, `${it.emd || ""} ${it.address || ""}`); return l ? `${tradeTypeOf(it)}|${l}` : null; }).filter(Boolean))] : []), [cands]);
   const dealsReady = Boolean(cands) && needKeys.every((k) => k in dealsMap);
   useEffect(() => {
     const need = needKeys.filter((k) => !(k in dealsMap));
@@ -87,7 +87,7 @@ export default function AskingPage({ admin }) {
 
   const limit = settings?.askingDaily ?? 10;
   const minScore = settings?.askingMinScore ?? 70;
-  const [analyzed, anaProg] = useChunkedMap(cands && settings && dealsReady ? cands : null, (it) => ({ it, a: analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${lawdOf(it.sido, it.sgg)}`] }) }), [cands, settings, dealsMap, dealsReady]);
+  const [analyzed, anaProg] = useChunkedMap(cands && settings && dealsReady ? cands : null, (it) => ({ it, a: analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${lawdOf(it.sido, it.sgg, `${it.emd || ""} ${it.address || ""}`)}`] }) }), [cands, settings, dealsMap, dealsReady]);
   const rows = useMemo(() => {
     if (!analyzed) return [];
     return analyzed

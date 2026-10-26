@@ -53,7 +53,7 @@ export default function ListPage({ mode }) {
   const needKeys = useMemo(() => {
     if (!scoped) return [];
     const keys = new Set();
-    scoped.forEach((it) => { const l = lawdOf(it.sido, it.sgg); if (!l) return; const t = tradeTypeOf(it); if (villa && t !== 'rh') return; keys.add(`${t}|${l}`); if (villa) keys.add(`${t}Rent|${l}`); });
+    scoped.forEach((it) => { const l = lawdOf(it.sido, it.sgg, `${it.emd || ""} ${it.address || ""}`); if (!l) return; const t = tradeTypeOf(it); if (villa && t !== 'rh') return; keys.add(`${t}|${l}`); if (villa) keys.add(`${t}Rent|${l}`); });
     return [...keys];
   }, [scoped, villa]);
   const dealsReady = Boolean(scoped) && needKeys.every((k) => k in dealsMap);
@@ -87,7 +87,7 @@ export default function ListPage({ mode }) {
       if (stop) return;
       const end = Math.min(list.length, i + 400);
       for (; i < end; i++) {
-        const it = list[i]; const l = lawdOf(it.sido, it.sgg);
+        const it = list[i]; const l = lawdOf(it.sido, it.sgg, `${it.emd || ""} ${it.address || ""}`);
         out.push({ it, a: analyze(it, { settings, deals: dealsMap[`${tradeTypeOf(it)}|${l}`], rentDeals: villa ? dealsMap[`${tradeTypeOf(it)}Rent|${l}`] : undefined, bidPremium: done ? undefined : predictPrice(it, premTable)?.premium }) });
       }
       if (i < list.length) { setAnaProg({ done: i, total: list.length }); setTimeout(step, 0); } else { setAnaProg(null); setAnalyzed(out); }

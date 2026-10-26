@@ -115,7 +115,7 @@ async function run({ db, log = console.log, deadline = Infinity }) {
     const it = { id: doc.id, ...doc.data() };
     if (!beforeBid(it, now)) { stats.frozen++; continue; }
     try {
-      const lawd = lawdOf(it.sido, it.sgg);
+      const lawd = lawdOf(it.sido, it.sgg, `${it.emd || ""} ${it.address || ""}`);
       const deals = lawd ? await loadDeals(db, tradeTypeOf(it), lawd, cache) : [];
       const rl = roundsByKey.get(it.id);
       // 이 회차부터의 회차표(앞 회차는 뺌)
