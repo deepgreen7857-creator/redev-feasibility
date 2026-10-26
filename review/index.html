@@ -53,13 +53,20 @@ h1{font-size:24px;margin:0 0 4px;text-wrap:balance}
 .links a{color:var(--accent)}
 h2{font-size:15px;margin:0 0 10px;color:var(--muted)}
 
-.row{grid-template-columns:56px minmax(0,1fr) minmax(0,260px) auto!important;align-items:center;padding:10px 14px!important}
-.th{width:56px;height:56px;border-radius:6px;overflow:hidden;background:var(--bg);display:grid;place-items:center;border:1px solid var(--line)}
+.row{grid-template-columns:96px minmax(0,1fr)!important;align-items:center;gap:14px!important;padding:12px!important}
+#list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,460px),1fr));gap:10px;align-items:start}
+#list .item{margin:0!important}
+#list .item:has(.body:not([hidden])){grid-column:1/-1}
+.l1{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.l1 .chip{font-size:12px}
+.l2,.l3{font-size:13px;line-height:1.5;margin-top:3px}
+.l2{color:var(--muted)}
+.th{width:96px;height:72px;border-radius:6px;overflow:hidden;background:var(--bg);display:grid;place-items:center;border:1px solid var(--line)}
 .th img{width:100%;height:100%;object-fit:cover}.th svg{width:34px;color:var(--muted)}
-.row .addr{font-size:15px}.row .flow{margin-top:2px;font-size:13px}
+.row .addr{font-size:15px;font-weight:600;line-height:1.35}
 .ladder.mini .step{padding:3px 1px;font-size:10px}
 .item{margin-bottom:6px!important}
-@media (max-width:640px){.row{grid-template-columns:48px minmax(0,1fr) auto!important}.th{width:48px;height:48px}.ladder.mini{grid-column:1/-1}}
+@media (max-width:640px){.row{grid-template-columns:72px minmax(0,1fr)!important}.th{width:72px;height:60px}}
 .item{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:12px}
 .head{display:grid;grid-template-columns:1fr auto;gap:12px;padding:16px 18px;cursor:pointer;width:100%;background:none;border:0;color:inherit;text-align:left;font:inherit}
 .head:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
@@ -128,20 +135,21 @@ function render(items){
   items.forEach((it,i)=>{
     const c=calc(it), cur=it.rounds[c.curK]||{};
     let chip,flow;
-    if(!c.entry){chip='<span class="chip no">제외</span>';flow='인수금액이 시세 한도('+won(c.ceiling)+')보다 큼'}
+    if(!c.entry){chip='<span class="chip no">제외</span>';flow='<div class="l3">인수금액이 시세 한도('+won(c.ceiling)+')보다 커서 몇 번을 유찰돼도 안 됨</div>'}
     else{
       const left=c.entry.k-c.curK;
       chip=left<=0?'<span class="chip go">이번 회차 진입</span>':'<span class="chip wait">'+left+'번 더 유찰 대기</span>';
-      const fails=c.curK, md=(cur.date||'').slice(5).replace('-','/');
-      const state=fails===0?'신건':fails+'회 유찰됨';
-      flow=state+' · 다음 '+md+' 최저 <span class="num">'+won(c.rows[c.curK].min)+'</span> → '+(left<=0?'<b>이번 기일 <span class="num">'+wonFull(c.entry.bid)+'원</span> 입찰</b>':'패스, <b>'+(left===1?'한 번':left+'번')+' 더 유찰되면 <span class="num">'+wonFull(c.entry.bid)+'원</span> 입찰</b>');
+      const fmt=d=>d?d.replace(/-/g,'.')+'.('+'일월화수목금토'[new Date(d+'T12:00:00Z').getUTCDay()]+')':'미정';
+      const dstr=fmt(cur.date), prev=c.curK>0?it.rounds[c.curK-1]:null;
+      const past=prev?fmt(prev.date)+' '+c.curK+'회 유찰됨, ':'신건, ';
+      const when=left<=0?'금회':(left===1?'차회':(left===2?'차차회':left+'회 뒤'));
+      const lo=c.entry.bid, hi=Math.floor(lo*1.03/10000)*10000, chun=n=>Math.round(n/1000).toLocaleString('ko-KR')+'천원';
+      flow='<div class="l2">'+past+'금회 <b>'+dstr+'</b> 최저 <span class="num">'+(c.rows[c.curK].min/10000).toLocaleString('ko-KR')+'만원</span></div><div class="l3">입찰시점 <b>'+when+'</b> · 입찰예정가 <b class="num">'+chun(lo)+'~'+chun(hi)+'</b></div>';
     }
     const box=document.createElement('section');box.className='item';
     box.innerHTML=`<button class="head row" id="h${i}" aria-expanded="false">
       <div class="th">${it.photo?`<img src="${it.photo}" alt="">`:HOUSE}</div>
-      <div class="mid"><div class="addr">${it.address}</div><div class="sub">${it.type} · ${it.id} · ${(cur.date||'').slice(5).replace('-','/')} ${dday(cur.date)}</div><div class="flow">${flow}</div></div>
-      <div class="ladder mini">${mini(it,c)}</div>
-      <div class="st">${chip}</div></button>
+      <div class="mid"><div class="l1"><span class="addr">${it.address}</span>${chip}</div>${flow}</div></button>
       <div class="body" hidden>
         <div class="sum">${it.summary}</div><div class="links"><a href="https://map.kakao.com/link/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">카카오맵·로드뷰</a><a href="https://map.naver.com/p/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">네이버지도</a></div>
         <div><h3>회차표 (시세 하한 ${won(it.market.low)}, 비용 ${won(it.costs)}, 목표수익 ${won(it.minProfit)}, 인수 가정 ${won(it.assume)})</h3>
