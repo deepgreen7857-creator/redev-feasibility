@@ -102,6 +102,7 @@ ul{margin:0;padding-left:18px} li{margin-bottom:3px}
 .l1{justify-content:flex-start;align-items:center}.l1 .addr{flex:1;min-width:0}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:2px 0 0;font-size:14px}.kv dt{color:var(--muted,#667);white-space:nowrap}.kv dd{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.kv .addr{font-weight:600}
 @media (max-width:600px){.kv dd{white-space:normal;overflow:visible}.kv{font-size:13.5px}}
+.dv{font-size:13px;color:var(--muted,#667);margin:2px 0 6px 18px;line-height:1.45}
 </style>
 </head>
 <body>
@@ -141,8 +142,8 @@ function mini(it,c){const last=Math.min(MAXK,Math.max(c.entry?c.entry.k:c.curK,c
 
 const DESK=[['rights','권리(말소기준·대항력·인수)'],['units','평형 구성·본건 평형'],['tax11','공시가격(호별)'],['market','실거래 매매(평형별)'],['rent','전세·월세'],['listings','현재 매물(네이버)'],['arrears','체납 관리비 추정'],['zone','정비구역 여부']];
 const SITE=['점유 상태(빈집·거주자·우편물)','체납 관리비 — 관리사무소 문의','누수·결로·외벽·옥상, 반지하 여부','주차·승강기·단지 관리 상태','인근 중개사무소 매도 호가·"얼마면 팔리나"'];
-function frame(it){const ok=k=>{const v=it[k];if(k==='tax11')return v&&!/미확인|확인 필요|추정/.test(v);if(k==='market')return !!it.marketSure;if(k==='rights')return Array.isArray(v)&&v.length;return v&&String(v).length>0};
- const desk=DESK.map(([k,l])=>`<li><b style="color:${ok(k)?'var(--go)':'var(--muted)'}">${ok(k)?'✓':'미확인'}</b> ${l}${(k!=='rights'&&k!=='market'&&k!=='tax11'&&it[k])?' — '+it[k]:''}</li>`).join('');
+function frame(it){const ok=k=>{const v=it[k];if(k==='tax11')return v&&!/미확인|확인 필요|추정/.test(v);if(k==='market')return !!it.marketSure;if(k==='rights')return Array.isArray(v)&&v.length;return v&&String(v).length>0&&!/^조회 불가|^추정 불가/.test(String(v))};
+ const desk=DESK.map(([k,l])=>`<li><b style="color:${ok(k)?'var(--go)':'var(--muted)'}">${ok(k)?'✓':(it[k]?'✗':'미조사')}</b> ${l}${(k!=='rights'&&k!=='market'&&k!=='tax11'&&it[k])?'<div class="dv">'+it[k]+'</div>':''}</li>`).join('');
  const site=SITE.map((l,i)=>{const d=(it.site||{})[i];return `<li><b style="color:${d?'var(--go)':'var(--muted)'}">${d?'✓':'□'}</b> ${l}${d?' — '+d:''}</li>`}).join('');
  return `<div class="cols"><div><h3>서류 점검(Claude)</h3><ul style="list-style:none;padding-left:0">${desk}</ul></div><div><h3>현장 점검(정민님)</h3><ul style="list-style:none;padding-left:0">${site}</ul></div><div><h3>판단 기록</h3><ul style="list-style:none;padding-left:0"><li><b>Claude</b> — ${it.summary}</li><li><b>정민님</b> — ${it.myJudgment||'미기록'}</li><li><b>결과</b> — ${it.prediction.actual||'기일 전'}</li></ul></div></div>`}
 
