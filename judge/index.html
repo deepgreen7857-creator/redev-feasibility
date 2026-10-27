@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>판단기록장</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+:root{--bg:#f5f6f3;--panel:#fff;--fg:#1d2420;--muted:#66706a;--line:#dde2dc;--go:#1f6b4f;--go-bg:#e0f0e8;--wait:#9a6a12;--wait-bg:#fbf1dc;--no:#a33a2c;
+--sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;--mono:"IBM Plex Mono",Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141916;--panel:#1c231f;--fg:#e4ebe6;--muted:#98a39c;--line:#2d3631;--go:#6cc39b;--go-bg:#183326;--wait:#e2b45a;--wait-bg:#3a2f18;--no:#ee8b7c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#141916;--panel:#1c231f;--fg:#e4ebe6;--muted:#98a39c;--line:#2d3631;--go:#6cc39b;--go-bg:#183326;--wait:#e2b45a;--wait-bg:#3a2f18;--no:#ee8b7c;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--sans)}
+.wrap{max-width:980px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:24px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13.5px;margin:0 0 22px}
+.sub a{color:var(--go)}
+.day{margin:0 0 30px}
+.day h2{font-size:18px;margin:0 0 4px}
+.day .note{color:var(--muted);font-size:13px;margin:0 0 12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:0 0 12px}
+.top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.rk{font-family:var(--mono);font-weight:700;color:var(--go);font-size:18px}
+.addr{font-weight:700;font-size:16px}
+.tp{font-size:12px;font-weight:700;padding:1px 6px;border-radius:4px;background:var(--go-bg);color:var(--go)}
+.case{color:var(--muted);font-size:13px}
+.nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px;margin:10px 0;padding:10px 0;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}
+.nums div{font-size:13px;color:var(--muted)}.nums b{display:block;font-family:var(--mono);font-size:15px;color:var(--fg)}
+.st{display:inline-block;font-size:12.5px;font-weight:700;padding:1px 8px;border-radius:10px}
+.st.go{background:var(--go-bg);color:var(--go)}.st.wait{background:var(--wait-bg);color:var(--wait)}.st.no{color:var(--no)}
+h3{font-size:13.5px;margin:10px 0 2px;color:var(--muted)}
+ul{margin:0;padding-left:18px}li{margin:1px 0}
+.why{margin:6px 0 0}
+details{margin-top:8px}summary{cursor:pointer;color:var(--go);font-size:13.5px}
+.rec{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:14px;margin-top:6px}.rec dt{color:var(--muted)}.rec dd{margin:0}
+@media (max-width:600px){.addr{font-size:15px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>판단기록장</h1>
+<p class="sub">review에서 Claude가 가장 자신 있는 물건 하루 5건. 최저입찰가 = 그 회차 최저가 + 1만 원, 법인 취득세 1.1% 물건만. 회차·결과는 review 자료를 따라 자동으로 바뀝니다. · <a href="../review/">입찰 판단표(review) 전체 보기</a></p>
+<div id="list">불러오는 중입니다.</div>
+</div>
+<script>
+const RATE=0.7,MAXK=6;
+const man=n=>Math.round(n/10000).toLocaleString('ko-KR')+'만';
+const rname=k=>k===0?'최초':k+'회 유찰';
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function calc(it){
+  const low=it.market.low,D=it.priorDeposit||0,A=it.assume||0;
+  const X=(low-it.costs-it.minProfit)/1.011;
+  let hi=D?(X>=D?X:-1):X-A; hi=hi>0?Math.floor(hi/10000)*10000:0;
+  const rows=[];let min=it.appraisal;
+  for(let k=0;k<=Math.max(MAXK,it.rounds.length+1);k++){
+    if(k>0)min=Math.floor(Math.round(min*RATE)/1000)*1000;
+    const bid=min+10000,take=D?Math.max(0,D-bid):A,total=bid+take,tax=Math.round(total*0.011);
+    rows.push({k,min,bid,take,total,tax,profit:low-total-tax-it.costs,ok:hi>0&&bid<=hi});
+  }
+  const cur=it.rounds.findIndex(r=>r.result!=='유찰');const curK=cur<0?it.rounds.length:cur;
+  const entry=it.taxFail?null:(rows.find(r=>r.k>=curK&&r.ok)||null);
+  return {rows,curK,entry,hi};
+}
+function card(p,it){
+  if(!it)return `<div class="card"><span class="rk">${p.rank}</span> ${esc(p.id)} — review에서 빠진 물건</div>`;
+  const c=calc(it),r=it.rounds[c.curK]||{},cr=c.rows[c.curK],e=c.entry;
+  let st;if(it.prediction&&it.prediction.actual)st=`<span class="st no">${esc(it.prediction.actual)}</span>`;
+  else if(e&&e.k===c.curK)st='<span class="st go">금회 진입</span>';
+  else if(e)st=`<span class="st wait">${e.k-c.curK}번 더 유찰 뒤 (${rname(e.k)})</span>`;else st='<span class="st no">진입 불가</span>';
+  const basis=(it.market.basis||[]).map(b=>`<li>${esc(b)}</li>`).join('');
+  const rights=(it.rights||[]).map(b=>`<li>${esc(b)}</li>`).join('');
+  const open=(p.open||[]).map(b=>`<li>${esc(b)}</li>`).join('');
+  return `<div class="card">
+<div class="top"><span class="rk">${p.rank}</span><span class="addr">${esc(it.address.replace(/^인천 /,''))}</span><span class="tp">${esc(it.type)}</span> ${st}</div>
+<div class="case">${esc(it.id)} · ${esc(it.court)} · ${esc(it.area)}</div>
+<div class="nums">
+<div>금회<b>${rname(c.curK)} ${esc((r.date||'').slice(5).replace('-','.'))}</b></div>
+<div>금회 최저가<b>${cr?man(cr.min):'-'}</b></div>
+<div>입찰예정가<b>${e?man(e.bid)+' ~ '+man(c.hi):'-'}</b></div>
+<div>시세<b>${man(it.market.low)} ~ ${man(it.market.high)}</b></div>
+<div>최저입찰가 낙찰 시 수익<b>${e?man(e.profit):'-'}</b></div>
+<div>감정가<b>${man(it.appraisal)}</b></div>
+</div>
+<h3>왜 자신 있나</h3><p class="why">${esc(p.why)}</p>
+<h3>그래도 남은 확인</h3><ul>${open}</ul>
+<details><summary>시세 근거·권리·기준선</summary>
+<h3>시세 근거</h3><ul>${basis}</ul>
+<h3>시세 판단·결론이 뒤집히는 기준선</h3><p class="why">${esc(it.marketReview||'')}</p>
+<h3>권리</h3><ul>${rights}</ul>
+<h3>공시가·취득세</h3><p class="why">${esc(it.tax11||'')}</p>
+</details>
+<dl class="rec">
+<dt>Claude</dt><dd>${esc(it.summary)}</dd>
+<dt>정민님</dt><dd>${esc(it.myJudgment||'미기록')}</dd>
+<dt>임장</dt><dd>${esc(it.visit||'전')}</dd>
+<dt>결과</dt><dd>${esc((it.prediction&&it.prediction.actual)||'기일 전')}</dd>
+</dl></div>`;
+}
+Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/items.json',{cache:'no-store'}).then(r=>r.json())]).then(([days,items])=>{
+  const by={};items.forEach(x=>by[x.id]=x);
+  days.sort((a,b)=>b.date.localeCompare(a.date));
+  document.getElementById('list').innerHTML=days.map(d=>`<section class="day"><h2>${esc(d.date)} 선정 ${d.picks.length}건</h2><p class="note">${esc(d.note||'')}</p>${d.picks.slice().sort((a,b)=>a.rank-b.rank).map(p=>card(p,by[p.id])).join('')}</section>`).join('');
+}).catch(e=>{document.getElementById('list').textContent='불러오지 못했습니다: '+e});
+</script>
+</body>
+</html>
