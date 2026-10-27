@@ -76,3 +76,12 @@ npm run jauction-login     # 처음 한 번(로그인 풀리면 다시)
 npm run jauction-test      # 1사건만 state\jauction-test 에(시간대 제한 없음)
 powershell -ExecutionPolicy Bypass -File .\install-jauction-task.ps1   # 매일 10:20·19:20
 ```
+
+## 경매 자료 보기 화면 (src/viewer.js, 본인 전용)
+원본 보관 하드(`법원경매원본`)를 **읽기만** 하는 화면. 사건번호를 누르면 감정평가서·매각물건명세서·현황조사서 PDF, 현장사진, 글자 문서가 한 화면에 뜸. 사이트에는 올리지 않음.
+- `자료보기.cmd` 더블클릭 → 브라우저에서 http://localhost:8787 (이 PC에서만 열림)
+- `자료보기-집안네트워크.cmd` → 같은 공유기에 붙은 노트북에서도 열림(창에 주소가 뜸, 사설 IP만 허용). 처음에 윈도 방화벽 창이 뜨면 '개인 네트워크'만 허용
+```powershell
+npm run viewer        # 이 PC에서만
+npm run viewer-lan    # 집 안 네트워크(노트북)까지
+```
