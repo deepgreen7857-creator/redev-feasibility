@@ -97,8 +97,11 @@ h3{font-size:13px;color:var(--muted);margin:0 0 6px;letter-spacing:.03em}
 ul{margin:0;padding-left:18px} li{margin-bottom:3px}
 .note{font-size:13px;color:var(--muted)}
 .pred{font-size:14px}
-.tp{display:inline-block;font-size:12px;font-weight:700;padding:1px 6px;margin-right:6px;border-radius:4px;background:var(--tp-bg,#e8eefc);color:var(--tp-fg,#2a4db0);vertical-align:1px}
+.tp{display:inline-block;white-space:nowrap;flex:none;font-size:12px;font-weight:700;padding:1px 6px;margin-right:6px;border-radius:4px;background:var(--tp-bg,#e8eefc);color:var(--tp-fg,#2a4db0);vertical-align:1px}
 @media (prefers-color-scheme:dark){.tp{--tp-bg:#26324f;--tp-fg:#a9bdf5}}
+.l1{justify-content:flex-start;align-items:center}.l1 .addr{flex:1;min-width:0}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:2px 0 0;font-size:14px}.kv dt{color:var(--muted,#667);white-space:nowrap}.kv dd{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.kv .addr{font-weight:600}
+@media (max-width:600px){.kv dd{white-space:normal;overflow:visible}.kv{font-size:13.5px}}
 </style>
 </head>
 <body>
@@ -118,7 +121,7 @@ function calc(it){
   let hi=D? (X>=D?X:-1) : X-A;                          // 최고입찰가
   hi=hi>0?Math.floor(hi/10000)*10000:0;
   const rows=[]; let min=it.appraisal;
-  for(let k=0;k<=MAXK;k++){
+  for(let k=0;k<=Math.max(MAXK,it.rounds.length+1);k++){
     if(k>0) min=Math.floor(Math.round(min*RATE)/1000)*1000;
     const bid=min+10000, take=D?Math.max(0,D-bid):A, total=bid+take, tax=Math.round(total*0.011);
     rows.push({k,min,bid,take,tax,profit:low-total-tax-it.costs,ok:hi>0&&bid<=hi});
@@ -150,22 +153,27 @@ function render(items){
   items.forEach((it,i)=>{
     const c=calc(it), cur=it.rounds[c.curK]||{};
     let chip,flow;
-    if(!c.entry){chip='<span class="chip no">제외</span>';flow='<div class="l2">'+(it.excludeNote||'')+'</div><div class="l3">'+(it.taxFail?'공시가격 1억 초과 — 법인 1.1% 대상 아님':'비용·인수 합계가 시세 한도를 넘어 유찰돼도 안 됨')+'</div>'}
+    const fmt=d=>d?d.replace(/-/g,'.')+'.('+'일월화수목금토'[new Date(d+'T12:00:00Z').getUTCDay()]+')':'미정';
+    const chun=n=>Math.round(n/1000).toLocaleString('ko-KR')+'천원';
+    const prev=c.curK>0?it.rounds[c.curK-1]:null;
+    const R=(k,v)=>'<dt>'+k+'</dt><dd>'+v+'</dd>';
+    let rows=R('물건종류',kind(it.type)+(it.typeNote?' · '+it.typeNote:''))+R('주소','<span class="addr" title="'+it.address+'">'+it.address.replace(/^인천\s+/,'')+'</span>');
+    rows+=R('유찰내용',prev?fmt(prev.date)+' '+c.curK+'회 유찰':'신건');
+    rows+=R('금회입찰',fmt(cur.date)+' · 최저가 <b class="num">'+chun(c.rows[c.curK].min)+'</b>');
+    if(!c.entry){chip='<span class="chip no">제외</span>';rows+=R('입찰시점','<b>제외</b> — '+(it.taxFail?'공시가격 1억 초과(법인 1.1% 대상 아님)':(it.excludeNote||'비용·인수 합계가 시세 한도를 넘음')));}
     else{
       const left=c.entry.k-c.curK;
       chip=left<=0?'<span class="chip go">금회 진입</span>':'<span class="chip wait">'+left+'번 더 유찰</span>';
-      const fmt=d=>d?d.replace(/-/g,'.')+'.('+'일월화수목금토'[new Date(d+'T12:00:00Z').getUTCDay()]+')':'미정';
-      const sh=d=>d?d.slice(5).replace('-','.')+'('+'일월화수목금토'[new Date(d+'T12:00:00Z').getUTCDay()]+')':'미정';
-      const dstr=sh(cur.date), prev=c.curK>0?it.rounds[c.curK-1]:null;
-      const past=prev?sh(prev.date)+' '+c.curK+'회 유찰됨 · ':'신건 · ';
       const when=left<=0?'금회':(left===1?'차회':(left===2?'차차회':left+'회 뒤'));
-      const lo=c.entry.bid, hi=c.hi, chun=n=>Math.round(n/1000).toLocaleString('ko-KR')+'천원';
-      flow='<div class="l2">'+past+'금회 <b>'+dstr+'</b> <span class="num">'+(c.rows[c.curK].min/10000).toLocaleString('ko-KR')+'만원</span></div><div class="l3">입찰시점 <b>'+when+'</b> · 입찰예정가 <b class="num">'+(Math.round(lo/1000)).toLocaleString('ko-KR')+'~'+chun(hi)+'</b></div>';
+      const ed=it.rounds[c.entry.k]&&it.rounds[c.entry.k].date;
+      rows+=R('입찰시점','<b>'+when+'</b>'+(left>0?' ('+rname(c.entry.k)+(ed?' · '+fmt(ed):'')+', 최저가 '+chun(c.entry.min)+')':''));
+      rows+=R('입찰예정가','<b class="num">'+Math.round(c.entry.bid/1000).toLocaleString('ko-KR')+'~'+chun(c.hi)+'</b>');
     }
+    flow='<dl class="kv">'+rows+'</dl>';
     const box=document.createElement('section');box.className='item';
     box.innerHTML=`<button class="head row" id="h${i}" aria-expanded="false">
       <div class="th">${it.photo?`<img src="${it.photo}" alt="">`:HOUSE}<span class="ms ${it.marketSure?'ok':'est'}">${it.marketSure?'실거래 확인':'시세 추정'}</span>${chip}</div>
-      <div class="mid">${it.checkLine?`<div class="weak" title="${it.checkLine}">확인 › ${it.checkLine}</div>`:''}<div class="l1"><span class="tp">${kind(it.type)}${it.typeNote?' · '+it.typeNote:''}</span><span class="addr" title="${it.address}">${it.address.replace(/^인천\s+/,"")}</span></div>${flow}</div></button>
+      <div class="mid">${it.checkLine?`<div class="weak" title="${it.checkLine}">확인 › ${it.checkLine}</div>`:''}${flow}</div></button>
       <div class="body" hidden>
         <div class="sum">${it.summary}</div>${frame(it)}${it.marketReview?`<div><h3>시세 검토</h3><p style="margin:0">${it.marketReview}</p></div>`:''}<div class="links"><a href="https://map.kakao.com/link/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">카카오맵·로드뷰</a><a href="https://map.naver.com/p/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">네이버지도</a></div>
         <div><h3>회차표 · 시세 하한 ${won(it.market.low)}, 비용 ${won(it.costs)}, 목표수익 ${won(it.minProfit)}${c.D?', 선순위 보증금(집행비용 포함) '+won(c.D):''}${it.assume?', 인수 가정 '+won(it.assume):''}</h3>
