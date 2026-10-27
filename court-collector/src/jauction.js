@@ -13,6 +13,7 @@
 //  보통 실행:  node src/jauction.js          (작업 스케줄러: start-jauction.cmd)
 //  처음 한 번:  npm run jauction-login   → 뜬 창에서 제이옥션 로그인(본인이 직접) → 로그인되면 저장하고 창이 저절로 닫힘
 //              (제이옥션은 회원만 상세·감정평가서·사진을 보여 준다. 로그인 쿠키는 state/jauction-cookies.json)
+//  지금 시작:  npm run jauction-now        (시간대 제한 없이 바로, 하루 40사건·사람 속도는 그대로)
 //  시험:       node src/jauction.js --limit 1 --dry     (1사건만, state/jauction-test 에 저장, 시간대 제한 없음)
 //              node src/jauction.js --case 2026타경503672
 import fs from 'node:fs';
@@ -25,6 +26,8 @@ const args = process.argv.slice(2);
 const arg = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
 const DRY = args.includes('--dry');
 const LOGIN = args.includes('--login');
+const NOW = args.includes('--now'); // 손으로 '지금 시작'할 때: 시간대 제한만 건너뜀(하루 한도·속도는 그대로)
+const anyHour = DRY || NOW;
 const LIMIT = Number(arg('--limit')) || Infinity;
 
 const cfgAll = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
@@ -289,7 +292,7 @@ async function main() {
   log(`시작 — 보관 폴더 ${ARCHIVE}${DRY ? ' (시험)' : ''}, 오늘 ${today}/${cfg.dailyMax}사건`);
   let n = 0;
   try {
-    if (!DRY && !inHours()) return log('쉬는 시간대 — 다음 실행에 이어서');
+    if (!anyHour && !inHours()) return log('쉬는 시간대 — 다음 실행에 이어서');
     if (!(await loggedIn())) throw new NeedLogin('제이옥션 로그인 안 됨 — 미니PC에서 npm run jauction-login 으로 한 번 로그인하세요(본인이 직접)');
     let idxs;
     if (arg('--case')) {
@@ -304,7 +307,7 @@ async function main() {
     for (const idx of todo) {
       if (n >= LIMIT) break;
       if (today >= cfg.dailyMax) { log('오늘 한도 — 내일 이어서'); break; }
-      if (!DRY && !inHours()) { log('쉬는 시간대 — 다음 실행에 이어서'); break; }
+      if (!anyHour && !inHours()) { log('쉬는 시간대 — 다음 실행에 이어서'); break; }
       if (n > 0) await pause('itemSeconds');
       try {
         const it = await readItem(idx);
