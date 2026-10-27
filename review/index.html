@@ -97,6 +97,8 @@ h3{font-size:13px;color:var(--muted);margin:0 0 6px;letter-spacing:.03em}
 ul{margin:0;padding-left:18px} li{margin-bottom:3px}
 .note{font-size:13px;color:var(--muted)}
 .pred{font-size:14px}
+.tp{display:inline-block;font-size:12px;font-weight:700;padding:1px 6px;margin-right:6px;border-radius:4px;background:var(--tp-bg,#e8eefc);color:var(--tp-fg,#2a4db0);vertical-align:1px}
+@media (prefers-color-scheme:dark){.tp{--tp-bg:#26324f;--tp-fg:#a9bdf5}}
 </style>
 </head>
 <body>
@@ -109,6 +111,7 @@ const RATE=0.7, MAXK=6;
 const won=n=>(Math.round(n/10000)).toLocaleString('ko-KR')+'만';
 const wonFull=n=>n.toLocaleString('ko-KR');
 const rname=k=>k===0?'최초':k+'회 유찰';
+const kind=t=>{t=t||'';const L=t.match(/^(대지|대|전|답|과수원|임야|잡종지|주차장|도로|구거|창고용지|공장용지)(\(|$|\s)/);if(L)return '토지('+(L[1]==='대'?'대지':L[1])+')';if(/^토지/.test(t))return t;if(/아파트형공장|지식산업/.test(t))return '아파트형공장';if(/아파트/.test(t))return '아파트';if(/오피스텔/.test(t))return '오피스텔';if(/다가구|단독|^주택/.test(t))return '단독·다가구';if(/연립/.test(t))return '연립';if(/다세대|빌라/.test(t))return '다세대(빌라)';if(/근린|상가/.test(t))return '근린상가';return t;};
 function calc(it){
   const low=it.market.low, D=it.priorDeposit||0, A=it.assume||0;
   const X=(low-it.costs-it.minProfit)/1.011;          // 총투입(낙찰가+인수) 한도
@@ -161,8 +164,8 @@ function render(items){
     }
     const box=document.createElement('section');box.className='item';
     box.innerHTML=`<button class="head row" id="h${i}" aria-expanded="false">
-      <div class="th">${it.photo?`<img src="${it.photo}" alt="">`:HOUSE}<span class="ms ${it.marketSure?'ok':'est'}">${it.marketSure?'시세 확인':'시세 추정'}</span>${chip}</div>
-      <div class="mid">${it.checkLine?`<div class="weak" title="${it.checkLine}">확인 › ${it.checkLine}</div>`:''}<div class="l1"><span class="addr" title="${it.address}">${it.address.replace(/^인천\s+/,"")}</span></div>${flow}</div></button>
+      <div class="th">${it.photo?`<img src="${it.photo}" alt="">`:HOUSE}<span class="ms ${it.marketSure?'ok':'est'}">${it.marketSure?'실거래 확인':'시세 추정'}</span>${chip}</div>
+      <div class="mid">${it.checkLine?`<div class="weak" title="${it.checkLine}">확인 › ${it.checkLine}</div>`:''}<div class="l1"><span class="tp">${kind(it.type)}${it.typeNote?' · '+it.typeNote:''}</span><span class="addr" title="${it.address}">${it.address.replace(/^인천\s+/,"")}</span></div>${flow}</div></button>
       <div class="body" hidden>
         <div class="sum">${it.summary}</div>${frame(it)}${it.marketReview?`<div><h3>시세 검토</h3><p style="margin:0">${it.marketReview}</p></div>`:''}<div class="links"><a href="https://map.kakao.com/link/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">카카오맵·로드뷰</a><a href="https://map.naver.com/p/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">네이버지도</a></div>
         <div><h3>회차표 · 시세 하한 ${won(it.market.low)}, 비용 ${won(it.costs)}, 목표수익 ${won(it.minProfit)}${c.D?', 선순위 보증금(집행비용 포함) '+won(c.D):''}${it.assume?', 인수 가정 '+won(it.assume):''}</h3>
