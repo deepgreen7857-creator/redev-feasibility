@@ -34,14 +34,14 @@ h3{font-size:13.5px;margin:10px 0 2px;color:var(--muted)}
 ul{margin:0;padding-left:18px}li{margin:1px 0}
 .why{margin:6px 0 0}
 details{margin-top:8px}summary{cursor:pointer;color:var(--go);font-size:13.5px}
-.rec{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:14px;margin-top:6px}.rec dt{color:var(--muted)}.rec dd{margin:0}
+.rep{border:1px solid var(--line);border-radius:8px;padding:6px 12px 10px;margin:10px 0}.rep .rec dd{margin-bottom:6px}.rec{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:14px;margin-top:6px}.rec dt{color:var(--muted)}.rec dd{margin:0}
 @media (max-width:600px){.addr{font-size:15px}}
 </style>
 </head>
 <body>
 <div class="wrap">
 <h1>판단기록장</h1>
-<p class="sub">review에서 Claude가 가장 자신 있는 물건 하루 5건. 최저입찰가 = 그 회차 최저가 + 1만 원, 법인 취득세 1.1% 물건만. 회차·결과는 review 자료를 따라 자동으로 바뀝니다. · <a href="../review/">입찰 판단표(review) 전체 보기</a></p>
+<p class="sub">자료가 다 채워진 물건 중 시세가 확정되고 수익이 확실한 5건, 물건마다 Claude 검토서. 최저입찰가 = 그 회차 최저가 + 1만 원, 법인 취득세 1.1% 물건만. 회차·결과는 review 자료를 따라 자동으로 바뀝니다. · <a href="../review/">입찰 판단표(review) 전체 보기</a></p>
 <div id="list">불러오는 중입니다.</div>
 </div>
 <script>
@@ -84,7 +84,7 @@ function card(p,it){
 <div>감정가<b>${man(it.appraisal)}</b></div>
 </div>
 <h3>왜 자신 있나</h3><p class="why">${esc(p.why)}</p>
-<h3>그래도 남은 확인</h3><ul>${open}</ul>
+${p.report?'<div class="rep"><h3>Claude 검토서</h3><dl class="rec">'+Object.entries(p.report).map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd>').join('')+'</dl></div>':''}${open?'<h3>그래도 남은 확인</h3><ul>'+open+'</ul>':''}
 <details><summary>시세 근거·권리·기준선</summary>
 <h3>시세 근거</h3><ul>${basis}</ul>
 <h3>시세 판단·결론이 뒤집히는 기준선</h3><p class="why">${esc(it.marketReview||'')}</p>
@@ -101,7 +101,7 @@ function card(p,it){
 Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/items.json',{cache:'no-store'}).then(r=>r.json())]).then(([days,items])=>{
   const by={};items.forEach(x=>by[x.id]=x);
   days.sort((a,b)=>b.date.localeCompare(a.date));
-  document.getElementById('list').innerHTML=days.map(d=>`<section class="day"><h2>${esc(d.date)} 선정 ${d.picks.length}건</h2><p class="note">${esc(d.note||'')}</p>${d.picks.slice().sort((a,b)=>a.rank-b.rank).map(p=>card(p,by[p.id])).join('')}</section>`).join('');
+  document.getElementById('list').innerHTML=days.map(d=>`<section class="day"><h2>${esc(d.date)} 선정 ${d.picks.length}건</h2><p class="note">${esc(d.note||'')}</p>${d.picks.length?d.picks.slice().sort((a,b)=>a.rank-b.rank).map(p=>card(p,by[p.id])).join(''):'<div class="card">오늘 기준을 모두 통과한 물건이 없습니다.</div>'}${(d.dropped||[]).length?'<details class="card"><summary>탈락 '+d.dropped.length+'건과 이유</summary><ul>'+d.dropped.map(x=>'<li>'+esc((by[x.id]||{}).address||x.id)+' — '+esc(x.why)+'</li>').join('')+'</ul></details>':''}</section>`).join('');
 }).catch(e=>{document.getElementById('list').textContent='불러오지 못했습니다: '+e});
 </script>
 </body>
