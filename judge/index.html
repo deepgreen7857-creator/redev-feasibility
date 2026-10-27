@@ -98,8 +98,8 @@ ${p.report?'<div class="rep"><h3>Claude 검토서</h3><dl class="rec">'+Object.e
 <dt>결과</dt><dd>${esc((it.prediction&&it.prediction.actual)||'기일 전')}</dd>
 </dl></div>`;
 }
-Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/items.json',{cache:'no-store'}).then(r=>r.json())]).then(([days,items])=>{
-  const by={};items.forEach(x=>by[x.id]=x);
+Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/items.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/land.json',{cache:'no-store'}).then(r=>r.json()).catch(()=>[])]).then(([days,items,land])=>{
+  const by={};items.forEach(x=>by[x.id]=x);land.forEach(x=>{if(!x.market)x.market={low:0,high:0,basis:[]};x.rounds=x.rounds||[];x.costs=x.costs||0;x.minProfit=x.minProfit||0;x.type=x.type||('토지('+(x.jimok||'')+')');by['L:'+x.id]=x});
   days.sort((a,b)=>b.date.localeCompare(a.date));
   document.getElementById('list').innerHTML=days.map(d=>`<section class="day"><h2>${esc(d.date)} 선정 ${d.picks.length}건</h2><p class="note">${esc(d.note||'')}</p>${d.picks.length?d.picks.slice().sort((a,b)=>a.rank-b.rank).map(p=>card(p,by[p.id])).join(''):'<div class="card">오늘 기준을 모두 통과한 물건이 없습니다.</div>'}${(d.dropped||[]).length?'<details class="card"><summary>탈락 '+d.dropped.length+'건과 이유</summary><ul>'+d.dropped.map(x=>'<li>'+esc((by[x.id]||{}).address||x.id)+' — '+esc(x.why)+'</li>').join('')+'</ul></details>':''}</section>`).join('');
 }).catch(e=>{document.getElementById('list').textContent='불러오지 못했습니다: '+e});

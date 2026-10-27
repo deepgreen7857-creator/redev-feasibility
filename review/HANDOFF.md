@@ -67,3 +67,11 @@
 - 중간 메시지도 한글로 쓴다. git 명령은 코드블록으로 준다.
 - 사용자가 올린 파일은 검토에만 쓰고 외부(아티팩트 등)에 노출하지 않는다.
 - 로그인·비밀번호 입력은 Claude가 하지 않는다.
+
+## 공시가격 API (2026.10.27 확인)
+- 브이월드 `getApartHousingPriceAttr`(공동주택가격속성조회)로 **호별 공시가**가 나온다. 아파트뿐 아니라 연립·다세대도 포함된다.
+- 키는 js/config.js의 VWORLD_KEY이고 www.jbslab.co.kr 도메인 전용이다. 그래서 크롬에서 www.jbslab.co.kr 페이지를 연 뒤 javascript_tool로 JSONP 호출한다(fetch는 CORS 때문에 안 됨).
+  - 주소 → PNU: `https://api.vworld.kr/req/search?service=search&request=search&version=2.0&type=address&category=parcel&format=json&query=<주소>&key=&domain=www.jbslab.co.kr&callback=`
+  - 공시가: `https://api.vworld.kr/ned/data/getApartHousingPriceAttr?pnu=<19자리>&stdrYear=2026&numOfRows=100&pageNo=1&format=json&key=&domain=www.jbslab.co.kr&callback=` → 결과의 field[].dongNm, hoNm, prvuseAr(전용㎡), pblntfPc(원)
+- **주의(인천 서구 → 서해구 개편)**: 검색은 새 코드(28275…)로 PNU를 주지만, 공시가 자료는 옛 서구 코드(28260)로 저장돼 있다. 예: 석남동은 옛 법정동코드 2826011000이다(에버그린 497-6 → PNU 2826011000104970006, 2026 501호 9,870만으로 열람값과 일치). 새 코드로 결과가 0건이면 옛 구 코드로 다시 조회한다. 다른 개편 지역도 같은 방식으로 처리한다.
+- 결과가 열람(realtyprice) 값과 같으므로 "열람 확인"으로 인정한다.
