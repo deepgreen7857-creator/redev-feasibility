@@ -70,7 +70,9 @@ powershell -ExecutionPolicy Bypass -File .\install-registry-task.ps1   # 매일 
 - 목록: `<원본폴더>\_제이옥션_목록.csv`(엑셀) · `_제이옥션_목록.json`
 - 천천히: 사건 사이 60~150초, 하루 40사건, 08~23시. 다 받은 사건은 7일 뒤 빠진 것만 다시. 막히면 `state\jauction-blocked.txt` 를 남기고 멈춤(우회 안 함)
 - 원본폴더 찾기(archive.js): `.env` ORIGINALS_DIR → 아무 드라이브의 `법원경매원본\경매원본표식.txt` → `D:\법원경매원본`. 외장하드를 다른 PC로 옮겨도 드라이브 문자와 상관없이 이어짐
+- 제이옥션은 **회원만** 상세·감정평가서·사진을 보여 줌 → 처음 한 번 `npm run jauction-login` 으로 뜬 창에서 본인이 직접 로그인(쿠키는 `state\jauction-cookies.json`). 로그가 `로그인 필요` 로 끝나면 이것만 다시
 ```powershell
-npm run jauction-test      # 1사건만 state\jauction-test 에
+npm run jauction-login     # 처음 한 번(로그인 풀리면 다시)
+npm run jauction-test      # 1사건만 state\jauction-test 에(시간대 제한 없음)
 powershell -ExecutionPolicy Bypass -File .\install-jauction-task.ps1   # 매일 10:20·19:20
 ```

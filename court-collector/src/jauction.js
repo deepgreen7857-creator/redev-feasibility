@@ -11,7 +11,10 @@
 //  · 사이트(서버)에는 올리지 않는다.
 //
 //  보통 실행:  node src/jauction.js          (작업 스케줄러: start-jauction.cmd)
-//  시험:       node src/jauction.js --limit 1 --dry     (1사건만, state/jauction-test 에 저장)
+//  처음 한 번:  npm run jauction-login   → 뜬 창에서 제이옥션 로그인(본인이 직접) → 로그인되면 저장하고 창이 저절로 닫힘
+//              (제이옥션은 회원만 상세·감정평가서·사진을 보여 준다. 로그인 쿠키는 state/jauction-cookies.json)
+//  지금 시작:  npm run jauction-now        (시간대 제한 없이 바로, 하루 40사건·사람 속도는 그대로)
+//  시험:       node src/jauction.js --limit 1 --dry     (1사건만, state/jauction-test 에 저장, 시간대 제한 없음)
 //              node src/jauction.js --case 2026타경503672
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,6 +25,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const arg = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
 const DRY = args.includes('--dry');
+const LOGIN = args.includes('--login');
+const NOW = args.includes('--now'); // 손으로 '지금 시작'할 때: 시간대 제한만 건너뜀(하루 한도·속도는 그대로)
+const anyHour = DRY || NOW;
 const LIMIT = Number(arg('--limit')) || Infinity;
 
 const cfgAll = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
@@ -51,6 +57,29 @@ const BASE = 'https://gfauction.co.kr';
 const FILES = 'https://file2.nuriauction.com';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 class Blocked extends Error {}
+class NeedLogin extends Error {}
+
+// ── 로그인 쿠키(제이옥션은 회원만 상세를 보여 줌) ─────
+//  npm run jauction-login 으로 본인이 한 번 로그인 → 쿠키를 파일로 저장 → fetch 마다 넣고, 새로 받은 쿠키로 갱신
+const COOKIES = path.join(STATE, 'jauction-cookies.json');
+let jar = fs.existsSync(COOKIES) ? JSON.parse(fs.readFileSync(COOKIES, 'utf8')) : []; // [{name,value,domain,path}]
+const saveJar = () => fs.writeFileSync(COOKIES, JSON.stringify(jar));
+const cookieFor = (url) => { const h = new URL(url).hostname; return jar.filter((c) => h === c.domain.replace(/^\./, '') || h.endsWith(c.domain.startsWith('.') ? c.domain : '.' + c.domain)).map((c) => `${c.name}=${c.value}`).join('; '); };
+function takeCookies(url, res) {
+  const list = typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : [];
+  if (!list.length) return;
+  const host = new URL(url).hostname;
+  for (const sc of list) {
+    const [nv, ...attrs] = sc.split(';'); const i = nv.indexOf('='); if (i < 1) continue;
+    const name = nv.slice(0, i).trim(); const value = nv.slice(i + 1).trim();
+    const dom = (attrs.map((a) => a.trim()).find((a) => /^domain=/i.test(a)) || '').slice(7) || host;
+    const del = /deleted|^$/.test(value) || attrs.some((a) => /max-age=0/i.test(a));
+    jar = jar.filter((c) => !(c.name === name && c.domain.replace(/^\./, '') === dom.replace(/^\./, '')));
+    if (!del) jar.push({ name, value, domain: dom, path: '/' });
+  }
+  saveJar();
+}
+const needLoginText = (t) => /무료 회원가입 후 주식회사 제이옥션의 경매정보/.test(t);
 
 // ── 하루 한도·시간대·잠금·멈춤 ────────────────────────
 const blockedFile = path.join(STATE, 'jauction-blocked.txt');
@@ -77,19 +106,24 @@ function saveDb() {
 
 // ── 제이옥션 ──────────────────────────────────────────
 async function get(url, { binary = false, referer = BASE + '/' } = {}) {
-  const res = await fetch(url, { headers: { 'User-Agent': UA, Referer: referer, 'Accept-Language': 'ko-KR,ko;q=0.9' }, signal: AbortSignal.timeout(90e3) });
+  const ck = cookieFor(url);
+  const res = await fetch(url, { headers: { 'User-Agent': UA, Referer: referer, 'Accept-Language': 'ko-KR,ko;q=0.9', ...(ck ? { Cookie: ck } : {}) }, signal: AbortSignal.timeout(90e3) });
+  takeCookies(url, res);
   if (res.status === 403 || res.status === 429) throw new Blocked(`HTTP ${res.status} ${url.split('?')[0]}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`HTTP ${res.status} ${url.split('?')[0]}`);
   if (binary) return Buffer.from(await res.arrayBuffer());
   const t = await res.text();
   if (/captcha|보안문자|자동입력\s*방지|비정상적인\s*접근|접근이\s*차단/i.test(t)) throw new Blocked(`차단/보안문자 화면 ${url.split('?')[0]}`);
+  // 상세 화면이 '회원가입 후 이용' 안내만 돌려주면 로그인이 풀린 것(목록은 로그인 없이도 이 안내가 칸마다 붙으므로 상세에서만 판단)
+  if (/detail_view\.php/.test(url) && t.length < 2000 && needLoginText(t)) throw new NeedLogin('제이옥션 로그인이 풀려 있음 — 미니PC에서 npm run jauction-login 으로 한 번 로그인하세요');
   return t;
 }
 const textOf = (h) => String(h || '').replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '')
   .replace(/<br\s*\/?>|<\/(p|tr|li|h\d|div)>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
   .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
-const idsIn = (h) => [...new Set([...String(h).matchAll(/detail_view\.php\?idx=(\d+)/g)].map((m) => m[1]))];
+// 물건 번호(idx): 로그인 상태면 detail_view 링크, 아니면 목록 체크박스(aChk) 값에만 있다
+const idsIn = (h) => [...new Set([...String(h).matchAll(/detail_view\.php\?idx=(\d+)|name=["']?aChk["']?[^>]*value=["']?(\d+)/g)].map((m) => m[1] || m[2]))];
 const courtBase = (c) => String(c).replace(/\s*경매[\d-]+계\s*$/, '').trim();
 const view = (type, idx) => get(`${BASE}/search/auction_detail_view.php?type=${encodeURIComponent(type)}&idx=${idx}`, { referer: `${BASE}/search/detail_view.php?idx=${idx}` });
 
@@ -221,14 +255,45 @@ async function grabCase(items) {
   log(`${first.court} ${first.caseNo}: 감정평가서 ${got.감정평가서 || 'X'} · 명세서 ${got.매각물건명세서.length}건 · 현황조사서 ${got.현황조사서 || 'X'} · 사진 ${got.사진수}장`);
 }
 
+async function loginMode() {
+  process.env.PLAYWRIGHT_BROWSERS_PATH ||= '0';
+  const { chromium } = await import('playwright');
+  const ctx = await chromium.launchPersistentContext(path.join(STATE, 'jauction-profile'), { headless: false, locale: 'ko-KR', viewport: { width: 1280, height: 900 } });
+  const page = ctx.pages()[0] || await ctx.newPage();
+  await page.goto(`${BASE}/main/main.php`).catch(() => {});
+  log('제이옥션 창에서 직접 로그인하세요. 로그인되면 저장하고 창이 저절로 닫힙니다(최대 30분 기다림).');
+  let closed = false; ctx.on('close', () => { closed = true; });
+  try {
+    for (let i = 0; i < 600 && !closed; i++) {
+      await sleep(3000);
+      const ok = await page.evaluate(() => /로그아웃/.test(document.body?.innerText || '')).catch(() => false);
+      if (ok) {
+        const list = (await ctx.cookies()).filter((c) => /gfauction|nuriauction/.test(c.domain)).map(({ name, value, domain }) => ({ name, value, domain, path: '/' }));
+        jar = list; saveJar();
+        log(`로그인 확인 — 로그인 정보 ${list.length}개 저장. 이제 npm run jauction-test 로 시험하세요.`);
+        return;
+      }
+    }
+    log(closed ? '로그인 전에 창이 닫혔습니다. 다시 npm run jauction-login 하세요.' : '30분 동안 로그인이 안 돼 끝냅니다.');
+  } finally { await ctx.close().catch(() => {}); }
+}
+
+async function loggedIn() {
+  if (!jar.length) return false;
+  const t = await get(`${BASE}/main/main.php`);
+  return /로그아웃/.test(t || '');
+}
+
 async function main() {
+  if (LOGIN) return loginMode();
   if (!cfg.enabled) return log('config.json jauction.enabled=false — 쉼');
   if (fs.existsSync(blockedFile)) return log(`멈춤 상태(${blockedFile}) — 제이옥션 화면을 직접 확인한 뒤 이 파일을 지우면 다시 받음`);
   if (!lock()) return log('이미 다른 제이옥션 수집기가 돌고 있음');
   log(`시작 — 보관 폴더 ${ARCHIVE}${DRY ? ' (시험)' : ''}, 오늘 ${today}/${cfg.dailyMax}사건`);
   let n = 0;
   try {
-    if (!inHours()) return log('쉬는 시간대 — 다음 실행에 이어서');
+    if (!anyHour && !inHours()) return log('쉬는 시간대 — 다음 실행에 이어서');
+    if (!(await loggedIn())) throw new NeedLogin('제이옥션 로그인 안 됨 — 미니PC에서 npm run jauction-login 으로 한 번 로그인하세요(본인이 직접)');
     let idxs;
     if (arg('--case')) {
       const m = arg('--case').match(/^(\d{4})타경(\d+)/);
@@ -242,7 +307,7 @@ async function main() {
     for (const idx of todo) {
       if (n >= LIMIT) break;
       if (today >= cfg.dailyMax) { log('오늘 한도 — 내일 이어서'); break; }
-      if (!inHours()) { log('쉬는 시간대 — 다음 실행에 이어서'); break; }
+      if (!anyHour && !inHours()) { log('쉬는 시간대 — 다음 실행에 이어서'); break; }
       if (n > 0) await pause('itemSeconds');
       try {
         const it = await readItem(idx);
@@ -256,12 +321,13 @@ async function main() {
         n++; bump();
         await grabCase(sib);
       } catch (e) {
-        if (e instanceof Blocked) throw e;
+        if (e instanceof Blocked || e instanceof NeedLogin) throw e;
         log(`idx ${idx}: 실패 ${e.message}`);
       }
     }
   } catch (e) {
     if (e instanceof Blocked) { fs.writeFileSync(blockedFile, `${new Date().toISOString()} ${e.message}\n`); log(`막힘 — 우회하지 않고 멈춤: ${e.message}`); }
+    else if (e instanceof NeedLogin) log(`로그인 필요 — ${e.message}`);
     else log(`오류: ${e.stack || e.message}`);
   } finally {
     saveDb();
