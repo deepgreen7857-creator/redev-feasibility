@@ -130,6 +130,8 @@ ul{margin:0;padding-left:18px} li{margin-bottom:3px}
 </div>
 <script>
 const RATE=0.7, MAXK=6;
+const CT=0.33; // 법인 주택 양도: 일반 법인세 약 10% + 주택 추가 법인세 20% + 지방소득세(그 10%) — 수도권은 지방 저가주택 예외 없음
+const afterTax=p=>p>0?Math.round(p*(1-CT)):p;
 const won=n=>(Math.round(n/10000)).toLocaleString('ko-KR')+'만';
 const wonFull=n=>n.toLocaleString('ko-KR');
 const rname=k=>k===0?'최초':k+'회 유찰';
@@ -137,14 +139,14 @@ const kind=t=>{t=t||'';const L=t.match(/^(대지|대|전|답|과수원|임야|�
 const missing=it=>{const m=[];if(!(it.rights||[]).length)m.push('권리');if(!it.marketSure)m.push('같은 건물 실거래');const t=it.tax11||'';if(!t||/미확인|확인 필요|추정|예상/.test(t))m.push('호별 공시가');if(!it.zone)m.push('정비구역');if(!it.units)m.push('평형');if(!it.rent)m.push('전월세');return m};
 function calc(it){
   const low=it.market.low, D=it.priorDeposit||0, A=it.assume||0;
-  const X=(low-it.costs-it.minProfit)/1.011;          // 총투입(낙찰가+인수) 한도
+  const X=(low-it.costs-it.minProfit/(1-CT))/1.011;   // 세후 목표수익이 남는 총투입 한도          // 총투입(낙찰가+인수) 한도
   let hi=D? (X>=D?X:-1) : X-A;                          // 최고입찰가
   hi=hi>0?Math.floor(hi/10000)*10000:0;
   const rows=[]; let min=it.appraisal;
   for(let k=0;k<=Math.max(MAXK,it.rounds.length+1);k++){
     if(k>0) min=Math.floor(Math.round(min*RATE)/1000)*1000;
     const bid=min+10000, take=D?Math.max(0,D-bid):A, total=bid+take, tax=Math.round(total*0.011);
-    rows.push({k,min,bid,take,tax,profit:low-total-tax-it.costs,ok:hi>0&&bid<=hi});
+    rows.push({k,min,bid,take,tax,pre:low-total-tax-it.costs,profit:afterTax(low-total-tax-it.costs),ok:hi>0&&bid<=hi});
   }
   const cur=it.rounds.findIndex(r=>r.result!=='유찰');
   const curK=cur<0?it.rounds.length:cur;
@@ -207,12 +209,12 @@ function render(items){
     box.innerHTML=`<button class="head grid" id="h${i}" aria-expanded="false">${flow}</button>
       <div class="body" hidden>
         ${missing(it).length&&c.entry?`<div class="weak">검토 중 — 아직 확인 안 된 것: ${missing(it).join(', ')}. 확인 전에는 입찰시점·입찰예정가를 내지 않습니다.</div>`:''}${it.checkLine?`<div class="weak">⚠ 확인 › ${it.checkLine}</div>`:''}<div class="sum">${it.summary}</div>${frame(it)}${it.marketReview?`<div><h3>시세 검토</h3><p style="margin:0">${it.marketReview}</p></div>`:''}<div class="links"><a href="https://map.kakao.com/link/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">카카오맵·로드뷰</a><a href="https://map.naver.com/p/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">네이버지도</a></div>
-        <div><h3>회차표 · 시세 하한 ${won(it.market.low)}, 비용 ${won(it.costs)}, 목표수익 ${won(it.minProfit)}${c.D?', 선순위 보증금(집행비용 포함) '+won(c.D):''}${it.assume?', 인수 가정 '+won(it.assume):''}</h3>
+        <div><h3>회차표 · 시세 하한 ${won(it.market.low)}, 비용 ${won(it.costs)}, 세후 목표수익 ${won(it.minProfit)}${c.D?', 선순위 보증금(집행비용 포함) '+won(c.D):''}${it.assume?', 인수 가정 '+won(it.assume):''}</h3>
         <p class="sum" style="margin:0 0 6px">최고입찰가 <span class="num">${c.hi?wonFull(c.hi)+'원':'없음'}</span>${it.bidLo?' · 경쟁 판단: '+it.bidLo.why:''}</p>
-        <div class="tbl"><table><thead><tr><th>회차</th><th>최저가</th><th>최저가 입찰 시 인수</th><th>취득세 1.1%</th><th>최저가 입찰 시 수익</th><th>판정</th></tr></thead><tbody>
+        <div class="tbl"><table><thead><tr><th>회차</th><th>최저가</th><th>최저가 입찰 시 인수</th><th>취득세 1.1%</th><th>최저가 입찰 시 세후 수익</th><th>판정</th></tr></thead><tbody>
         ${c.rows.map(r=>`<tr class="${c.entry&&r.k===c.entry.k?'entry':''} ${r.k<c.curK?'past':''}"><td>${rname(r.k)}${(it.rounds[r.k]&&it.rounds[r.k].date)?' · '+it.rounds[r.k].date:''}${r.k<c.curK?' (유찰)':''}</td><td class="num">${wonFull(r.min)}</td><td class="num">${r.take?won(r.take):'0'}</td><td class="num">${wonFull(r.tax)}</td><td class="num">${won(r.profit)}</td><td>${r.ok?'가능':'불가'}</td></tr>`).join('')}
         </tbody></table></div>
-        <p class="note">최고입찰가 = (시세 하한 − 비용 − 목표수익) ÷ 1.011 − 인수금액. 최저가가 이 금액 아래로 처음 내려오는 회차가 진입 회차입니다. ${it.assumeNote||''}</p></div>
+        <p class="note">최고입찰가 = (시세 하한 − 비용 − 세후 목표수익 ÷ 0.67) ÷ 1.011 − 인수금액. 수익은 법인세(일반 약 10% + 주택 추가 20% + 지방세, 합계 약 33%)를 뺀 세후 금액입니다. 최저가가 이 금액 아래로 처음 내려오는 회차가 진입 회차입니다. ${it.assumeNote||''}</p></div>
         <div class="cols">
           <div><h3>시세 근거 (${won(it.market.low)} ~ ${won(it.market.high)})</h3><ul>${it.market.basis.map(x=>'<li>'+x+'</li>').join('')}</ul></div>
           <div><h3>권리</h3><ul>${it.rights.map(x=>'<li>'+x+'</li>').join('')}</ul></div>
