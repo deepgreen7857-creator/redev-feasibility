@@ -321,17 +321,28 @@ async function main() {
     if (files.pending.length) { log(`밀린 첨부 ${files.pending.length}개 올리기`); await files.upload(); }
     // 법원 사이트가 잠깐 느려 화면이 안 뜨는 오류(waitFor… Timeout 등)로 회차를 통째로 접지 않는다:
     //  5분 쉬고 브라우저를 새로 열어 같은 법원부터 이어감(이미 읽은 물건은 상세를 안 엶). 한 회차에 3번까지.
+    // 집중 지역(config.focus): 회차마다 먼저 그 지역 법원을 돌며 상세(명세서·첨부)는 그 지역 물건만 연다 — 범위를 좁혀 먼저 100% 채우기(2026-10-26)
+    //  집중 지역을 한 바퀴 다 돈 뒤 시간·화면 수가 남으면 나머지 법원(서울·경기 등)을 평소처럼 이어서 돈다(2026-10-27, 남는 시간 쉬지 않게)
+    //  나머지 법원은 progress.restCourt 로 따로 이어 감(다음 회차에도 멈춘 법원부터)
+    const focus = cfg.focus?.courts?.length ? cfg.focus : null;
+    const focusRe = focus?.address ? new RegExp(focus.address) : null;
+    const phases = focus
+      ? [{ name: '집중', list: focus.courts, key: 'court', re: focus.detailOnly ? focusRe : null },
+        { name: '나머지', list: cfg.courts.filter((c) => !focus.courts.includes(c)), key: 'restCourt', re: null }]
+      : [{ name: '전체', list: cfg.courts, key: 'court', re: null }];
+    let phaseAt = 0; // 화면 오류로 다시 열어도 끝난 단계는 다시 돌지 않음
     const collect = async () => {
+     for (; phaseAt < phases.length; phaseAt++) {
+      const ph = phases[phaseAt];
+      const courtList = ph.list;
+      if (!courtList.length) continue;
+      if (phaseAt > 0) log(`${phases[phaseAt - 1].name} 법원을 다 돌아 ${ph.name} 법원으로 넘어감`);
       // 지난번에 멈춘 법원부터 이어서
-      // 집중 지역(config.focus): 그 지역 법원만 돌고, 상세(명세서·첨부)는 그 지역 물건만 연다 — 범위를 좁혀 먼저 100% 채우기(2026-10-26)
-      const focus = cfg.focus || null;
-      const focusRe = focus?.address ? new RegExp(focus.address) : null;
-      const courtList = focus?.courts?.length ? focus.courts : cfg.courts;
-      const start = Math.max(0, courtList.indexOf(progress.court || ''));
+      const start = Math.max(0, courtList.indexOf(progress[ph.key] || ''));
       const courts = [...courtList.slice(start), ...courtList.slice(0, start)];
       outer: for (let ci = 0; ci < courts.length; ci++) {
         const court = courts[ci];
-        progress.court = court; saveProgress();
+        progress[ph.key] = court; saveProgress();
         log(`법원: ${court}`);
         for await (const row of listCourt(page, court, pace)) {
           // 한동안 봤으면 끊고 쉰다: 올릴 것 올리고, 브라우저 닫고, 쉬었다가 같은 법원 처음부터 다시(이미 본 물건은 상세를 안 엶)
@@ -348,7 +359,7 @@ async function main() {
           let stale = !prev || prev.v !== DETAIL_V || prev.minBid !== row.minBid || prev.status !== row.status || Date.now() - (prev.at || 0) > cfg.refreshDetailAfterDays * 86400e3;
           let detail = null;
           // 같은 물건에서 화면 오류가 두 번 나면 오늘은 건너뛴다(한 물건 때문에 회차가 계속 같은 자리에서 멈추던 문제 대비)
-          if (stale && focusRe && focus.detailOnly && !focusRe.test(`${row.address || ''} ${row.title || ''}`)) stale = false; // 집중 지역 밖: 목록 정보만
+          if (stale && ph.re && !ph.re.test(`${row.address || ''} ${row.title || ''}`)) stale = false; // 집중 단계에서 집중 지역 밖: 목록 정보만
           if (stale && (badRows[key]?.n || 0) >= 2 && Date.now() - badRows[key].at < 86400e3) { stale = false; log(`건너뜀(화면 오류 반복): ${row.caseNo}`); }
           if (stale) {
             if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
@@ -399,8 +410,11 @@ async function main() {
           if (stats.detailed >= LIMIT) { stats.stoppedBy = 'test-limit'; break outer; }
           if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
         }
-        progress.court = courtList[(courtList.indexOf(court) + 1) % courtList.length]; saveProgress();
+        progress[ph.key] = courtList[(courtList.indexOf(court) + 1) % courtList.length]; saveProgress();
       }
+      // break outer(한도·시간대 끝)로 나왔으면 다음 단계로 넘어가지 않음
+      if (stats.stoppedBy) return;
+     }
     };
     for (let retries = 0; ; retries++) {
       try { await collect(); break; } catch (e) {
