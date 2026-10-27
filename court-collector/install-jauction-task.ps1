@@ -1,4 +1,4 @@
-# 윈도 작업 스케줄러에 'review 후보 감정평가서 받기(제이옥션)'를 등록합니다. (PowerShell에서 이 폴더로 이동 후 실행)
+﻿# 윈도 작업 스케줄러에 'review 후보 감정평가서 받기(제이옥션)'를 등록합니다. (PowerShell에서 이 폴더로 이동 후 실행)
 #   powershell -ExecutionPolicy Bypass -File .\install-jauction-task.ps1
 $dir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ErrorActionPreference = "Stop"
