@@ -17,7 +17,9 @@
     "jauction": "node src/jauction.js",
     "jauction-test": "node src/jauction.js --limit 1 --dry",
     "jauction-login": "node src/jauction.js --login",
-    "jauction-now": "node src/jauction.js --now"
+    "jauction-now": "node src/jauction.js --now",
+    "viewer": "node src/viewer.js",
+    "viewer-lan": "node src/viewer.js --lan"
   },
   "dependencies": {
     "pdfjs-dist": "^4.10.38",
