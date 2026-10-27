@@ -1,5 +1,5 @@
 // 법원 첨부(감정평가서·현황조사서·매각물건명세서·사진) 보관과 서버 올리기
-//  · 원본은 이 PC 하드에 그대로 둔다: 등기부 수집기와 같은 폴더 D:\법원경매원본(매일 새벽 E:로 백업됨).
+//  · 원본은 이 PC 하드에 그대로 둔다: 등기부 수집기와 같은 폴더 <드라이브>:\법원경매원본 — 표식 파일(경매원본표식.txt)로 찾음(archive.js).
 //    .env 의 ORIGINALS_DIR 로 바꿀 수 있고, 그 폴더가 없는 PC(시험 등)에서는 state/originals.
 //    물건 폴더: <원본폴더>\<법원>\<연도>\<사건번호>\<물건번호>\ (등기부 PDF와 같은 자리) — 사진01.jpg, 감정평가서.json(공유문서 위치) …
 //    병합·중복사건이 함께 쓰는 문서: <원본폴더>\_공유문서\감정평가서_<해시>.pdf
@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { findArchive } from './archive.js';
 
 export const MAX_UPLOAD = 22 * 1024 * 1024; // 서버 요청 한도(32MB) 안에 base64로 들어가는 크기
 export const DOC_KINDS = ['감정평가서', '현황조사서', '매각물건명세서'];
@@ -19,8 +20,8 @@ const safe = (s) => String(s).replace(/[\\/:*?"<>|\s]/g, '');
 
 export class FileStore {
   constructor({ root, stateDir, env, log, dry }) {
-    const archive = env.ORIGINALS_DIR || 'D:\\법원경매원본';
-    this.dir = fs.existsSync(archive) ? path.resolve(archive) : path.join(root, 'state', 'originals');
+    // 원본 폴더: ORIGINALS_DIR → 표식 파일이 있는 외장하드 → D:\\법원경매원본 → state/originals (archive.js)
+    this.dir = findArchive(env) || path.join(root, 'state', 'originals');
     this.pendingFile = path.join(stateDir, 'files-pending.json');
     this.pending = fs.existsSync(this.pendingFile) ? JSON.parse(fs.readFileSync(this.pendingFile, 'utf8')) : [];
     this.env = env; this.log = log; this.dry = dry;

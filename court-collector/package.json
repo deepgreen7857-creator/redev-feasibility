@@ -13,7 +13,9 @@
     "registry": "node src/registry.js",
     "registry-test": "node src/registry.js --limit 2 --dry",
     "myauction-login": "node src/registry.js --login",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "jauction": "node src/jauction.js",
+    "jauction-test": "node src/jauction.js --limit 1 --dry"
   },
   "dependencies": {
     "pdfjs-dist": "^4.10.38",

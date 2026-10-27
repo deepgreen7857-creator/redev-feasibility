@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pdfRows, parseRegistry, plainText } from './registryParse.js';
+import { findArchive } from './archive.js';
 
 process.env.PLAYWRIGHT_BROWSERS_PATH ||= '0';
 const { chromium } = await import('playwright');
@@ -40,8 +41,8 @@ const STATE = path.join(ROOT, 'state'); const LOGS = path.join(ROOT, 'logs');
 const PROFILE = path.join(STATE, 'myauction-profile');
 // PDF 원본 보관: D:\법원경매원본\법원\연도\사건번호\물건번호\ (C드라이브는 작음 — 이 폴더는 매일 새벽 E:로 백업됨)
 //  그 폴더가 없는 PC(시험 등)에서는 state/registry 에 둔다
-const ARCHIVE = env.ORIGINALS_DIR || cfg.archiveDir || 'D:\\법원경매원본';
-const USE_ARCHIVE = fs.existsSync(ARCHIVE);
+const ARCHIVE = (cfg.archiveDir && fs.existsSync(cfg.archiveDir) ? cfg.archiveDir : findArchive(env)) || '';
+const USE_ARCHIVE = !!ARCHIVE && fs.existsSync(ARCHIVE);
 const PDF_DIR = env.REGISTRY_DIR || cfg.dir || (USE_ARCHIVE ? ARCHIVE : path.join(STATE, 'registry'));
 fs.mkdirSync(STATE, { recursive: true }); fs.mkdirSync(LOGS, { recursive: true }); fs.mkdirSync(PDF_DIR, { recursive: true });
 const kstNow = () => new Date(Date.now() + 9 * 3600e3);

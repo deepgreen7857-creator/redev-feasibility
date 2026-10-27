@@ -63,3 +63,14 @@ npm run registry-test            # 2건만 받아 정리 결과를 state/registr
 powershell -ExecutionPolicy Bypass -File .\install-registry-task.ps1   # 매일 자동
 ```
 로그가 `로그인 필요` 로 끝나면 `npm run myauction-login` 만 다시 하면 됩니다. 로그: `logs\registry-날짜.log`
+
+## 제이옥션 자료 사건번호별 보관 (src/jauction.js, 본인 전용)
+집중 지역(가좌동·석남동) 진행 물건과 review 후보 사건의 **감정평가서·매각물건명세서·현황조사서·문건접수·송달내역·현장사진**을 제이옥션(gfauction.co.kr)에서 받아 원본 하드에 둡니다. 사이트에는 올리지 않습니다. 기준은 대법원 원본이고 이것은 참고 자료입니다.
+- 저장: `<원본폴더>\<법원>\<연도>\<사건번호>\` 에 `감정평가서_제이옥션.pdf`, `현황조사서_제이옥션.txt/.html`, `문건접수내역_제이옥션.txt`, `송달내역_제이옥션.txt`, `사진_제이옥션\사진01.jpg…`, `<물건번호>\매각물건명세서_제이옥션.pdf`, `<물건번호>\물건정보_제이옥션.json`
+- 목록: `<원본폴더>\_제이옥션_목록.csv`(엑셀) · `_제이옥션_목록.json`
+- 천천히: 사건 사이 60~150초, 하루 40사건, 08~23시. 다 받은 사건은 7일 뒤 빠진 것만 다시. 막히면 `state\jauction-blocked.txt` 를 남기고 멈춤(우회 안 함)
+- 원본폴더 찾기(archive.js): `.env` ORIGINALS_DIR → 아무 드라이브의 `법원경매원본\경매원본표식.txt` → `D:\법원경매원본`. 외장하드를 다른 PC로 옮겨도 드라이브 문자와 상관없이 이어짐
+```powershell
+npm run jauction-test      # 1사건만 state\jauction-test 에
+powershell -ExecutionPolicy Bypass -File .\install-jauction-task.ps1   # 매일 10:20·19:20
+```
