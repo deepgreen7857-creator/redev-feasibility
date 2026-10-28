@@ -138,7 +138,7 @@ const rname=k=>k===0?'최초':k+'회 유찰';
 const kind=t=>{t=t||'';const L=t.match(/^(대지|대|전|답|과수원|임야|잡종지|주차장|도로|구거|창고용지|공장용지)(\(|$|\s)/);if(L)return '토지('+(L[1]==='대'?'대지':L[1])+')';if(/^토지/.test(t))return t;if(/아파트형공장|지식산업/.test(t))return '아파트형공장';if(/아파트/.test(t))return '아파트';if(/오피스텔/.test(t))return '오피스텔';if(/다가구|단독|^주택/.test(t))return '단독·다가구';if(/연립/.test(t))return '연립';if(/다세대|빌라/.test(t))return '다세대(빌라)';if(/근린|상가/.test(t))return '근린상가';return t;};
 const missing=it=>{const m=[];if(!(it.rights||[]).length)m.push('권리');if(!it.marketSure)m.push('같은 건물 실거래');const t=it.tax11||'';if(!t||/미확인|확인 필요|추정|예상/.test(t))m.push('호별 공시가');if(!it.zone)m.push('정비구역');if(!it.units)m.push('평형');if(!it.rent)m.push('전월세');return m};
 function calc(it){
-  const low=it.market.low, D=it.priorDeposit||0, A=it.assume||0;
+  const low=Math.round(it.market.low*0.93*(1-0.0055))-600000, D=it.priorDeposit||0, A=it.assume||0;   // 급매(−7%)·복비·보유비 반영
   const X=(low-it.costs-it.minProfit/(1-CT))/1.011;   // 세후 목표수익이 남는 총투입 한도          // 총투입(낙찰가+인수) 한도
   let hi=D? (X>=D?X:-1) : X-A;                          // 최고입찰가
   hi=hi>0?Math.floor(hi/10000)*10000:0;

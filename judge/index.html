@@ -45,16 +45,19 @@ details{margin-top:8px}summary{cursor:pointer;color:var(--go);font-size:13.5px}
 <div id="list">불러오는 중입니다.</div>
 </div>
 <script>
-const RATE=0.7,MAXK=6;
+const RATE=0.7,MAXK=6,CASH=50000000;
 const CT=0.33; // 법인 주택 양도: 일반 법인세 약 10% + 주택 추가 법인세 20% + 지방소득세(그 10%)
 const afterTax=(p,land)=>(p>0&&!land)?Math.round(p*(1-CT)):p;
 const man=n=>Math.round(n/10000).toLocaleString('ko-KR')+'만';
 const rname=k=>k===0?'최초':k+'회 유찰';
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function calc(it){
-  const low=it.market.low,D=it.priorDeposit||0,A=it.assume||0;
+  // 매도는 급매 기준(시세 하한 −7%), 복비 0.55%, 보유비 60만을 뺀 값으로 계산 (정민님 2026.10.28)
+  const low=it.land?it.market.low:Math.round(it.market.low*0.93*(1-0.0055))-600000,D=it.priorDeposit||0,A=it.assume||0;
   const X=(low-it.costs-it.minProfit/(it.land?1:(1-CT)))/1.011;   // 세후 목표수익이 남는 총투입 한도
-  let hi=D?(X>=D?X:-1):X-A; hi=hi>0?Math.floor(hi/10000)*10000:0;
+  let hi=D?(X>=D?X:-1):X-A;
+  if(!it.land&&!it.budgetOnly)hi=Math.min(hi,(CASH-it.costs)/1.011-A);   // 현금 한도(대출 없음)
+  hi=hi>0?Math.floor(hi/10000)*10000:0;
   const rows=[];let min=it.appraisal;
   for(let k=0;k<=Math.max(MAXK,it.rounds.length+1);k++){
     if(k>0)min=Math.floor(Math.round(min*RATE)/1000)*1000;
@@ -82,7 +85,7 @@ function card(p,it){
 <div>금회 최저가<b>${cr?man(cr.min):'-'}</b></div>
 <div>입찰예정가<b>${e?man(e.bid)+' ~ '+man(c.hi):'-'}</b></div>
 <div>시세<b>${man(it.market.low)} ~ ${man(it.market.high)}</b></div>
-<div>최저입찰가 낙찰 시 세후 수익<b>${e?man(e.profit):'-'}</b></div>
+<div>최저입찰가 낙찰·급매 매도 시 세후<b>${e?man(e.profit):'-'}</b></div>
 <div>감정가<b>${man(it.appraisal)}</b></div>
 </div>
 <h3>왜 자신 있나</h3><p class="why">${esc(p.why)}</p>
