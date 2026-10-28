@@ -144,7 +144,7 @@ function calc(it){
   hi=hi>0?Math.floor(hi/10000)*10000:0;
   const rows=[]; let min=it.appraisal;
   for(let k=0;k<=Math.max(MAXK,it.rounds.length+1);k++){
-    if(k>0) min=Math.floor(Math.round(min*RATE)/1000)*1000;
+    if(k>0) min=Math.floor(Math.round(min*(it.rate||RATE))/1000)*1000;
     const bid=min+10000, take=D?Math.max(0,D-bid):A, total=bid+take, tax=Math.round(total*0.011);
     rows.push({k,min,bid,take,tax,pre:low-total-tax-it.costs,profit:afterTax(low-total-tax-it.costs),ok:hi>0&&bid<=hi});
   }
@@ -172,7 +172,7 @@ function render(items){
   const el=document.getElementById('list');
   if(!items.length){el.innerHTML='<p class="note">아직 올린 물건이 없습니다.</p>';return}
   el.innerHTML='';
-  const grp=it=>{const c=calc(it);if(!c.entry)return 4;if(missing(it).length)return 3;if(c.entry.k>c.curK)return 2;const d=(it.rounds[c.curK]||{}).date;const x=d?(new Date(d+'T00:00:00+09:00')-new Date())/864e5:99;return x<=7?0:1};
+  const grp=it=>{if(it.hold)return 3;const c=calc(it);if(!c.entry)return 4;if(missing(it).length)return 3;if(c.entry.k>c.curK)return 2;const d=(it.rounds[c.curK]||{}).date;const x=d?(new Date(d+'T00:00:00+09:00')-new Date())/864e5:99;return x<=7?0:1};
   const G=['금회 진입 · 7일 이내 기일','금회 진입','대기 — 더 유찰된 뒤 입찰','검토 중 — 서류 확인이 끝나야 입찰시점을 냅니다','제외'];
   const hdr='<div class="head grid thead">'+[['상태','c-st'],['종류','c-kd'],['주소','c-ad'],['유찰','c-fl'],['금회 기일','c-dt'],['금회 최저가','c-mn'],['입찰시점','c-wh'],['입찰예정가','c-es'],['시세','c-mk']].map(([k,cl])=>'<div class="cell '+cl+'">'+k+'</div>').join('')+'</div>';
   items=items.slice().sort((a,b)=>grp(a)-grp(b)||String((a.rounds[calc(a).curK]||{}).date||'9').localeCompare(String((b.rounds[calc(b).curK]||{}).date||'9')));
@@ -186,7 +186,8 @@ function render(items){
     const man=n=>Math.round(n/1e4).toLocaleString('ko-KR')+'만';
     const prev=c.curK>0?it.rounds[c.curK-1]:null;
     let st,when='',est='';
-    if(!c.entry){st='<span class="chip no">제외</span>';when='<span class="muted">'+(it.taxFail?'공시 1억 초과':'인수금액 과다')+'</span>';}
+    if(it.hold){st='<span class="chip chk">보류</span>';when='<span class="muted">'+it.hold+'</span>';est='<span class="muted">—</span>';}
+    else if(!c.entry){st='<span class="chip no">제외</span>';when='<span class="muted">'+(it.taxFail?'공시 1억 초과':'인수금액 과다')+'</span>';}
     else if(missing(it).length){st='<span class="chip chk">검토 중</span>';when='<span class="muted" title="미확인: '+missing(it).join(', ')+'">미확인: '+missing(it).join('·')+'</span>';est='<span class="muted">—</span>';}
     else{const left=c.entry.k-c.curK;
       st=left<=0?'<span class="chip go">금회 진입</span>':'<span class="chip wait">'+left+'번 더 유찰</span>';
@@ -205,7 +206,7 @@ function render(items){
       ['입찰예정가',est||'—','c-es num'],
       ['시세',(it.marketSure?'':'<span class="muted">추정</span> ')+Math.round(it.market.low/1e4).toLocaleString('ko-KR')+'~'+man(it.market.high),'c-mk num']];
     const flow=cells.map(([k,v,cl])=>'<div class="cell '+cl+'"><span class="lb">'+k+'</span><span class="vl">'+v+'</span></div>').join('');
-    const box=document.createElement('section');box.className='item';
+    const box=document.createElement('section');box.className='item';box.id='i-'+it.id;
     box.innerHTML=`<button class="head grid" id="h${i}" aria-expanded="false">${flow}</button>
       <div class="body" hidden>
         ${missing(it).length&&c.entry?`<div class="weak">검토 중 — 아직 확인 안 된 것: ${missing(it).join(', ')}. 확인 전에는 입찰시점·입찰예정가를 내지 않습니다.</div>`:''}${it.checkLine?`<div class="weak">⚠ 확인 › ${it.checkLine}</div>`:''}<div class="sum">${it.summary}</div>${frame(it)}${it.marketReview?`<div><h3>시세 검토</h3><p style="margin:0">${it.marketReview}</p></div>`:''}<div class="links"><a href="https://map.kakao.com/link/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">카카오맵·로드뷰</a><a href="https://map.naver.com/p/search/${encodeURIComponent(it.address.replace(/\s+\S+동\s+\S+호$/,"").replace(/\s+\S+호$/,""))}" target="_blank" rel="noopener">네이버지도</a></div>
@@ -265,7 +266,7 @@ function cards(items){
   });
 }
 
-fetch('items.json',{cache:'no-store'}).then(r=>r.json()).then(d=>render(sortItems(d)))
+fetch('items.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{d.forEach(x=>{x.market=x.market||{low:0,high:0,basis:[]};x.market.basis=x.market.basis||[];['rights','timeline','flags','checks','rounds'].forEach(k=>{if(!Array.isArray(x[k]))x[k]=x[k]?[String(x[k])]:[]});x.prediction=x.prediction||{date:'',round:'',predict:'',actual:''};x.reviewed=x.reviewed||'';x.costs=x.costs||3500000;x.minProfit=x.minProfit||10000000;x.tax11=x.tax11||'';x.summary=x.summary||'';x.type=x.type||'';x.appraisal=x.appraisal||0});render(sortItems(d));const h=decodeURIComponent(location.hash.slice(1));const b=h&&document.getElementById(h);if(b){const hd=b.querySelector('.head'),bd=b.querySelector('.body');bd.hidden=false;hd.setAttribute('aria-expanded','true');b.scrollIntoView({block:'start'})}})
   .catch(()=>{document.getElementById('list').innerHTML='<p class="note">items.json을 읽지 못했습니다. 같은 폴더에 있는지 확인해 주세요.</p>'});
 </script>
 </body>

@@ -75,7 +75,7 @@ function calc(it){
   hi=hi>0?Math.floor(hi/10000)*10000:0;
   const rows=[];let min=it.appraisal;
   for(let k=0;k<=Math.max(MAXK,it.rounds.length+1);k++){
-    if(k>0)min=Math.floor(Math.round(min*RATE)/1000)*1000;
+    if(k>0)min=Math.floor(Math.round(min*(it.rate||RATE))/1000)*1000;
     const bid=min+10000,take=D?Math.max(0,D-bid):A,total=bid+take,tax=Math.round(total*0.011);
     rows.push({k,min,bid,take,total,tax,pre:low-total-tax-it.costs,profit:afterTax(low-total-tax-it.costs,it.land),ok:hi>0&&bid<=hi});
   }
@@ -88,10 +88,11 @@ const TODAY=new Date(new Date().toISOString().slice(0,10));
 function dday(d){if(!d)return '';const x=new Date(d);if(isNaN(x))return '';const n=Math.round((x-TODAY)/864e5);return n<0?'지남':n===0?'D-day':'D-'+n}
 function guessAddr(x,it){if(x.addr)return x.addr;if(it&&it.address)return it.address;const m=(x.why||'').match(/^\[[^\]]*\]\s*([^:—(]+)|^([^:—(]+)/);return (m&&(m[1]||m[2])||x.id).trim()}
 function itemDate(x,it){if(x.date)return x.date;if(it&&it.rounds){const r=it.rounds.find(r=>r.result!=='유찰');if(r&&r.date)return r.date}const m=(x.why||'').match(/\((\d{1,2})\.(\d{1,2})/);return m?'2026-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0'):''}
+window._BY={};function by_has(id){return !!window._BY[id]}
 function mini(x,it,kind){const d=itemDate(x,it),dd=dday(d);const why=(x.why||'').replace(/^\[[^\]]*\]\s*/,'');
  const tags=[];if(kind==='ok')tags.push('<span class="badge">'+(x.status||'예비')+'</span>');if(kind==='hold')tags.push('<span class="badge w">보류 — 확인 대기</span>');if(kind==='drop')tags.push('<span class="badge r">탈락</span>');
  if(/예산/.test(why))tags.push('<span class="badge w">예산 초과</span>');if(/HUG|확약/.test(why))tags.push('<span class="badge">HUG·보증 확약</span>');if(/70%/.test(why))tags.push('<span class="badge">70% 회차</span>');
- return `<div class="mini ${kind}"><div class="m-top"><div><div class="m-addr">${esc(guessAddr(x,it).replace(/^인천 /,''))}</div><div class="m-case">${esc(x.id)}${d?' · 기일 '+esc(d.slice(5).replace('-','.')):''}</div></div>${dd?`<span class="dd ${/^D-[0-3]$|D-day/.test(dd)?'soon':''}">${dd}</span>`:''}</div><div>${tags.join('')}</div><div class="m-why">${esc(why)}</div></div>`}
+ return `<div class="mini ${kind}"><div class="m-top"><div><div class="m-addr">${esc(guessAddr(x,it).replace(/^인천 /,''))}</div><div class="m-case">${esc(x.id)}${d?' · 기일 '+esc(d.slice(5).replace('-','.')):''}</div></div>${dd?`<span class="dd ${/^D-[0-3]$|D-day/.test(dd)?'soon':''}">${dd}</span>`:''}</div><div>${tags.join('')}</div><div class="m-why">${esc(why)}</div>${x.report?'<details><summary>검토서 보기</summary><dl class="rec">'+Object.entries(x.report).map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd>').join('')+'</dl></details>':''}${(!String(x.id).startsWith('L:')&&by_has(x.id))?'<a class="m-link" href="../review/#i-'+encodeURIComponent(x.id)+'">입찰 판단표에서 자세히 보기 →</a>':''}</div>`}
 function extra(d,by){const R=(d.reserve||[]).filter(x=>x.status!=='보류');const D=(d.dropped||[]).concat((d.reserve||[]).filter(x=>x.status==='보류'));const hold=D.filter(x=>x.status==='보류'||1)&&D.filter(x=>x.status==='보류'||(/보류|재검토|확인 전/.test(x.why)&&!/탈락/.test(x.why)));const drop=D.filter(x=>!hold.includes(x));
  const sortD=(a,b)=>(itemDate(a,by[a.id])||'9').localeCompare(itemDate(b,by[b.id])||'9');let h='';
  if(R.length)h+=`<div class="mini-h">예비 후보 <span class="cnt">${R.length}건 · 기일 순</span></div><div class="grid">${R.slice().sort(sortD).map(x=>mini(x,by[x.id],'ok')).join('')}</div>`;
@@ -134,7 +135,7 @@ ${p.report?'<div class="rep"><h3>Claude 검토서</h3><dl class="rec">'+Object.e
 </dl></div>`;
 }
 Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/items.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/land.json',{cache:'no-store'}).then(r=>r.json()).catch(()=>[])]).then(([days,items,land])=>{
-  const by={};items.forEach(x=>by[x.id]=x);land.forEach(x=>{if(!x.market)x.market={low:x.pubTotal||0,high:x.pubTotal||0,basis:x.pubTotal?['공시지가 합계 '+Math.round(x.pubTotal/1e4).toLocaleString('ko-KR')+'만 — 토지 실거래(내 데이터) 미수집이라 참고값']:[]};x.rounds=x.rounds||[];if(x.yuchal&&!x.rounds.some(r=>r.result==='유찰')){const cur=x.rounds.find(r=>r.result!=='유찰')||{name:x.yuchal+'회 유찰',date:x.date,result:'예정'};x.rounds=Array.from({length:x.yuchal},(_,i)=>({name:i?i+'회 유찰':'최초',date:'',result:'유찰'})).concat([cur])}x.court=x.court||'';x.costs=x.costs||0;x.minProfit=x.minProfit||0;x.type=x.type||('토지('+(x.jimok||'')+')');x.land=true;by['L:'+x.id]=x});
+  const by={};items.forEach(x=>by[x.id]=x);window._BY=by;land.forEach(x=>{if(!x.market)x.market={low:x.pubTotal||0,high:x.pubTotal||0,basis:x.pubTotal?['공시지가 합계 '+Math.round(x.pubTotal/1e4).toLocaleString('ko-KR')+'만 — 토지 실거래(내 데이터) 미수집이라 참고값']:[]};x.rounds=x.rounds||[];if(x.yuchal&&!x.rounds.some(r=>r.result==='유찰')){const cur=x.rounds.find(r=>r.result!=='유찰')||{name:x.yuchal+'회 유찰',date:x.date,result:'예정'};x.rounds=Array.from({length:x.yuchal},(_,i)=>({name:i?i+'회 유찰':'최초',date:'',result:'유찰'})).concat([cur])}x.court=x.court||'';x.costs=x.costs||0;x.minProfit=x.minProfit||0;x.type=x.type||('토지('+(x.jimok||'')+')');x.land=true;by['L:'+x.id]=x});
   days.sort((a,b)=>b.date.localeCompare(a.date));
   document.getElementById('list').innerHTML=days.map(d=>`<section class="day"><h2>${esc(d.date)} 선정 ${d.picks.length}건</h2><p class="note">${esc(d.note||'')}</p>${d.picks.length?d.picks.slice().sort((a,b)=>a.rank-b.rank).map(p=>card(p,by[p.id])).join(''):'<div class="card">오늘 기준을 모두 통과한 물건이 없습니다.</div>'}${extra(d,by)}</section>`).join('');
 }).catch(e=>{document.getElementById('list').textContent='불러오지 못했습니다: '+e});
