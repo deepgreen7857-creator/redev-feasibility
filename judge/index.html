@@ -36,6 +36,21 @@ ul{margin:0;padding-left:18px}li{margin:1px 0}
 details{margin-top:8px}summary{cursor:pointer;color:var(--go);font-size:13.5px}
 .rep{border:1px solid var(--line);border-radius:8px;padding:6px 12px 10px;margin:10px 0}.rep .rec dd{margin-bottom:6px}.rec{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:14px;margin-top:6px}.rec dt{color:var(--muted)}.rec dd{margin:0}
 @media (max-width:600px){.addr{font-size:15px}}
+.mini-h{display:flex;align-items:center;gap:8px;font-size:19px;font-weight:800;margin:26px 0 10px;padding-top:14px;border-top:3px solid var(--fg)}
+.mini-h .cnt{font-family:var(--mono);font-size:13px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.mini{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--wait);border-radius:10px;padding:10px 12px}
+.mini.ok{border-left-color:var(--go)}.mini.hold{border-left-color:var(--wait);background:var(--wait-bg)}.mini.drop{border-left-color:var(--no)}
+.mini .m-top{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.mini .m-addr{font-weight:700;font-size:15px;line-height:1.35}
+.mini .m-case{color:var(--muted);font-size:12px;font-family:var(--mono)}
+.dd{flex:none;font-family:var(--mono);font-weight:700;font-size:13px;padding:2px 8px;border-radius:12px;background:var(--fg);color:var(--panel)}
+.dd.soon{background:var(--no);color:#fff}
+.badge{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 7px;border-radius:9px;margin:4px 4px 0 0;background:var(--go-bg);color:var(--go)}
+.badge.w{background:var(--wait-bg);color:var(--wait)}.badge.r{background:transparent;color:var(--no);border:1px solid var(--no)}
+.mini .m-why{font-size:13.5px;margin-top:6px}
+.tag-budget{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:10px;background:var(--wait-bg);color:var(--wait);margin-left:4px}
+
 </style>
 </head>
 <body>
@@ -68,6 +83,21 @@ function calc(it){
   const entry=it.taxFail?null:(rows.find(r=>r.k>=curK&&r.ok)||null);
   return {rows,curK,entry,hi};
 }
+
+const TODAY=new Date(new Date().toISOString().slice(0,10));
+function dday(d){if(!d)return '';const x=new Date(d);if(isNaN(x))return '';const n=Math.round((x-TODAY)/864e5);return n<0?'지남':n===0?'D-day':'D-'+n}
+function guessAddr(x,it){if(x.addr)return x.addr;if(it&&it.address)return it.address;const m=(x.why||'').match(/^\[[^\]]*\]\s*([^:—(]+)|^([^:—(]+)/);return (m&&(m[1]||m[2])||x.id).trim()}
+function itemDate(x,it){if(x.date)return x.date;if(it&&it.rounds){const r=it.rounds.find(r=>r.result!=='유찰');if(r&&r.date)return r.date}const m=(x.why||'').match(/\((\d{1,2})\.(\d{1,2})/);return m?'2026-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0'):''}
+function mini(x,it,kind){const d=itemDate(x,it),dd=dday(d);const why=(x.why||'').replace(/^\[[^\]]*\]\s*/,'');
+ const tags=[];if(kind==='ok')tags.push('<span class="badge">'+(x.status||'예비')+'</span>');if(kind==='hold')tags.push('<span class="badge w">보류 — 확인 대기</span>');if(kind==='drop')tags.push('<span class="badge r">탈락</span>');
+ if(/예산/.test(why))tags.push('<span class="badge w">예산 초과</span>');if(/HUG|확약/.test(why))tags.push('<span class="badge">HUG·보증 확약</span>');if(/70%/.test(why))tags.push('<span class="badge">70% 회차</span>');
+ return `<div class="mini ${kind}"><div class="m-top"><div><div class="m-addr">${esc(guessAddr(x,it).replace(/^인천 /,''))}</div><div class="m-case">${esc(x.id)}${d?' · 기일 '+esc(d.slice(5).replace('-','.')):''}</div></div>${dd?`<span class="dd ${/^D-[0-3]$|D-day/.test(dd)?'soon':''}">${dd}</span>`:''}</div><div>${tags.join('')}</div><div class="m-why">${esc(why)}</div></div>`}
+function extra(d,by){const R=(d.reserve||[]).filter(x=>x.status!=='보류');const D=(d.dropped||[]).concat((d.reserve||[]).filter(x=>x.status==='보류'));const hold=D.filter(x=>x.status==='보류'||1)&&D.filter(x=>x.status==='보류'||(/보류|재검토|확인 전/.test(x.why)&&!/탈락/.test(x.why)));const drop=D.filter(x=>!hold.includes(x));
+ const sortD=(a,b)=>(itemDate(a,by[a.id])||'9').localeCompare(itemDate(b,by[b.id])||'9');let h='';
+ if(R.length)h+=`<div class="mini-h">예비 후보 <span class="cnt">${R.length}건 · 기일 순</span></div><div class="grid">${R.slice().sort(sortD).map(x=>mini(x,by[x.id],'ok')).join('')}</div>`;
+ if(hold.length)h+=`<div class="mini-h">보류 — 확인되면 올라올 물건 <span class="cnt">${hold.length}건</span></div><div class="grid">${hold.slice().sort(sortD).map(x=>mini(x,by[x.id],'hold')).join('')}</div>`;
+ if(drop.length)h+=`<details class="card"><summary>탈락 ${drop.length}건과 이유 (펼치기)</summary><div class="grid" style="margin-top:8px">${drop.map(x=>mini(x,by[x.id],'drop')).join('')}</div></details>`;
+ return h}
 function card(p,it){
   if(!it)return `<div class="card"><span class="rk">${p.rank}</span> ${esc(p.id)} — review에서 빠진 물건</div>`;
   const c=calc(it),r=it.rounds[c.curK]||{},cr=c.rows[c.curK],e=c.entry;
@@ -78,7 +108,7 @@ function card(p,it){
   const rights=(it.rights||[]).map(b=>`<li>${esc(b)}</li>`).join('');
   const open=(p.open||[]).map(b=>`<li>${esc(b)}</li>`).join('');
   return `<div class="card">
-<div class="top"><span class="rk">${p.rank}</span><span class="addr">${esc(it.address.replace(/^인천 /,''))}</span><span class="tp">${esc(it.type)}</span> ${st}</div>
+<div class="top"><span class="rk">${p.rank}</span><span class="addr">${esc(it.address.replace(/^인천 /,''))}</span><span class="tp">${esc(it.type)}</span> ${st}${p.budgetOnly?'<span class="tag-budget">예산 후보 — 예산 하나만 걸림</span>':''}${p.strategy?'<span class="tag-budget" style="background:var(--go-bg);color:var(--go)">'+esc(p.strategy)+'</span>':''}</div>
 <div class="case">${esc(it.id)} · ${esc(it.court)} · ${esc(it.area)}</div>
 <div class="nums">
 <div>금회<b>${rname(c.curK)} ${esc((r.date||'').slice(5).replace('-','.'))}</b></div>
@@ -106,7 +136,7 @@ ${p.report?'<div class="rep"><h3>Claude 검토서</h3><dl class="rec">'+Object.e
 Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/items.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/land.json',{cache:'no-store'}).then(r=>r.json()).catch(()=>[])]).then(([days,items,land])=>{
   const by={};items.forEach(x=>by[x.id]=x);land.forEach(x=>{if(!x.market)x.market={low:0,high:0,basis:[]};x.rounds=x.rounds||[];x.costs=x.costs||0;x.minProfit=x.minProfit||0;x.type=x.type||('토지('+(x.jimok||'')+')');x.land=true;by['L:'+x.id]=x});
   days.sort((a,b)=>b.date.localeCompare(a.date));
-  document.getElementById('list').innerHTML=days.map(d=>`<section class="day"><h2>${esc(d.date)} 선정 ${d.picks.length}건</h2><p class="note">${esc(d.note||'')}</p>${d.picks.length?d.picks.slice().sort((a,b)=>a.rank-b.rank).map(p=>card(p,by[p.id])).join(''):'<div class="card">오늘 기준을 모두 통과한 물건이 없습니다.</div>'}${(d.dropped||[]).length?'<details class="card"><summary>탈락 '+d.dropped.length+'건과 이유</summary><ul>'+d.dropped.map(x=>'<li>'+esc((by[x.id]||{}).address||x.id)+' — '+esc(x.why)+'</li>').join('')+'</ul></details>':''}</section>`).join('');
+  document.getElementById('list').innerHTML=days.map(d=>`<section class="day"><h2>${esc(d.date)} 선정 ${d.picks.length}건</h2><p class="note">${esc(d.note||'')}</p>${d.picks.length?d.picks.slice().sort((a,b)=>a.rank-b.rank).map(p=>card(p,by[p.id])).join(''):'<div class="card">오늘 기준을 모두 통과한 물건이 없습니다.</div>'}${extra(d,by)}</section>`).join('');
 }).catch(e=>{document.getElementById('list').textContent='불러오지 못했습니다: '+e});
 </script>
 </body>
