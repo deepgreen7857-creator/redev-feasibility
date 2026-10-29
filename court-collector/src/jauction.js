@@ -98,7 +98,7 @@ const dbFile = path.join(ARCHIVE, '_제이옥션_목록.json');
 const db = fs.existsSync(dbFile) ? JSON.parse(fs.readFileSync(dbFile, 'utf8')) : {}; // key: 법원_사건번호
 function saveDb() {
   fs.writeFileSync(dbFile, JSON.stringify(db, null, 1));
-  const cols = ['법원', '사건번호', '물건번호', '용도', '주소', '다음매각기일', '감정평가서', '매각물건명세서', '현황조사서', '문건접수', '송달', '사진수', '마지막확인', '폴더'];
+  const cols = ['법원', '사건번호', '물건번호', '용도', '주소', '다음매각기일', '명세서공개일', '감정평가서', '매각물건명세서', '명세서변경', '현황조사서', '문건접수', '송달', '사진수', '마지막확인', '폴더'];
   const esc = (v) => { const s = Array.isArray(v) ? v.join(' ') : String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const rows = Object.values(db).sort((a, b) => String(a.다음매각기일 || '9').localeCompare(String(b.다음매각기일 || '9'))).map((r) => cols.map((c) => esc(r[c])).join(','));
   fs.writeFileSync(path.join(ARCHIVE, '_제이옥션_목록.csv'), '\uFEFF' + [cols.join(','), ...rows].join('\r\n'));
@@ -176,13 +176,17 @@ async function readItem(idx) {
 const exists = (f) => { try { return fs.statSync(f).size > 0; } catch { return false; } };
 const isPdf = (b) => b && b.subarray(0, 4).toString() === '%PDF';
 const isJpg = (b) => b && b[0] === 0xff && b[1] === 0xd8;
+// 매각물건명세서는 매각기일 1주일 전부터 조회 가능 — 그 날(공개일) 전에 받은 명세서는 지난 회차 것이다
+const openDayOf = (sale) => (/^\d{4}-\d{2}-\d{2}$/.test(sale || '') ? new Date(new Date(sale + 'T00:00:00Z').getTime() - 7 * 86400e3).toISOString().slice(0, 10) : '');
+const fileDay = (f) => { try { return new Date(fs.statSync(f).mtimeMs + 9 * 3600e3).toISOString().slice(0, 10); } catch { return ''; } };
+const staleSpec = (f, sale) => { const od = openDayOf(sale); return !!(od && kstDay() >= od && exists(f) && fileDay(f) < od); };
 
 /** 사건 하나 받기 — 같은 사건의 물건(idx)들을 함께 */
 async function grabCase(items) {
   const first = items[0];
   const dir = path.join(ARCHIVE, first.court || '법원미상', first.year, first.caseNo);
   fs.mkdirSync(dir, { recursive: true });
-  const got = { 감정평가서: '', 매각물건명세서: [], 현황조사서: '', 문건접수: '', 송달: '', 사진수: 0 };
+  const got = { 감정평가서: '', 매각물건명세서: [], 현황조사서: '', 문건접수: '', 송달: '', 사진수: 0, 명세서받은날: {}, 명세서변경: [], 명세서같음: [] };
   let caseDataDir = '';
 
   // 감정평가서(사건 단위) — PDF 주소에서 사건 자료 폴더도 알아낸다
@@ -219,7 +223,16 @@ async function grabCase(items) {
     const idir = path.join(dir, no); fs.mkdirSync(idir, { recursive: true });
     const fM = path.join(idir, '매각물건명세서_제이옥션.pdf');
     const src = (String(v).match(/<iframe[^>]+src=["']([^"']+\.pdf)/i) || [])[1];
-    if (src && !exists(fM)) { await pause('pageSeconds'); const b = await get(new URL(src, BASE).href, { binary: true }); if (isPdf(b)) fs.writeFileSync(fM, b); }
+    if (src && (!exists(fM) || staleSpec(fM, it.sale))) {
+      const old = exists(fM) ? fs.readFileSync(fM) : null; const oldDay = old ? fileDay(fM) : '';
+      await pause('pageSeconds'); const b = await get(new URL(src, BASE).href, { binary: true });
+      if (isPdf(b)) {
+        if (old && !old.equals(b)) { fs.renameSync(fM, path.join(idir, `매각물건명세서_제이옥션_${oldDay}받음.pdf`)); fs.writeFileSync(fM, b); got.명세서변경.push(no); log(`${it.caseNo}(${no}) 매각물건명세서 새로 나옴 — 이전 것은 _${oldDay}받음 으로 보관`); }
+        else if (old) { fs.utimesSync(fM, new Date(), new Date()); got.명세서같음.push(no); }
+        else fs.writeFileSync(fM, b);
+      }
+    }
+    if (exists(fM)) got.명세서받은날[no] = fileDay(fM);
     if (exists(fM)) got.매각물건명세서.push(no);
     if (!caseDataDir && src) caseDataDir = new URL(src, BASE).href.replace(/\d+\/[^/]+$/, '');
     const { text, ...meta } = it;
@@ -248,6 +261,7 @@ async function grabCase(items) {
   db[key] = {
     법원: first.court, 사건번호: first.caseNo, 물건번호: items.map((i) => i.itemNo).join(' '), 용도: first.use, 주소: first.address, 다음매각기일: first.sale,
     감정평가서: got.감정평가서, 매각물건명세서: got.매각물건명세서.join(' '), 현황조사서: got.현황조사서, 문건접수: got.문건접수, 송달: got.송달, 사진수: got.사진수,
+    명세서공개일: openDayOf(first.sale), 명세서받은날: got.명세서받은날, 명세서변경: got.명세서변경.join(' '),
     마지막확인: kstDay(), 폴더: path.relative(ARCHIVE, dir), idx: items.map((i) => i.idx), _at: Date.now(),
     _완료: !!(got.감정평가서 && got.매각물건명세서.length && got.현황조사서 && (got.사진수 || !first.hasPic)),
   };
@@ -300,7 +314,8 @@ async function main() {
       idxs = new Map(idsIn(await get(`${BASE}/search/search_list.php?stc=1&sno=${m[1]}&tno=${m[2]}`)).map((i) => [i, 'case']));
     } else idxs = await collectIdx();
     // 이미 받은 물건(최근 확인·완료)은 건너뛴다
-    const fresh = (idx) => Object.values(db).some((r) => (r.idx || []).includes(idx) && (r._완료 ? Date.now() - r._at < cfg.refreshDays * 86400e3 : Date.now() - r._at < cfg.retryMissingDays * 86400e3));
+    const specDue = (r) => { const od = openDayOf(r.다음매각기일); return !!(od && kstDay() >= od && kstDay() <= r.다음매각기일 && Object.values(r.명세서받은날 || { x: '' }).some((d) => !d || d < od)); };
+    const fresh = (idx) => Object.values(db).some((r) => (r.idx || []).includes(idx) && !specDue(r) && (r._완료 ? Date.now() - r._at < cfg.refreshDays * 86400e3 : Date.now() - r._at < cfg.retryMissingDays * 86400e3));
     const todo = [...idxs.keys()].filter((i) => !fresh(i));
     log(`대상 ${idxs.size}건 중 이번에 볼 물건 ${todo.length}건`);
     const seenCase = new Set();
