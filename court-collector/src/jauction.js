@@ -183,14 +183,21 @@ async function collectScope() {
   // review 후보: 전부 받음(가볍게 받아 둔 것도 채움)
   const file = path.join(ROOT, '..', 'review', 'items.json');
   if (fs.existsSync(file)) {
-    const cases = [...new Set(JSON.parse(fs.readFileSync(file, 'utf8')).map((it) => (String(it.id).match(/^(\d{4})타경(\d+)/) || []).slice(1, 3).join('|')).filter((x) => x.includes('|')))];
+    // 같은 사건번호가 다른 법원에도 있으므로(제주 2025타경1517 등) 후보의 법원까지 맞는 줄만 받는다
+    const courtOf = new Map();
+    for (const it of JSON.parse(fs.readFileSync(file, 'utf8'))) { const m = String(it.id).match(/^(\d{4})타경(\d+)/); if (m) { const cb = courtBase(it.court || '').replace(/\s/g, ''); courtOf.set(`${m[1]}|${m[2]}`, (cb.match(/([가-힣]+지원)$/) || [])[1] || cb); } }
+    const cases = [...courtOf.keys()];
     let k = 0;
     for (const c of cases) {
       const [y, num] = c.split('|');
+      const wantCourt = courtOf.get(c);
       const done = Object.values(db).some((r) => r.사건번호 === `${y}타경${num}` && r._full && Date.now() - (r._at || 0) < cfg.refreshDays * 86400e3);
       if (done) continue;
       await pause('pageSeconds');
-      for (const r of rowsIn(await get(`${BASE}/search/search_list.php?stc=1&sno=${y}&tno=${num}`))) { out.set(r.idx, { src: 'review', sale: r.sale || (out.get(r.idx) || {}).sale || '', light: false }); k++; }
+      for (const r of rowsIn(await get(`${BASE}/search/search_list.php?stc=1&sno=${y}&tno=${num}`))) {
+        if (wantCourt && !r.text.replace(/\s/g, '').includes(wantCourt)) continue; // 다른 법원의 같은 사건번호
+        out.set(r.idx, { src: 'review', sale: r.sale || (out.get(r.idx) || {}).sale || '', light: false }); k++;
+      }
     }
     log(`review 후보(전부 받음) — ${k}건`);
   }
