@@ -32,7 +32,7 @@ table.t{width:100%;border-collapse:collapse;font-size:13.5px}table.t th,table.t 
 .filters{padding:10px 12px;border-bottom:1px solid var(--line);background:#fbfcfd;display:flex;flex-direction:column;gap:7px;font-size:13px}
 .frow{display:flex;flex-wrap:wrap;gap:4px;align-items:center}.frow>span.l{color:var(--sub);width:52px;flex:none}
 .chip{border:1px solid var(--line);background:#fff;border-radius:14px;padding:2px 9px;font-size:12.5px;cursor:pointer;user-select:none}.chip.on{background:var(--acc);border-color:var(--acc);color:#fff}
-.filters select{font:inherit;font-size:12.5px;padding:2px 4px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.filters select{max-width:230px;font:inherit;font-size:12.5px;padding:2px 4px;border:1px solid var(--line);border-radius:6px;background:#fff}
 .filters label{display:inline-flex;gap:3px;align-items:center;margin-right:8px}
 table.wide td{white-space:nowrap}table.wide td.addr{white-space:normal;min-width:220px}
 .count{color:var(--sub);font-size:12px;padding:8px 14px;border-bottom:1px solid var(--line)}
@@ -167,19 +167,23 @@ function regionOf(c) {
 }
 const USES = [['아파트', /아파트/], ['다세대', /다세대|빌라|연립/], ['도시형', /도시형/], ['주택', /^주택|단독|다가구|근린주택/], ['오피스텔', /오피스텔/], ['상가', /상가|근린|점포|사무실|숙박|공장|창고/], ['땅', /대지|임야|^전$|^답$|과수원|잡종지|토지|도로|구거|목장|묘지/], ['그 밖', null]];
 function useOf(c) { const u = String(c.use || ''); for (const [k, re] of USES) if (re && re.test(u)) return k; return '그 밖'; }
-const F0 = { region: [], use: [], maxBid: 0, maxRate: 0, minFail: 0, sale: 'future', appraisalDoc: false, noAssume: false, sort: 'sale' };
+const F0 = { region: '', use: '', maxBid: 0, maxRate: 0, round: '', sale: 'future', appraisalDoc: false, noAssume: false, sort: 'sale' };
 let F = { ...F0 };
-try { F = { ...F0, ...JSON.parse(localStorage.getItem('dataFilters') || '{}') }; } catch { /* 저장 안 되는 브라우저 */ }
-const saveF = () => { try { localStorage.setItem('dataFilters', JSON.stringify(F)); } catch { /* */ } };
+try { F = { ...F0, ...JSON.parse(localStorage.getItem('dataFilters2') || '{}') }; } catch { /* 저장 안 되는 브라우저 */ }
+const saveF = () => { try { localStorage.setItem('dataFilters2', JSON.stringify(F)); } catch { /* */ } };
+// 묶음: 수도권·충청, 주거(아파트·다세대·도시형)
+const REGION_SETS = { '수도권': ['서울', '인천', '경기'], '충청': ['충남', '충북', '대전', '세종'] };
+const USE_SETS = { '주거(아파트·다세대·도시형)': ['아파트', '다세대', '도시형'] };
+const inSet = (v, pick, sets) => !pick || (sets[pick] ? sets[pick].includes(v) : v === pick);
 function filtered(q) {
   const L = cases.filter((c) => {
     if (q && !(c.caseNo + ' ' + c.court + ' ' + (c.address || '') + ' ' + (c.use || '')).toLowerCase().includes(q)) return false;
     const s = c.summary || {}; const d = saleOf(c);
-    if (F.region.length && !F.region.includes(regionOf(c))) return false;
-    if (F.use.length && !F.use.includes(useOf(c))) return false;
+    if (!inSet(regionOf(c), F.region, REGION_SETS)) return false;
+    if (!inSet(useOf(c), F.use, USE_SETS)) return false;
     if (F.maxBid && !(s.minBid && s.minBid <= F.maxBid)) return false;
     if (F.maxRate && !(s.minRate && s.minRate <= F.maxRate)) return false;
-    if (F.minFail && !((s.failCount || 0) >= F.minFail)) return false;
+    if (F.round !== '' && F.round != null) { const f = s.failCount; if (f == null) return false; if (F.round === '4+' ? f < 4 : f !== Number(F.round)) return false; }
     if (F.sale === 'future' && !(d && d >= TODAY)) return false;
     if (/^\d+$/.test(F.sale) && !(d && d >= TODAY && d <= dayPlus(Number(F.sale)))) return false;
     if (F.sale === 'past' && !(d && d < TODAY)) return false;
@@ -194,16 +198,16 @@ function drawFilters() {
   const chips = (key, list) => list.map((k) => '<span class="chip' + (F[key].includes(k) ? ' on' : '') + '" data-k="' + key + '" data-v="' + k + '">' + k + '</span>').join('');
   const sel = (key, opts) => '<select data-k="' + key + '">' + opts.map(([v, l]) => '<option value="' + v + '"' + (String(F[key]) === String(v) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
   $('#filters').innerHTML =
-    '<div class="frow"><span class="l">지역</span>' + chips('region', REGIONS) + '</div>' +
-    '<div class="frow"><span class="l">용도</span>' + chips('use', USES.map((x) => x[0])) + '</div>' +
+    '<div class="frow"><span class="l">지역</span>' + sel('region', [['', '전체'], ...Object.keys(REGION_SETS).map((k) => [k, k + '(' + REGION_SETS[k].join('·') + ')']), ...REGIONS.map((r) => [r, r])]) + '</div>' +
+    '<div class="frow"><span class="l">용도</span>' + sel('use', [['', '전체'], ...Object.keys(USE_SETS).map((k) => [k, k]), ...USES.map((x) => [x[0], x[0]])]) + '</div>' +
     '<div class="frow"><span class="l">최저가</span>' + sel('maxBid', [[0, '전체'], [10000000, '1천만 이하'], [30000000, '3천만 이하'], [50000000, '5천만 이하'], [100000000, '1억 이하'], [200000000, '2억 이하'], [300000000, '3억 이하']]) +
-      '&nbsp;비율 ' + sel('maxRate', [[0, '전체'], [70, '70% 이하'], [49, '49% 이하'], [34, '34% 이하'], [24, '24% 이하']]) +
-      '&nbsp;유찰 ' + sel('minFail', [[0, '전체'], [1, '1회 이상'], [2, '2회 이상'], [3, '3회 이상'], [5, '5회 이상']]) + '</div>' +
-    '<div class="frow"><span class="l">매각기일</span>' + sel('sale', [['future', '지나지 않은 것'], ['7', '7일 안'], ['14', '14일 안'], ['30', '30일 안'], ['45', '45일 안'], ['all', '전체'], ['past', '지난 것']]) +
-      '&nbsp;정렬 ' + sel('sort', [['sale', '매각기일 빠른 순'], ['bid', '최저가 낮은 순'], ['rate', '비율 낮은 순'], ['recent', '최근 받은 순']]) + '</div>' +
+      '&nbsp;비율 ' + sel('maxRate', [[0, '전체'], [70, '70% 이하'], [49, '49% 이하'], [34, '34% 이하'], [24, '24% 이하']]) + '</div>' +
+    '<div class="frow"><span class="l">회차</span>' + sel('round', [['', '전체'], ['0', '최초'], ['1', '1회 유찰'], ['2', '2회 유찰'], ['3', '3회 유찰'], ['4+', '4회 유찰 이상']]) +
+      '&nbsp;매각기일 ' + sel('sale', [['future', '지나지 않은 것'], ['7', '7일 안'], ['14', '14일 안'], ['30', '30일 안'], ['45', '45일 안'], ['all', '전체'], ['past', '지난 것']]) + '</div>' +
+    '<div class="frow"><span class="l">정렬</span>' + sel('sort', [['sale', '매각기일 빠른 순'], ['bid', '최저가 낮은 순'], ['rate', '비율 낮은 순'], ['recent', '최근 받은 순']]) + '</div>' +
     '<div class="frow"><label><input type="checkbox" data-k="appraisalDoc"' + (F.appraisalDoc ? ' checked' : '') + '>감정평가서 있음</label><label><input type="checkbox" data-k="noAssume"' + (F.noAssume ? ' checked' : '') + '>인수 권리 없음</label><span class="chip" id="freset">조건 지우기</span></div>';
   document.querySelectorAll('#filters .chip[data-k]').forEach((el) => (el.onclick = () => { const k = el.dataset.k; const v = el.dataset.v; F[k] = F[k].includes(v) ? F[k].filter((x) => x !== v) : [...F[k], v]; changed(); }));
-  document.querySelectorAll('#filters select').forEach((el) => (el.onchange = () => { const k = el.dataset.k; F[k] = /^(maxBid|maxRate|minFail)$/.test(k) ? Number(el.value) : el.value; changed(); }));
+  document.querySelectorAll('#filters select').forEach((el) => (el.onchange = () => { const k = el.dataset.k; F[k] = /^(maxBid|maxRate)$/.test(k) ? Number(el.value) : el.value; changed(); }));
   document.querySelectorAll('#filters input[type=checkbox]').forEach((el) => (el.onchange = () => { F[el.dataset.k] = el.checked; changed(); }));
   $('#freset').onclick = () => { F = { ...F0 }; changed(); };
 }
