@@ -6,3 +6,5 @@ echo [%date% %time%] git pull (jauction) >> logs\update.log
 git -C .. checkout -- court-collector/package-lock.json >> logs\update.log 2>&1
 git -C .. pull --ff-only >> logs\update.log 2>&1
 node src\jauction.js
+rem 받은 자료를 jbslab.co.kr/data(관리자 전용)에 올림
+node src\datasync.js

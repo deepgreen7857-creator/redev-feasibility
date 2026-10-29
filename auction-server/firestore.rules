@@ -28,5 +28,7 @@ service cloud.firestore {
     match /courtFiles/{id}      { allow read: if isAdmin(); allow write: if false; }
     // 여러 물건이 함께 쓰는 문서(병합·중복사건) — 관리자 전용
     match /courtDocShared/{id}  { allow read: if isAdmin(); allow write: if false; }
+    // 자료 보기(jbslab.co.kr/data) — 미니PC 원본 하드 사본(감정평가서·명세서·현황조사서·사진) 열기 주소. 관리자만 읽음, 쓰기는 수집 서버만
+    match /dataCases/{id}       { allow read: if isAdmin(); allow write: if false; }
   }
 }
