@@ -52,6 +52,16 @@ const log = (m) => { const line = `[${new Date().toLocaleString('ko-KR', { timeZ
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rand = ([a, b]) => a + Math.random() * (b - a);
 const pause = (k) => sleep(rand(cfg[k]) * 1000);
+// 돌고 있는 중에도 config.json 의 속도·한도를 다시 읽는다(창을 껐다 켜지 않아도 바뀐 설정이 바로 적용)
+function reloadCfg() {
+  try { const j = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8')).jauction || {}; for (const k of ['dailyMax', 'itemSeconds', 'pageSeconds', 'photoSeconds', 'allowedHours', 'skipUse']) if (j[k] !== undefined) cfg[k] = j[k]; } catch { /* 고치는 중이면 다음에 */ }
+}
+const stopFile = path.join(STATE, 'jauction-stop.txt'); // 이 파일이 생기면 지금 사건을 마치고 멈춤
+// 동산(자동차·중기·선박 등)은 받지 않는다 — 부동산만
+const MOVABLE = /자동차|차량|승용|승합|화물차|트럭|버스|오토바이|이륜|중기|건설기계|굴착기|지게차|선박|어선|항공기|유체동산|기계기구|광업권|어업권/;
+const skipFile = path.join(STATE, 'jauction-skip.json');
+const skip = new Set(fs.existsSync(skipFile) ? JSON.parse(fs.readFileSync(skipFile, 'utf8')) : []);
+const saveSkip = () => fs.writeFileSync(skipFile, JSON.stringify([...skip]));
 
 const BASE = 'https://gfauction.co.kr';
 const FILES = 'https://file2.nuriauction.com';
@@ -104,6 +114,14 @@ function saveDb() {
   fs.writeFileSync(path.join(ARCHIVE, '_제이옥션_목록.csv'), '\uFEFF' + [cols.join(','), ...rows].join('\r\n'));
 }
 
+// 이 물건을 이미 받았나: light 면 명세서·현황조사서까지, 아니면 전부(_full). 덜 받은 것은 3일 뒤 다시
+// 매각기일 1주 전(명세서 공개일)이 지났는데 그 전에 받은 명세서뿐이면 다시 받아야 함(노트북 690e7a4)
+const specDue = (r) => { const od = openDayOf(r.다음매각기일); return !!(od && kstDay() >= od && kstDay() <= r.다음매각기일 && Object.values(r.명세서받은날 || { x: '' }).some((d) => !d || d < od)); };
+function doneFor(idx, light) {
+  return Object.values(db).some((r) => (r.idx || []).includes(idx) && !specDue(r) && (
+    (light ? r._완료 || r._full : r._full || (r._완료 && !r._light)) ? Date.now() - r._at < cfg.refreshDays * 86400e3 : Date.now() - r._at < cfg.retryMissingDays * 86400e3));
+}
+
 // ── 제이옥션 ──────────────────────────────────────────
 async function get(url, { binary = false, referer = BASE + '/' } = {}) {
   const ck = cookieFor(url);
@@ -124,6 +142,61 @@ const textOf = (h) => String(h || '').replace(/<script[\s\S]*?<\/script>/gi, '')
   .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
 // 물건 번호(idx): 로그인 상태면 detail_view 링크, 아니면 목록 체크박스(aChk) 값에만 있다
 const idsIn = (h) => [...new Set([...String(h).matchAll(/detail_view\.php\?idx=(\d+)|name=["']?aChk["']?[^>]*value=["']?(\d+)/g)].map((m) => m[1] || m[2]))];
+/** 목록 화면의 물건 줄: idx·줄 글자(주소 포함)·매각기일 */
+function rowsIn(h) {
+  const out = [];
+  for (const part of String(h).split(/<tr[\s>]/i).slice(1)) {
+    const m = part.match(/name=["']?aChk["']?[^>]*value=["']?(\d+)/) || part.match(/detail_view\.php\?idx=(\d+)/);
+    if (!m) continue;
+    const t = textOf('<tr>' + part.split(/<\/tr>/i)[0]);
+    const d = (t.match(/(\d{4})[.-](\d{2})[.-](\d{2})/) || []);
+    out.push({ idx: m[1], text: t, sale: d[0] ? `${d[1]}-${d[2]}-${d[3]}` : '' });
+  }
+  return out;
+}
+
+/** 검토 범위(1단계): config.json jauction.scope — 용도·최저가 상한·시도로 검색해 매각기일 빠른 순으로 모음
+ *  돌려줌: Map idx → { src, sale, light } (light=true 는 명세서·현황조사서만) */
+async function collectScope() {
+  const out = new Map();
+  const days = cfg.scopeDays || 45;
+  for (const sc of cfg.scope || []) {
+    const addrRe = sc.addr ? new RegExp(sc.addr) : null;
+    for (const sido of sc.sido || []) {
+      let before = -1; let n0 = out.size;
+      for (let page = 1; page <= (sc.pages || 80); page++) {
+        const q = new URLSearchParams({ stc: '1', address1_01: sido, address1_02: '', address1_03: '', usage_codes: sc.usage, mprice2: String(sc.mprice2), ipdate1: kstDay(), ipdate2: kstDay(days), aorder: 'a.appoint_result_date', page: String(page) });
+        const h = await get(`${BASE}/search/search_list.php?${q}`);
+        const rows = rowsIn(h);
+        for (const r of rows) {
+          if (out.has(r.idx)) continue;
+          if (addrRe && !addrRe.test(r.text)) continue;
+          out.set(r.idx, { src: `범위:${sc.name}`, sale: r.sale, light: true });
+        }
+        const seen = rows.length ? rows.map((r) => r.idx).join(',') : '';
+        if (!rows.length || seen === before) break; before = seen;
+        await pause('pageSeconds');
+      }
+      log(`${sc.name} (시도 ${sido}) — ${out.size - n0}건`);
+    }
+  }
+  // review 후보: 전부 받음(가볍게 받아 둔 것도 채움)
+  const file = path.join(ROOT, '..', 'review', 'items.json');
+  if (fs.existsSync(file)) {
+    const cases = [...new Set(JSON.parse(fs.readFileSync(file, 'utf8')).map((it) => (String(it.id).match(/^(\d{4})타경(\d+)/) || []).slice(1, 3).join('|')).filter((x) => x.includes('|')))];
+    let k = 0;
+    for (const c of cases) {
+      const [y, num] = c.split('|');
+      const done = Object.values(db).some((r) => r.사건번호 === `${y}타경${num}` && r._full && Date.now() - (r._at || 0) < cfg.refreshDays * 86400e3);
+      if (done) continue;
+      await pause('pageSeconds');
+      for (const r of rowsIn(await get(`${BASE}/search/search_list.php?stc=1&sno=${y}&tno=${num}`))) { out.set(r.idx, { src: 'review', sale: r.sale || (out.get(r.idx) || {}).sale || '', light: false }); k++; }
+    }
+    log(`review 후보(전부 받음) — ${k}건`);
+  }
+  return out;
+}
+
 const courtBase = (c) => String(c).replace(/\s*경매[\d-]+계\s*$/, '').trim();
 const view = (type, idx) => get(`${BASE}/search/auction_detail_view.php?type=${encodeURIComponent(type)}&idx=${idx}`, { referer: `${BASE}/search/detail_view.php?idx=${idx}` });
 
@@ -132,10 +205,21 @@ const bodyAfterMenu = (t) => { const i = t.indexOf('acrobat reader 설치'); ret
 
 /** 대상 물건 idx 모으기: 집중 지역 진행 물건 + review 후보(사건번호 검색) */
 async function collectIdx() {
+  // 지역 코드 찾기용: 검색 화면을 한 번 저장해 둔다(서울·경기 코드를 config.json jauction.areas 에 넣을 때 봄)
+  const areaPage = path.join(STATE, 'jauction-search-page.html');
+  if (!fs.existsSync(areaPage)) { try { fs.writeFileSync(areaPage, await get(`${BASE}/search/search01.php`)); } catch { /* */ } await pause('pageSeconds'); }
   const out = new Map(); // idx → 출처
+  // 지역 목록은 하루 한 번만 훑는다(같은 날 다음 실행은 저장해 둔 목록을 씀 — 서울·경기 목록은 수백 화면이라)
+  // 2일 안에 훑은 목록이 있으면 그것을 씀(서울·경기 목록은 수백 화면이라 매번 훑지 않음)
+  const listFile = path.join(STATE, `jauction-list-${kstDay()}.json`);
+  const recent = [kstDay(), kstDay(-1), kstDay(-2)].map((d) => path.join(STATE, `jauction-list-${d}.json`)).find((f) => fs.existsSync(f));
+  if (recent) {
+    for (const [id, src] of JSON.parse(fs.readFileSync(recent, 'utf8'))) out.set(id, src);
+    log(`오늘 훑은 지역 목록 다시 씀 — ${out.size}건`);
+  } else {
   for (const a of cfg.areas) {
     let before = -1;
-    for (let page = 1; page <= cfg.maxListPages; page++) {
+    for (let page = 1; page <= (a.pages || cfg.maxListPages); page++) {
       const q = new URLSearchParams({ stc: '1', address1_01: a.a1, address1_02: a.a2, address1_03: a.a3, ipdate1: kstDay(), ipdate2: kstDay(cfg.aheadDays), page: String(page) });
       const h = await get(`${BASE}/search/search_list.php?${q}`);
       idsIn(h).forEach((id) => out.has(id) || out.set(id, a.name));
@@ -143,6 +227,8 @@ async function collectIdx() {
       await pause('pageSeconds');
     }
     log(`${a.name} 진행 물건 목록 — 지금까지 ${out.size}건`);
+  }
+  fs.writeFileSync(listFile, JSON.stringify([...out]));
   }
   const file = path.join(ROOT, '..', 'review', 'items.json');
   if (fs.existsSync(file)) {
@@ -182,7 +268,8 @@ const fileDay = (f) => { try { return new Date(fs.statSync(f).mtimeMs + 9 * 3600
 const staleSpec = (f, sale) => { const od = openDayOf(sale); return !!(od && kstDay() >= od && exists(f) && fileDay(f) < od); };
 
 /** 사건 하나 받기 — 같은 사건의 물건(idx)들을 함께 */
-async function grabCase(items) {
+/** light=true: 명세서·현황조사서만(감정평가서·문건·송달·사진 뺌) */
+async function grabCase(items, light = false) {
   const first = items[0];
   const dir = path.join(ARCHIVE, first.court || '법원미상', first.year, first.caseNo);
   fs.mkdirSync(dir, { recursive: true });
@@ -191,7 +278,7 @@ async function grabCase(items) {
 
   // 감정평가서(사건 단위) — PDF 주소에서 사건 자료 폴더도 알아낸다
   const fA = path.join(dir, '감정평가서_제이옥션.pdf');
-  {
+  if (!light) {
     await pause('pageSeconds');
     const v = await view('judgement', first.idx);
     const src = (String(v).match(/<iframe[^>]+src=["']([^"']+\.pdf)/i) || [])[1];
@@ -199,11 +286,11 @@ async function grabCase(items) {
       const url = new URL(src, BASE).href; caseDataDir = url.replace(/[^/]+$/, '');
       if (!exists(fA)) { await pause('pageSeconds'); const b = await get(url, { binary: true }); if (isPdf(b)) fs.writeFileSync(fA, b); }
     }
-    got.감정평가서 = exists(fA) ? 'O' : '';
   }
+  got.감정평가서 = exists(fA) ? 'O' : '';
 
   // 글자 문서(사건 단위): 현황조사서·문건접수내역·송달내역
-  for (const [type, name, key] of [['status', '현황조사서', '현황조사서'], ['mun', '문건접수내역', '문건접수'], ['song', '송달내역', '송달']]) {
+  for (const [type, name, key] of [['status', '현황조사서', '현황조사서'], ['mun', '문건접수내역', '문건접수'], ['song', '송달내역', '송달']].filter(([t]) => !light || t === 'status')) {
     const fT = path.join(dir, `${name}_제이옥션.txt`);
     if (!exists(fT)) {
       await pause('pageSeconds');
@@ -242,7 +329,7 @@ async function grabCase(items) {
   // 현장사진(사건 단위): 사진 보기 화면에서 파일 이름을 읽고 자료 폴더에서 받는다
   const pdir = path.join(dir, '사진_제이옥션');
   const already = fs.existsSync(pdir) ? fs.readdirSync(pdir).filter((f) => /\.jpe?g$/i.test(f)).length : 0;
-  if (first.hasPic && caseDataDir && already === 0) {
+  if (!light && first.hasPic && caseDataDir && already === 0) {
     await pause('pageSeconds');
     const pv = await get(`${FILES}/auction/pic_view.php?idx=${first.idx}&picname=pic_0.jpg`, { referer: `${BASE}/search/auction_detail_view.php?type=pic_0.jpg&idx=${first.idx}` });
     const names = [...new Set([...String(pv).matchAll(/\/(pic_[\w]+\.jpe?g)/gi)].map((m) => m[1]))]
@@ -258,15 +345,17 @@ async function grabCase(items) {
   got.사진수 = fs.existsSync(pdir) ? fs.readdirSync(pdir).filter((f) => /\.jpe?g$/i.test(f)).length : 0;
 
   const key = `${first.court}_${first.caseNo}`;
+  const full = !!(got.감정평가서 && got.매각물건명세서.length && got.현황조사서 && (got.사진수 || !first.hasPic));
+  const lightDone = !!(got.매각물건명세서.length && got.현황조사서);
   db[key] = {
     법원: first.court, 사건번호: first.caseNo, 물건번호: items.map((i) => i.itemNo).join(' '), 용도: first.use, 주소: first.address, 다음매각기일: first.sale,
     감정평가서: got.감정평가서, 매각물건명세서: got.매각물건명세서.join(' '), 현황조사서: got.현황조사서, 문건접수: got.문건접수, 송달: got.송달, 사진수: got.사진수,
     명세서공개일: openDayOf(first.sale), 명세서받은날: got.명세서받은날, 명세서변경: got.명세서변경.join(' '),
     마지막확인: kstDay(), 폴더: path.relative(ARCHIVE, dir), idx: items.map((i) => i.idx), _at: Date.now(),
-    _완료: !!(got.감정평가서 && got.매각물건명세서.length && got.현황조사서 && (got.사진수 || !first.hasPic)),
+    _완료: light ? lightDone : full, _light: light && !full, _full: full,
   };
   saveDb();
-  log(`${first.court} ${first.caseNo}: 감정평가서 ${got.감정평가서 || 'X'} · 명세서 ${got.매각물건명세서.length}건 · 현황조사서 ${got.현황조사서 || 'X'} · 사진 ${got.사진수}장`);
+  log(`${first.court} ${first.caseNo}${light ? ' [가볍게]' : ''}: 감정평가서 ${got.감정평가서 || 'X'} · 명세서 ${got.매각물건명세서.length}건 · 현황조사서 ${got.현황조사서 || 'X'} · 사진 ${got.사진수}장`);
 }
 
 async function loginMode() {
@@ -312,21 +401,34 @@ async function main() {
     if (arg('--case')) {
       const m = arg('--case').match(/^(\d{4})타경(\d+)/);
       idxs = new Map(idsIn(await get(`${BASE}/search/search_list.php?stc=1&sno=${m[1]}&tno=${m[2]}`)).map((i) => [i, 'case']));
-    } else idxs = await collectIdx();
+    } else {
+      // 1단계: 검토 범위(용도·최저가 상한) + review 후보. 다 받았으면 2단계: 넓은 지역 전체(config areas)
+      idxs = await collectScope();
+      const scopeLeft = [...idxs.entries()].filter(([i, v]) => !doneFor(i, v.light) && !skip.has(i)).length;
+      log(`검토 범위 — 대상 ${idxs.size}건, 남은 것 ${scopeLeft}건`);
+      if (!scopeLeft) { log('검토 범위를 다 받음 — 넓은 지역(서울·경기 전체 등)으로 넘어감'); idxs = new Map([...(await collectIdx())].map(([i, src]) => [i, { src, sale: '', light: false }])); }
+    }
+    if (idxs.size && typeof [...idxs.values()][0] === 'string') idxs = new Map([...idxs].map(([i, src]) => [i, { src, sale: '', light: false }]));
     // 이미 받은 물건(최근 확인·완료)은 건너뛴다
-    const specDue = (r) => { const od = openDayOf(r.다음매각기일); return !!(od && kstDay() >= od && kstDay() <= r.다음매각기일 && Object.values(r.명세서받은날 || { x: '' }).some((d) => !d || d < od)); };
-    const fresh = (idx) => Object.values(db).some((r) => (r.idx || []).includes(idx) && !specDue(r) && (r._완료 ? Date.now() - r._at < cfg.refreshDays * 86400e3 : Date.now() - r._at < cfg.retryMissingDays * 86400e3));
-    const todo = [...idxs.keys()].filter((i) => !fresh(i));
+    const fresh = (idx) => doneFor(idx, idxs.get(idx)?.light);
+    // 받는 순서: 집중 지역(앞의 두 지역) → review 후보 → 넓은 지역(config 순서대로)
+    // 받는 순서: 매각기일 빠른 순(검토 범위·review). 넓은 지역은 config 순서대로
+    const rank = (src) => { if (/^범위:|^review$|^case$/.test(src)) return 0; const k = cfg.areas.findIndex((x) => x.name === src); return k < 0 ? 99 : k + 1; };
+    const key = (i) => { const v = idxs.get(i); return [rank(v.src), v.sale || '9999-99-99']; };
+    const todo = [...idxs.keys()].filter((i) => !fresh(i) && !skip.has(i)).sort((x, y) => { const a = key(x); const b = key(y); return a[0] - b[0] || a[1].localeCompare(b[1]); });
     log(`대상 ${idxs.size}건 중 이번에 볼 물건 ${todo.length}건`);
     const seenCase = new Set();
     for (const idx of todo) {
       if (n >= LIMIT) break;
       if (today >= cfg.dailyMax) { log('오늘 한도 — 내일 이어서'); break; }
       if (!anyHour && !inHours()) { log('쉬는 시간대 — 다음 실행에 이어서'); break; }
+      reloadCfg();
+      if (fs.existsSync(stopFile)) { try { fs.unlinkSync(stopFile); } catch { /* */ } log('멈춤 요청(jauction-stop.txt) — 여기서 멈춤'); break; }
       if (n > 0) await pause('itemSeconds');
       try {
         const it = await readItem(idx);
         if (!it) { log(`idx ${idx}: 물건 정보를 못 읽음`); continue; }
+        if (MOVABLE.test(String(it.use || '').replace(/주차|차고/g, ''))) { skip.add(idx); saveSkip(); log(`idx ${idx}: 동산(${it.use}) — 받지 않음`); continue; }
         const ck = `${it.court}_${it.caseNo}`;
         if (seenCase.has(ck)) continue; seenCase.add(ck);
         // 같은 사건의 다른 물건번호 idx 도 함께
@@ -334,7 +436,9 @@ async function main() {
         const listed = idsIn(await get(`${BASE}/search/search_list.php?stc=1&sno=${it.year}&tno=${it.caseNo.split('타경')[1]}`)).filter((i) => i !== idx);
         for (const o of listed.slice(0, 11)) { await pause('pageSeconds'); const s = await readItem(o); if (s && s.court === it.court && s.caseNo === it.caseNo) sib.push(s); }
         n++; bump();
-        await grabCase(sib);
+        // 30사건마다 사이트(/data) 올리기를 따로 돌림(이미 돌고 있으면 그쪽이 알아서 건너뜀)
+        if (!DRY && n % 30 === 0) { try { const { spawn } = await import('node:child_process'); spawn(process.execPath, [path.join(ROOT, 'src', 'datasync.js')], { cwd: ROOT, detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch { /* */ } }
+        await grabCase(sib, !!idxs.get(idx)?.light && !sib.some((s) => idxs.get(s.idx) && !idxs.get(s.idx).light));
       } catch (e) {
         if (e instanceof Blocked || e instanceof NeedLogin) throw e;
         log(`idx ${idx}: 실패 ${e.message}`);
