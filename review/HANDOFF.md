@@ -218,3 +218,4 @@
 - 판단 원문은 www.jbslab.co.kr/data(미니PC가 제이옥션에서 모은 감정평가서·명세서·현황조사서·사진)를 먼저 본다. 크롬에 관리자 Google 계정이 로그인돼 있어 '로그인' 버튼만 누르면 들어가짐(비밀번호 입력 없음).
 - /data에 없는 사건만 대법원 법원경매정보(물건상세·명세서 뷰어)로 보충하고, 어느 쪽에서 봤는지 출처를 적는다.
 - 미니PC가 꺼져 있으면 /data가 갱신되지 않음 → 보고 첫머리에 'data 갱신 안 됨(마지막 자료 날짜)'을 적는다.
+- (10.30 오전) 회사 망에서는 /data의 PDF(firebasestorage)가 '인천광역시 유해사이트 차단'으로 안 열림. 대책: court-collector/src/pdftext.js 추가, datasync.js v3 — 명세서·현황조사서·감정평가서(앞 8쪽) 글자를 dataCases.summary.specText/surveyText/appraisalText 로 같이 올림(서버 수정 불필요, summary 30KB 한도 안). data/index.html에 '원문 글자' 칸 추가. 정민님이 court-collector·data 폴더를 git push 해야 미니PC(실행 전 git pull)에 반영됨. 반영 후 첫 실행에서 기존 사건 전부 글자 다시 보냄(v3).
