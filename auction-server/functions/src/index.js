@@ -870,6 +870,47 @@ async function handleCourtFile(body) {
   return { ok: true, kind, size: buf.length, shared };
 }
 
+// ---------- 자료 보기(jbslab.co.kr/data) — 미니PC 원본 하드 사본, 관리자 전용 ----------
+//  dataCase: 사건 기본정보(법원·사건번호·용도·주소·매각기일) → dataCases/<법원_사건번호> (관리자만 읽음)
+//  dataFile: 사건 폴더 안 파일(PDF·사진·글자) → 저장소 data/<법원>/<연도>/<사건번호>/<경로>, 열기 주소는 dataCases 에만
+//  dataLocal: 너무 커서 하드에만 둔 파일 표시
+const DATA_CASE = /^\d{4}타경\d+$/;
+const DATA_PATH = /^[\w가-힣().,\- ]+(\/[\w가-힣().,\- ]+){0,2}$/;
+const DATA_TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', txt: 'text/plain; charset=utf-8' };
+const dataDocId = (court, caseNo) => `${String(court).replace(/[\/\s]/g, '')}_${caseNo}`;
+const dataKey = (p) => require('crypto').createHash('sha1').update(p).digest('hex').slice(0, 16);
+async function handleData(body) {
+  const court = String(body.court || '').trim(); const caseNo = String(body.caseNo || '').replace(/\s/g, ''); const year = String(body.year || caseNo.slice(0, 4));
+  if (!court || /[\/.]/.test(court) || !DATA_CASE.test(caseNo) || !/^\d{4}$/.test(year)) return { ok: false, error: '사건 정보' };
+  const ref = db.collection('dataCases').doc(dataDocId(court, caseNo));
+  const at = new Date().toISOString();
+  if (body.action === 'dataCase') {
+    const m = body.meta || {};
+    const pick = (v, n = 300) => (v === undefined || v === null ? '' : String(v).slice(0, n));
+    await ref.set({ court, caseNo, year, use: pick(m.use, 60), address: pick(m.address), sale: pick(m.sale, 20), itemNo: pick(m.itemNo, 60), updatedAt: at }, { merge: true });
+    return { ok: true };
+  }
+  const p = String(body.path || '');
+  if (!DATA_PATH.test(p) || p.split('/').some((s) => s === '.' || s === '..')) return { ok: false, error: '경로' };
+  const ext = (p.match(/\.([a-z]+)$/i) || [])[1]?.toLowerCase();
+  if (!DATA_TYPES[ext]) return { ok: false, error: '파일 종류' };
+  const kind = ext === 'pdf' ? 'pdf' : ext === 'txt' ? 'txt' : 'img';
+  if (body.action === 'dataLocal') {
+    await ref.set({ court, caseNo, year, files: { [dataKey(p)]: { path: p, kind, size: Number(body.size) || null, local: true, at } }, updatedAt: at }, { merge: true });
+    return { ok: true };
+  }
+  if (body.action !== 'dataFile') return { ok: false, error: '모르는 동작' };
+  const buf = Buffer.from(String(body.data || ''), 'base64');
+  if (!buf.length || buf.length > 21 * 1024 * 1024) return { ok: false, error: '크기' };
+  if (kind === 'pdf' && buf.slice(0, 4).toString() !== '%PDF') return { ok: false, error: '파일 형식' };
+  if (kind === 'img' && !((buf[0] === 0xff && buf[1] === 0xd8) || buf.slice(1, 4).toString() === 'PNG')) return { ok: false, error: '파일 형식' };
+  const file = getStorage().bucket().file(`data/${court}/${year}/${caseNo}/${p}`);
+  await file.save(buf, { contentType: DATA_TYPES[ext], resumable: false, metadata: { cacheControl: 'private, max-age=86400', contentDisposition: 'inline' } });
+  const url = await getDownloadURL(file);
+  await ref.set({ court, caseNo, year, files: { [dataKey(p)]: { path: p, kind, size: buf.length, url, at } }, updatedAt: at }, { merge: true });
+  return { ok: true, size: buf.length };
+}
+
 exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY, DATA_GO_KR_KEY], timeoutSeconds: 300, memory: '1GiB', cors: false }, async (req, res) => {
   if (req.method !== 'POST') { res.status(405).send('POST만 받습니다'); return; }
   const auth = String(req.get('authorization') || '');
@@ -877,6 +918,10 @@ exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY, DATA
   const body = req.body || {};
   if (['file', 'fileMeta', 'fileText', 'fileRef'].includes(body.action)) {
     try { res.json(await handleCourtFile(body)); } catch (e) { logger.error('court file', body.listingId, body.kind, e.message); res.status(500).json({ ok: false, error: e.message.slice(0, 200) }); }
+    return;
+  }
+  if (['dataCase', 'dataFile', 'dataLocal'].includes(body.action)) {
+    try { res.json(await handleData(body)); } catch (e) { logger.error('data file', body.caseNo, body.path, e.message); res.status(500).json({ ok: false, error: e.message.slice(0, 200) }); }
     return;
   }
   if (body.action) { res.json(await handleRegistry(body)); return; }

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>경매 자료 보기 — 관리자</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--ink:#1d2330;--sub:#6b7280;--line:#e3e6eb;--acc:#1f6f5c;--accbg:#e7f3ef;--warn:#b45309;--warnbg:#fdf2e3}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 "Malgun Gothic","Apple SD Gothic Neo",sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+header h1{font-size:17px;margin:0;white-space:nowrap}#who{color:var(--sub);font-size:12px;margin-left:auto}
+#q{flex:1;min-width:200px;max-width:420px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}
+button{font:inherit;cursor:pointer}.btn{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff}.btn.main{background:var(--acc);border-color:var(--acc);color:#fff}
+.gate{max-width:420px;margin:80px auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px;text-align:center}.gate p{color:var(--sub)}
+.wrap{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 55px)}
+#list{overflow:auto;border-right:1px solid var(--line);background:var(--card)}
+.row{padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer}.row:hover{background:#fafbfc}.row.on{background:var(--accbg)}
+.row b{font-size:15px}.row .addr{color:var(--sub);font-size:13px;margin:2px 0}.tags{display:flex;gap:4px;flex-wrap:wrap}
+.tag{font-size:11px;padding:1px 6px;border-radius:10px;background:#eef0f3;color:#4b5563}.tag.ok{background:var(--accbg);color:var(--acc)}.tag.no{background:var(--warnbg);color:var(--warn)}
+#main{overflow:auto;padding:16px 20px}.empty{color:var(--sub);padding:40px;text-align:center}
+h2{margin:0 0 4px;font-size:20px}.meta{color:var(--sub);font-size:13px;margin-bottom:14px}
+.sec{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}.sec h3{margin:0 0 10px;font-size:15px}
+.docs{display:flex;gap:8px;flex-wrap:wrap}.doc{padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:14px}
+.doc.on{border-color:var(--acc);background:var(--accbg);color:var(--acc)}.doc small{color:var(--sub)}.doc[disabled]{opacity:.55;cursor:default}
+#pdf{width:100%;height:78vh;border:1px solid var(--line);border-radius:8px;margin-top:10px;display:none;background:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.grid img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:6px;cursor:zoom-in;background:#eee}
+#txt{width:100%;height:420px;border:1px solid var(--line);border-radius:8px;margin-top:10px;display:none;background:#fafbfc}
+#big{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:10;cursor:zoom-out}#big img{max-width:95vw;max-height:92vh}
+.count{color:var(--sub);font-size:12px;padding:8px 14px;border-bottom:1px solid var(--line)}
+@media (max-width:800px){.wrap{grid-template-columns:1fr;height:auto}#list{max-height:45vh}#pdf{height:70vh}}
+</style></head><body>
+<header><h1>경매 자료 보기</h1><input id="q" placeholder="사건번호·주소·법원으로 찾기 (예: 가좌동, 503672)" style="display:none"><span id="who"></span><button class="btn" id="out" style="display:none">로그아웃</button></header>
+<div id="gate" class="gate"><h2>관리자 전용</h2><p>미니PC 원본 하드에 모은 경매 자료입니다.<br>관리자 Google 계정으로 로그인하세요.</p><button class="btn main" id="login">Google로 로그인</button><p id="msg"></p></div>
+<div class="wrap" id="app" style="display:none"><div id="list"></div><div id="main"><div class="empty">왼쪽에서 사건을 고르세요.</div></div></div>
+<div id="big" onclick="this.style.display='none'"><img id="bigimg" alt=""></div>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+const app = initializeApp({ apiKey: 'AIzaSyAaqAP7371502cfR3OpnYC33tTfE7EeqtI', authDomain: 'jbslab-auction.firebaseapp.com', projectId: 'jbslab-auction', appId: '1:780407673324:web:0506b356fb74a8c68a30c9' });
+const auth = getAuth(app); const db = getFirestore(app);
+const ADMIN = ['deepgreen7857@gmail.com'];
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const kb = (n) => !n ? '' : n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB';
+let cases = [];
+$('#login').onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch((e) => { $('#msg').textContent = '로그인 실패: ' + e.message; });
+$('#out').onclick = () => signOut(auth);
+onAuthStateChanged(auth, async (u) => {
+  const ok = u && ADMIN.includes(u.email);
+  $('#gate').style.display = ok ? 'none' : 'block'; $('#app').style.display = ok ? 'grid' : 'none';
+  $('#q').style.display = ok ? '' : 'none'; $('#out').style.display = u ? '' : 'none'; $('#who').textContent = u ? u.email : '';
+  if (u && !ok) { $('#msg').textContent = '관리자 계정이 아닙니다.'; cases = []; $('#list').innerHTML = ''; return; }
+  if (ok) await load();
+});
+async function load() {
+  $('#list').innerHTML = '<div class="count">불러오는 중…</div>';
+  try {
+    const snap = await getDocs(collection(db, 'dataCases'));
+    cases = snap.docs.map((d) => { const c = { id: d.id, ...d.data() }; c.list = Object.values(c.files || {}); return c; });
+  } catch (e) { $('#list').innerHTML = '<div class="count">못 읽음: ' + esc(e.message) + '</div>'; return; }
+  cases.sort((a, b) => (a.sale || '9999').localeCompare(b.sale || '9999') || String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  draw();
+  const h = decodeURIComponent(location.hash.slice(1)); if (h) open(h);
+}
+const has = (c, re) => c.list.some((f) => re.test(f.path));
+function draw() {
+  const q = $('#q').value.trim().toLowerCase();
+  const L = cases.filter((c) => !q || (c.caseNo + ' ' + c.court + ' ' + (c.address || '') + ' ' + (c.use || '')).toLowerCase().includes(q));
+  const t = (ok, l) => '<span class="tag ' + (ok ? 'ok' : 'no') + '">' + l + '</span>';
+  $('#list').innerHTML = '<div class="count">' + L.length + '건 / 전체 ' + cases.length + '건</div>' + L.map((c) => '<div class="row" data-id="' + esc(c.id) + '"><b>' + esc(c.caseNo) + '</b> <span class="tag">' + esc(String(c.court).replace('지방법원', '지법')) + '</span>' + (c.use ? ' <span class="tag">' + esc(c.use) + '</span>' : '') +
+    '<div class="addr">' + esc(c.address || '주소 정보 없음') + (c.sale ? ' · 매각기일 ' + esc(c.sale) : '') + '</div><div class="tags">' + t(has(c, /감정평가서/), '감정평가서') + t(has(c, /매각물건명세서/), '명세서') + t(has(c, /현황조사서/), '현황조사서') + '<span class="tag">사진 ' + c.list.filter((f) => f.kind === 'img').length + '</span></div></div>').join('');
+  document.querySelectorAll('.row').forEach((r) => (r.onclick = () => open(r.dataset.id)));
+}
+const rank = (n) => /감정평가서/.test(n) ? 0 : /매각물건명세서/.test(n) ? 1 : /현황조사서/.test(n) ? 2 : /등기/.test(n) ? 3 : 9;
+const base = (p) => p.split('/').pop();
+function open(id) {
+  const c = cases.find((x) => x.id === id); if (!c) return;
+  document.querySelectorAll('.row').forEach((r) => r.classList.toggle('on', r.dataset.id === id));
+  history.replaceState(null, '', '#' + encodeURIComponent(id));
+  const pdf = c.list.filter((f) => f.kind === 'pdf').sort((a, b) => rank(base(a.path)) - rank(base(b.path)) || a.path.localeCompare(b.path));
+  const img = c.list.filter((f) => f.kind === 'img' && f.url).sort((a, b) => a.path.localeCompare(b.path));
+  const txt = c.list.filter((f) => f.kind === 'txt').sort((a, b) => a.path.localeCompare(b.path));
+  const sub = (p) => { const s = p.split('/'); return s.length > 1 && /^\d+$/.test(s[0]) ? ' (물건' + s[0] + ')' : ''; };
+  const btn = (f, cls) => '<button class="doc ' + cls + '" ' + (f.url ? 'data-url="' + esc(f.url) + '"' : 'disabled title="파일이 커서 미니PC 하드에만 있습니다"') + '>' + esc(base(f.path).replace(/\.(pdf|txt)$/i, '').replace(/_/g, ' ')) + sub(f.path) + ' <small>' + (f.url ? kb(f.size) : '하드에만') + '</small></button>';
+  $('#main').innerHTML = '<h2>' + esc(c.caseNo) + '</h2><div class="meta">' + esc(c.court) + (c.use ? ' · ' + esc(c.use) : '') + (c.address ? ' · ' + esc(c.address) : '') + (c.sale ? ' · 다음 매각기일 ' + esc(c.sale) : '') + '</div>' +
+    '<div class="sec"><h3>문서 (PDF ' + pdf.length + '개)</h3>' + (pdf.length ? '<div class="docs">' + pdf.map((f) => btn(f, 'p')).join('') + '</div><iframe id="pdf" title="문서 보기"></iframe>' : '<div class="meta">받은 PDF가 없습니다.</div>') + '</div>' +
+    '<div class="sec"><h3>현장사진 (' + img.length + '장)</h3>' + (img.length ? '<div class="grid">' + img.map((f) => '<img loading="lazy" src="' + esc(f.url) + '" alt="' + esc(base(f.path)) + '">').join('') + '</div>' : '<div class="meta">받은 사진이 없습니다.</div>') + '</div>' +
+    '<div class="sec"><h3>글자 문서 (' + txt.length + '개)</h3>' + (txt.length ? '<div class="docs">' + txt.map((f) => btn(f, 't')).join('') + '</div><iframe id="txt" title="글자 문서"></iframe>' : '<div class="meta">없음</div>') + '</div>';
+  const wire = (sel, frame) => document.querySelectorAll(sel).forEach((b) => (b.onclick = () => { if (!b.dataset.url) return; document.querySelectorAll(sel).forEach((x) => x.classList.toggle('on', x === b)); const fr = $(frame); fr.style.display = 'block'; fr.src = b.dataset.url; }));
+  wire('.doc.p', '#pdf'); wire('.doc.t', '#txt');
+  const first = document.querySelector('.doc.p[data-url]'); if (first) first.click();
+  document.querySelectorAll('.grid img').forEach((im) => (im.onclick = () => { $('#bigimg').src = im.src; $('#big').style.display = 'flex'; }));
+}
+$('#q').oninput = draw;
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#big').style.display = 'none'; });
+</script></body></html>
