@@ -70,7 +70,7 @@ svg#map.drawing{cursor:crosshair}
 .kpi{border:1px solid var(--line);border-radius:6px;padding:9px 10px;min-width:0}
 .kpi .l{font-size:12px;color:var(--ink-2)}
 .kpi .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;font-family:var(--f-mono);letter-spacing:-.01em}
-.kpi .f{font-size:11px;color:var(--ink-2);font-family:var(--f-mono);overflow-wrap:anywhere}
+.kpi .f{font-size:12px;color:var(--ink-2);font-family:var(--f-body);font-variant-numeric:tabular-nums;line-height:1.45;overflow-wrap:anywhere}
 .checks{display:flex;flex-direction:column;gap:6px}
 .chk{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;border:1px solid var(--line);border-radius:6px;padding:8px 10px}
 .chk.req{border-left:3px solid var(--ink-2)}
@@ -118,6 +118,11 @@ tr.hl td{background:var(--accent-soft)}
 .btn.sm{font-size:12px;padding:3px 9px;text-decoration:none;display:inline-flex;align-items:center}
 .source{font-size:13px;color:var(--ink-2);display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-top:10px}
 .source b{color:var(--ink)}
+.acc{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--sheet);color:var(--ink);padding:1px 7px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.acc.ok{border-color:var(--ok);color:var(--ok)}
+.acc.bad{border-color:var(--bad);color:var(--bad)}
+.acc.man{font-weight:600}
+.acc:hover{background:var(--grid)}
 a.back{color:var(--accent);font-size:13px;text-decoration:none}
 a.back:hover{text-decoration:underline}
 </style>
@@ -175,6 +180,7 @@ a.back:hover{text-decoration:underline}
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
-<script src="urban.js?v=1"></script>
+<script src="../js/config.js?v=67"></script>
+<script src="urban.js?v=2"></script>
 </body>
 </html>

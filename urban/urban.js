@@ -66,6 +66,87 @@ const polyArea = pts => { let a = 0; for (let i = 0; i < pts.length; i++) { cons
 const inside = (x, y, pts) => { let c = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) c = !c; } return c; };
 const centroid = pts => { let a = 0, cx = 0, cy = 0; for (let i = 0; i < pts.length; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]; const f = x1 * y2 - x2 * y1; a += f; cx += (x1 + x2) * f; cy += (y1 + y2) * f; } if (!a) return [pts[0][0], pts[0][1]]; return [cx / (3 * a), cy / (3 * a)]; };
 
+/* ===== 주택접도율: 도로접면 추정 + 직접 지정 ===== */
+// 토지특성 도로접면: 광대로·중로·소로·세로(가) = 폭 4m 이상 도로에 접한 것으로 추정, 세로(불)·맹지 = 미충족
+//  세로(가)는 '폭 8m 미만·자동차 통행 가능'이라 4m 미만일 수 있음 → 판정 칸·도면 필지를 눌러 직접 지정 가능
+const ROAD_CACHE = 'jbs-urban-road', ACC_OVR = 'jbs-urban-access';
+const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (e) { return {}; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* 무시 */ } };
+const roadCache = lsGet(ROAD_CACHE), accOvr = lsGet(ACC_OVR);
+function accessFromRoad(nm) {
+  if (!nm) return null;
+  if (/맹지|\(불\)/.test(nm)) return false;
+  if (/광대|중로|소로|세로.*\(가\)/.test(nm)) return true;
+  return null;
+}
+const pKey = p => (D.real ? 'r:' + (p.pnu || p.jibun) : 's:' + p.id);
+function applyAccess(p) {
+  const o = accOvr[pKey(p)];
+  if (o === true || o === false) { p.access = o; p.manual = true; p.accSrc = '직접 지정'; p.accessStr = p.accSrc; return; }
+  p.manual = false;
+  if (D.real) {
+    const nm = p.roadSide || roadCache[p.pnu] || '';
+    p.roadNm = nm;
+    p.access = accessFromRoad(nm);
+    p.accSrc = p.access == null ? (nm ? `도로접면 '${nm}' — 자동 판단 불가` : '도로접면 미조회') : `도로접면 '${nm}' 기준 추정`;
+    p.accessStr = p.accSrc;
+  } else { p.access = p.accessAuto; p.accSrc = '예시 도로 폭'; }
+}
+function cycleAccess(id) {
+  const p = D.parcels[id]; if (!p) return;
+  const k = pKey(p), cur = accOvr[k];
+  if (cur === undefined) accOvr[k] = true; else if (cur === true) accOvr[k] = false; else delete accOvr[k];
+  lsSet(ACC_OVR, accOvr);
+  applyAccess(p);
+  render();
+  toast(`${p.jibun}: ${p.manual ? (p.access ? '접도 충족으로 지정' : '접도 미충족으로 지정') : '자동 판단으로 되돌림'}`);
+}
+function jsonp(url, params, timeout = 15000) {
+  return new Promise((resolve, reject) => {
+    const cb = '__vwu' + Math.random().toString(36).slice(2);
+    const s = document.createElement('script');
+    const t = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, timeout);
+    function cleanup() { clearTimeout(t); delete window[cb]; s.remove(); }
+    window[cb] = data => { cleanup(); resolve(data); };
+    s.src = url + '?' + new URLSearchParams({ ...params, callback: cb });
+    s.onerror = () => { cleanup(); reject(new Error('load')); };
+    document.head.append(s);
+  });
+}
+async function vwRoadSide(pnu) {
+  const yr = new Date().getFullYear();
+  for (const y of [yr, yr - 1]) {
+    const d = await jsonp('https://api.vworld.kr/ned/data/getLandCharacteristics', { pnu, key: VWORLD_KEY.trim(), domain: location.origin, format: 'json', numOfRows: 1, pageNo: 1, stdrYear: String(y) });
+    const f = d && d.landCharacteristicss && d.landCharacteristicss.field && d.landCharacteristicss.field[0];
+    if (f) return f.roadSideCodeNm || '';
+  }
+  return '';
+}
+const roadTargets = () => D.parcels.filter(p => p.pnu && !p.roadSide && roadCache[p.pnu] === undefined && p.blds.length);
+let roadBusy = false;
+async function fetchRoads(btn) {
+  if (roadBusy) return;
+  if (typeof VWORLD_KEY !== 'string' || !VWORLD_KEY.trim()) { toast('브이월드 인증키가 없습니다'); return; }
+  if (!/jbslab\.co\.kr$/.test(location.hostname)) toast('브이월드 키는 www.jbslab.co.kr에서만 조회됩니다');
+  const list = roadTargets(); if (!list.length) { toast('조회할 필지가 없습니다'); return; }
+  roadBusy = true; let done = 0, fail = 0;
+  const work = async () => {
+    while (list.length) {
+      const p = list.shift();
+      try { roadCache[p.pnu] = await vwRoadSide(p.pnu); } catch (e) { fail++; }
+      done++; if (btn) btn.textContent = `조회 중 ${done}/${done + list.length}`;
+      if (done % 20 === 0) lsSet(ROAD_CACHE, roadCache);
+    }
+  };
+  await Promise.all([work(), work(), work(), work()]);
+  lsSet(ROAD_CACHE, roadCache);
+  roadBusy = false;
+  D.parcels.forEach(applyAccess);
+  renderSourceBar(loadProject());
+  render();
+  toast(fail ? `도로접면 조회 완료 · 실패 ${fail}필지(다시 누르면 재시도)` : '도로접면 조회 완료');
+}
+
 /* ===== 건축물 판정 ===== */
 function kindOf(use) {
   if (['아파트', '연립주택', '다세대주택'].includes(use)) return '공동';
@@ -127,7 +208,7 @@ function buildSample() {
       }
     }
   }
-  parcels.forEach((p, i) => { p.zone = p.cx < W * 0.55 ? '제2종일반주거지역' : '제3종일반주거지역'; p.jibun = '예시동 ' + (100 + i); p.jimok = '대'; p.price = 0; p.owner = ''; p.public = false; });
+  parcels.forEach((p, i) => { p.zone = p.cx < W * 0.55 ? '제2종일반주거지역' : '제3종일반주거지역'; p.jibun = '예시동 ' + (100 + i); p.jimok = '대'; p.price = 0; p.owner = ''; p.public = false; p.accessAuto = p.access; });
   const buildings = []; let bid = 0;
   for (const p of parcels) {
     if (R() > 0.92) continue;
@@ -191,7 +272,7 @@ function buildReal(p) {
     const [cx, cy] = centroid(big);
     return {
       id: i, rings, area: Number(l.area) || polyArea(big), cx, cy, zone: l.zoning || p.meta?.zoning || '', jibun: (l.addr ? '' : '') + l.jibun, jimok: l.jimok,
-      price: Number(l.price) || 0, owner: l.owner || '', public: l.ownerType === '국공유지', pnu: l.pnu || '',
+      price: Number(l.price) || 0, owner: l.owner || '', public: l.ownerType === '국공유지', pnu: l.pnu || '', roadSide: l.roadSide || '',
       access: null, accessStr: '도로 폭 정보 없음', blds: [],
     };
   });
@@ -239,8 +320,8 @@ function analyze(key) {
   const N = bs.length, oldN = bs.filter(b => b.old).length, unknownN = bs.filter(b => b.unknown).length;
   const fa = bs.reduce((s, b) => s + b.floor, 0), oldFa = bs.filter(b => b.old).reduce((s, b) => s + b.floor, 0);
   const smallN = ps.filter(p => p.area < smallLimit(p.zone)).length;
-  const accKnown = bs.every(b => b.pid != null && D.parcels[b.pid].access != null);
-  const accN = accKnown ? bs.filter(b => D.parcels[b.pid].access).length : null;
+  let accN = 0, accU = 0;
+  bs.forEach(b => { const a = b.pid != null ? D.parcels[b.pid].access : null; if (a === true) accN++; else if (a == null) accU++; });
   const du = bs.reduce((s, b) => s + densityUnits(b), 0);
   const landArea = ps.reduce((s, p) => s + p.area, 0);
   const zoneArea = {}; ps.forEach(p => { const z = p.zone || '미확인'; zoneArea[z] = (zoneArea[z] || 0) + p.area; });
@@ -253,10 +334,19 @@ function analyze(key) {
   });
   const priorLand = ps.reduce((s, p) => s + p.area * p.price, 0);
   return {
-    key, area, ps, bs, N, oldN, unknownN, fa, oldFa, smallN, accN, du, landArea, zoneArea, owners: Math.max(owners, 1), priorLand,
+    key, area, ps, bs, N, oldN, unknownN, fa, oldFa, smallN, accN, accU, du, landArea, zoneArea, owners: Math.max(owners, 1), priorLand,
     oldRatio: N ? oldN / N : 0, oldFaRatio: fa ? oldFa / fa : 0, smallRatio: ps.length ? smallN / ps.length : 0,
-    accRatio: accN == null ? null : (N ? accN / N : 0), density: du / (area / 10000),
+    // 미확인 건축물이 있으면 접도율은 범위(accRatio ~ accMax)
+    accRatio: N ? accN / N : 0, accMax: N ? (accN + accU) / N : 0, density: du / (area / 10000),
   };
+}
+const accText = a => a.accU ? `${pct(a.accRatio)}~${pct(a.accMax)}` : pct(a.accRatio);
+// 접도율 '이하' 기준: 미확인이 모두 접도여도 기준 이하면 충족, 모두 미접도여도 기준 초과면 미충족, 그 사이는 확인 필요
+function accJudge(a, lim) {
+  const st = a.accMax <= lim ? 'ok' : a.accRatio > lim ? 'bad' : 'unk';
+  const v = a.accU ? `${accText(a)} (미확인 ${a.accU}동)` : `${pct(a.accRatio)} (${a.accN}/${a.N}동)`;
+  const s = st === 'ok' ? '충족' : st === 'bad' ? `${((a.accRatio - lim) * 100).toFixed(1)}%p 초과` : `미확인 ${a.accU}동에 따라 달라짐 — 도로접면 조회 또는 현황표 접도 칸을 눌러 지정`;
+  return { st, v, s };
 }
 function judge(a, type) {
   const out = [];
@@ -267,7 +357,7 @@ function judge(a, type) {
     const need = Math.ceil(r.obsoleteCount * a.N - a.oldN), okO = a.oldRatio >= r.obsoleteCount;
     out.push({ req: true, t: '노후·불량건축물 수 ' + r.obsoleteCount * 100 + '% 이상', basis: '정비조례 제5조①2, 영 별표1 제2호', v: pct(a.oldRatio) + ` (${a.oldN}/${a.N}동)`, st: st(okO), s: (okO ? `기준보다 ${Math.floor(a.oldN - r.obsoleteCount * a.N)}동 여유` : `기준 대비 ${need}동 부족`) + (a.unknownN ? ` · 연도 미확인 ${a.unknownN}동` : '') });
     const opts = [
-      { t: '주택접도율 ' + r.road * 100 + '% 이하', v: a.accRatio == null ? '도로 폭 미입력' : pct(a.accRatio) + ` (${a.accN}/${a.N}동)`, st: a.accRatio == null ? 'unk' : st(a.accRatio <= r.road), s: a.accRatio == null ? '접한 도로의 폭(4m 이상)·접도 길이 확인 필요' : a.accRatio <= r.road ? '충족' : `${((a.accRatio - r.road) * 100).toFixed(1)}%p 초과`, basis: '제5조①2가, 제2조7호' },
+      { t: '주택접도율 ' + r.road * 100 + '% 이하', ...accJudge(a, r.road), basis: '제5조①2가, 제2조7호' },
       { t: '과소필지 ' + r.small * 100 + '% 이상', v: pct(a.smallRatio) + ` (${a.smallN}/${a.ps.length}필지)`, st: st(a.smallRatio >= r.small), s: a.smallRatio >= r.small ? '충족' : `${((r.small - a.smallRatio) * 100).toFixed(1)}%p 모자람`, basis: '제5조①2나, 제2조5호(분할제한면적 미만)' },
       { t: '호수밀도 ' + r.density + ' 이상', v: a.density.toFixed(1) + '동/ha', st: st(a.density >= r.density), s: a.density >= r.density ? '충족' : `${(r.density - a.density).toFixed(1)}동/ha 모자람`, basis: '제5조①2다, 제2조6호' },
       { t: '노후 연면적 ' + r.obsoleteFloor * 100 + '% 이상', v: pct(a.oldFaRatio), st: st(a.oldFaRatio >= r.obsoleteFloor), s: a.oldFaRatio >= r.obsoleteFloor ? '충족' : `${((r.obsoleteFloor - a.oldFaRatio) * 100).toFixed(1)}%p 모자람`, basis: '제5조①2라' },
@@ -278,11 +368,11 @@ function judge(a, type) {
     const okO = a.oldRatio >= r.obsoleteCount;
     out.push({ req: true, t: '노후·불량건축물 수 ' + r.obsoleteCount * 100 + '% 이상', basis: '정비조례 제5조①1', v: pct(a.oldRatio), st: st(okO), s: okO ? '충족' : `기준 대비 ${Math.ceil(r.obsoleteCount * a.N - a.oldN)}동 부족` });
     const opts = [
-      { t: '접도율 ' + r.road * 100 + '% 이하', v: a.accRatio == null ? '도로 폭 미입력' : pct(a.accRatio), st: a.accRatio == null ? 'unk' : st(a.accRatio <= r.road), basis: '제5조①1가' },
+      { t: '접도율 ' + r.road * 100 + '% 이하', ...accJudge(a, r.road), basis: '제5조①1가' },
       { t: '과소·부정형·세장형 필지 ' + r.small * 100 + '% 이상', v: pct(a.smallRatio) + ' (과소필지만 집계)', st: st(a.smallRatio >= r.small), basis: '제5조①1나 — 부정형·세장형 미판정' },
       { t: '호수밀도 ' + r.density + ' 이상', v: a.density.toFixed(1) + '동/ha', st: st(a.density >= r.density), basis: '제5조①1다' },
     ];
-    opts.forEach(o => o.s = o.st === 'ok' ? '충족' : o.st === 'unk' ? '확인 필요' : '미달');
+    opts.forEach(o => { if (!o.s) o.s = o.st === 'ok' ? '충족' : o.st === 'unk' ? '확인 필요' : '미달'; });
     out.push({ group: true, t: '다음 중 하나 이상', items: opts, st: opts.some(o => o.st === 'ok') ? 'ok' : opts.some(o => o.st === 'unk') ? 'unk' : 'bad' });
   }
   const pass = out.every(o => o.st === 'ok') ? true : out.some(o => o.st === 'bad') ? false : null;
@@ -352,6 +442,7 @@ function loadData() {
   const useReal = S.source === 'real' || (S.source === 'auto' && projectUsable(proj));
   D = useReal && projectUsable(proj) ? buildReal(proj) : buildSample();
   try { const s = localStorage.getItem(cKey()); if (s) D.regions.C.pts = JSON.parse(s); } catch (e) { /* 무시 */ }
+  D.parcels.forEach(applyAccess);
   const pad = Math.max(D.W, D.H) * 0.015;
   svg.setAttribute('viewBox', `${-pad} ${-pad} ${D.W + pad * 2} ${D.H + pad * 2}`);
   if (!D.regions[S.region] || !D.regions[S.region].pts && S.region !== 'C') S.region = 'A';
@@ -363,9 +454,14 @@ function renderSourceBar(proj) {
   document.getElementById('demoTag').textContent = D.real ? '실제 구역 · 사업성 검토 프로젝트에서 불러옴' : '예시 구역 데이터 · 실제 지번 아님';
   document.getElementById('demoTag').className = D.real ? 'demo real' : 'demo';
   bar.innerHTML = D.real
-    ? `<b>${esc(D.title)}</b> · 토지조서 ${D.parcels.length}필지 · 건축물조서 ${D.buildings.length}동 <button class="btn ghost sm" id="toSample">예시 구역 보기</button> <a class="btn ghost sm" href="../">구역계 고치기(사업성 검토)</a>`
+    ? `<b>${esc(D.title)}</b> · 토지조서 ${D.parcels.length}필지 · 건축물조서 ${D.buildings.length}동 <button class="btn sm" id="roadBtn">${roadTargets().length ? `도로접면 조회 (${roadTargets().length}필지)` : '도로접면 다시 조회'}</button> <button class="btn ghost sm" id="toSample">예시 구역 보기</button> <a class="btn ghost sm" href="../">구역계 고치기(사업성 검토)</a>`
     : has ? `예시 구역을 보는 중입니다. <button class="btn ghost sm" id="toReal">내 프로젝트 구역 불러오기 (${esc(proj.meta?.name || '')})</button>`
       : `사업성 검토 화면에서 구역계를 그리고 토지·건축물 조서를 불러오면 여기서 그 구역으로 판정합니다. <a class="btn ghost sm" href="../">사업성 검토로 가기</a>`;
+  const rb = document.getElementById('roadBtn');
+  if (rb) rb.onclick = () => {
+    if (!roadTargets().length) { D.parcels.forEach(p => { if (p.pnu && !p.roadSide) delete roadCache[p.pnu]; }); }
+    fetchRoads(rb);
+  };
   const ts = document.getElementById('toSample'), tr = document.getElementById('toReal');
   if (ts) ts.onclick = () => { S.source = 'sample'; S.region = 'A'; loadData(); syncRegionChips(); render(); };
   if (tr) tr.onclick = () => { S.source = 'real'; S.region = 'A'; loadData(); syncRegionChips(); render(); };
@@ -399,7 +495,8 @@ function drawMap() {
   D.parcels.forEach(p => {
     const dim = reg && reg.pts && !inReg.has(p.id);
     p.rings.forEach(r => {
-      const shape = el('polygon', { points: ringStr(r), fill: parcelFill(p), stroke: 'var(--roadline)', 'stroke-width': 0.35 * u, opacity: dim ? 0.38 : 1 }, g);
+      const shape = el('polygon', { points: ringStr(r), fill: parcelFill(p), stroke: p.manual && S.mode === 'access' ? 'var(--ink)' : 'var(--roadline)', 'stroke-width': (p.manual && S.mode === 'access' ? 1 : 0.35) * u, opacity: dim ? 0.38 : 1 }, g);
+      if (S.mode === 'access' && p.blds.length) { shape.style.cursor = 'pointer'; shape.addEventListener('click', ev => { if (S.drawing) return; ev.stopPropagation(); cycleAccess(p.id); }); }
       const t = el('title', {}, shape);
       t.textContent = `${p.jibun} ${p.jimok || ''} · ${fmt(p.area)}㎡ · ${p.zone || '용도지역 미확인'}\n접도: ${p.accessStr}` +
         (p.blds.length ? p.blds.map(b => `\n${b.use} · ${b.struct} · ${b.year || '연도 없음'} · ${(b.old ?? obsoleteRule(b).old) ? '노후' : '비노후'}`).join('') : '\n건축물 없음');
@@ -445,11 +542,11 @@ function drawLegend() {
   const m = {
     old: [['var(--old)', '노후·불량'], ['var(--new)', '비노후'], ['var(--nobuild)', '건축물 없음']],
     small: [['var(--small)', '과소필지(분할제한면적 미만, 주거 60㎡)'], ['var(--new)', '그 외']],
-    access: D.real ? [['var(--nobuild)', '도로 폭 정보가 없어 미판정']] : [['var(--old)', '접도 미충족(폭4m·4m 미만)'], ['var(--new)', '접도 충족'], ['var(--nobuild)', '건축물 없음']],
+    access: [['var(--new)', '접도 충족'], ['var(--old)', '미충족(폭4m·4m 미만)'], ['var(--nobuild)', D.real ? '미확인·건축물 없음' : '건축물 없음'], [null, '필지를 누르면 충족 → 미충족 → 자동 순으로 지정']],
     zone: [['var(--accent-soft)', '제2종일반주거'], ['var(--warn-soft)', '제3종일반주거'], ['var(--nobuild)', '기타·미확인']],
     arch: [['var(--accent)', '개략 주동 배치'], ['var(--old)', '노후·불량(현황)']],
   }[S.mode];
-  L.innerHTML = m.map(([c, t]) => `<span><i style="background:${c}"></i>${t}</span>`).join('') + `<span><svg width="26" height="8" style="vertical-align:0"><line x1="0" y1="4" x2="26" y2="4" stroke="var(--redline)" stroke-width="2" stroke-dasharray="7 2 1.2 2"/></svg> 구역계</span>`;
+  L.innerHTML = m.map(([c, t]) => c ? `<span><i style="background:${c}"></i>${t}</span>` : `<span>${t}</span>`).join('') + `<span><svg width="26" height="8" style="vertical-align:0"><line x1="0" y1="4" x2="26" y2="4" stroke="var(--redline)" stroke-width="2" stroke-dasharray="7 2 1.2 2"/></svg> 구역계</span>`;
 }
 function svgPoint(evt) { const pt = svg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY; const q = pt.matrixTransform(svg.getScreenCTM().inverse()); return [Math.round(Math.max(0, Math.min(D.W, q.x)) * 10) / 10, Math.round(Math.max(0, Math.min(D.H, q.y)) * 10) / 10]; }
 svg.addEventListener('click', e => { if (!S.drawing) return; S.draft.push(svgPoint(e)); document.getElementById('finishBtn').disabled = S.draft.length < 3; drawMap(); });
@@ -468,7 +565,7 @@ const regName = () => esc(D.regions[S.region].name);
 function renderZone(a) {
   const rows = a.bs.slice().sort((x, y) => (x.year || 9999) - (y.year || 9999)).map(b => {
     const p = b.pid != null ? D.parcels[b.pid] : null;
-    return `<tr><td>${esc(p ? p.jibun : '(필지 연결 안 됨)')}</td><td>${esc(b.use)}</td><td>${esc(b.struct)}</td><td class="r">${b.year || '–'}</td><td class="r">${fmt(b.floor)}</td><td>${b.unknown ? '<span class="pill warn">확인</span>' : b.old ? '<span class="pill bad">노후</span>' : '<span class="pill ok">비노후</span>'}</td><td>${esc(b.why)}</td><td>${!p || p.access == null ? '–' : p.access ? '충족' : '미충족'}</td><td>${b.lic}</td></tr>`;
+    return `<tr><td>${esc(p ? p.jibun : '(필지 연결 안 됨)')}</td><td>${esc(b.use)}</td><td>${esc(b.struct)}</td><td class="r">${b.year || '–'}</td><td class="r">${fmt(b.floor)}</td><td>${b.unknown ? '<span class="pill warn">확인</span>' : b.old ? '<span class="pill bad">노후</span>' : '<span class="pill ok">비노후</span>'}</td><td>${esc(b.why)}</td><td>${p ? `<button class="acc ${p.access === true ? 'ok' : p.access === false ? 'bad' : ''} ${p.manual ? 'man' : ''}" data-pid="${p.id}" title="${esc(p.accSrc)} · 누르면 충족 → 미충족 → 자동">${p.access == null ? '미확인' : p.access ? '충족' : '미충족'}${p.manual ? ' · 지정' : ''}</button>` : '–'}</td><td>${b.lic}</td></tr>`;
   }).join('');
   side.innerHTML = `<h2>${regName()} 현황분석 ${D.real ? '<span class="badge v">토지·건축물 조서</span>' : '<span class="badge a">예시 데이터</span>'}</h2>
   <div class="kpis">
@@ -478,17 +575,19 @@ function renderZone(a) {
     ${kpi('노후도(동수)', pct(a.oldRatio), `${a.oldN} / ${a.N}동${a.unknownN ? ` · 연도 없음 ${a.unknownN}` : ''}`)}
     ${kpi('노후도(연면적)', pct(a.oldFaRatio), `${fmt(a.oldFa)} / ${fmt(a.fa)}㎡`)}
     ${kpi('과소필지', pct(a.smallRatio), `분할제한면적 미만 ${a.smallN} / ${a.ps.length}필지`)}
-    ${kpi('주택접도율', pct(a.accRatio), a.accN == null ? '도로 폭·접도 길이 입력 필요' : `폭4m·4m 이상 접도 ${a.accN} / ${a.N}동`)}
+    ${kpi('주택접도율', accText(a), `폭4m·4m 이상 접도 ${a.accN} / ${a.N}동${a.accU ? ` · 미확인 ${a.accU}동` : ''}`)}
     ${kpi('호수밀도', a.density.toFixed(1) + '동/ha', `${a.du}동 ÷ ${(a.area / 10000).toFixed(2)}ha`)}
     ${kpi('토지등소유자(추정)', fmt(a.owners) + '명', D.real ? '소유자명 기준, 공동주택은 세대별, 국공유지 제외' : '1필지 1인, 다세대는 호수별')}
   </div>
   <h3>건축물 현황 (준공 오래된 순)</h3>
   <div class="tscroll"><table><thead><tr><th>지번</th><th>용도</th><th>구조</th><th class="r">사용승인</th><th class="r">연면적㎡</th><th>판정</th><th>근거</th><th>접도</th><th>허가</th></tr></thead><tbody>${rows || '<tr><td colspan="9">건축물이 없습니다.</td></tr>'}</tbody></table></div>
   <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" id="copyTbl">표 복사(엑셀 붙여넣기용)</button></div>
+  <p class="note">접도는 ${D.real ? "토지특성 <b>도로접면</b>으로 추정합니다. 광대로·중로·소로·세로(가)는 폭 4m 이상 도로에 접한 것으로, 세로(불)·맹지는 미충족으로 봅니다. 세로(가)는 '폭 8m 미만·자동차 통행 가능' 도로라 4m가 안 될 수 있으니, 현장과 다르면 접도 칸이나 도면(색 구분 '접도')의 필지를 눌러 직접 지정하세요." : '예시 구역의 도로 폭으로 판정합니다. 접도 칸을 눌러 직접 지정해 볼 수 있습니다.'}</p>
   <p class="note">노후·불량 판정은 인천 정비조례 제3조②를 사용승인 연도에 적용한 값입니다.${D.real ? ' 공동주택의 지하층이 주거용인지는 대장만으로 알 수 없어 RC 30년으로 보고, 지하층이 있으면 근거에 표시합니다. 호수밀도의 "세대수가 가장 많은 층"은 세대수 ÷ 지상층수로 어림합니다.' : ''}</p>`;
+  side.querySelectorAll('button.acc').forEach(bt => bt.onclick = () => cycleAccess(+bt.dataset.pid));
   document.getElementById('copyTbl').onclick = async () => {
     const head = '지번\t용도\t구조\t사용승인\t연면적\t판정\t근거\t접도\t허가';
-    const body = a.bs.map(b => { const p = b.pid != null ? D.parcels[b.pid] : null; return [p ? p.jibun : '', b.use, b.struct, b.year || '', b.floor, b.unknown ? '확인' : b.old ? '노후' : '비노후', b.why, !p || p.access == null ? '' : p.access ? '충족' : '미충족', b.lic].join('\t'); }).join('\n');
+    const body = a.bs.map(b => { const p = b.pid != null ? D.parcels[b.pid] : null; return [p ? p.jibun : '', b.use, b.struct, b.year || '', b.floor, b.unknown ? '확인' : b.old ? '노후' : '비노후', b.why, !p || p.access == null ? '미확인' : p.access ? '충족' : '미충족', b.lic].join('\t'); }).join('\n');
     try { await navigator.clipboard.writeText(head + '\n' + body); toast('표를 복사했습니다'); } catch (e) { toast('복사가 막혀 있습니다. 표를 직접 선택해 복사해 주세요'); }
   };
 }
@@ -498,7 +597,7 @@ function renderReq(a) {
   const item = o => `<div class="chk ${o.req ? 'req' : ''}"><span class="pill ${PILL[o.st][0]}">${PILL[o.st][1]}</span><div><div class="t">${o.t}</div><div class="s">${o.basis || ''}${o.s ? ' · ' + o.s : ''}</div></div><div class="num">${o.v}</div></div>`;
   const list = j.items.map(o => o.group ? `<div class="chk"><span class="pill ${PILL[o.st][0]}">${PILL[o.st][1]}</span><div style="grid-column:2/4"><div class="t">${o.t}</div><div class="checks" style="margin-top:6px">${o.items.map(item).join('')}</div></div></div>` : item(o)).join('');
   const keys = ['A', 'B', 'C'].filter(k => D.regions[k].pts);
-  const cmp = keys.map(k => { const x = analyze(k), jj = judge(x, P.type); return `<tr class="${k === S.region ? 'hl' : ''}"><td>${esc(D.regions[k].name)}</td><td class="r">${fmt(x.area)}</td><td class="r">${pct(x.oldRatio)}</td><td class="r">${pct(x.oldFaRatio)}</td><td class="r">${pct(x.smallRatio)}</td><td class="r">${pct(x.accRatio)}</td><td class="r">${x.density.toFixed(1)}</td><td>${jj.pass === true ? '<span class="pill ok">입안 가능</span>' : jj.pass === false ? '<span class="pill bad">요건 미달</span>' : '<span class="pill warn">확인 필요</span>'}</td></tr>`; }).join('');
+  const cmp = keys.map(k => { const x = analyze(k), jj = judge(x, P.type); return `<tr class="${k === S.region ? 'hl' : ''}"><td>${esc(D.regions[k].name)}</td><td class="r">${fmt(x.area)}</td><td class="r">${pct(x.oldRatio)}</td><td class="r">${pct(x.oldFaRatio)}</td><td class="r">${pct(x.smallRatio)}</td><td class="r">${accText(x)}</td><td class="r">${x.density.toFixed(1)}</td><td>${jj.pass === true ? '<span class="pill ok">입안 가능</span>' : jj.pass === false ? '<span class="pill bad">요건 미달</span>' : '<span class="pill warn">확인 필요</span>'}</td></tr>`; }).join('');
   const vtxt = j.pass === true ? '인천 정비조례 제5조 요건을 충족합니다' : j.pass === false ? '요건을 충족하지 못합니다 — 아래 미충족 항목을 보세요' : '확인이 필요한 항목이 있어 판정을 끝내지 못했습니다';
   side.innerHTML = `<h2>${regName()} 입안대상지역 요건판정</h2>
   <div class="field" style="max-width:260px;margin-bottom:10px"><label for="ptype">사업 유형</label><select id="ptype"><option value="redev">재개발사업</option><option value="improve">주거환경개선사업</option></select></div>
