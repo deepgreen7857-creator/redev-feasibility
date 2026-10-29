@@ -94,12 +94,12 @@ async function api(body) {
   }
 }
 
-function walk(dir, base, depth = 0) {
+function walk(dir, base, depth = 0, okExt = OK_EXT) {
   const out = [];
   for (const e of ls(dir)) {
     const full = path.join(dir, e.name);
-    if (e.isDirectory()) { if (depth < 2) out.push(...walk(full, base, depth + 1)); continue; }
-    if (!OK_EXT.test(e.name)) continue;
+    if (e.isDirectory()) { if (depth < 2) out.push(...walk(full, base, depth + 1, okExt)); continue; }
+    if (!okExt.test(e.name)) continue;
     out.push(path.relative(base, full).split(path.sep).join('/'));
   }
   return out;
@@ -125,7 +125,7 @@ async function main() {
           const base = { court: c.name, year: y.name, caseNo: k.name };
           const m = meta[`${c.name}_${k.name}`] || {};
           // 요약·문건·송달 표: 물건정보·글자 문서가 바뀌면 다시 보냄(v2: 요약 추가)
-          const extraFiles = walk(dir, dir).filter((r) => /물건정보_제이옥션\.json$|(문건접수내역|송달내역)_제이옥션\.txt$/.test(r));
+          const extraFiles = walk(dir, dir, 0, /\.(json|txt)$/i).filter((r) => /물건정보_제이옥션\.json$|(문건접수내역|송달내역)_제이옥션\.txt$/.test(r));
           const extraSig = extraFiles.map((r) => { try { return `${r}:${fs.statSync(path.join(dir, r)).mtimeMs}`; } catch { return r; } }).join(',');
           const caseSig = `v2|${m.용도 || ''}|${m.주소 || ''}|${m.다음매각기일 || ''}|${m.물건번호 || ''}|${extraSig}`;
           const todo = [];
