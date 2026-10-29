@@ -91,6 +91,7 @@ const VWorld = {
     return {
       ledgerArea: +f.lndpclAr, ledgerJimok: f.lndcgrCodeNm, jiga: +f.pblntfPclnd || 0, baseYear: f.stdrYear, landUse: f.ladUseSittnNm,
       zoning: [f.prposArea1Nm, f.prposArea2Nm].filter(x => x && x !== '지정되지않음').join(', '),
+      roadSide: f.roadSideCodeNm || '',   // 도로접면 (정비계획 검토의 주택접도율 추정에 씀)
     };
   },
 };
@@ -123,7 +124,7 @@ function applyLandArea(land) {
 function applyLandChar(land, c) {
   if (!c || !(c.ledgerArea > 0)) { land.ledgerFail = true; applyLandArea(land); return; }
   land.ledgerFail = false;
-  land.ledgerArea = c.ledgerArea; land.ledgerJimok = c.ledgerJimok || ''; land.zoning = c.zoning || ''; land.baseYear = c.baseYear || ''; land.landUse = c.landUse || '';
+  land.ledgerArea = c.ledgerArea; land.ledgerJimok = c.ledgerJimok || ''; land.zoning = c.zoning || ''; land.baseYear = c.baseYear || ''; land.landUse = c.landUse || ''; land.roadSide = c.roadSide || '';
   if (c.jiga) { land.price = c.jiga; land.priceYear = c.baseYear || land.priceYear; }
   applyLandArea(land);
 }
