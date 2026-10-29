@@ -887,7 +887,12 @@ async function handleData(body) {
   if (body.action === 'dataCase') {
     const m = body.meta || {};
     const pick = (v, n = 300) => (v === undefined || v === null ? '' : String(v).slice(0, n));
-    await ref.set({ court, caseNo, year, use: pick(m.use, 60), address: pick(m.address), sale: pick(m.sale, 20), itemNo: pick(m.itemNo, 60), updatedAt: at }, { merge: true });
+    // summary: 감정가·최저가·유찰·진행 회차·등기부 요약, docs: 문건접수·송달 표(미니PC가 글자에서 뽑음)
+    const small = (v, max) => { if (!v || typeof v !== 'object') return null; const j = JSON.stringify(v); return j.length <= max ? JSON.parse(j) : null; };
+    const extra = {};
+    const sm = small(body.summary, 30000); if (sm) extra.summary = sm;
+    const dc = small(body.docs, 300000); if (dc) extra.docs = dc;
+    await ref.set({ court, caseNo, year, use: pick(m.use, 60), address: pick(m.address), sale: pick(m.sale, 20), itemNo: pick(m.itemNo, 60), ...extra, updatedAt: at }, { merge: true });
     return { ok: true };
   }
   const p = String(body.path || '');
@@ -903,9 +908,11 @@ async function handleData(body) {
   const buf = Buffer.from(String(body.data || ''), 'base64');
   if (!buf.length || buf.length > 21 * 1024 * 1024) return { ok: false, error: '크기' };
   if (kind === 'pdf' && buf.slice(0, 4).toString() !== '%PDF') return { ok: false, error: '파일 형식' };
-  if (kind === 'img' && !((buf[0] === 0xff && buf[1] === 0xd8) || buf.slice(1, 4).toString() === 'PNG')) return { ok: false, error: '파일 형식' };
+  // 사진: 확장자와 상관없이 실제 내용(머리 바이트)으로 종류를 정한다(.png 인데 실제는 jpg·gif·webp 인 파일이 있음)
+  const imgType = kind !== 'img' ? null : (buf[0] === 0xff && buf[1] === 0xd8) ? 'image/jpeg' : buf.slice(1, 4).toString() === 'PNG' ? 'image/png' : buf.slice(0, 3).toString() === 'GIF' ? 'image/gif' : (buf.slice(0, 4).toString() === 'RIFF' && buf.slice(8, 12).toString() === 'WEBP') ? 'image/webp' : buf.slice(0, 2).toString() === 'BM' ? 'image/bmp' : null;
+  if (kind === 'img' && !imgType) return { ok: false, error: '파일 형식' };
   const file = getStorage().bucket().file(`data/${court}/${year}/${caseNo}/${p}`);
-  await file.save(buf, { contentType: DATA_TYPES[ext], resumable: false, metadata: { cacheControl: 'private, max-age=86400', contentDisposition: 'inline' } });
+  await file.save(buf, { contentType: imgType || DATA_TYPES[ext], resumable: false, metadata: { cacheControl: 'private, max-age=86400', contentDisposition: 'inline' } });
   const url = await getDownloadURL(file);
   await ref.set({ court, caseNo, year, files: { [dataKey(p)]: { path: p, kind, size: buf.length, url, at } }, updatedAt: at }, { merge: true });
   return { ok: true, size: buf.length };

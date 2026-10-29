@@ -24,6 +24,11 @@ h2{margin:0 0 4px;font-size:20px}.meta{color:var(--sub);font-size:13px;margin-bo
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.grid img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:6px;cursor:zoom-in;background:#eee}
 #txt{width:100%;height:420px;border:1px solid var(--line);border-radius:8px;margin-top:10px;display:none;background:#fafbfc}
 #big{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:10;cursor:zoom-out}#big img{max-width:95vw;max-height:92vh}
+.sum{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.kv{background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:8px 10px}.kv b{display:block;font-size:17px}.kv span{font-size:12px;color:var(--sub)}.kv.hl{background:var(--accbg);border-color:#bfe0d6}.kv.hl b{color:var(--acc)}
+table.t{width:100%;border-collapse:collapse;font-size:13.5px}table.t th,table.t td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}table.t th{background:#fafbfc;color:var(--sub);font-weight:600;white-space:nowrap}table.t td.n{text-align:right;white-space:nowrap}table.t td.d{white-space:nowrap;color:var(--sub)}
+.res-fail{color:var(--warn)}.res-sold{color:var(--acc);font-weight:600}.res-now{font-weight:700}
+.tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
 .count{color:var(--sub);font-size:12px;padding:8px 14px;border-bottom:1px solid var(--line)}
 @media (max-width:800px){.wrap{grid-template-columns:1fr;height:auto}#list{max-height:45vh}#pdf{height:70vh}}
 </style></head><body>
@@ -34,7 +39,7 @@ h2{margin:0 0 4px;font-size:20px}.meta{color:var(--sub);font-size:13px;margin-bo
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 const app = initializeApp({ apiKey: 'AIzaSyAaqAP7371502cfR3OpnYC33tTfE7EeqtI', authDomain: 'jbslab-auction.firebaseapp.com', projectId: 'jbslab-auction', appId: '1:780407673324:web:0506b356fb74a8c68a30c9' });
 const auth = getAuth(app); const db = getFirestore(app);
 const ADMIN = ['deepgreen7857@gmail.com'];
@@ -67,26 +72,66 @@ function draw() {
   const L = cases.filter((c) => !q || (c.caseNo + ' ' + c.court + ' ' + (c.address || '') + ' ' + (c.use || '')).toLowerCase().includes(q));
   const t = (ok, l) => '<span class="tag ' + (ok ? 'ok' : 'no') + '">' + l + '</span>';
   $('#list').innerHTML = '<div class="count">' + L.length + '건 / 전체 ' + cases.length + '건</div>' + L.map((c) => '<div class="row" data-id="' + esc(c.id) + '"><b>' + esc(c.caseNo) + '</b> <span class="tag">' + esc(String(c.court).replace('지방법원', '지법')) + '</span>' + (c.use ? ' <span class="tag">' + esc(c.use) + '</span>' : '') +
-    '<div class="addr">' + esc(c.address || '주소 정보 없음') + (c.sale ? ' · 매각기일 ' + esc(c.sale) : '') + '</div><div class="tags">' + t(has(c, /감정평가서/), '감정평가서') + t(has(c, /매각물건명세서/), '명세서') + t(has(c, /현황조사서/), '현황조사서') + '<span class="tag">사진 ' + c.list.filter((f) => f.kind === 'img').length + '</span></div></div>').join('');
+    '<div class="addr">' + esc(c.address || '주소 정보 없음') + (c.sale ? ' · 매각기일 ' + esc(c.sale) : '') + '</div>' + (c.summary && c.summary.minBid ? '<div class="addr">감정 ' + won(c.summary.appraisal) + ' · <b style="color:var(--acc)">최저 ' + won(c.summary.minBid) + (c.summary.minRate ? ' (' + c.summary.minRate + '%)' : '') + '</b>' + (c.summary.failCount != null ? ' · 유찰 ' + c.summary.failCount + '회' : '') + '</div>' : '') + '<div class="tags">' + t(has(c, /감정평가서/), '감정평가서') + t(has(c, /매각물건명세서/), '명세서') + t(has(c, /현황조사서/), '현황조사서') + '<span class="tag">사진 ' + c.list.filter((f) => f.kind === 'img').length + '</span></div></div>').join('');
   document.querySelectorAll('.row').forEach((r) => (r.onclick = () => open(r.dataset.id)));
+}
+const won = (n) => n ? (n >= 1e8 ? (Math.floor(n / 1e8) + '억 ' + (Math.round((n % 1e8) / 1e4) ? Math.round((n % 1e8) / 1e4).toLocaleString() + '만' : '')).trim() + '원' : n >= 1e4 ? Math.round(n / 1e4).toLocaleString() + '만원' : n.toLocaleString() + '원') : '-';
+const roundName = (n) => n <= 1 ? '최초' : (n - 1) + '회 유찰';
+function summaryHtml(s, c) {
+  if (!s) return '';
+  const kv = (label, val, hl) => val ? '<div class="kv' + (hl ? ' hl' : '') + '"><span>' + label + '</span><b>' + val + '</b></div>' : '';
+  const cur = (s.rounds || []).slice(-1)[0];
+  let h = '<div class="sec"><h3>사건 요약</h3><div class="sum">' +
+    kv('감정가', won(s.appraisal)) + kv('최저가' + (s.minRate ? ' (' + s.minRate + '%)' : ''), won(s.minBid), true) +
+    kv('유찰 횟수', s.failCount != null ? s.failCount + '회' + (cur ? ' <small style="font-weight:400;color:var(--sub)">(이번 ' + roundName(cur.n) + ')</small>' : '') : '') +
+    kv('매각기일', esc(s.saleAt || c.sale || '')) + kv('입찰보증금' + (s.depositRate ? ' (' + s.depositRate + '%)' : ''), s.deposit ? won(s.deposit) : '') +
+    kv('청구금액', s.claim ? won(s.claim) : '') + kv('토지면적', esc(s.landArea || '')) + kv('건물면적', esc(s.buildingArea || '')) +
+    kv('경매종류', esc(s.kind || '')) + kv('담당', esc([s.court || c.court, s.team].filter(Boolean).join(' '))) + kv('배당요구종기', esc(s.dividendEnd || '')) +
+    '</div>' + (s.target ? '<div class="meta">' + esc(s.target) + '</div>' : '');
+  if ((s.rounds || []).length) h += '<table class="t"><tr><th>회차</th><th>입찰기일</th><th>최저가</th><th>결과</th></tr>' + s.rounds.map((r) => '<tr><td>' + roundName(r.n) + '</td><td class="d">' + esc(r.date) + '</td><td class="n">' + (r.minBid ? r.minBid.toLocaleString() + '원' : '-') + '</td><td class="' + (/유찰/.test(r.result) ? 'res-fail' : /매각|낙찰/.test(r.result) ? 'res-sold' : 'res-now') + '">' + esc(r.result) + '</td></tr>').join('') + '</table>';
+  if ((s.registry || []).length) h += '<h3 style="margin-top:14px">등기부 요약 (제이옥션 기준)</h3><table class="t"><tr><th>구분</th><th>일자</th><th>권리</th><th>권리자</th><th>금액</th><th>인수/소멸</th></tr>' + s.registry.map((r) => '<tr><td>' + esc(r.구분 || '') + '</td><td class="d">' + esc(r.일자) + '</td><td>' + esc(r.권리) + '</td><td>' + esc(r.권리자) + '</td><td class="n">' + (r.금액 ? r.금액.toLocaleString() + '원' : '') + '</td><td' + (/인수|기준/.test(r.인수소멸) ? ' class="res-now"' : '') + '>' + esc(r.인수소멸) + '</td></tr>').join('') + '</table>';
+  return h + '</div>';
+}
+// 제이옥션 요약이 없는 사건(법원 수집기로만 받은 것)은 정비경매 리포트 물건 정보에서 가져옴
+async function listingSummary(c) {
+  try {
+    const snap = await getDocs(query(collection(db, 'listings'), where('caseNo', '==', c.caseNo)));
+    const L = snap.docs.map((d) => d.data()).filter((x) => !x.court || String(x.court).replace(/\s/g, '') === String(c.court).replace(/\s/g, ''));
+    if (!L.length) return null;
+    const x = L[0];
+    return { appraisal: x.appraisal, minBid: x.minBid, minRate: x.appraisal && x.minBid ? Math.round(x.minBid / x.appraisal * 100) : null, failCount: x.failCount, saleAt: String(x.bidEnd || '').slice(0, 16), court: x.court, kind: x.status || '' };
+  } catch { return null; }
+}
+function docsHtml(c) {
+  const d = c.docs || {};
+  const keys = Object.keys(d).filter((k) => (d[k] || []).length);
+  if (!keys.length) return '';
+  return '<div class="sec"><h3>진행 기록</h3><div class="tabs">' + keys.map((k, i) => '<button class="doc dk' + (i ? '' : ' on') + '" data-k="' + esc(k) + '">' + esc(k) + ' <small>' + d[k].length + '건</small></button>').join('') + '</div>' +
+    keys.map((k, i) => '<div class="dtab" data-k="' + esc(k) + '"' + (i ? ' style="display:none"' : '') + '><table class="t"><tr><th>' + (k === '송달' ? '송달일' : '접수일') + '</th><th>내용</th>' + (k === '송달' ? '<th>결과</th>' : '') + '</tr>' +
+      d[k].map((row) => { const [a, b, r] = String(row).split('\t'); return '<tr><td class="d">' + esc(a) + '</td><td>' + esc(b) + '</td>' + (k === '송달' ? '<td class="' + (/도달|송달간주/.test(r || '') ? '' : 'res-fail') + '">' + esc(r || '') + '</td>' : '') + '</tr>'; }).join('') + '</table></div>').join('') + '</div>';
 }
 const rank = (n) => /감정평가서/.test(n) ? 0 : /매각물건명세서/.test(n) ? 1 : /현황조사서/.test(n) ? 2 : /등기/.test(n) ? 3 : 9;
 const base = (p) => p.split('/').pop();
-function open(id) {
+async function open(id) {
   const c = cases.find((x) => x.id === id); if (!c) return;
   document.querySelectorAll('.row').forEach((r) => r.classList.toggle('on', r.dataset.id === id));
   history.replaceState(null, '', '#' + encodeURIComponent(id));
   const pdf = c.list.filter((f) => f.kind === 'pdf').sort((a, b) => rank(base(a.path)) - rank(base(b.path)) || a.path.localeCompare(b.path));
   const img = c.list.filter((f) => f.kind === 'img' && f.url).sort((a, b) => a.path.localeCompare(b.path));
-  const txt = c.list.filter((f) => f.kind === 'txt').sort((a, b) => a.path.localeCompare(b.path));
+  // 문건접수·송달은 표(진행 기록)로 보여 주므로 글자 문서에서는 현황조사서 등만
+  const txt = c.list.filter((f) => f.kind === 'txt' && !(c.docs && /(문건접수|송달)/.test(f.path) && c.docs[/문건접수/.test(f.path) ? '문건접수' : '송달'])).sort((a, b) => a.path.localeCompare(b.path));
   const sub = (p) => { const s = p.split('/'); return s.length > 1 && /^\d+$/.test(s[0]) ? ' (물건' + s[0] + ')' : ''; };
   const btn = (f, cls) => '<button class="doc ' + cls + '" ' + (f.url ? 'data-url="' + esc(f.url) + '"' : 'disabled title="파일이 커서 미니PC 하드에만 있습니다"') + '>' + esc(base(f.path).replace(/\.(pdf|txt)$/i, '').replace(/_/g, ' ')) + sub(f.path) + ' <small>' + (f.url ? kb(f.size) : '하드에만') + '</small></button>';
   $('#main').innerHTML = '<h2>' + esc(c.caseNo) + '</h2><div class="meta">' + esc(c.court) + (c.use ? ' · ' + esc(c.use) : '') + (c.address ? ' · ' + esc(c.address) : '') + (c.sale ? ' · 다음 매각기일 ' + esc(c.sale) : '') + '</div>' +
+    '<div id="sumbox">' + summaryHtml(c.summary, c) + '</div>' +
     '<div class="sec"><h3>문서 (PDF ' + pdf.length + '개)</h3>' + (pdf.length ? '<div class="docs">' + pdf.map((f) => btn(f, 'p')).join('') + '</div><iframe id="pdf" title="문서 보기"></iframe>' : '<div class="meta">받은 PDF가 없습니다.</div>') + '</div>' +
     '<div class="sec"><h3>현장사진 (' + img.length + '장)</h3>' + (img.length ? '<div class="grid">' + img.map((f) => '<img loading="lazy" src="' + esc(f.url) + '" alt="' + esc(base(f.path)) + '">').join('') + '</div>' : '<div class="meta">받은 사진이 없습니다.</div>') + '</div>' +
+    docsHtml(c) +
     '<div class="sec"><h3>글자 문서 (' + txt.length + '개)</h3>' + (txt.length ? '<div class="docs">' + txt.map((f) => btn(f, 't')).join('') + '</div><iframe id="txt" title="글자 문서"></iframe>' : '<div class="meta">없음</div>') + '</div>';
   const wire = (sel, frame) => document.querySelectorAll(sel).forEach((b) => (b.onclick = () => { if (!b.dataset.url) return; document.querySelectorAll(sel).forEach((x) => x.classList.toggle('on', x === b)); const fr = $(frame); fr.style.display = 'block'; fr.src = b.dataset.url; }));
   wire('.doc.p', '#pdf'); wire('.doc.t', '#txt');
+  document.querySelectorAll('.doc.dk').forEach((b) => (b.onclick = () => { document.querySelectorAll('.doc.dk').forEach((x) => x.classList.toggle('on', x === b)); document.querySelectorAll('.dtab').forEach((t) => (t.style.display = t.dataset.k === b.dataset.k ? '' : 'none')); }));
+  if (!c.summary) { const s = await listingSummary(c); if (s && document.querySelector('.row.on')?.dataset.id === id) $('#sumbox').innerHTML = summaryHtml(s, c) + '<div class="meta" style="margin-top:-8px">요약은 정비경매 리포트(법원 자료) 기준</div>'; }
   const first = document.querySelector('.doc.p[data-url]'); if (first) first.click();
   document.querySelectorAll('.grid img').forEach((im) => (im.onclick = () => { $('#bigimg').src = im.src; $('#big').style.display = 'flex'; }));
 }

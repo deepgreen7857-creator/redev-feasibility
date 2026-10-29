@@ -31,6 +31,55 @@ const OK_EXT = /\.(pdf|jpe?g|png|txt)$/i;
 const CASE_RE = /^\d{4}타경\d+$/;
 const ls = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }); } catch { return []; } };
 
+// ── 제이옥션 물건정보 글자에서 요약 뽑기(감정가·최저가·유찰·진행 회차·등기부) ──
+const won = (v) => Number(String(v || '').replace(/[^\d]/g, '')) || null;
+function parseInfo(t) {
+  t = String(t || '').replace(/\r/g, '');
+  const g = (re, i = 1) => (t.match(re) || [])[i] || '';
+  const s = {};
+  s.court = g(/(\S+지방법원(?:\s*\S+지원)?)\s*\n\s*경매/);
+  s.team = g(/(경매\d+계)/);
+  s.saleAt = g(/매각기일\s*:\s*([\d.]+\([^)]*\)\s*[\d:]*)/).trim();
+  s.appraisal = won(g(/감정가\s+([\d,]+)원/));
+  s.minRate = Number(g(/최저가\s+\(\s*(\d+)%/)) || null;
+  s.minBid = won(g(/최저가\s+\(\s*\d+%\s*\)\s*([\d,]+)원/));
+  s.deposit = won(g(/보증금\s+\(\s*\d+%\s*\)\s*([\d,]+)원/));
+  s.depositRate = Number(g(/보증금\s+\(\s*(\d+)%/)) || null;
+  s.claim = won(g(/청구금액\s+([\d,]+)원/));
+  s.kind = g(/경매종류\s+(\S+)/);
+  s.target = g(/경매대상\s+([^\n]+)/).trim();
+  s.landArea = g(/토지면적\s+([^\n]+)/).trim();
+  s.buildingArea = g(/건물면적\s+([^\n]+)/).trim();
+  s.dividendEnd = g(/배당요구종기\s*:\s*([\d/.-]+)/);
+  s.rounds = [...t.matchAll(/(\d+)차\s+(\d{4}\/\d{2}\/\d{2})\s+([\d,]+)원\s+([^\s\d][^\n]*)/g)].map((m) => ({ n: Number(m[1]), date: m[2].replace(/\//g, '-'), minBid: won(m[3]), result: m[4].trim() }));
+  s.failCount = s.rounds.filter((r) => /유찰/.test(r.result)).length;
+  // 등기부현황(건물·토지): 순번 일자 권리 권리자 [금액] 인수/소멸
+  const reg = [];
+  for (const part of t.split(/(?=(?:건물|토지|집합건물)\s*등기부현황)/).slice(1)) {
+    const kindName = (part.match(/^(건물|토지|집합건물)/) || [])[1];
+    const body = part.split(/주의사항/)[0];
+    for (const m of body.matchAll(/\n\s*(\d+)\s*\n\s*(\d{4}\.\d{2}\.\d{2})\s*\n\s*([^\n]+?)\s*\n\s*([^\n]+?)\s*\n([\s\S]*?)(소멸기준|소멸|인수)\s*(?=\n|$)/g)) {
+      const amt = won((m[5].match(/([\d,]{4,})원/g) || []).pop());
+      reg.push({ 구분: kindName, 일자: m[2], 권리: m[3].trim(), 권리자: m[4].trim(), 금액: amt, 인수소멸: m[6] });
+    }
+  }
+  if (reg.length) s.registry = reg.slice(0, 40);
+  for (const k of Object.keys(s)) if (s[k] === '' || s[k] === null || (Array.isArray(s[k]) && !s[k].length)) delete s[k];
+  return s;
+}
+// 문건접수·송달 글자 → 표
+function parseDoc(name, t) {
+  const L = String(t || '').replace(/\r/g, '').split('\n').map((x) => x.trim()).filter(Boolean);
+  const D = /^\d{4}\.\d{2}\.\d{2}$/;
+  const rows = [];
+  if (/송달/.test(name)) {
+    for (let i = 0; i < L.length; i++) if (D.test(L[i]) && L[i + 1]) { const r = L[i + 2] && /^\d{4}\.\d{2}\.\d{2}\s+\S/.test(L[i + 2]) ? L[i + 2] : ''; rows.push([L[i], L[i + 1], r]); i += r ? 2 : 1; }
+  } else {
+    for (let i = 0; i < L.length; i++) if (D.test(L[i]) && L[i + 1] && !D.test(L[i + 1])) { rows.push([L[i], L[i + 1]]); i++; }
+  }
+  return rows.slice(0, 400);
+}
+
 async function api(body) {
   for (let i = 0; ; i++) {
     try {
@@ -75,7 +124,10 @@ async function main() {
           const dir = path.join(ARCHIVE, c.name, y.name, k.name);
           const base = { court: c.name, year: y.name, caseNo: k.name };
           const m = meta[`${c.name}_${k.name}`] || {};
-          const caseSig = `${m.용도 || ''}|${m.주소 || ''}|${m.다음매각기일 || ''}|${m.물건번호 || ''}`;
+          // 요약·문건·송달 표: 물건정보·글자 문서가 바뀌면 다시 보냄(v2: 요약 추가)
+          const extraFiles = walk(dir, dir).filter((r) => /물건정보_제이옥션\.json$|(문건접수내역|송달내역)_제이옥션\.txt$/.test(r));
+          const extraSig = extraFiles.map((r) => { try { return `${r}:${fs.statSync(path.join(dir, r)).mtimeMs}`; } catch { return r; } }).join(',');
+          const caseSig = `v2|${m.용도 || ''}|${m.주소 || ''}|${m.다음매각기일 || ''}|${m.물건번호 || ''}|${extraSig}`;
           const todo = [];
           for (const rel of walk(dir, dir)) {
             let st; try { st = fs.statSync(path.join(dir, rel)); } catch { continue; }
@@ -86,7 +138,15 @@ async function main() {
           if (!todo.length && done[caseKey] === caseSig) continue;
           if (DRY) { log(`${k.name}: 올릴 파일 ${todo.length}개`); files += todo.length; continue; }
           try {
-            const rc = await api({ action: 'dataCase', ...base, meta: { use: m.용도, address: m.주소, sale: m.다음매각기일, itemNo: m.물건번호 } });
+            let summary = null; const docs = {};
+            for (const r of extraFiles) {
+              try {
+                const raw = fs.readFileSync(path.join(dir, r), 'utf8');
+                if (/물건정보/.test(r)) { if (!summary) summary = parseInfo(JSON.parse(raw).화면글자); }
+                else { const nm = /문건접수/.test(r) ? '문건접수' : '송달'; const rows = parseDoc(nm, raw); if (rows.length) docs[nm] = rows.map((x) => x.join('\t')); }
+              } catch { /* 깨진 파일은 건너뜀 */ }
+            }
+            const rc = await api({ action: 'dataCase', ...base, meta: { use: m.용도, address: m.주소, sale: m.다음매각기일, itemNo: m.물건번호 }, summary, docs: Object.keys(docs).length ? docs : null });
             // 서버에 자료 보기 기능이 아직 반영 안 됐으면(모르는 동작) 헛걸음하지 말고 바로 멈춤
             if (!rc.ok) { if (/모르는 동작/.test(rc.error || '')) { log('서버에 자료 올리기 기능이 아직 반영되지 않음(firebase deploy 필요) — 멈춤'); return; } log(`${k.name}: 사건 정보 거절 ${rc.error}`); fail++; continue; }
             done[caseKey] = caseSig; cases++;
