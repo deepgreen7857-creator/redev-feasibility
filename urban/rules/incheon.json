@@ -1,0 +1,258 @@
+{
+  "_meta": {
+    "description": "인천광역시 정비구역 지정·정비계획 판정 기준값 (jbslab /urban rules)",
+    "verified_at": "2026-10-30",
+    "sources": {
+      "ordinance": "인천광역시 도시 및 주거환경정비 조례 [시행 2025.12.31.] 조례 제7686호 — 국가법령정보센터 원문 대조",
+      "building_ordinance": "인천광역시 건축 조례 [시행 2026.7.13.] 조례 제7764호 제28조 — 국가법령정보센터 원문 대조",
+      "basic_plan": "2030 인천 도시·주거환경정비기본계획 변경 고시(2026.4.27.) — 고시문 원문 미확보, 언론보도로 확인한 값 (status=press)"
+    },
+    "status_legend": {
+      "verified": "조례 원문과 대조 완료",
+      "press": "고시 원문 미확보, 다수 언론보도로 확인 — 고시문 대조 필요",
+      "unknown": "확인 못 함 — 화면에 '기준값 미입력' 표시"
+    }
+  },
+
+  "obsolete_building": {
+    "_basis": "정비조례 제3조 제2항 (법 제2조제3호라목, 시행령 제2조)",
+    "status": "verified",
+    "apartment": {
+      "rc_steel": { "years": 30, "exclude_if": "주거용도의 지하층이 있는 공동주택" },
+      "other": { "years": 20, "_note": "주거용 지하층(반지하)이 있는 RC 공동주택도 여기(20년)로 판정" }
+    },
+    "non_apartment": {
+      "rc_steel": { "years": 30, "exclude_use": "건축법 시행령 별표1 제1호 단독주택" },
+      "other": { "years": 20, "_note": "RC 단독주택은 여기(20년)로 판정" }
+    },
+    "rc_steel_structures": ["철근콘크리트", "철골콘크리트", "철골철근콘크리트", "강구조"],
+    "additional_types_article3_1": {
+      "_basis": "정비조례 제3조 제1항 (법 제2조제3호다목) — 자동판정 불가, 수동 체크 항목",
+      "status": "verified",
+      "items": [
+        "분할제한면적에 미달하거나 도시계획시설 설치로 효용을 다할 수 없게 된 대지의 건축물",
+        "공장의 매연·소음 등으로 위해 우려 지역의 건축물",
+        "준공일 기준 40년까지 사용하기 위한 보수·보강비가 철거 후 신축비보다 클 것으로 예상되는 건축물"
+      ]
+    },
+    "unapproved_building": {
+      "_basis": "정비조례 제3조 제3항",
+      "status": "verified",
+      "rule": "미사용승인건축물: 용도·구조는 건축허가 내용, 준공연도는 재산세·수도·전기요금 부과 개시 연도"
+    },
+    "unlicensed": {
+      "_basis": "정비조례 제2조 제1호·제2호, 시행령 별표1 제2호(국토부령 무허가건축물 포함)",
+      "status": "verified",
+      "existing_cutoff_date": "1989-01-24",
+      "_note": "기존무허가건축물 = 1989.1.24. 당시 무허가건축물. 신발생무허가건축물과 구분 입력"
+    }
+  },
+
+  "small_parcel": {
+    "_basis": "정비조례 제2조 제5호 → 건축조례 제28조 제1항 분할제한면적 '미만'",
+    "status": "verified",
+    "rule": "area_lt",
+    "min_area_by_zone_m2": {
+      "주거지역": 60,
+      "상업지역": 150,
+      "공업지역": 150,
+      "녹지지역": 200,
+      "기타": 60
+    },
+    "_note": "주거지역은 2024.3.28. 개정으로 90㎡ → 60㎡. 90㎡ 기준 자료(구 기사 등)와 혼동 주의"
+  },
+
+  "house_density": {
+    "_basis": "정비조례 제2조 제6호",
+    "status": "verified",
+    "unit": "동/ha (정비구역 면적 1만㎡당 건축물 동수)",
+    "rules": {
+      "apartment": "세대수가 가장 많은 층 기준, 구분소유 1세대를 1동",
+      "existing_unlicensed": "포함",
+      "new_unlicensed": "제외",
+      "converted_to_multiplex_after_approval": "단독·다가구 → 다세대 전환 시 전환 전 동수",
+      "non_residential": { "m2_per_unit": 90, "basis": "건축면적", "rounding": "floor" }
+    }
+  },
+
+  "road_access_ratio": {
+    "_basis": "정비조례 제2조 제7호",
+    "status": "verified",
+    "road_width_min_m": 4,
+    "frontage_min_m": 4,
+    "dead_end": { "length_min_m": 35, "road_width_min_m": 6 },
+    "formula": "폭 4m 이상 도로에 길이 4m 이상 접한 대지의 건축물 수 / 구역 내 건축물 총수"
+  },
+
+  "designation_requirements": {
+    "_basis": "정비조례 제5조 (시행령 별표1 제4호 위임)",
+    "status": "verified",
+    "redevelopment": {
+      "min_area_m2": 10000,
+      "obsolete_count_ratio_min": 0.60,
+      "any_of": [
+        { "key": "road_access_ratio", "op": "<=", "value": 0.50, "label": "주택접도율 50% 이하" },
+        { "key": "small_parcel_ratio", "op": ">=", "value": 0.30, "label": "과소필지 30% 이상 (전체 필지 중)" },
+        { "key": "house_density", "op": ">=", "value": 50, "label": "호수밀도 50 이상" },
+        { "key": "obsolete_floor_area_ratio", "op": ">=", "value": 0.50, "label": "노후·불량건축물 연면적 50% 이상" }
+      ]
+    },
+    "residential_improvement": {
+      "obsolete_count_ratio_min": 0.70,
+      "except": "법 제23조제1항제1호 방법(자율주택정비형)으로 시행하는 경우 제외",
+      "any_of": [
+        { "key": "road_access_ratio", "op": "<=", "value": 0.30, "label": "접도율 30% 이하" },
+        { "key": "small_irregular_parcel_ratio", "op": ">=", "value": 0.50, "label": "과소·부정형·세장형 필지 50% 이상" },
+        { "key": "house_density", "op": ">=", "value": 70, "label": "호수밀도 70 이상" }
+      ]
+    },
+    "reconstruction": {
+      "_basis": "시행령 별표1 제3호 + 정비조례 제5조 제2항",
+      "apartment_cluster_min_area_m2": 10000,
+      "_note": "별표1 제3호 다목(200세대 이상 또는 부지 1만㎡ 이상)·라목(재건축진단 2/3 이상 + 조례 면적 1만㎡) 판정"
+    },
+    "expansion": {
+      "_basis": "정비조례 제5조 제3항, 시행령 별표1 제5호",
+      "max_ratio": 1.20,
+      "condition": "인천시 도시계획위원회 심의로 부지 정형화·기반시설 확보 필요 인정 시"
+    },
+    "also_follow_basic_plan": {
+      "_basis": "정비조례 제5조 제4항",
+      "status": "press",
+      "_note": "2026.4.27. 기본계획 변경에서 '재개발 정비구역 지정 기준 완화'가 보도됨 — 구역 경계설정 기준 등 고시문 원문 대조 필요"
+    }
+  },
+
+  "consent": {
+    "request_for_plan": {
+      "_basis": "정비조례 제8조의2 제1항 (시행령 제11조의2)",
+      "status": "verified",
+      "owners_ratio_min": 0.30,
+      "procedure": "동의 받기 전 구역계 제출 → 구청장이 연번 부여한 동의서 사용 → 구 홈페이지·행정복지센터·추정분담금시스템 공개 → 요청일부터 1개월 내 입안대상지역 요건 확인·시 협의(1회 1개월 연장 가능)",
+      "documents": ["정비계획 입안 요청서", "입안 요청 동의서", "토지 및 건축물 조서", "기초조사·확인 내역서", "동의총괄표", "입안 요청 구역의 범위(구역계)"]
+    },
+    "proposal_of_plan": {
+      "_basis": "정비조례 제9조 제1항 (법 제14조, 시행령 제12조)",
+      "status": "verified",
+      "owners_ratio_min": 0.50,
+      "land_area_ratio_min": 0.50,
+      "change_by_general_meeting": "변경 요청 시 총회에서 토지등소유자(조합원) 2/3 이상 찬성 의결로 갈음 가능(제9조 제5항)",
+      "count_method": "시행령 제33조"
+    },
+    "direct_by_district_head": {
+      "_basis": "2030 정비기본계획 변경 고시(2026.4.27.)",
+      "status": "press",
+      "owners_ratio_min": 0.50,
+      "land_area_ratio_min": 0.50,
+      "_note": "종전 토지등소유자 2/3 → 1/2. 토지면적 1/2은 동일(보도 기준)"
+    },
+    "opposition_review": {
+      "_basis": "2030 정비기본계획 변경 고시(2026.4.27.)",
+      "status": "press",
+      "owners_ratio": 0.50,
+      "_note": "정비계획(안) 수립 단계에서 토지등소유자 50% 이상 반대 시 입안 재검토"
+    }
+  },
+
+  "survey_items_article6": {
+    "_basis": "정비조례 제6조 (시행령 제7조제2항제7호) — 정비계획 입안 시 조사·확인 항목, 체크리스트로 사용",
+    "status": "verified",
+    "items": [
+      "거주가구 및 세입자 현황",
+      "도시관리계획에 따른 토지이용계획 현황",
+      "토지의 용도·규모별 현황",
+      "건축물 허가 유무·준공연도·용도·구조·규모 등 일반현황 및 노후·불량 건축물 현황",
+      "유형·무형 문화유적, 건축자산, 보호수목 현황 및 지역유래",
+      "토지등소유자의 정비구역지정 동의현황(입안 제안 시)",
+      "분양 희망 주택규모 및 자금부담 의사",
+      "기초생활수급자 현황",
+      "수급자 임대주택 입주희망 여부 및 희망 규모",
+      "세입자 임대주택 입주희망 여부 및 희망 규모",
+      "노후·불량 건축물 구조적 결함 현장 확인 평가",
+      "사업성 예측자료",
+      "기존 수목 현황",
+      "그 밖에 정비계획 수립에 필요한 사항"
+    ]
+  },
+
+  "plan_contents_article7": {
+    "_basis": "정비조례 제7조 (시행령 제8조제3항제11호) — 정비계획 도서 목차에 추가",
+    "status": "verified",
+    "items": [
+      "가구 또는 획지에 관한 계획",
+      "임대주택 건설계획(재건축, 기존 주택 없는 재개발 제외)",
+      "임대주택을 민간임대로 계획 시: 인수 절차·방법, 임대조건·우선매각 기준, 공급·계약·관리 방안",
+      "주민 소득원 개발(주거환경개선사업 한정)",
+      "무상양여 국·공유지 사용·처분(주거환경개선사업 한정)",
+      "나무은행 운영계획(녹지보전 조례 제30조)",
+      "주민공동체 활성화 방안(자율주택정비형 주거환경개선 한정)",
+      "환경성 검토 결과(국토계획법 제27조제2항 준용)",
+      "건축자산·한옥 등 역사·문화자원 보전 및 활용계획"
+    ]
+  },
+
+  "minor_change_article10": {
+    "_basis": "정비조례 제10조 (시행령 제13조제4항제12호) — 검토 모드 경미한 변경 판정",
+    "status": "verified",
+    "items": [
+      "정비사업 명칭 변경",
+      "도로모퉁이 가각전제를 위한 구역결정사항 변경",
+      "기존건축물 정비·개량 계획 변경(영 제8조제3항제5호)",
+      "상호 접한 정비구역·지구 간 경계조정",
+      "지정범위 변경 없는 면적·자구 정정",
+      "국토부 고시 임대주택 비율 범위 내 세대수 변경",
+      "2009.2.6. 이전 수립 정비계획의 연면적·세대수 변경",
+      "관계법령 개정에 따른 불가피한 변경, 건축위원회 심의결과에 따른 변경",
+      "기본계획상 공공시설등(정비기반시설 제외) 간 변경 — 30일 이상 공람"
+    ]
+  },
+
+  "far": {
+    "_basis": "2030 정비기본계획 용적률 계획 체계 (변경 고시 2026.4.27.)",
+    "status": "press",
+    "_note": "1·2종 및 일반 준주거는 변경 전 기본계획 표 값, 3종 상한과 역세권 준주거는 변경 보도 값. 고시문 원문 대조 필요",
+    "by_zone": {
+      "제1종일반주거지역": { "base": 180, "allowed": 200, "max": 200 },
+      "제2종일반주거지역": { "base": 210, "allowed": 230, "max": 250 },
+      "제3종일반주거지역": { "base": 230, "allowed": 250, "max": 285 },
+      "준주거지역_순수공동주택": { "base": 230, "allowed": 250, "max": 300 },
+      "역세권_준주거지역_순수공동주택": { "base": 250, "allowed": 270, "allowed_with_local_firm": 290, "max": 360 }
+    },
+    "allowed_incentive": {
+      "items_count": 9,
+      "max_points": 20,
+      "max_points_with_local_firm": 40
+    },
+    "max_incentive_items_count": 4,
+    "current_far_special": {
+      "status": "press",
+      "rule": "현황용적률 > 허용용적률이면 허용용적률을 현황용적률까지 인정. 현황 > 상한이면 도시계획위원회 심의로 현황의 120%까지(2·3종 최대 300%, 역세권 3종 360% 이내). 2종 현황 > 상한이면 용도지역 상향(공공기여 미적용)으로 300%까지"
+    }
+  },
+
+  "national_housing_ratio": {
+    "_basis": "정비조례 제27조 (법 제54조 제4항) — 법적상한용적률까지 완화 시 증가 용적률 중 국민주택규모 주택 비율",
+    "status": "verified",
+    "reconstruction": 0.30,
+    "redevelopment": 0.50,
+    "growth_management_area_applies": true
+  },
+
+  "station_area_special": {
+    "_basis": "정비조례 제29조의2 (시행령 제55조)",
+    "status": "verified",
+    "station_distance_m": 500,
+    "national_housing_ratio": {
+      "up_to_legal_max": { "default": 0.50, "reconstruction": 0.30 },
+      "over_legal_max": 0.50
+    },
+    "public_sale_ratio": { "up_to_legal_max": 0.0, "over_legal_max": 0.50 }
+  },
+
+  "public_redevelopment": {
+    "_basis": "정비조례 제2조의2, 제27조의2",
+    "status": "verified",
+    "public_rental_ratio": { "overcrowding_control_region": 0.30, "other": 0.20 },
+    "housing_ratio": 0.70
+  }
+}

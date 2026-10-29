@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>jbslab 정비계획 검토</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 상단 단계 탭(구역계→요건→정비계획→건축→사업성) + 좌측 도면 / 우측 수치 패널. 도면 관례: 구역계 = 적색 일점쇄선 */
+:root{
+  --paper:#f5f6f2; --sheet:#ffffff; --ink:#1d2a33; --ink-2:#4f5d66; --line:#d5dbd6; --grid:#e7ebe6;
+  --redline:#c8322b; --accent:#1f5f8b; --accent-soft:#e3edf4;
+  --ok:#2f7d4f; --ok-soft:#e2f1e7; --bad:#b4372f; --bad-soft:#f7e3e1; --warn:#9a6a10; --warn-soft:#f6ecd5;
+  --old:#d9876f; --new:#c9d3cc; --small:#8f6bb3; --road:#eceee9; --roadline:#c7ccc6; --nobuild:#f1f2ee;
+  --f-body:"IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --paper:#141a1e; --sheet:#1b2328; --ink:#e4e9ea; --ink-2:#9fadb3; --line:#2f3b42; --grid:#222c32;
+  --redline:#ff6a5f; --accent:#7db8e0; --accent-soft:#1f3242;
+  --ok:#6fcf93; --ok-soft:#1b3326; --bad:#ff8a80; --bad-soft:#3a2120; --warn:#e7b85a; --warn-soft:#3a2f17;
+  --old:#c4705a; --new:#3b4a50; --small:#a98bd0; --road:#20292e; --roadline:#34424a; --nobuild:#1f272c;
+  color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --paper:#141a1e; --sheet:#1b2328; --ink:#e4e9ea; --ink-2:#9fadb3; --line:#2f3b42; --grid:#222c32;
+  --redline:#ff6a5f; --accent:#7db8e0; --accent-soft:#1f3242;
+  --ok:#6fcf93; --ok-soft:#1b3326; --bad:#ff8a80; --bad-soft:#3a2120; --warn:#e7b85a; --warn-soft:#3a2f17;
+  --old:#c4705a; --new:#3b4a50; --small:#a98bd0; --road:#20292e; --roadline:#34424a; --nobuild:#1f272c;
+  color-scheme:dark; }
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.55}
+*{box-sizing:border-box}
+.wrap{max-width:1280px;margin:0 auto;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:16px 40px}
+header.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding-block:6px 14px;border-bottom:1px solid var(--line)}
+.mark{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.01em}
+.mark svg{flex:none}
+.mark small{font-family:var(--f-mono);font-weight:500;color:var(--ink-2)}
+header.top h1{font-size:18px;margin:0;font-weight:600;text-wrap:balance}
+.demo{margin-left:auto;font-size:12px;background:var(--warn-soft);color:var(--warn);padding:4px 10px;border-radius:4px}
+nav.steps{display:flex;gap:4px;overflow-x:auto;padding-block:12px;scrollbar-width:thin}
+nav.steps button{flex:none;font:inherit;border:1px solid var(--line);background:var(--sheet);color:var(--ink-2);padding:7px 12px;border-radius:6px;cursor:pointer;display:flex;gap:6px;align-items:center}
+nav.steps button .n{font-family:var(--f-mono);font-size:11px;color:var(--ink-2)}
+nav.steps button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+nav.steps button[aria-selected="true"] .n{color:var(--paper)}
+nav.steps button:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+nav.steps .arrow{color:var(--line);align-self:center;flex:none}
+.layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:1fr}}
+.panel{background:var(--sheet);border:1px solid var(--line);border-radius:8px;padding:14px;min-width:0}
+.panel h2{font-size:15px;margin:0 0 10px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel h3{font-size:13px;margin:16px 0 6px;color:var(--ink-2);font-weight:600;letter-spacing:.02em}
+.mapbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.chip{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--sheet);color:var(--ink);padding:5px 10px;border-radius:999px;cursor:pointer}
+.chip[aria-pressed="true"]{border-color:var(--redline);color:var(--redline);font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{font:inherit;font-size:12px;border:0;background:var(--sheet);color:var(--ink-2);padding:5px 9px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.btn{font:inherit;font-size:13px;border:1px solid var(--accent);background:var(--accent);color:var(--sheet);padding:5px 11px;border-radius:6px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.svgbox{border:1px solid var(--line);border-radius:6px;background:var(--sheet);overflow:hidden}
+svg#map{display:block;width:100%;height:auto;touch-action:manipulation}
+svg#map.drawing{cursor:crosshair}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);margin-top:8px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:4px;border:1px solid var(--roadline)}
+.hint{font-size:12px;color:var(--ink-2);margin-top:6px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.kpi{border:1px solid var(--line);border-radius:6px;padding:9px 10px;min-width:0}
+.kpi .l{font-size:12px;color:var(--ink-2)}
+.kpi .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;font-family:var(--f-mono);letter-spacing:-.01em}
+.kpi .f{font-size:11px;color:var(--ink-2);font-family:var(--f-mono);overflow-wrap:anywhere}
+.checks{display:flex;flex-direction:column;gap:6px}
+.chk{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.chk.req{border-left:3px solid var(--ink-2)}
+.pill{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.info{background:var(--accent-soft);color:var(--accent)}
+.chk .t{font-weight:500}
+.chk .s{font-size:12px;color:var(--ink-2)}
+.chk .num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:13px;text-align:right;white-space:nowrap}
+.verdict{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:6px;margin-bottom:10px;font-weight:600}
+.verdict.ok{background:var(--ok-soft);color:var(--ok)}
+.verdict.bad{background:var(--bad-soft);color:var(--bad)}
+.tscroll{overflow-x:auto;border:1px solid var(--line);border-radius:6px;max-height:380px;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--grid);text-align:left;white-space:nowrap}
+th{position:sticky;top:0;background:var(--sheet);color:var(--ink-2);font-weight:600;font-size:12px;z-index:1}
+td.r,th.r{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-mono)}
+tr.hl td{background:var(--accent-soft)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 14px}
+.field{display:flex;flex-direction:column;gap:3px;min-width:0}
+.field label{font-size:12px;color:var(--ink-2)}
+.field input,.field select{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink);width:100%;font-variant-numeric:tabular-nums}
+.field input[type=range]{padding:0;border:0;background:transparent;accent-color:var(--accent)}
+.field .u{font-size:11px;color:var(--ink-2);font-family:var(--f-mono)}
+.badge{font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px}
+.badge.v{background:var(--ok-soft);color:var(--ok)}
+.badge.p{background:var(--warn-soft);color:var(--warn)}
+.badge.a{background:var(--accent-soft);color:var(--accent)}
+.note{font-size:12px;color:var(--ink-2);border-left:2px solid var(--line);padding-left:10px;margin-top:10px}
+.big{font-family:var(--f-mono);font-size:30px;font-weight:600;font-variant-numeric:tabular-nums}
+.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.ledger td:first-child{color:var(--ink-2)}
+.ledger tr.sum td{font-weight:600;border-top:1px solid var(--ink-2)}
+.bar{height:8px;border-radius:4px;background:var(--grid);overflow:hidden;margin-top:4px}
+.bar span{display:block;height:100%;background:var(--accent)}
+.rules dt{font-weight:600;margin-top:10px}
+.rules dd{margin:2px 0 0;color:var(--ink-2);font-size:13px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:6px;font-size:13px}
+@media (prefers-reduced-motion: no-preference){ .kpi .v,.big{transition:color .2s} }
+
+.verdict.warn{background:var(--warn-soft);color:var(--warn)}
+.demo.real{background:var(--ok-soft);color:var(--ok)}
+.btn.sm{font-size:12px;padding:3px 9px;text-decoration:none;display:inline-flex;align-items:center}
+.source{font-size:13px;color:var(--ink-2);display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-top:10px}
+.source b{color:var(--ink)}
+a.back{color:var(--accent);font-size:13px;text-decoration:none}
+a.back:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="mark" aria-label="jbslab">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="4" fill="var(--ink)"/><path d="M6 6h6v6H6zM14 6h6v6h-6zM6 14h6v6H6z" fill="var(--paper)" opacity=".85"/><path d="M14 14h6v6h-6z" fill="none" stroke="var(--redline)" stroke-width="1.6" stroke-dasharray="3 1.4 .8 1.4"/></svg>
+      jbslab <small>/urban</small>
+    </div>
+    <h1>정비구역 지정 · 정비계획 검토</h1>
+    <span class="demo" id="demoTag">불러오는 중</span>
+    <a class="back" href="../">사업성 검토로</a>
+  </header>
+  <div class="source" id="source"></div>
+
+  <nav class="steps" role="tablist" aria-label="검토 단계">
+    <button role="tab" data-tab="zone" aria-selected="true"><span class="n">1</span>구역계·현황</button><span class="arrow">›</span>
+    <button role="tab" data-tab="req" aria-selected="false"><span class="n">2</span>요건판정</button><span class="arrow">›</span>
+    <button role="tab" data-tab="plan" aria-selected="false"><span class="n">3</span>정비계획</button><span class="arrow">›</span>
+    <button role="tab" data-tab="arch" aria-selected="false"><span class="n">4</span>개략 건축계획</button><span class="arrow">›</span>
+    <button role="tab" data-tab="biz" aria-selected="false"><span class="n">5</span>사업성</button><span class="arrow">·</span>
+    <button role="tab" data-tab="rules" aria-selected="false"><span class="n">≡</span>적용 기준</button>
+  </nav>
+
+  <div class="layout">
+    <section class="panel" aria-label="도면">
+      <div class="mapbar">
+        <span style="font-size:12px;color:var(--ink-2)">구역계</span>
+        <button class="chip" data-region="A" aria-pressed="true">A안</button>
+        <button class="chip" data-region="B" aria-pressed="false">B안</button>
+        <button class="chip" data-region="C" aria-pressed="false" id="chipC">직접 그린 안</button>
+        <span style="flex:1"></span>
+        <button class="btn ghost" id="drawBtn">구역계 그리기</button>
+        <button class="btn" id="finishBtn" hidden>완성</button>
+        <button class="btn ghost" id="cancelBtn" hidden>취소</button>
+      </div>
+      <div class="mapbar">
+        <span style="font-size:12px;color:var(--ink-2)">색 구분</span>
+        <div class="seg" role="group" aria-label="도면 색 구분">
+          <button data-mode="old" aria-pressed="true">노후·불량</button>
+          <button data-mode="small" aria-pressed="false">과소필지</button>
+          <button data-mode="access" aria-pressed="false">접도</button>
+          <button data-mode="zone" aria-pressed="false">용도지역</button>
+          <button data-mode="arch" aria-pressed="false">개략 배치</button>
+        </div>
+      </div>
+      <div class="svgbox"><svg id="map" viewBox="-6 -6 416 328" role="img" aria-label="예시 구역 지적도"></svg></div>
+      <div class="legend" id="legend"></div>
+      <p class="hint" id="drawHint">그리기: 도면을 눌러 꼭짓점을 찍고 <b>완성</b>을 누르면 '직접 그린 안'으로 판정합니다. 구역계 안에 중심점이 들어온 필지를 편입 필지로 봅니다.</p>
+    </section>
+
+    <section class="panel" id="side" aria-live="polite"></section>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="urban.js?v=1"></script>
+</body>
+</html>
