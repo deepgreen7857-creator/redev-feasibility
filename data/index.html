@@ -10,7 +10,8 @@ header h1{font-size:17px;margin:0;white-space:nowrap}#who{color:var(--sub);font-
 #q{flex:1;min-width:200px;max-width:420px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}
 button{font:inherit;cursor:pointer}.btn{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff}.btn.main{background:var(--acc);border-color:var(--acc);color:#fff}
 .gate{max-width:420px;margin:80px auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px;text-align:center}.gate p{color:var(--sub)}
-.wrap{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 55px)}
+.wrap{display:grid;grid-template-columns:var(--lw,400px) 6px 1fr;height:calc(100vh - 55px)}
+#split{cursor:col-resize;background:var(--line);opacity:.6}#split:hover,#split.drag{background:var(--acc);opacity:.5}
 #list{overflow:auto;border-right:1px solid var(--line);background:var(--card)}
 .row{padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer}.row:hover{background:#fafbfc}.row.on{background:var(--accbg)}
 .row b{font-size:15px}.row .addr{color:var(--sub);font-size:13px;margin:2px 0}.tags{display:flex;gap:4px;flex-wrap:wrap}
@@ -30,17 +31,17 @@ table.t{width:100%;border-collapse:collapse;font-size:13.5px}table.t th,table.t 
 .res-fail{color:var(--warn)}.res-sold{color:var(--acc);font-weight:600}.res-now{font-weight:700}
 .tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
 .filters{padding:10px 12px;border-bottom:1px solid var(--line);background:#fbfcfd;display:flex;flex-direction:column;gap:7px;font-size:13px}
-.frow{display:flex;flex-wrap:wrap;gap:4px;align-items:center}.frow>span.l{color:var(--sub);width:52px;flex:none}
+.frow{display:flex;flex-wrap:wrap;gap:4px;align-items:center}.frow{flex-wrap:nowrap}.frow>span.l{color:var(--sub);width:50px;flex:none}.frow>span.l2{color:var(--sub);margin:0 4px 0 10px;flex:none}.frow select{flex:1;min-width:0}
 .chip{border:1px solid var(--line);background:#fff;border-radius:14px;padding:2px 9px;font-size:12.5px;cursor:pointer;user-select:none}.chip.on{background:var(--acc);border-color:var(--acc);color:#fff}
 .filters select{max-width:230px;font:inherit;font-size:12.5px;padding:2px 4px;border:1px solid var(--line);border-radius:6px;background:#fff}
 .filters label{display:inline-flex;gap:3px;align-items:center;margin-right:8px}
 table.wide td{white-space:nowrap}table.wide td.addr{white-space:normal;min-width:220px}
 .count{color:var(--sub);font-size:12px;padding:8px 14px;border-bottom:1px solid var(--line)}
-@media (max-width:800px){.wrap{grid-template-columns:1fr;height:auto}#list{max-height:45vh}#pdf{height:70vh}}
+@media (max-width:800px){#split{display:none}.wrap{grid-template-columns:1fr;height:auto}#list{max-height:45vh}#pdf{height:70vh}}
 </style></head><body>
 <header><h1>경매 자료 보기</h1><input id="q" placeholder="사건번호·주소·법원으로 찾기 (예: 가좌동, 503672)" style="display:none"><button class="btn" id="tbl" style="display:none">표로 보기</button><span id="who"></span><button class="btn" id="out" style="display:none">로그아웃</button></header>
 <div id="gate" class="gate"><h2>관리자 전용</h2><p>미니PC 원본 하드에 모은 경매 자료입니다.<br>관리자 Google 계정으로 로그인하세요.</p><button class="btn main" id="login">Google로 로그인</button><p id="msg"></p></div>
-<div class="wrap" id="app" style="display:none"><div style="overflow:auto;border-right:1px solid var(--line);background:var(--card)"><div class="filters" id="filters"></div><div id="list" style="border-right:0;overflow:visible"></div></div><div id="main"><div class="empty">왼쪽에서 사건을 고르세요.</div></div></div>
+<div class="wrap" id="app" style="display:none"><div style="overflow:auto;border-right:1px solid var(--line);background:var(--card)"><div class="filters" id="filters"></div><div id="list" style="border-right:0;overflow:visible"></div></div><div id="split" title="끌어서 왼쪽 칸 너비 조절"></div><div id="main"><div class="empty">왼쪽에서 사건을 고르세요.</div></div></div>
 <div id="big" onclick="this.style.display='none'"><img id="bigimg" alt=""></div>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -182,7 +183,6 @@ function filtered(q) {
     if (!inSet(regionOf(c), F.region, REGION_SETS)) return false;
     if (!inSet(useOf(c), F.use, USE_SETS)) return false;
     if (F.maxBid && !(s.minBid && s.minBid <= F.maxBid)) return false;
-    if (F.maxRate && !(s.minRate && s.minRate <= F.maxRate)) return false;
     if (F.round !== '' && F.round != null) { const f = s.failCount; if (f == null) return false; if (F.round === '4+' ? f < 4 : f !== Number(F.round)) return false; }
     if (F.sale === 'future' && !(d && d >= TODAY)) return false;
     if (/^\d+$/.test(F.sale) && !(d && d >= TODAY && d <= dayPlus(Number(F.sale)))) return false;
@@ -198,13 +198,12 @@ function drawFilters() {
   const chips = (key, list) => list.map((k) => '<span class="chip' + (F[key].includes(k) ? ' on' : '') + '" data-k="' + key + '" data-v="' + k + '">' + k + '</span>').join('');
   const sel = (key, opts) => '<select data-k="' + key + '">' + opts.map(([v, l]) => '<option value="' + v + '"' + (String(F[key]) === String(v) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
   $('#filters').innerHTML =
-    '<div class="frow"><span class="l">지역</span>' + sel('region', [['', '전체'], ...Object.keys(REGION_SETS).map((k) => [k, k + '(' + REGION_SETS[k].join('·') + ')']), ...REGIONS.map((r) => [r, r])]) + '</div>' +
-    '<div class="frow"><span class="l">용도</span>' + sel('use', [['', '전체'], ...Object.keys(USE_SETS).map((k) => [k, k]), ...USES.map((x) => [x[0], x[0]])]) + '</div>' +
+    '<div class="frow"><span class="l">지역</span>' + sel('region', [['', '전체'], ...Object.keys(REGION_SETS).map((k) => [k, k]), ...REGIONS.map((r) => [r, r])]) +
+      '<span class="l2">용도</span>' + sel('use', [['', '전체'], ...Object.keys(USE_SETS).map((k) => [k, '주거(아파트·다세대·도시형)']), ...USES.map((x) => [x[0], x[0]])]) + '</div>' +
     '<div class="frow"><span class="l">최저가</span>' + sel('maxBid', [[0, '전체'], [10000000, '1천만 이하'], [30000000, '3천만 이하'], [50000000, '5천만 이하'], [100000000, '1억 이하'], [200000000, '2억 이하'], [300000000, '3억 이하']]) +
-      '&nbsp;비율 ' + sel('maxRate', [[0, '전체'], [70, '70% 이하'], [49, '49% 이하'], [34, '34% 이하'], [24, '24% 이하']]) + '</div>' +
-    '<div class="frow"><span class="l">회차</span>' + sel('round', [['', '전체'], ['0', '최초'], ['1', '1회 유찰'], ['2', '2회 유찰'], ['3', '3회 유찰'], ['4+', '4회 유찰 이상']]) +
-      '&nbsp;매각기일 ' + sel('sale', [['future', '지나지 않은 것'], ['7', '7일 안'], ['14', '14일 안'], ['30', '30일 안'], ['45', '45일 안'], ['all', '전체'], ['past', '지난 것']]) + '</div>' +
-    '<div class="frow"><span class="l">정렬</span>' + sel('sort', [['sale', '매각기일 빠른 순'], ['bid', '최저가 낮은 순'], ['rate', '비율 낮은 순'], ['recent', '최근 받은 순']]) + '</div>' +
+      '<span class="l2">회차</span>' + sel('round', [['', '전체'], ['0', '최초'], ['1', '1회 유찰'], ['2', '2회 유찰'], ['3', '3회 유찰'], ['4+', '4회 유찰 이상']]) + '</div>' +
+    '<div class="frow"><span class="l">매각기일</span>' + sel('sale', [['future', '지나지 않은 것'], ['7', '7일 안'], ['14', '14일 안'], ['30', '30일 안'], ['45', '45일 안'], ['all', '전체'], ['past', '지난 것']]) +
+      '<span class="l2">정렬</span>' + sel('sort', [['sale', '매각기일 빠른 순'], ['bid', '최저가 낮은 순'], ['rate', '비율 낮은 순'], ['recent', '최근 받은 순']]) + '</div>' +
     '<div class="frow"><label><input type="checkbox" data-k="appraisalDoc"' + (F.appraisalDoc ? ' checked' : '') + '>감정평가서 있음</label><label><input type="checkbox" data-k="noAssume"' + (F.noAssume ? ' checked' : '') + '>인수 권리 없음</label><span class="chip" id="freset">조건 지우기</span></div>';
   document.querySelectorAll('#filters .chip[data-k]').forEach((el) => (el.onclick = () => { const k = el.dataset.k; const v = el.dataset.v; F[k] = F[k].includes(v) ? F[k].filter((x) => x !== v) : [...F[k], v]; changed(); }));
   document.querySelectorAll('#filters select').forEach((el) => (el.onchange = () => { const k = el.dataset.k; F[k] = /^(maxBid|maxRate)$/.test(k) ? Number(el.value) : el.value; changed(); }));
@@ -227,4 +226,14 @@ function showTable() {
   document.querySelectorAll('.trow').forEach((r) => (r.onclick = () => open(r.dataset.id)));
 }
 $('#tbl').onclick = () => showTable();
+// 왼쪽·오른쪽 칸 사이를 끌어서 너비 조절(이 브라우저에 기억)
+(() => {
+  const wrap = $('#app'); const sp = $('#split');
+  try { const w = Number(localStorage.getItem('dataLeftWidth')); if (w) wrap.style.setProperty('--lw', w + 'px'); } catch { /* */ }
+  let on = false;
+  sp.addEventListener('mousedown', (e) => { on = true; sp.classList.add('drag'); document.body.style.userSelect = 'none'; e.preventDefault(); });
+  window.addEventListener('mousemove', (e) => { if (!on) return; const w = Math.max(280, Math.min(window.innerWidth - 360, e.clientX - wrap.getBoundingClientRect().left)); wrap.style.setProperty('--lw', w + 'px'); });
+  window.addEventListener('mouseup', () => { if (!on) return; on = false; sp.classList.remove('drag'); document.body.style.userSelect = ''; try { localStorage.setItem('dataLeftWidth', parseInt(getComputedStyle(wrap).getPropertyValue('--lw'))); } catch { /* */ } });
+  sp.addEventListener('dblclick', () => { wrap.style.setProperty('--lw', '400px'); try { localStorage.removeItem('dataLeftWidth'); } catch { /* */ } });
+})();
 </script></body></html>
