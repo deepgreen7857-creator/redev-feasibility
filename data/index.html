@@ -172,9 +172,9 @@ const F0 = { region: '', use: '', maxBid: 0, maxRate: 0, round: '', sale: 'futur
 let F = { ...F0 };
 try { F = { ...F0, ...JSON.parse(localStorage.getItem('dataFilters2') || '{}') }; } catch { /* 저장 안 되는 브라우저 */ }
 const saveF = () => { try { localStorage.setItem('dataFilters2', JSON.stringify(F)); } catch { /* */ } };
-// 묶음: 수도권·충청, 주거(아파트·다세대·도시형)
+// 묶음: 수도권·충청, 아파트·다세대·도시형
 const REGION_SETS = { '수도권': ['서울', '인천', '경기'], '충청': ['충남', '충북', '대전', '세종'] };
-const USE_SETS = { '주거(아파트·다세대·도시형)': ['아파트', '다세대', '도시형'] };
+const USE_SETS = { '아파트·다세대·도시형': ['아파트', '다세대', '도시형'] };
 const inSet = (v, pick, sets) => !pick || (sets[pick] ? sets[pick].includes(v) : v === pick);
 function filtered(q) {
   const L = cases.filter((c) => {
@@ -199,7 +199,7 @@ function drawFilters() {
   const sel = (key, opts) => '<select data-k="' + key + '">' + opts.map(([v, l]) => '<option value="' + v + '"' + (String(F[key]) === String(v) ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
   $('#filters').innerHTML =
     '<div class="frow"><span class="l">지역</span>' + sel('region', [['', '전체'], ...Object.keys(REGION_SETS).map((k) => [k, k]), ...REGIONS.map((r) => [r, r])]) +
-      '<span class="l2">용도</span>' + sel('use', [['', '전체'], ...Object.keys(USE_SETS).map((k) => [k, '주거(아파트·다세대·도시형)']), ...USES.map((x) => [x[0], x[0]])]) + '</div>' +
+      '<span class="l2">용도</span>' + sel('use', [['', '전체'], ...Object.keys(USE_SETS).map((k) => [k, k]), ...USES.map((x) => [x[0], x[0]])]) + '</div>' +
     '<div class="frow"><span class="l">최저가</span>' + sel('maxBid', [[0, '전체'], [10000000, '1천만 이하'], [30000000, '3천만 이하'], [50000000, '5천만 이하'], [100000000, '1억 이하'], [200000000, '2억 이하'], [300000000, '3억 이하']]) +
       '<span class="l2">회차</span>' + sel('round', [['', '전체'], ['0', '최초'], ['1', '1회 유찰'], ['2', '2회 유찰'], ['3', '3회 유찰'], ['4+', '4회 유찰 이상']]) + '</div>' +
     '<div class="frow"><span class="l">매각기일</span>' + sel('sale', [['future', '지나지 않은 것'], ['7', '7일 안'], ['14', '14일 안'], ['30', '30일 안'], ['45', '45일 안'], ['all', '전체'], ['past', '지난 것']]) +
