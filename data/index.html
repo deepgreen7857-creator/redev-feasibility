@@ -108,6 +108,13 @@ async function listingSummary(c) {
     return { appraisal: x.appraisal, minBid: x.minBid, minRate: x.appraisal && x.minBid ? Math.round(x.minBid / x.appraisal * 100) : null, failCount: x.failCount, saleAt: String(x.bidEnd || '').slice(0, 16), court: x.court, status: x.status || '' };
   } catch { return null; }
 }
+function textHtml(sm) {
+  // 미니PC가 PDF에서 뽑은 글자(명세서·현황조사서·감정평가서 앞쪽) — PDF 저장소가 막힌 망(회사 등)에서도 읽기용
+  if (!sm) return '';
+  const parts = [['specText', '매각물건명세서'], ['surveyText', '현황조사서'], ['appraisalText', '감정평가서(앞쪽)']].filter(([k]) => sm[k]);
+  if (!parts.length) return '';
+  return '<div class="sec"><h3>원문 글자 (PDF가 안 열릴 때)</h3>' + parts.map(([k, t]) => '<details' + (k === 'specText' ? ' open' : '') + '><summary>' + t + '</summary><pre style="white-space:pre-wrap;font-size:13px;max-height:480px;overflow:auto;background:#fafafa;border:1px solid var(--line);border-radius:8px;padding:10px">' + esc(sm[k]) + '</pre></details>').join('') + '</div>';
+}
 function docsHtml(c) {
   const d = c.docs || {};
   const keys = Object.keys(d).filter((k) => (d[k] || []).length);
@@ -136,7 +143,7 @@ async function open(id) {
   const sub = (p) => { const s = p.split('/'); return s.length > 1 && /^\d+$/.test(s[0]) ? ' (물건' + s[0] + ')' : ''; };
   const btn = (f, cls) => '<button class="doc ' + cls + '" ' + (f.url ? 'data-url="' + esc(f.url) + '"' : 'disabled title="파일이 커서 미니PC 하드에만 있습니다"') + '>' + esc(base(f.path).replace(/\.(pdf|txt)$/i, '').replace(/_/g, ' ')) + sub(f.path) + ' <small>' + (f.url ? kb(f.size) : '하드에만') + '</small></button>';
   $('#main').innerHTML = '<h2>' + esc(c.caseNo) + headLine(c.summary) + '</h2><div class="meta">' + esc(c.court) + (c.use ? ' · ' + esc(c.use) : '') + (c.address ? ' · ' + esc(c.address) : '') + (c.sale ? ' · 다음 매각기일 ' + esc(c.sale) : '') + '</div>' +
-    '<div id="sumbox">' + summaryHtml(c.summary, c) + '</div>' +
+    '<div id="sumbox">' + summaryHtml(c.summary, c) + '</div>' + textHtml(c.summary) +
     '<div class="sec"><h3>문서 (PDF ' + pdf.length + '개)</h3>' + (pdf.length ? '<div class="docs">' + pdf.map((f) => btn(f, 'p')).join('') + '</div><iframe id="pdf" title="문서 보기"></iframe>' : '<div class="meta">받은 PDF가 없습니다.</div>') + '</div>' +
     '<div class="sec"><h3>현장사진 (' + img.length + '장)</h3>' + (img.length ? '<div class="grid">' + img.map((f) => '<img loading="lazy" src="' + esc(f.url) + '" alt="' + esc(base(f.path)) + '">').join('') + '</div>' : '<div class="meta">받은 사진이 없습니다.</div>') + '</div>' +
     docsHtml(c) +
