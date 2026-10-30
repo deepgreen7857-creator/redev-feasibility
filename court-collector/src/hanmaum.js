@@ -146,9 +146,13 @@ class NeedLogin extends Error { constructor() { super('한마음경매 로그인
 async function loginMode() {
   process.env.PLAYWRIGHT_BROWSERS_PATH ||= '0';
   const { chromium } = await import('playwright');
-  const ctx = await chromium.launchPersistentContext(path.join(STATE, 'hanmaum-profile'), { headless: false, locale: 'ko-KR', viewport: { width: 1280, height: 900 } });
+  // 창이 다른 창 뒤에 숨지 않게 화면 가득 띄우고 맨 앞으로(10/30 로그인 창을 못 찾음). 프로필이 잠겨 있으면 새 폴더로
+  const prof = path.join(STATE, 'hanmaum-login-profile'); // 앞 창이 아직 떠 있어도 겹치지 않게 따로
+  const ctx = await chromium.launchPersistentContext(prof, { headless: false, locale: 'ko-KR', viewport: null, args: ['--start-maximized'] });
   const page = ctx.pages()[0] || await ctx.newPage();
   await page.goto(`${BASE}/login`).catch(() => {});
+  await page.bringToFront().catch(() => {});
+  await page.evaluate(() => { document.title = '★ 여기서 한마음경매 로그인 ★ ' + document.title; }).catch(() => {});
   log('한마음경매 창에서 직접 로그인하세요. 로그인되면 저장하고 창이 저절로 닫힙니다(최대 30분).');
   let closed = false; ctx.on('close', () => { closed = true; });
   try {
@@ -172,10 +176,10 @@ async function main() {
     let todo = targets();
     if (arg('--case')) todo = [{ court: arg('--court') || '인천지방법원', caseNo: arg('--case'), sale: '', review: true }];
     log(`시작 — 감정평가서 없는 사건 ${todo.length}건, 오늘 ${today}/${cfg.dailyMax}`);
-    let failRun = 0; let rests = 0;
+    let failRun = 0; let rests = 0; let k0 = 0;
     for (const v of todo) {
       if (n >= LIMIT || today >= cfg.dailyMax) break;
-      if (n > 0) await pause('itemSeconds');
+      if (k0++ > 0) await pause('itemSeconds'); // 찾기만 하고 없던 사건 뒤에도 쉼(10/30 처음 몇 건이 1초 간격으로 돌았음)
       try { const rc = await grab(v); if (rc === 'ok') { n++; bump(); } failRun = 0; } catch (e) {
         if (e instanceof Blocked || e instanceof NeedLogin) throw e;
         log(`${v.caseNo}: 실패 ${e.cause?.code || ''} ${e.message}`);
