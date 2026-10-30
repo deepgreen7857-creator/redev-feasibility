@@ -326,6 +326,9 @@ async function main() {
     //  나머지 법원은 progress.restCourt 로 따로 이어 감(다음 회차에도 멈춘 법원부터)
     const focus = cfg.focus?.courts?.length ? cfg.focus : null;
     const focusRe = focus?.address ? new RegExp(focus.address) : null;
+    // 검토 범위(config.focus.scope): 용도·최저가 상한에 맞는 물건은 집중 지역 밖이어도 상세(원본 PDF·사진)를 연다 — 제이옥션 차단 대체(2026-10-30)
+    const scopeRules = (focus?.scope || []).map((r) => ({ re: new RegExp(r.usage), max: r.maxMinBid }));
+    const inScope = (row) => scopeRules.some((r) => r.re.test(String(row.usage || '')) && Number(row.minBid || 0) > 0 && Number(row.minBid) <= r.max);
     const phases = focus
       ? [{ name: '집중', list: focus.courts, key: 'court', re: focus.detailOnly ? focusRe : null },
         { name: '나머지', list: cfg.courts.filter((c) => !focus.courts.includes(c)), key: 'restCourt', re: null }]
@@ -359,7 +362,7 @@ async function main() {
           let stale = !prev || prev.v !== DETAIL_V || prev.minBid !== row.minBid || prev.status !== row.status || Date.now() - (prev.at || 0) > cfg.refreshDetailAfterDays * 86400e3;
           let detail = null;
           // 같은 물건에서 화면 오류가 두 번 나면 오늘은 건너뛴다(한 물건 때문에 회차가 계속 같은 자리에서 멈추던 문제 대비)
-          if (stale && ph.re && !ph.re.test(`${row.address || ''} ${row.title || ''}`)) stale = false; // 집중 단계에서 집중 지역 밖: 목록 정보만
+          if (stale && ph.re && !ph.re.test(`${row.address || ''} ${row.title || ''}`) && !inScope(row)) stale = false; // 집중 단계에서 집중 지역·검토 범위 밖: 목록 정보만
           if (stale && (badRows[key]?.n || 0) >= 2 && Date.now() - badRows[key].at < 86400e3) { stale = false; log(`건너뜀(화면 오류 반복): ${row.caseNo}`); }
           if (stale) {
             if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }

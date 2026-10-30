@@ -85,3 +85,14 @@ powershell -ExecutionPolicy Bypass -File .\install-jauction-task.ps1   # 매일 
 npm run viewer        # 이 PC에서만
 npm run viewer-lan    # 집 안 네트워크(노트북)까지
 ```
+
+## 무료경매.kr(제일법원경매) 수집기 — src/muryo.js (제이옥션 대체)
+
+- 제이옥션(gfauction.co.kr)이 집 IP를 막은 동안(10/30~) 쓰는 대체 수집기. start-jauction.cmd 가 제이옥션과 함께 띄운다(서로 다른 사이트, 각자 잠금).
+- 받는 것: 무료경매.kr 화면 글자만 — 사건 상세(기일현황·임차인·지역분석), 현황조사서, 부동산 표시목록, 기일내역, 문건접수·송달내역.
+- 받지 않는 것: 감정평가서·매각물건명세서 PDF, 현장사진. 이 파일들은 *.speedauction.co.kr 서버에 있고 그 서버 robots.txt 가 전부 금지라서 받지 않는다.
+- 범위: config.json muryo.scope(제이옥션 검토 범위와 같은 조건) + review 후보. 제이옥션에서 이미 받은 사건은 건너뜀.
+- 속도: 사건 사이 60~140초, 화면 사이 4~10초, 하루 150사건, 06~23시. 막히면 state/muryo-blocked.txt 를 만들고 멈춤(우회 안 함).
+- 저장: <원본폴더>\<법원>\<연도>\<사건번호>\ 아래 *_무료경매.txt, <물건번호>\물건정보_무료경매.json, 목록 _무료경매_목록.csv/json
+- 저작권: 개인 보관용. 재배포하지 않는다(jbslab.co.kr/data 는 관리자 전용).
+- 지금 시작: 지금시작-무료경매.cmd / 시험: npm run muryo-test / 로그인(선택): npm run muryo-login

@@ -112,6 +112,8 @@ async function main() {
   if (fs.existsSync(lockFile)) { const pid = Number(fs.readFileSync(lockFile, 'utf8')); try { process.kill(pid, 0); return log('이미 올리는 중'); } catch { /* 죽은 잠금 */ } }
   fs.writeFileSync(lockFile, String(process.pid));
   const meta = {};
+  // 무료경매.kr 목록을 먼저 깔고 제이옥션 목록으로 덮음(제이옥션이 있으면 그쪽 기준)
+  try { for (const r of Object.values(JSON.parse(fs.readFileSync(path.join(ARCHIVE, '_무료경매_목록.json'), 'utf8')))) meta[`${r.법원}_${r.사건번호}`] = r; } catch { /* 없음 */ }
   try { for (const r of Object.values(JSON.parse(fs.readFileSync(path.join(ARCHIVE, '_제이옥션_목록.json'), 'utf8')))) meta[`${r.법원}_${r.사건번호}`] = r; } catch { /* 없음 */ }
   let files = 0; let bytes = 0; let cases = 0; let fail = 0;
   try {
