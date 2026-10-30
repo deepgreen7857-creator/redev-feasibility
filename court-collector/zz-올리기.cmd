@@ -4,8 +4,8 @@ rem 무료경매 수집기(muryo.js)와 관련 수정을 저장소에 올림 —
 cd /d "%~dp0"
 set OUT=logs\claude-git-muryo.txt
 echo === START %date% %time% > %OUT%
-git -C .. add court-collector/src/muryo.js court-collector/지금시작-무료경매.cmd court-collector/config.json court-collector/package.json court-collector/start-jauction.cmd court-collector/src/datasync.js court-collector/src/run.js court-collector/README.md court-collector/zz-올리기.cmd >> %OUT% 2>&1
-git -C .. commit -m "무료경매.kr(제일법원경매) 대체 수집기 muryo.js 추가, 제이옥션 중단(IP 차단), 대법원 수집기가 검토 범위 상세를 받게 함" >> %OUT% 2>&1
+git -C .. add court-collector/src/muryo.js court-collector/src/hanmaum.js court-collector/한마음-로그인.cmd court-collector/지금시작-한마음.cmd court-collector/지금시작-무료경매.cmd court-collector/config.json court-collector/package.json court-collector/start-jauction.cmd court-collector/src/datasync.js court-collector/src/run.js court-collector/README.md court-collector/zz-올리기.cmd >> %OUT% 2>&1
+git -C .. commit -m "한마음경매 수집기 hanmaum.js 추가 - 감정평가서·명세서 PDF와 사진을 채움" >> %OUT% 2>&1
 git -C .. pull --rebase >> %OUT% 2>&1
 git -C .. push >> %OUT% 2>&1
 git -C .. log --oneline -1 >> %OUT% 2>&1

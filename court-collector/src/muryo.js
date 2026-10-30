@@ -40,7 +40,9 @@ const DEFAULT_SCOPE = [
 ];
 const cfg = {
   enabled: true, dailyMax: 150, itemSeconds: [60, 140], pageSeconds: [4, 10], allowedHours: [[6, 23]],
-  refreshDays: 7, retryMissingDays: 3, scopeDays: 45, maxListPages: 30, failStop: 8, skipIfJauction: true,
+  refreshDays: 7, retryMissingDays: 3, scopeDays: 45, maxListPages: 30, failStop: 8, failRests: 6, failRestMinutes: 30, skipIfJauction: true,
+  // 검토 범위를 다 받으면 쉬지 않고 넓은 범위로 넘어감(수집은 멈추지 않는다)
+  broad: [{ name: 'C 수도권 주거·토지 전체', regions: ['인천', '서울', '경기'], use1: '01,02,03,04,05,07', use3: '41,42,43,44,45,46,47,49' }],
   scope: DEFAULT_SCOPE,
   ...(cfgAll.muryo || {}),
 };
@@ -179,7 +181,7 @@ function rowsIn(h) {
 async function listPage(form) { return rowsIn(await get('/v1/s01/01.htm', { method: 'POST', form, referer: `${BASE}/v1/s01/01.htm` })); }
 
 /** 검토 범위 + review 후보 → Map key → { rows:[…], src, sale, light } */
-async function collectScope() {
+async function collectScope({ skipReview = false } = {}) {
   const out = new Map();
   const add = (r, src, light) => { const v = out.get(r.key) || { rows: [], src, sale: r.sale, light }; if (!v.rows.some((x) => x.objNo === r.objNo)) v.rows.push(r); if (!light) { v.light = false; v.src = src; } if (r.sale && (!v.sale || r.sale < v.sale)) v.sale = r.sale; out.set(r.key, v); };
   for (const sc of cfg.scope || []) {
@@ -205,7 +207,7 @@ async function collectScope() {
   }
   // review 후보: 전부 받음
   const file = path.join(ROOT, '..', 'review', 'items.json');
-  if (fs.existsSync(file)) {
+  if (!skipReview && fs.existsSync(file)) {
     let k = 0;
     for (const it of JSON.parse(fs.readFileSync(file, 'utf8'))) {
       const m = String(it.id).match(/^(\d{4})타경(\d+)/); if (!m) continue;
@@ -366,9 +368,15 @@ async function main() {
       const left = [...all.values()].filter((v) => !doneByCaseNo(caseOf(v), v.light));
       const byJ = [...all.values()].filter((v) => jauctionDone('', caseOf(v), v.light)).length;
       log(`검토 범위 — 대상 ${all.size}사건, 제이옥션에서 이미 받은 것 ${byJ}사건, 남은 것 ${left.length}사건`);
+      if (!left.length && cfg.broad?.length) {
+        log('검토 범위를 다 받음 — 넓은 범위로 넘어감');
+        const keep = cfg.scope; cfg.scope = cfg.broad; const wide = await collectScope({ skipReview: true }); cfg.scope = keep;
+        for (const v of wide.values()) if (!doneByCaseNo(caseOf(v), true)) left.push(v);
+        log(`넓은 범위 — 남은 것 ${left.length}사건`);
+      }
       todo = left.sort((a, b) => (a.src === 'review' ? 0 : 1) - (b.src === 'review' ? 0 : 1) || String(a.sale || '9').localeCompare(String(b.sale || '9')));
     }
-    let failRun = 0;
+    let failRun = 0; let restRounds = 0;
     for (const v of todo) {
       if (n >= LIMIT) break;
       reloadCfg();
@@ -384,7 +392,12 @@ async function main() {
       } catch (e) {
         if (e instanceof Blocked) throw e;
         log(`${v.rows[0].year}타경${v.rows[0].num}: 실패 ${e.cause?.code || ''} ${e.message}`);
-        if (++failRun >= cfg.failStop) { log(`연달아 ${cfg.failStop}번 실패 — 멈춤(우회하지 않음, 다음 예약 실행 때 다시 봄)`); break; }
+        if (++failRun >= cfg.failStop) {
+          if (++restRounds > cfg.failRests) { log(`연달아 실패가 ${cfg.failRests}번 쉬어도 계속됨 — 이번 실행은 여기까지(다음 예약 실행 때 이어서)`); break; }
+          log(`연달아 ${cfg.failStop}번 실패 — 그만두지 않고 ${cfg.failRestMinutes}분 쉰 뒤 같은 자리부터 다시(${restRounds}/${cfg.failRests}, 우회 없음)`);
+          await sleep(cfg.failRestMinutes * 60e3); failRun = 0;
+          if (!anyHour && !inHours()) { log('쉬는 시간대 — 다음 실행에 이어서'); break; }
+        }
       }
     }
   } catch (e) {
