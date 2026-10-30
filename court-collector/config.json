@@ -155,8 +155,8 @@
     "dailyMax": 150,
     "allowedHours": [
       [
-        6,
-        23
+        0,
+        24
       ]
     ],
     "itemSeconds": [
