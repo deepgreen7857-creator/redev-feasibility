@@ -74,7 +74,9 @@ class NeedLogin extends Error {}
 const COOKIES = path.join(STATE, 'jauction-cookies.json');
 let jar = fs.existsSync(COOKIES) ? JSON.parse(fs.readFileSync(COOKIES, 'utf8')) : []; // [{name,value,domain,path}]
 const saveJar = () => fs.writeFileSync(COOKIES, JSON.stringify(jar));
-const cookieFor = (url) => { const h = new URL(url).hostname; return jar.filter((c) => h === c.domain.replace(/^\./, '') || h.endsWith(c.domain.startsWith('.') ? c.domain : '.' + c.domain)).map((c) => `${c.name}=${c.value}`).join('; '); };
+// ace_auction 은 '본 물건 목록' 쿠키라 볼 때마다 길어진다 — 8KB를 넘으면 사이트가 모든 요청을 HTTP 400 으로 거절(10/30 08:50) → 저장도 전송도 하지 않음
+const SKIP_COOKIE = /^ace_/;
+const cookieFor = (url) => { const h = new URL(url).hostname; return jar.filter((c) => !SKIP_COOKIE.test(c.name)).filter((c) => h === c.domain.replace(/^\./, '') || h.endsWith(c.domain.startsWith('.') ? c.domain : '.' + c.domain)).map((c) => `${c.name}=${c.value}`).join('; '); };
 function takeCookies(url, res) {
   const list = typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : [];
   if (!list.length) return;
@@ -82,6 +84,7 @@ function takeCookies(url, res) {
   for (const sc of list) {
     const [nv, ...attrs] = sc.split(';'); const i = nv.indexOf('='); if (i < 1) continue;
     const name = nv.slice(0, i).trim(); const value = nv.slice(i + 1).trim();
+    if (SKIP_COOKIE.test(name)) continue;
     const dom = (attrs.map((a) => a.trim()).find((a) => /^domain=/i.test(a)) || '').slice(7) || host;
     const del = /deleted|^$/.test(value) || attrs.some((a) => /max-age=0/i.test(a));
     jar = jar.filter((c) => !(c.name === name && c.domain.replace(/^\./, '') === dom.replace(/^\./, '')));
@@ -425,6 +428,7 @@ async function main() {
     const todo = [...idxs.keys()].filter((i) => !fresh(i) && !skip.has(i)).sort((x, y) => { const a = key(x); const b = key(y); return a[0] - b[0] || a[1].localeCompare(b[1]); });
     log(`대상 ${idxs.size}건 중 이번에 볼 물건 ${todo.length}건`);
     const seenCase = new Set();
+    let failRun = 0; // 연달아 실패한 수 — 15번 넘으면 멈춤(사이트 쪽 문제일 수 있음)
     for (const idx of todo) {
       if (n >= LIMIT) break;
       if (today >= cfg.dailyMax) { log('오늘 한도 — 내일 이어서'); break; }
@@ -442,13 +446,14 @@ async function main() {
         const sib = [it];
         const listed = idsIn(await get(`${BASE}/search/search_list.php?stc=1&sno=${it.year}&tno=${it.caseNo.split('타경')[1]}`)).filter((i) => i !== idx);
         for (const o of listed.slice(0, 11)) { await pause('pageSeconds'); const s = await readItem(o); if (s && s.court === it.court && s.caseNo === it.caseNo) sib.push(s); }
-        n++; bump();
+        n++; bump(); failRun = 0;
         // 30사건마다 사이트(/data) 올리기를 따로 돌림(이미 돌고 있으면 그쪽이 알아서 건너뜀)
         if (!DRY && n % 30 === 0) { try { const { spawn } = await import('node:child_process'); spawn(process.execPath, [path.join(ROOT, 'src', 'datasync.js')], { cwd: ROOT, detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch { /* */ } }
         await grabCase(sib, !!idxs.get(idx)?.light && !sib.some((s) => idxs.get(s.idx) && !idxs.get(s.idx).light));
       } catch (e) {
         if (e instanceof Blocked || e instanceof NeedLogin) throw e;
         log(`idx ${idx}: 실패 ${e.message}`);
+        if (++failRun >= 15) { log('연달아 15번 실패 — 멈춤(사이트 상태를 확인한 뒤 다시 시작)'); break; }
       }
     }
   } catch (e) {
