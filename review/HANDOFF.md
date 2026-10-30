@@ -219,3 +219,6 @@
 - /data에 없는 사건만 대법원 법원경매정보(물건상세·명세서 뷰어)로 보충하고, 어느 쪽에서 봤는지 출처를 적는다.
 - 미니PC가 꺼져 있으면 /data가 갱신되지 않음 → 보고 첫머리에 'data 갱신 안 됨(마지막 자료 날짜)'을 적는다.
 - (10.30 오전) 회사 망에서는 /data의 PDF(firebasestorage)가 '인천광역시 유해사이트 차단'으로 안 열림. 대책: court-collector/src/pdftext.js 추가, datasync.js v3 — 명세서·현황조사서·감정평가서(앞 8쪽) 글자를 dataCases.summary.specText/surveyText/appraisalText 로 같이 올림(서버 수정 불필요, summary 30KB 한도 안). data/index.html에 '원문 글자' 칸 추가. 정민님이 court-collector·data 폴더를 git push 해야 미니PC(실행 전 git pull)에 반영됨. 반영 후 첫 실행에서 기존 사건 전부 글자 다시 보냄(v3).
+- (10.30 23시) 자동 푸시가 10:48에 court-collector·data를 올렸고 미니PC가 새 코드로 돌아 /data에 명세서 글자(summary.specText)가 들어옴 — 941건, 기일 남은 209건 중 205건. 읽는 법: /data 로그인(버튼만) → 콘솔에서 firebase-app/firestore 10.12.2 동적 import → getDocs(collection(db,'dataCases')) → summary.specText·minBid·failCount·registry. 감정평가서 글자는 대부분 비어 있음(스캔 PDF 추정).
+- 같은 시각 /data 기준 1차 거르기 결과: 주거 새 통과 0, 땅 11.02분 전부 제외(갈화리 777 농업보호구역 등). 보성빌라 302 선순위 임차권 1.11억 인수로 탈락.
+- 썬앤빌 1604(10.30): 대법원 기일내역에 결과 미게시, 다음 매각기일 없이 11.06 매각결정기일만 → 낙찰 추정. 다음 실행에서 낙찰가 확인.
