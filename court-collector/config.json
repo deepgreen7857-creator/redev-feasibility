@@ -57,7 +57,7 @@
   "uploadBatch": 20,
   "headless": true,
   "jauction": {
-    "dailyMax": 1000,
+    "dailyMax": 400,
     "allowedHours": [
       [
         0,
@@ -65,8 +65,8 @@
       ]
     ],
     "itemSeconds": [
-      15,
-      35
+      45,
+      100
     ],
     "areas": [
       {
@@ -104,12 +104,12 @@
       }
     ],
     "pageSeconds": [
-      2,
-      5
+      3,
+      7
     ],
     "photoSeconds": [
-      1,
-      2.5
+      1.5,
+      3
     ],
     "scopeDays": 45,
     "scope": [
@@ -144,6 +144,61 @@
         ],
         "usage": "301,302,303,304,305,306",
         "mprice2": 30000000,
+        "addr": "통영|거제|남해군|사천|고성군|하동|진해|마산합포"
+      }
+    ]
+  },
+  "muryo": {
+    "enabled": true,
+    "dailyMax": 150,
+    "allowedHours": [
+      [
+        6,
+        23
+      ]
+    ],
+    "itemSeconds": [
+      60,
+      140
+    ],
+    "pageSeconds": [
+      4,
+      10
+    ],
+    "scopeDays": 45,
+    "skipIfJauction": true,
+    "scope": [
+      {
+        "name": "A 수도권 아파트·다세대·도시형 5천만 이하",
+        "regions": [
+          "서울",
+          "인천",
+          "경기"
+        ],
+        "use1": "01,03,07",
+        "minPriceMax": 50000000
+      },
+      {
+        "name": "B 수도권·충청 땅 3천만 이하",
+        "regions": [
+          "서울",
+          "인천",
+          "경기",
+          "충북",
+          "충남",
+          "대전",
+          "세종"
+        ],
+        "use3": "41,42,43,44,45,46",
+        "minPriceMax": 30000000
+      },
+      {
+        "name": "B 경남 남해안 땅 3천만 이하",
+        "regions": [
+          "경남"
+        ],
+        "use3": "41,42,43,44,45,46",
+        "minPriceMax": 30000000,
         "addr": "통영|거제|남해군|사천|고성군|하동|진해|마산합포"
       }
     ]

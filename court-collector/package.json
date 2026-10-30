@@ -20,7 +20,11 @@
     "jauction-now": "node src/jauction.js --now",
     "viewer": "node src/viewer.js",
     "viewer-lan": "node src/viewer.js --lan",
-    "datasync": "node src/datasync.js"
+    "datasync": "node src/datasync.js",
+    "muryo": "node src/muryo.js",
+    "muryo-test": "node src/muryo.js --limit 1 --dry",
+    "muryo-now": "node src/muryo.js --now",
+    "muryo-login": "node src/muryo.js --login"
   },
   "dependencies": {
     "pdfjs-dist": "^4.10.38",

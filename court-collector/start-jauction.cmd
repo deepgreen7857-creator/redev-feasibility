@@ -5,6 +5,8 @@ if not exist logs mkdir logs
 echo [%date% %time%] git pull (jauction) >> logs\update.log
 git -C .. checkout -- court-collector/package-lock.json >> logs\update.log 2>&1
 git -C .. pull --ff-only >> logs\update.log 2>&1
+rem 무료경매.kr(제일법원경매) 수집기를 따로 띄움 — 제이옥션과 다른 사이트라 같이 돌아도 됨(이미 돌고 있으면 스스로 끝남)
+start "" /b node src\muryo.js
 node src\jauction.js
 rem 받은 자료를 jbslab.co.kr/data(관리자 전용)에 올림
 node src\datasync.js
