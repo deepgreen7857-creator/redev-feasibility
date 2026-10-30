@@ -122,7 +122,8 @@ function headLine(s) {
   if (!s || !s.minBid) return '';
   const cur = (s.rounds || []).slice(-1)[0];
   const n = cur ? cur.n : (s.failCount != null ? s.failCount + 1 : null);
-  return ' <span style="font-size:15px;font-weight:600;color:var(--sub)">' + (n ? roundName(n) + ' · ' : '') + '<span style="color:var(--acc)">최저 ' + won(s.minBid) + (s.minRate ? ' (' + s.minRate + '%)' : '') + '</span> · 감정 ' + won(s.appraisal) + '</span>';
+  // 감정가 먼저, 그다음 이번 회차와 그 회차 최저가
+  return ' <span style="font-size:15px;font-weight:600;color:var(--sub)">감정 ' + won(s.appraisal) + ' · ' + (n ? roundName(n) + ' ' : '') + '<span style="color:var(--acc)">최저 ' + won(s.minBid) + (s.minRate ? ' (' + s.minRate + '%)' : '') + '</span></span>';
 }
 const rank = (n) => /감정평가서/.test(n) ? 0 : /매각물건명세서/.test(n) ? 1 : /현황조사서/.test(n) ? 2 : /등기/.test(n) ? 3 : 9;
 const base = (p) => p.split('/').pop();
