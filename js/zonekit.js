@@ -342,6 +342,23 @@ const ZoneKit = {
     try { return turf.difference(zone, f); }
     catch (e) { try { return turf.difference(turf.truncate(zone, { precision: 7 }), turf.truncate(f, { precision: 7 })); } catch (e2) { return zone; } }
   },
+  // 선(LineString)으로 구역계를 조각냄 → 조각(Polygon Feature) 배열(큰 것부터). 선이 구역을 가로지르지 않으면 []
+  //  선을 1cm 두께로 부풀려 빼서 나눔. 조각을 구역에서 뺄 때는 turf.difference(zone, 조각) — 선 자리의 1cm 띠는 남는 쪽에 붙음
+  split(zone, line) {
+    const parts = g => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates);
+    const before = parts(zone.geometry).length;
+    let cut;
+    try { cut = turf.difference(zone, turf.buffer(line, 0.01, { units: 'meters' })); } catch (e) { return []; }
+    if (!cut) return [];
+    const ps = parts(cut.geometry);
+    if (ps.length <= before) return [];
+    return ps.map(c => turf.polygon(c)).filter(f => turf.area(f) >= 0.5).sort((a, b) => turf.area(b) - turf.area(a));
+  },
+  // 조각을 구역에서 뺌
+  removePiece(zone, piece) {
+    try { return turf.difference(zone, piece) || null; }
+    catch (e) { try { return turf.difference(turf.truncate(zone, { precision: 7 }), turf.truncate(piece, { precision: 7 })); } catch (e2) { return zone; } }
+  },
   // 필지가 구역계 안에 든 비율 (0~1)
   inRatio(zone, f) {
     if (!zone) return 0;
