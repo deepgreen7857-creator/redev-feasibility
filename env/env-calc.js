@@ -8,7 +8,7 @@
   function eia(C, p) {
     const e = item(C, 'eia_redev_area'), s = item(C, 'small_eia_urban'), st = item(C, 'strategic_eia');
     const a = num(p.siteArea), green = num(p.greenArea) || 0;
-    const out = { area: a, eia: e, small: s, strategic: { result: '기준확인필요', basis: st.근거 }, unconfirmed: unc(e) || unc(s) };
+    const out = { area: a, eia: e, small: s, strategic: { result: st.값 == null ? '기준확인필요' : a === null ? '○○' : a >= st.값 ? '전략환경영향평가 대상(정비구역 지정)' : '대상 아님', basis: st.근거, when: st.협의시기 }, unconfirmed: unc(e) || unc(s) };
     if (a === null) { out.result = '○○'; return out; }
     if (a >= e.값) { out.result = '환경영향평가 대상'; out.basis = e.근거; return out; }
     if (p.urban === '아니오') { out.result = '확인필요(도시지역 외)'; out.basis = s.근거; return out; }

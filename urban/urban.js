@@ -2062,7 +2062,7 @@ function evalSection(a) {
   ${row('교통영향평가', tia, tia && a.area >= tia['값'], tia ? `정비사업 부지면적 ${fmt(tia['값'])}㎡ 이상 → 이 안 ${fmt(a.area)}㎡${tia['제출시기'] ? `. 제출: ${esc(tia['제출시기'])}` : ''}` : '', '../traffic/')}
   ${row('환경영향평가', eia, eia && a.area >= eia['값'], eia ? `도시정비사업 ${fmt(eia['값'])}㎡ 이상 → 이 안 ${fmt(a.area)}㎡` : '', '../env/')}
   ${row('소규모 환경영향평가', sm, sm && a.area >= smV && !(eia && a.area >= eia['값']), sm ? `도시지역 ${fmt(sm['값'])}㎡ 이상(녹지지역 ${fmt(sm['녹지지역_값'] || 0)}㎡) — 환경영향평가 대상이면 제외${green ? '. 구역에 녹지지역이 있어 녹지 기준 적용' : ''}${sm['협의시기'] ? `. 협의: ${esc(sm['협의시기'])}` : ''}` : '', '../env/')}
-  ${row('전략환경영향평가', se, false, '정비계획이 별표 2 대상인지 원문 확인 전', '../env/')}
+  ${row('전략환경영향평가', se, se && se['값'] != null && a.area >= se['값'], se && se['값'] != null ? `정비구역 지정 — 환경영향평가 대상 규모(${fmt(se['값'])}㎡) 이상일 때만 → 이 안 ${fmt(a.area)}㎡${se['협의시기'] ? `. 협의: ${esc(se['협의시기'])}` : ''}` : '정비계획이 별표 2 대상인지 원문 확인 전', '../env/')}
   </tbody></table></div>`;
 }
 function renderReq(a) {

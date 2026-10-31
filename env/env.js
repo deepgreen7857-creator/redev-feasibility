@@ -67,7 +67,7 @@ ReviewUI.start({
 
     <h2>9. 영향평가 대상 여부</h2>
     <table><tr><th style="width:170px">환경영향평가·소규모 환경영향평가</th><td>${badge(e.result)}${chk(e.unconfirmed)}<br><span class="note">환경영향평가: 사업면적 ${fmt(e.eia.값)}㎡ 이상(${esc(e.eia.근거)}). 소규모: 도시지역 ${fmt(e.small.값)}㎡(녹지지역 ${fmt(e.small.녹지지역_값)}㎡) 이상, 정비구역 지정 시 지구단위계획 의제 포함(${esc(e.small.출처)}).</span>${e.when ? `<br>협의 시기: ${esc(e.when)}` : ''}</td></tr>
-    <tr><th>전략환경영향평가</th><td>${badge(e.strategic.result)} <span class="chk">※ 기준 확인 필요</span><br><span class="note">${esc(e.strategic.basis)}</span></td></tr></table>
+    <tr><th>전략환경영향평가</th><td>${badge(e.strategic.result)}${e.strategic.result === '기준확인필요' ? ' <span class="chk">※ 기준 확인 필요</span>' : ''}<br><span class="note">${esc(e.strategic.basis)}${e.strategic.when ? ` · 협의: ${esc(e.strategic.when)}` : ''}</span></td></tr></table>
 
     <h2>10. 환경 영향 저감방안 및 종합 의견</h2>
     <ol>${r.list.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
