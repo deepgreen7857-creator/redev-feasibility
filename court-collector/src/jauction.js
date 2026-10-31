@@ -190,7 +190,7 @@ async function collectScope() {
   {
     // 같은 사건번호가 다른 법원에도 있으므로(제주 2025타경1517 등) 후보의 법원까지 맞는 줄만 받는다
     const courtOf = new Map();
-    for (const it of reviewCands()) { const m = String(it.id).match(/^(\d{4})타경(\d+)/); if (m) { const cb = courtBase(it.court || '').replace(/\s/g, ''); const key = `${m[1]}|${m[2]}`; const v = (cb.match(/([가-힣]+지원)$/) || [])[1] || cb; if (!courtOf.get(key)) courtOf.set(key, v); } }
+    for (const it of reviewCands()) { const m = String(it.id).match(/^(\d{4})타경(\d+)/); if (m) { const cb = courtBase(it.court || '').replace(/\s/g, ''); const key = `${m[1]}|${m[2]}`; const v = cb.startsWith('@') ? cb : ((cb.match(/([가-힣]+지원)$/) || [])[1] || cb); if (!courtOf.get(key)) courtOf.set(key, v); } }
     const cases = [...courtOf.keys()];
     let k = 0;
     for (const c of cases) {
@@ -200,7 +200,7 @@ async function collectScope() {
       if (done) continue;
       await pause('pageSeconds');
       for (const r of rowsIn(await get(`${BASE}/search/search_list.php?stc=1&sno=${y}&tno=${num}`))) {
-        if (wantCourt && !r.text.replace(/\s/g, '').includes(wantCourt)) continue; // 다른 법원의 같은 사건번호
+        if (wantCourt && (wantCourt.startsWith('@') ? !r.text.includes(wantCourt.slice(1)) : !r.text.replace(/\s/g, '').includes(wantCourt))) continue; // 다른 법원의 같은 사건번호
         out.set(r.idx, { src: 'review', sale: r.sale || (out.get(r.idx) || {}).sale || '', light: false }); k++;
       }
     }
@@ -215,7 +215,7 @@ function reviewCands() {
   const out = []; const rd = (f) => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, '..', f), 'utf8')); } catch { return null; } };
   for (const f of ['review/items.json', 'review/land.json']) { const a = rd(f); if (Array.isArray(a)) for (const it of a) out.push({ id: String(it.id || ''), court: it.court || '' }); }
   const pk = rd('judge/picks.json');
-  if (Array.isArray(pk)) for (const d of pk.slice(0, 3)) for (const it of [...(d.picks || []), ...(d.reserve || [])]) out.push({ id: String(it.id || '').replace(/^L:/, ''), court: it.court || '' });
+  if (Array.isArray(pk)) for (const d of pk.slice(0, 3)) for (const it of [...(d.picks || []), ...(d.reserve || [])]) { const kw = (String(it.addr || '').match(/[가-힣]{2,}/) || [])[0] || ''; out.push({ id: String(it.id || '').replace(/^L:/, ''), court: it.court || (kw ? '@' + kw : '') }); } // 법원 없는 판단기록장 항목은 주소 첫 낱말(예: 당진)로 같은 번호 다른 법원 사건을 거름
   return out.filter((x) => /^\d{4}타경\d+/.test(x.id));
 }
 const courtBase = (c) => String(c).replace(/\s*경매[\d-]+계\s*$/, '').trim();
