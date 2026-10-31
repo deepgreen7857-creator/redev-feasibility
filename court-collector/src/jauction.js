@@ -54,7 +54,7 @@ const rand = ([a, b]) => a + Math.random() * (b - a);
 const pause = (k) => sleep(rand(cfg[k]) * 1000);
 // 돌고 있는 중에도 config.json 의 속도·한도를 다시 읽는다(창을 껐다 켜지 않아도 바뀐 설정이 바로 적용)
 function reloadCfg() {
-  try { const j = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8')).jauction || {}; for (const k of ['dailyMax', 'itemSeconds', 'pageSeconds', 'photoSeconds', 'allowedHours', 'skipUse']) if (j[k] !== undefined) cfg[k] = j[k]; } catch { /* 고치는 중이면 다음에 */ }
+  try { const j = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8')).jauction || {}; for (const k of ['dailyMax', 'itemSeconds', 'pageSeconds', 'photoSeconds', 'allowedHours', 'skipUse', 'skipPhotos', 'enabled']) if (j[k] !== undefined) cfg[k] = j[k]; } catch { /* 고치는 중이면 다음에 */ }
 }
 const stopFile = path.join(STATE, 'jauction-stop.txt'); // 이 파일이 생기면 지금 사건을 마치고 멈춤
 // 동산(자동차·중기·선박 등)은 받지 않는다 — 부동산만
@@ -100,6 +100,8 @@ const countFile = path.join(STATE, `jauction-${kstDay()}.json`);
 let today = fs.existsSync(countFile) ? JSON.parse(fs.readFileSync(countFile, 'utf8')).count || 0 : 0;
 const bump = () => { today++; fs.writeFileSync(countFile, JSON.stringify({ count: today })); };
 const inHours = () => { const h = kstNow().getUTCHours(); return cfg.allowedHours.some(([a, b]) => h >= a && h < b); };
+// 쉬는 시간대면 끝내지 않고 다음 도는 시간까지 기다림(최대 3시간) — 2026.10.31: 새벽에도 돌되 중간에 쉬게
+async function waitHours() { for (let k = 0; k < 36 && !inHours(); k++) { if (k === 0) log('쉬는 시간 — 다음 도는 시간까지 기다림'); await sleep(5 * 60e3); reloadCfg(); } return inHours(); }
 const lockFile = path.join(STATE, 'jauction.lock');
 function lock() {
   if (fs.existsSync(lockFile)) { const pid = Number(fs.readFileSync(lockFile, 'utf8')); try { process.kill(pid, 0); return false; } catch { /* 죽은 잠금 */ } }
@@ -346,7 +348,7 @@ async function grabCase(items, light = false) {
   // 현장사진(사건 단위): 사진 보기 화면에서 파일 이름을 읽고 자료 폴더에서 받는다
   const pdir = path.join(dir, '사진_제이옥션');
   const already = fs.existsSync(pdir) ? fs.readdirSync(pdir).filter((f) => /\.jpe?g$/i.test(f)).length : 0;
-  if (!light && first.hasPic && caseDataDir && already === 0) {
+  if (!cfg.skipPhotos && !light && first.hasPic && caseDataDir && already === 0) {
     await pause('pageSeconds');
     const pv = await get(`${FILES}/auction/pic_view.php?idx=${first.idx}&picname=pic_0.jpg`, { referer: `${BASE}/search/auction_detail_view.php?type=pic_0.jpg&idx=${first.idx}` });
     const names = [...new Set([...String(pv).matchAll(/\/(pic_[\w]+\.jpe?g)/gi)].map((m) => m[1]))]
@@ -412,7 +414,7 @@ async function main() {
   log(`시작 — 보관 폴더 ${ARCHIVE}${DRY ? ' (시험)' : ''}, 오늘 ${today}/${cfg.dailyMax}사건`);
   let n = 0;
   try {
-    if (!anyHour && !inHours()) return log('쉬는 시간대 — 다음 실행에 이어서');
+    if (!anyHour && !(await waitHours())) return log('쉬는 시간대 — 다음 실행에 이어서');
     if (!(await loggedIn())) throw new NeedLogin('제이옥션 로그인 안 됨 — 미니PC에서 npm run jauction-login 으로 한 번 로그인하세요(본인이 직접)');
     let idxs;
     if (arg('--case')) {
@@ -439,7 +441,7 @@ async function main() {
     for (const idx of todo) {
       if (n >= LIMIT) break;
       if (today >= cfg.dailyMax) { log('오늘 한도 — 내일 이어서'); break; }
-      if (!anyHour && !inHours()) { log('쉬는 시간대 — 다음 실행에 이어서'); break; }
+      if (!anyHour && !(await waitHours())) { log('쉬는 시간대 — 다음 실행에 이어서'); break; }
       reloadCfg();
       if (fs.existsSync(stopFile)) { try { fs.unlinkSync(stopFile); } catch { /* */ } log('멈춤 요청(jauction-stop.txt) — 여기서 멈춤'); break; }
       if (n > 0) await pause('itemSeconds');
@@ -460,7 +462,7 @@ async function main() {
       } catch (e) {
         if (e instanceof Blocked || e instanceof NeedLogin) throw e;
         log(`idx ${idx}: 실패 ${e.message}`);
-        if (++failRun >= 15) { log('연달아 15번 실패 — 멈춤(사이트 상태를 확인한 뒤 다시 시작)'); break; }
+        if (++failRun >= 3) { fs.writeFileSync(blockedFile, `${new Date().toISOString()} 연달아 3번 실패: ${e.message}\n`); log('연달아 3번 실패 — 차단 가능성, 우회하지 않고 멈춤(jauction-blocked.txt). 제이옥션 화면을 직접 확인한 뒤 파일을 지우면 다시 받음'); break; }
       }
     }
   } catch (e) {
