@@ -68,6 +68,9 @@ async function load() {
   try {
     const snap = await getDocs(collection(db, 'dataCases'));
     cases = snap.docs.map((d) => { const c = { id: d.id, ...d.data() }; c.list = Object.values(c.files || {}); return c; });
+    // review 후보와 사건번호는 같은데 법원이 다른 것 = 10/30 이전에 잘못 받은 다른 법원 사건 → 표시만 하고 기본 목록에서 숨김(지우지 않음)
+    try { const R = await (await fetch('../review/items.json', { cache: 'no-store' })).json(); const want = {}; for (const it of R) { const m = String(it.id || '').match(/^(\d{4}타경\d+)/); if (m) (want[m[1]] ||= []).push(String(it.court || '').replace(/\s*경매[\d-]+계\s*$/, '').replace(/\s/g, '')); }
+      for (const c of cases) { const w = want[c.caseNo]; if (w && !w.includes(String(c.court || '').replace(/\s/g, ''))) c.otherCourt = true; } } catch { /* review 목록 못 읽으면 표시 안 함 */ }
   } catch (e) { $('#list').innerHTML = '<div class="count">못 읽음: ' + esc(e.message) + '</div>'; return; }
   cases.sort((a, b) => (a.sale || '9999').localeCompare(b.sale || '9999') || String(b.updatedAt).localeCompare(String(a.updatedAt)));
   drawFilters(); draw();
@@ -79,11 +82,14 @@ function draw() {
   const L = filtered(q);
   const t = (ok, l) => '<span class="tag ' + (ok ? 'ok' : 'no') + '">' + l + '</span>';
   $('#list').innerHTML = '<div class="count">' + L.length + '건 / 전체 ' + cases.length + '건</div>' + L.map((c) => '<div class="row" data-id="' + esc(c.id) + '"><b>' + esc(c.caseNo) + '</b> <span class="tag">' + esc(String(c.court).replace('지방법원', '지법')) + '</span>' + (c.use ? ' <span class="tag">' + esc(c.use) + '</span>' : '') +
-    '<div class="addr">' + esc(c.address || '주소 정보 없음') + (c.sale ? ' · 매각기일 ' + esc(c.sale) : '') + '</div>' + (c.summary && c.summary.minBid ? '<div class="addr">감정 ' + won(c.summary.appraisal) + ' · <b style="color:var(--acc)">최저 ' + won(c.summary.minBid) + (c.summary.minRate ? ' (' + c.summary.minRate + '%)' : '') + '</b>' + (c.summary.failCount != null ? ' · 유찰 ' + c.summary.failCount + '회' : '') + '</div>' : '') + '<div class="tags">' + t(has(c, /감정평가서/), '감정평가서') + t(has(c, /매각물건명세서/), '명세서') + t(has(c, /현황조사서/), '현황조사서') + '<span class="tag">사진 ' + c.list.filter((f) => f.kind === 'img').length + '</span></div></div>').join('');
+    '<div class="addr">' + esc(c.address || '주소 정보 없음') + (c.sale ? ' · 매각기일 ' + esc(c.sale) : '') + '</div>' + (c.summary && c.summary.minBid ? '<div class="addr">감정 ' + won(c.summary.appraisal) + ' · <b style="color:var(--acc)">최저 ' + won(c.summary.minBid) + (c.summary.minRate ? ' (' + c.summary.minRate + '%)' : '') + '</b>' + (c.summary.failCount != null ? ' · 유찰 ' + c.summary.failCount + '회' : '') + '</div>' : '') + '<div class="tags">' + t(has(c, /감정평가서/), '감정평가서') + t(has(c, /매각물건명세서/), '명세서') + t(has(c, /현황조사서/), '현황조사서') + '<span class="tag">사진 ' + c.list.filter((f) => f.kind === 'img').length + '</span>' + (c.otherCourt ? '<span class="tag no">다른 법원(검토 대상 아님)</span>' : '') + resTag(c) + '</div></div>').join('');
   document.querySelectorAll('.row').forEach((r) => (r.onclick = () => open(r.dataset.id)));
 }
 const won = (n) => n ? (n >= 1e8 ? (Math.floor(n / 1e8) + '억 ' + (Math.round((n % 1e8) / 1e4) ? Math.round((n % 1e8) / 1e4).toLocaleString() + '만' : '')).trim() + '원' : n >= 1e4 ? Math.round(n / 1e4).toLocaleString() + '만원' : n.toLocaleString() + '원') : '-';
 const roundName = (n) => n <= 1 ? '최초' : (n - 1) + '회 유찰';
+// 매각 결과(무료경매.kr 결과 확인): 마지막으로 끝난 기일
+const lastRes = (c) => { const R = (c.summary || {}).saleResults || []; return [...R].reverse().find((r) => r.결과 && r.결과 !== '예정'); };
+function resTag(c) { const r = lastRes(c); if (!r) return ''; return '<span class="tag ' + (r.결과 === '매각' ? 'ok' : '') + '">' + esc(r.매각기일 + ' ' + r.결과) + (r.낙찰가 ? ' ' + won(r.낙찰가) + (r.낙찰가율 ? '(' + r.낙찰가율 + '%)' : '') + (r.입찰인원 ? ' ' + r.입찰인원 + '명' : '') : '') + '</span>'; }
 function summaryHtml(s, c) {
   if (!s) return '';
   const kv = (label, val, hl) => val ? '<div class="kv' + (hl ? ' hl' : '') + '"><span>' + label + '</span><b>' + val + '</b></div>' : '';
@@ -96,6 +102,7 @@ function summaryHtml(s, c) {
     kv('경매종류', esc(s.kind || '')) + kv('진행 상태', esc(s.status || '')) + kv('담당', [s.court || c.court, s.team].filter(Boolean).map(esc).join('<br>')) + kv('배당요구종기', esc(s.dividendEnd || '')) +
     '</div>' + (s.target ? '<div class="meta">' + esc(s.target) + '</div>' : '');
   if ((s.rounds || []).length) h += '<table class="t"><tr><th>회차</th><th>입찰기일</th><th>최저가</th><th>결과</th></tr>' + s.rounds.map((r) => '<tr><td>' + roundName(r.n) + '</td><td class="d">' + esc(r.date) + '</td><td class="n">' + (r.minBid ? r.minBid.toLocaleString() + '원' : '-') + '</td><td class="' + (/유찰/.test(r.result) ? 'res-fail' : /매각|낙찰/.test(r.result) ? 'res-sold' : 'res-now') + '">' + esc(r.result) + '</td></tr>').join('') + '</table>';
+  if ((s.saleResults || []).length) h += '<h3 style="margin-top:14px">매각 결과 (무료경매.kr 확인 ' + esc(s.saleResultsAt || '') + ')</h3><table class="t"><tr><th>회차</th><th>매각기일</th><th>최저가</th><th>결과</th><th>낙찰가</th><th>입찰인원</th><th>2등 입찰가</th></tr>' + s.saleResults.map((r) => '<tr><td>' + esc(r.회차 || '') + '</td><td class="d">' + esc(r.매각기일) + '</td><td class="n">' + (r.최저가 ? r.최저가.toLocaleString() + '원' : '') + '</td><td class="' + (/유찰/.test(r.결과) ? 'res-fail' : /매각/.test(r.결과) ? 'res-sold' : 'res-now') + '">' + esc(r.결과) + '</td><td class="n">' + (r.낙찰가 ? r.낙찰가.toLocaleString() + '원' + (r.낙찰가율 ? ' (' + r.낙찰가율 + '%)' : '') : '') + '</td><td class="n">' + (r.입찰인원 != null ? r.입찰인원 + '명' : '') + '</td><td class="n">' + (r['2등입찰가'] ? r['2등입찰가'].toLocaleString() + '원' : '') + '</td></tr>').join('') + '</table>';
   if ((s.registry || []).length) h += '<h3 style="margin-top:14px">등기부 요약 (제이옥션 기준)</h3><table class="t"><tr><th>구분</th><th>일자</th><th>권리</th><th>권리자</th><th>금액</th><th>인수/소멸</th></tr>' + s.registry.map((r) => '<tr><td>' + esc(r.구분 || '') + '</td><td class="d">' + esc(r.일자) + '</td><td>' + esc(r.권리) + '</td><td>' + esc(r.권리자) + '</td><td class="n">' + (r.금액 ? r.금액.toLocaleString() + '원' : '') + '</td><td' + (/인수|기준/.test(r.인수소멸) ? ' class="res-now"' : '') + '>' + esc(r.인수소멸) + '</td></tr>').join('') + '</table>';
   return h + '</div>';
 }
@@ -179,10 +186,10 @@ function regionOf(c) {
 }
 const USES = [['아파트', /아파트/], ['다세대', /다세대|빌라|연립/], ['도시형', /도시형/], ['주택', /^주택|단독|다가구|근린주택/], ['오피스텔', /오피스텔/], ['상가', /상가|근린|점포|사무실|숙박|공장|창고/], ['땅', /대지|임야|^전$|^답$|과수원|잡종지|토지|도로|구거|목장|묘지/], ['그 밖', null]];
 function useOf(c) { const u = String(c.use || ''); for (const [k, re] of USES) if (re && re.test(u)) return k; return '그 밖'; }
-const F0 = { region: '', use: '', maxBid: 0, maxRate: 0, round: '', sale: 'future', appraisalDoc: false, noAssume: false, sort: 'sale' };
+const F0 = { region: '', use: '', maxBid: 0, maxRate: 0, round: '', sale: 'future', appraisalDoc: false, noAssume: false, otherCourt: false, sort: 'sale' };
 let F = { ...F0 };
-try { F = { ...F0, ...JSON.parse(localStorage.getItem('dataFilters2') || '{}') }; } catch { /* 저장 안 되는 브라우저 */ }
-const saveF = () => { try { localStorage.setItem('dataFilters2', JSON.stringify(F)); } catch { /* */ } };
+try { F = { ...F0, ...JSON.parse(localStorage.getItem('dataFilters3') || '{}') }; } catch { /* 저장 안 되는 브라우저 */ }
+const saveF = () => { try { localStorage.setItem('dataFilters3', JSON.stringify(F)); } catch { /* */ } };
 // 묶음: 수도권·충청, 아파트·다세대·도시형
 const REGION_SETS = { '수도권': ['서울', '인천', '경기'], '충청': ['충남', '충북', '대전', '세종'] };
 const USE_SETS = { '아파트·다세대·도시형': ['아파트', '다세대', '도시형'] };
@@ -198,11 +205,12 @@ function filtered(q) {
     if (F.sale === 'future' && !(d && d >= TODAY)) return false;
     if (/^\d+$/.test(F.sale) && !(d && d >= TODAY && d <= dayPlus(Number(F.sale)))) return false;
     if (F.sale === 'past' && !(d && d < TODAY)) return false;
+    if (!F.otherCourt && c.otherCourt) return false;
     if (F.appraisalDoc && !has(c, /감정평가서/)) return false;
     if (F.noAssume && (s.registry || []).some((r) => /인수/.test(r.인수소멸))) return false;
     return true;
   });
-  const by = { sale: (a, b) => (saleOf(a) || '9999').localeCompare(saleOf(b) || '9999'), bid: (a, b) => ((a.summary || {}).minBid || 9e15) - ((b.summary || {}).minBid || 9e15), rate: (a, b) => ((a.summary || {}).minRate || 999) - ((b.summary || {}).minRate || 999), recent: (a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)) };
+  const by = { sale: (a, b) => { const x = saleOf(a) || '9999'; const y = saleOf(b) || '9999'; const px = x < TODAY; const py = y < TODAY; return px !== py ? (px ? 1 : -1) : px ? y.localeCompare(x) : x.localeCompare(y); }, bid: (a, b) => ((a.summary || {}).minBid || 9e15) - ((b.summary || {}).minBid || 9e15), rate: (a, b) => ((a.summary || {}).minRate || 999) - ((b.summary || {}).minRate || 999), recent: (a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)) };
   return L.sort(by[F.sort] || by.sale);
 }
 function drawFilters() {
@@ -214,8 +222,8 @@ function drawFilters() {
     '<div class="frow"><span class="l">최저가</span>' + sel('maxBid', [[0, '전체'], [10000000, '1천만 이하'], [30000000, '3천만 이하'], [50000000, '5천만 이하'], [100000000, '1억 이하'], [200000000, '2억 이하'], [300000000, '3억 이하']]) +
       '<span class="l2">회차</span>' + sel('round', [['', '전체'], ['0', '최초'], ['1', '1회 유찰'], ['2', '2회 유찰'], ['3', '3회 유찰'], ['4+', '4회 유찰 이상']]) + '</div>' +
     '<div class="frow"><span class="l">매각기일</span>' + sel('sale', [['future', '지나지 않은 것'], ['7', '7일 안'], ['14', '14일 안'], ['30', '30일 안'], ['45', '45일 안'], ['all', '전체'], ['past', '지난 것']]) +
-      '<span class="l2">정렬</span>' + sel('sort', [['sale', '매각기일 빠른 순'], ['bid', '최저가 낮은 순'], ['rate', '비율 낮은 순'], ['recent', '최근 받은 순']]) + '</div>' +
-    '<div class="frow"><label><input type="checkbox" data-k="appraisalDoc"' + (F.appraisalDoc ? ' checked' : '') + '>감정평가서 있음</label><label><input type="checkbox" data-k="noAssume"' + (F.noAssume ? ' checked' : '') + '>인수 권리 없음</label><span class="chip" id="freset">조건 지우기</span></div>';
+      '<span class="l2">정렬</span>' + sel('sort', [['sale', '오늘부터 가까운 순'], ['bid', '최저가 낮은 순'], ['rate', '비율 낮은 순'], ['recent', '최근 받은 순']]) + '</div>' +
+    '<div class="frow"><label><input type="checkbox" data-k="appraisalDoc"' + (F.appraisalDoc ? ' checked' : '') + '>감정평가서 있음</label><label><input type="checkbox" data-k="noAssume"' + (F.noAssume ? ' checked' : '') + '>인수 권리 없음</label><label><input type="checkbox" data-k="otherCourt"' + (F.otherCourt ? ' checked' : '') + '>다른 법원 것도</label><span class="chip" id="freset">조건 지우기</span></div>';
   document.querySelectorAll('#filters .chip[data-k]').forEach((el) => (el.onclick = () => { const k = el.dataset.k; const v = el.dataset.v; F[k] = F[k].includes(v) ? F[k].filter((x) => x !== v) : [...F[k], v]; changed(); }));
   document.querySelectorAll('#filters select').forEach((el) => (el.onchange = () => { const k = el.dataset.k; F[k] = /^(maxBid|maxRate)$/.test(k) ? Number(el.value) : el.value; changed(); }));
   document.querySelectorAll('#filters input[type=checkbox]').forEach((el) => (el.onchange = () => { F[el.dataset.k] = el.checked; changed(); }));

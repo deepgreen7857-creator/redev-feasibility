@@ -809,9 +809,26 @@ const INFRA = {
       if (!add.length) return g;
       try { return safeUnion([g, ...add]); } catch (er) { return g; }
     };
+    // 경계까지 채우느라 면적이 늘면, 경계에 붙은 변은 그대로 두고 블록을 얇게 해서 정한 면적(A)에 맞춤
+    //  n: 블록이 붙은 경계 쪽 방향(없으면 가운데를 기준으로 얇게)
+    const keepArea = (x, y, n) => {
+      const g0 = extend(x, y);
+      if (!(turf.area(g0) > A * 1.02)) return g0;
+      const hh0 = hh;
+      let lo = hh0 * 0.2, hi = hh0, best = g0;
+      for (let k = 0; k < 14; k++) {
+        const mid = (lo + hi) / 2; hh = mid;
+        const sx = n ? x + n[0] * (hh0 - mid) : x, sy = n ? y + n[1] * (hh0 - mid) : y;
+        const g = extend(sx, sy), a = turf.area(g);
+        if (a >= A) { hi = mid; best = g; } else lo = mid;
+        if (Math.abs(a - A) < A * 0.005) break;
+      }
+      hh = hh0;
+      return best;
+    };
     // 찾은 자리에서 가장 가까운 선(구역 경계·다른 시설) 쪽으로 붙임 — 사이가 8m 안쪽이라 못 쓰는 띠가 남을 때만
     const flush = (cx, cy) => {
-      if (!edge) return extend(cx, cy);
+      if (!edge) return keepArea(cx, cy, null);
       const [a, b] = edge, dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
       let nx = -dy / L, ny = dx / L;   // 경계선의 법선
       if ((cx - a[0]) * nx + (cy - a[1]) * ny > 0) { nx = -nx; ny = -ny; }   // 블록 → 경계선 방향
@@ -819,8 +836,8 @@ const INFRA = {
       // 8m보다 멀면 붙이지 않음(그 사이는 쓸 수 있는 땅이라 놓은 자리를 그대로 둠). 8m 안이면 끝까지 붙임
       let moved = 0;
       for (let s = 0; s < 18; s++) { if (!fitsAt(x + nx * 0.5, y + ny * 0.5)) break; x += nx * 0.5; y += ny * 0.5; moved += 0.5; }
-      if (moved >= 8.5) return extend(cx, cy);
-      return extend(x, y);
+      if (moved >= 8.5) return keepArea(cx, cy, null);
+      return keepArea(x, y, [nx, ny]);
     };
     // 정사각형 → 1:1.5 → 1:2(경계선 방향으로 길게) 순으로, 가까운 자리부터 최대 120m까지 찾음
     // 놓은 자리 둘레 120m 안에 없으면(구역 밖에 놓았거나 모퉁이라 막힌 경우) 구역 가운데에서 구역 전체를 다시 찾음
@@ -905,6 +922,17 @@ const INFRA = {
     const parkC = inf.parkC || this.defaultCenter(zone);
     const avoid0 = roadGeom && relGeom ? safeUnion([roadGeom, relGeom]) : (roadGeom || relGeom);
     let parkGeom = this.block(parkC, parkNeed, zone, avoid0, szPark.asp);
+    // 공원과 종교 대체부지가 맞닿아 있으면 한 띠로 묶음: 가까운 구역 경계와 나란한 곧은 안쪽 선 하나로,
+    //  두 시설 면적의 합만큼 깊이를 정하고 경계에 수직인 선 하나로 나눔(각자 정한 면적)
+    let paired = false;
+    if (relC && parkGeom && relGeom) {
+      try {
+        if (turf.booleanIntersects(turf.buffer(parkGeom, 1.5, { units: 'meters' }), relGeom)) {
+          const pr = this.pairBand(zone, roadGeom, [['park', parkGeom, parkNeed], ['rel', relGeom, relArea]]);
+          if (pr) { parkGeom = pr.park; relGeom = pr.rel; paired = true; }
+        }
+      } catch (er) { paired = false; }
+    }
     // 3) 학교·기타
     const szSchool = this.sizeOf(z, 'school', num(P.schoolArea), a.area), schoolA = szSchool.A;
     const schoolC = inf.schoolC || (() => { const [la, lo] = parkC; return [la, lo + (Math.sqrt(parkNeed || 1) + Math.sqrt(schoolA || 1)) / 2 / (Math.cos(la * Math.PI / 180) * 111320)]; })();
@@ -1051,6 +1079,46 @@ const INFRA = {
       .bindTooltip(`공원·녹지(제안) ${fmt(inf.parkArea)}㎡ · 끌어서 옮기기${inf.parkArea < inf.parkNeed * 0.95 ? ` — 구역 경계·도로에 걸려 필요 ${fmt(inf.parkNeed)}㎡보다 작음, 위치를 옮기세요` : ''}`, { sticky: true }).addTo(layer), 'park', this.centerOf(inf.parkGeom));
     if (inf.schoolGeom) this.movable(L.geoJSON(inf.schoolGeom, { style: { color: c('--accent'), weight: 2, fillColor: c('--accent'), fillOpacity: 0.3 } })
       .bindTooltip(`학교용지(제안) ${fmt(inf.schoolArea)}㎡ · 끌어서 옮기기`, { sticky: true }).addTo(layer), 'school', this.centerOf(inf.schoolGeom));
+  },
+  // 맞닿은 두 블록을 경계 따라 한 띠로 다시 그림. items: [[kind, geom, 목표면적], …] → { kind: geom } 또는 null
+  pairBand(zone, minus, items) {
+    const U = safeUnion(items.map(x => x[1]));
+    const c0 = turf.centroid(U).geometry.coordinates, lon0 = c0[0], lat0 = c0[1];
+    const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+    const toM = ([lon, lat]) => [(lon - lon0) * kx, (lat - lat0) * ky], toLL = ([x, y]) => [lon0 + x / kx, lat0 + y / ky];
+    // 묶음 가운데에서 가장 가까운 구역 경계선
+    let best = Infinity, ed = null;
+    const zr = zone.geometry.type === 'Polygon' ? [zone.geometry.coordinates[0]] : zone.geometry.coordinates.map(p => p[0]);
+    zr.forEach(r => { for (let i = 0; i + 1 < r.length; i++) {
+      const a = toM(r[i]), b = toM(r[i + 1]), dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy; if (L2 < 4) continue;
+      const t = Math.max(0, Math.min(1, -(a[0] * dx + a[1] * dy) / L2)), d = Math.hypot(a[0] + t * dx, a[1] + t * dy);
+      if (d < best) { best = d; ed = [a, b]; }
+    } });
+    if (!ed) return null;
+    const [a, b] = ed, L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+    let nx = -uy, ny = ux; if ((0 - a[0]) * nx + (0 - a[1]) * ny < 0) { nx = -nx; ny = -ny; }   // 경계 → 안쪽
+    const P = (u, v) => toLL([a[0] + ux * u + nx * v, a[1] + uy * u + ny * v]);
+    const coordsOf = g => { const gg = g.geometry || g; return gg.type === 'Polygon' ? gg.coordinates.flat() : gg.coordinates.flat(2); };
+    const us = coordsOf(U).map(q => { const m = toM(q); return (m[0] - a[0]) * ux + (m[1] - a[1]) * uy; });
+    const u0 = Math.min(...us), u1 = Math.max(...us);
+    let free = zone; if (minus) { try { free = turf.difference(zone, minus) || zone; } catch (er) { free = zone; } }
+    const box = (ua, ub, v) => turf.polygon([[P(ua, -60), P(ub, -60), P(ub, v), P(ua, v), P(ua, -60)]]);
+    const cut = (ua, ub, v) => { try { return turf.intersect(box(ua, ub, v), free); } catch (er) { return null; } };
+    const total = items.reduce((t, x) => t + x[2], 0);
+    // 깊이 v: 띠 면적 = 두 시설 면적 합
+    let lo = 1, hi = 200, band = null;
+    for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2, g = cut(u0, u1, m), A = g ? turf.area(g) : 0; if (A >= total) { hi = m; band = g; } else lo = m; }
+    if (!band) return null;
+    const v = hi;
+    // 나누는 선: 묶음 안에서 가운데가 경계선 방향으로 앞선 시설부터 차례로
+    const order = items.map(x => { const c = toM(turf.centroid(x[1]).geometry.coordinates); return [x, (c[0] - a[0]) * ux + (c[1] - a[1]) * uy]; }).sort((p, q) => p[1] - q[1]).map(p => p[0]);
+    const first = order[0];
+    let sl = u0, sh = u1, sp = null;
+    for (let k = 0; k < 24; k++) { const m = (sl + sh) / 2, g = cut(u0, m, v), A = g ? turf.area(g) : 0; if (A >= first[2]) { sh = m; sp = g; } else sl = m; }
+    if (!sp) return null;
+    const rest = cut(sh, u1, v);
+    if (!rest) return null;
+    return { [order[0][0]]: sp, [order[1][0]]: rest };
   },
   // 지금 그려진 블록의 가운데 [lat, lng] — 끌어 옮길 때 기준(저장된 위치가 구역 밖이어도 보이는 자리에서 옮겨지게)
   centerOf(g) { if (!g) return null; try { const c = turf.centroid(g).geometry.coordinates; return [c[1], c[0]]; } catch (er) { return null; } },
