@@ -1472,12 +1472,13 @@ const INFRA = {
 const GATE = {
   KIND: { main: '주출입구', sub: '부출입구', park: '주차장 출입구' },
   list(z) { return ((z && z.infra && z.infra.gates) || []); },
+  // 다각형 테두리를 LineString 여러 개로(구멍·여러 덩어리 포함) — pointToLineDistance·nearestPointOnLine은 LineString만 받음
+  lines(f) { try { return turf.flatten(turf.polygonToLine(f)).features.filter(l => l.geometry.type === 'LineString'); } catch (er) { return []; } },
   put(z, kind, latlng) {
     const zone = z.geojson; let pt = [latlng.lat, latlng.lng];
     // 구역(획지) 경계에 붙임
     try {
-      const ln = turf.polygonToLine(zone), fs = ln.type === 'FeatureCollection' ? ln.features : [ln];
-      let best = null; fs.forEach(f => { const n = turf.nearestPointOnLine(f, turf.point([latlng.lng, latlng.lat]), { units: 'meters' }); if (!best || n.properties.dist < best.properties.dist) best = n; });
+      let best = null; this.lines(zone).forEach(f => { const n = turf.nearestPointOnLine(f, turf.point([latlng.lng, latlng.lat]), { units: 'meters' }); if (!best || n.properties.dist < best.properties.dist) best = n; });
       if (best) pt = [best.geometry.coordinates[1], best.geometry.coordinates[0]];
     } catch (er) { /* 그대로 */ }
     z.infra.gates = this.list(z).filter(g => kind === 'sub' || kind === 'park' || g.kind !== kind);   // 주출입구는 하나만
@@ -1503,7 +1504,7 @@ const GATE = {
     let best = null;
     ((z.roads && z.roads.edge) || []).forEach(r => {
       let d = 99;
-      try { const f = { type: 'Feature', properties: {}, geometry: r.geom }, p = turf.point([pt[1], pt[0]]); d = turf.booleanPointInPolygon(p, f) ? 0 : (() => { const ln = turf.polygonToLine(f), fs = ln.type === 'FeatureCollection' ? ln.features : [ln]; return Math.min(...fs.map(l => turf.pointToLineDistance(p, l, { units: 'meters' }))); })(); } catch (er) { d = 99; }
+      try { const f = { type: 'Feature', properties: {}, geometry: r.geom }, p = turf.point([pt[1], pt[0]]); d = turf.booleanPointInPolygon(p, f) ? 0 : Math.min(99, ...this.lines(f).map(l => turf.pointToLineDistance(p, l, { units: 'meters' }))); } catch (er) { d = 99; }
       if (d <= 15 && (!best || d < best.d)) best = { r, d };
     });
     return best && best.r;
