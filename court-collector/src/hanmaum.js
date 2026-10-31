@@ -152,6 +152,8 @@ async function loginMode() {
   const page = ctx.pages()[0] || await ctx.newPage();
   await page.goto(`${BASE}/login`).catch(() => {});
   await page.bringToFront().catch(() => {});
+  // '로그인 상태 유지'를 미리 체크해 둠 — 이게 없으면 세션이 몇 시간 뒤 끊김(10/31 07:40 로그인 풀림)
+  await page.check('input[name=remember]').catch(() => {});
   await page.evaluate(() => { document.title = '★ 여기서 한마음경매 로그인 ★ ' + document.title; }).catch(() => {});
   log('한마음경매 창에서 직접 로그인하세요. 로그인되면 저장하고 창이 저절로 닫힙니다(최대 30분).');
   let closed = false; ctx.on('close', () => { closed = true; });
@@ -159,7 +161,7 @@ async function loginMode() {
     for (let i = 0; i < 600 && !closed; i++) {
       await sleep(3000);
       const ok = await page.evaluate(() => /로그아웃/.test(document.body?.innerText || '')).catch(() => false);
-      if (ok) { jar = (await ctx.cookies()).filter((c) => c.domain.includes('hanmaumauction')).map(({ name, value }) => ({ name, value })); saveJar(); log(`로그인 확인 — ${jar.length}개 저장`); return; }
+      if (ok) { jar = (await ctx.cookies()).filter((c) => c.domain.includes('hanmaumauction')).map(({ name, value }) => ({ name, value })); saveJar(); log(`로그인 확인 — ${jar.length}개 저장${jar.some((c) => /^remember_/.test(c.name)) ? '(로그인 상태 유지 O)' : '(로그인 상태 유지 X — 다시 로그인할 때 체크하세요)'}`); return; }
     }
     log(closed ? '로그인 전에 창이 닫혔습니다.' : '30분 동안 로그인이 안 돼 끝냅니다.');
   } finally { await ctx.close().catch(() => {}); }
