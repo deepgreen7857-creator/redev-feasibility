@@ -31,3 +31,16 @@
 ## 주의
 - `_비공개/` 폴더(명부 등 개인정보)는 절대 커밋 금지 (`.gitignore`에 있음)
 - 브이월드 키는 `www.jbslab.co.kr` 도메인 전용. 로컬에서 시험할 때는 콘솔에서 `VWorld.domain`을 `'www.jbslab.co.kr'`로 바꿔야 지적도·토지특성이 조회됨
+
+## 검토서 도구 (/traffic, /env, /arch, /landscape) — 2026-11-01 추가
+- 교통성·환경성·경관 검토서 초안을 Claude 없이 브라우저에서 만드는 독립 도구. 정비구역 외(지구단위계획·도시계획시설·건축물)에도 씀
+- 공통: `shared/site-store.js`(구역 저장 'jbs.sites.v1', /urban 안 가져오기) · `shared/review-ui.js`(지도·입력·검토서·워드/인쇄) · `shared/review.css`
+- 기준표: `shared/criteria/{traffic,environment,landscape}.json` — 법령 숫자는 여기만. `상태`에 '확인필요'가 있으면 문서에 '※ 기준 확인 필요'가 자동으로 붙음. 숫자를 추정해 넣지 말 것(채팅 Claude가 조문 대조 후 채움)
+- 문장 틀: `shared/templates/*_ko.json`
+- 도구별: `<도구>/<도구>-calc.js`(순수 계산, `node <도구>/test-calc.js`로 테스트) + `<도구>/<도구>.js`(입력 칸·문서)
+- 각 검토서는 배치 조건을 `site.constraints.<도구>`에 저장 → 개략 배치(/arch)와 경관 검토가 이어받음. 흐름: 구역계 → 교통·환경 1차 → 배치 조건 → /arch → 교통 2차·경관
+- 수정 후: `node --check` + `node traffic/test-calc.js && node env/test-calc.js && node landscape/test-calc.js`
+- /arch 개략 건축계획: `shared/arch-geom.js`(배치 엔진·태양 위치·그림자·일조시간, `node arch/test-geom.js`) + `shared/mass3d.js`(three.js r128 3D, /landscape도 씀) + `arch/arch-draw.js`(배치도·표준평면 SVG) + `arch/arch.js`. 기준표 `shared/criteria/arch.json`(인동간격 0.8은 검토 가정값 — 인천 건축조례 확인 필요)
+  - 경계 변마다 성격(대지경계·도로·간선도로·정북 인접대지·저층 주거 인접)을 지정 → 변별 이격, 정북 일조 층수 상한, 인동간격, 남저북고로 3개 대안(다동형·중간형·소동형) 생성, 주동 방향 자동
+  - [이 안으로 확정] → site.arch.chosen 저장, site.v(세대수·층수·전용면적 합계)를 갱신해 교통·환경·경관 검토에 이어짐
+- /landscape 높이·경관계획: 정비구역 지정 단계 수준(높이·스카이라인·통경축·조망). /arch 확정안으로 입면·통경축 개방률·조망점 3D 그림 자동. 경관심의 수준 확장은 이 도구에서

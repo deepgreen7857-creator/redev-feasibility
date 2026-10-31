@@ -1,0 +1,14 @@
+const assert = require('assert');
+const C = require('../shared/criteria/environment.json'), T = require('../shared/templates/env_ko.json');
+const X = require('./env-calc.js');
+let n = 0; const t = (name, fn) => { fn(); n++; console.log('통과', name); };
+t('30만㎡ 이상 환경영향평가', () => assert.strictEqual(X.eia(C, { siteArea: 300000 }).result, '환경영향평가 대상'));
+t('도시지역 6만㎡ 소규모', () => assert.strictEqual(X.eia(C, { siteArea: 60000, urban: '예' }).result, '소규모 환경영향평가 대상'));
+t('59,999㎡ 대상 아님', () => assert.strictEqual(X.eia(C, { siteArea: 59999, urban: '예' }).result, '대상 아님'));
+t('녹지 1만㎡ 포함 시 소규모', () => assert.strictEqual(X.eia(C, { siteArea: 30000, greenArea: 10000, urban: '예' }).result, '소규모 환경영향평가 대상'));
+t('국가유산 400m 해당 가능', () => assert.strictEqual(X.heritage(C, { heritage: 'A', heritageDist: 400 }).result, '보존지역 해당 가능'));
+t('일조: 3층(9m) 1.5m', () => assert.strictEqual(X.sunlight(C, { floors: 3, northRes: '예' }).need, 1.5));
+t('일조: 20층(60m) 30m', () => assert.strictEqual(X.sunlight(C, { floors: 20, northRes: '예' }).need, 30));
+t('간선도로면 소음 검토', () => assert.strictEqual(X.noise(C, { roads: [{ name: '인천대로', level: '간선도로' }] }).result, '소음 검토 필요'));
+t('종합 배치 조건', () => { const r = X.run(C, T, { siteArea: 70000, urban: '예', floors: 25, northRes: '예', roads: [{ name: '인천대로', level: '간선도로' }] }); assert.deepStrictEqual(r.constraints.소음_검토_도로, ['인천대로']); assert.ok(r.constraints.북측_일조_높이제한); });
+console.log(`\n${n}개 모두 통과`);

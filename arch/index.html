@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>jbslab 개략 건축계획</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../shared/review.css?v=2">
+<style>
+.layout{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr)}
+#map{height:520px}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.tag{font-size:12px;display:inline-flex;align-items:center;gap:5px;color:var(--ink-2)}
+.tag i{width:16px;height:4px;border-radius:2px;display:inline-block}
+.alts{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.alt{border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--sheet);cursor:pointer;text-align:left;min-width:180px}
+.alt[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.alt b{display:block;font-size:13px}.alt span{font-size:12px;color:var(--ink-2);font-family:var(--f-mono)}
+.out{margin-top:14px}
+.otabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:10px}
+.otabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--ink-2)}
+.otabs button[aria-selected="true"]{border-bottom-color:var(--ink);color:var(--ink);font-weight:600}
+.view{background:var(--sheet);border:1px solid var(--line);border-radius:8px;padding:12px}
+.view svg{width:100%;height:auto;display:block;border-radius:4px}
+#v3d{height:560px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.row input[type=range]{width:220px}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px}
+.kv div{border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.kv .l{font-size:11px;color:var(--ink-2)} .kv .v{font-size:17px;font-weight:600;font-family:var(--f-mono)}
+.busy{opacity:.55;pointer-events:none}
+details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header class="top">
+    <div class="mark" aria-label="jbslab">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="4" fill="var(--ink)"/><path d="M6 6h6v6H6zM14 6h6v6h-6zM6 14h6v6H6z" fill="var(--paper)" opacity=".85"/><path d="M14 14h6v6h-6z" fill="none" stroke="var(--redline)" stroke-width="1.6" stroke-dasharray="3 1.4 .8 1.4"/></svg>
+      jbslab <small>/arch</small>
+    </div>
+    <h1>개략 건축계획 · 배치 검토</h1>
+    <a href="../urban/">정비계획 검토로</a>
+  </header>
+  <nav class="tools" aria-label="검토 도구">
+    <a href="../traffic/">교통성 검토서</a><a href="../env/">환경성 검토서</a><a href="../arch/" aria-current="page">개략 건축계획</a><a href="../landscape/">높이·경관계획</a>
+  </nav>
+
+  <div class="layout">
+    <section class="panel" aria-label="구역과 경계">
+      <h2>1. 구역 · 경계 성격</h2>
+      <div class="bar">
+        <select id="siteSel" aria-label="구역 불러오기"><option value="">구역 불러오기…</option></select>
+        <button id="mEdge" aria-pressed="true">경계 성격 바꾸기</button>
+        <button id="mEntry" aria-pressed="false">차량 출입구 찍기</button>
+        <button id="autoTag">경계 자동 지정</button>
+      </div>
+      <div id="map" aria-label="구역 지도"></div>
+      <div class="tags" id="tagLegend"></div>
+      <p class="note">경계선을 누를 때마다 성격이 바뀝니다(대지경계 → 도로 → 간선도로 → 정북 인접대지 → 저층 주거 인접). 공원·도로 등 기반시설 자리는 지도 왼쪽 위 다각형 도구로 그리면 건축 불가 영역이 됩니다.</p>
+    </section>
+
+    <section class="panel" aria-label="계획 조건">
+      <h2>2. 계획 조건</h2>
+      <div id="carry" class="note"></div>
+      <h3>밀도</h3>
+      <div class="grid">
+        <label>구역면적 ㎡<input id="p_siteArea" inputmode="decimal"></label>
+        <label>기반시설 비율 % (제외 영역을 그리면 무시)<input id="p_infra" inputmode="decimal"></label>
+        <label>목표 용적률 %<input id="p_far" inputmode="decimal"></label>
+        <label>최고 층수 한도<input id="p_maxFloors" inputmode="numeric"></label>
+      </div>
+      <h3>평형 구성 (세대수 비율 %)</h3>
+      <div class="grid">
+        <label>59㎡형<input id="p_m59" inputmode="decimal"></label>
+        <label>84㎡형<input id="p_m84" inputmode="decimal"></label>
+        <label>114㎡형<input id="p_m114" inputmode="decimal"></label>
+        <label>주동 방향(정남 기준, 동쪽으로 돌리면 +)<select id="p_angleMode"><option value="auto">자동(가장 유리한 각도)</option><option value="fixed">직접 입력</option></select></label>
+        <label>회전각 °<input id="p_angle" inputmode="decimal"></label>
+      </div>
+      <details><summary>이격·인동간격 등 세부 조건</summary>
+      <div class="grid" style="margin-top:8px">
+        <label>인동간격(높이 대비 배수)<input id="p_spacing" inputmode="decimal"></label>
+        <label>동 측면 간격 m<input id="p_sideGap" inputmode="decimal"></label>
+        <label>도로 경계 이격 m<input id="p_roadSb" inputmode="decimal"></label>
+        <label>간선도로 이격(소음) m<input id="p_artSb" inputmode="decimal"></label>
+        <label>대지경계 이격 m<input id="p_bndSb" inputmode="decimal"></label>
+        <label>저층 주거 인접부 층수 상한<input id="p_lowCap" inputmode="numeric"></label>
+        <label>층수 상한 적용 거리 m<input id="p_lowDist" inputmode="decimal"></label>
+        <label>최저 층수<input id="p_minFloors" inputmode="numeric"></label>
+        <label>층고 m<input id="p_fh" inputmode="decimal"></label>
+        <label>전용→연면적 환산계수<input id="p_sf" inputmode="decimal"></label>
+      </div>
+      <p class="note" id="ruleNote"></p>
+      </details>
+      <div class="bar" style="margin-top:14px">
+        <button class="primary" id="run">배치안 만들기</button>
+        <button id="confirm" disabled>이 안으로 확정</button>
+      </div>
+      <div class="msg" id="msg" role="status"></div>
+    </section>
+  </div>
+
+  <section class="out" id="out" hidden>
+    <div class="alts" id="alts" role="group" aria-label="배치 대안"></div>
+    <div class="otabs" role="tablist">
+      <button role="tab" data-v="plan" aria-selected="true">배치도</button>
+      <button role="tab" data-v="sun" aria-selected="false">동지 일조</button>
+      <button role="tab" data-v="m3d" aria-selected="false">3D</button>
+      <button role="tab" data-v="sum" aria-selected="false">개요·세대 구성</button>
+      <button role="tab" data-v="unit" aria-selected="false">표준 평면</button>
+    </div>
+    <div class="view" id="vplan"><div class="row"><button id="dlSvg">배치도 SVG</button><button id="dlPng">배치도 PNG</button><button id="dlDoc">개략 건축계획(.doc)</button></div><div id="planSvg"></div></div>
+    <div class="view" id="vsun" hidden>
+      <div class="row"><button id="calcSun">일조 계산</button><label class="tag">그림자 시각 <input type="range" id="sunT" min="8" max="16" step="0.25" value="12"> <b id="sunTv">12:00</b></label></div>
+      <div id="sunNote" class="note"></div><div id="sunSvg"></div>
+    </div>
+    <div class="view" id="vm3d" hidden>
+      <div class="row"><button data-cam="sw">남서에서</button><button data-cam="se">남동에서</button><button data-cam="n">북쪽에서</button><button data-cam="top">위에서</button>
+        <label class="tag">해 위치(동지) <input type="range" id="sun3" min="8" max="16" step="0.25" value="12"> <b id="sun3v">12:00</b></label><button id="dl3d">그림 저장</button></div>
+      <div id="v3d"></div><p class="note">끌기: 돌리기 · 휠: 확대 · 오른쪽 끌기(또는 Shift+끌기): 이동</p>
+    </div>
+    <div class="view" id="vsum" hidden></div>
+    <div class="view" id="vunit" hidden><div class="plans" id="plans"></div><p class="note">표준 평면은 개략 배치 검토용 예시 치수입니다. 실제 단위세대 설계는 건축사가 합니다.</p></div>
+  </section>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../js/config.js?v=1"></script>
+<script src="../shared/site-store.js?v=2"></script>
+<script src="../shared/arch-geom.js?v=1"></script>
+<script src="../shared/mass3d.js?v=1"></script>
+<script src="../traffic/traffic-calc.js?v=1"></script>
+<script src="arch-draw.js?v=1"></script>
+<script src="arch.js?v=1"></script>
+</body>
+</html>
