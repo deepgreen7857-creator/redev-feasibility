@@ -136,6 +136,37 @@ tr.hl td{background:var(--accent-soft)}
 .empty-guide{color:var(--ink-2)}
 .empty-guide ol{padding-left:18px;margin:8px 0}
 [hidden]{display:none!important}
+.pick-pop{font-family:var(--f-body);font-size:13px;display:flex;flex-direction:column;gap:4px}
+.pick-pop .u{color:#555;font-size:12px}
+.pick-btns{display:flex;gap:6px;margin-top:4px}
+.pick-pop .btn:disabled{opacity:.4;cursor:not-allowed}
+.job{border:1px solid var(--accent);background:var(--accent-soft);color:var(--ink);border-radius:8px;padding:10px 12px;margin-bottom:12px}
+.job-t{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--accent)}
+.job-t b{color:var(--ink)}
+.job .bar{height:6px;margin-top:8px;background:var(--sheet)}
+.job .bar span{background:var(--accent);transition:width .3s}
+.job-s{font-size:12.5px;color:var(--ink-2);margin-top:6px}
+.spin{width:14px;height:14px;border:2px solid var(--accent);border-right-color:transparent;border-radius:50%;flex:none;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.spin{animation:none}}
+.zk{border:1px solid var(--line);border-radius:6px;margin-bottom:8px;background:var(--paper)}
+.zk summary{cursor:pointer;padding:7px 10px;font-weight:600;font-size:13px}
+.zk summary .u{font-weight:400;color:var(--ink-2);font-size:12px;margin-left:6px}
+.zk-body{padding:0 10px 10px}
+.zk textarea{width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--sheet);color:var(--ink);resize:vertical}
+.zk-opts{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;margin:6px 0}
+.zk-btns{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.zk-anchor{display:inline-flex;gap:4px}
+.zk-anchor input{width:120px;font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:var(--sheet);color:var(--ink)}
+.zk-head{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px}
+.zk .warn,.status .warn{color:var(--bad)}
+.pill.info{background:var(--accent-soft);color:var(--accent)}
+#pickBtn.on,#editBtn.on{background:var(--redline);border-color:var(--redline);color:var(--sheet)}
+#pickBtn.on{background:var(--redline);border-color:var(--redline)}
+.lmap.picking{cursor:pointer}
+.lmap.picking .leaflet-interactive{cursor:pointer}
+.lmap.full{position:fixed;inset:0;height:auto;z-index:2000;border-radius:0;border:0}
+.lmap-btn{display:block;width:30px;height:30px;line-height:30px;text-align:center;font-size:16px;background:#fff;color:#222;text-decoration:none}
 td .u{font-size:11px;color:var(--ink-2);font-family:var(--f-mono)}
 a.back{color:var(--accent);font-size:13px;text-decoration:none}
 a.back:hover{text-decoration:underline}
@@ -175,13 +206,37 @@ a.back:hover{text-decoration:underline}
       </div>
       <div class="mapbar" id="mapTools">
         <form id="searchForm" class="search"><input id="searchQ" type="search" placeholder="주소·지번 검색 (예: 용현동 340)" aria-label="주소 검색"><button class="btn ghost sm" type="submit">이동</button></form>
-        <button class="btn ghost sm" id="editBtn" type="button">구역계 고치기</button>
+        <button class="btn sm" id="pickBtn" type="button" title="지도에서 필지를 누르면 구역에 넣을지 뺄지 고릅니다">구역계 고치기 (필지 넣고 빼기)</button>
+        <button class="btn ghost sm" id="editBtn" type="button" title="구역계 꼭짓점을 끌어서 고칩니다">꼭짓점 끌어 고치기</button>
         <button class="btn ghost sm" id="fetchBtn" type="button">필지·건축물 다시 불러오기</button>
         <button class="btn ghost sm" id="geoInBtn" type="button">GeoJSON 불러오기</button>
         <button class="btn ghost sm" id="geoOutBtn" type="button">GeoJSON 내보내기</button>
         <button class="btn ghost sm" id="clearBtn" type="button">이 안 지우기</button>
         <input id="geoFile" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
       </div>
+      <details class="zk" id="zkTools">
+        <summary>지번 목록·필지 경계로 구역계 만들기 <span class="u">사업성 검토와 같은 도구</span></summary>
+        <div class="zk-body">
+          <div class="form">
+            <div class="field"><label for="zkBase">기준 동 주소</label><input id="zkBase" placeholder="예: 인천광역시 미추홀구 용현동"><span class="u">지번만 쓴 줄 앞에 붙입니다. 주소 검색을 하면 자동으로 채웁니다</span></div>
+            <div class="field"><label for="zkTh">필지 포함 기준(필지에 맞추기)</label><select id="zkTh"><option value="0.5">필지의 50% 이상이 범위 안</option><option value="0.3">30% 이상</option><option value="0.7">70% 이상</option><option value="0.9">90% 이상</option></select></div>
+          </div>
+          <div class="field" style="margin-top:8px"><label for="zkList">지번 목록 (한 줄에 하나)</label><textarea id="zkList" rows="5" placeholder="340&#10;340-1&#10;산12-3&#10;용현동 341"></textarea></div>
+          <div class="zk-opts">
+            <label><input type="checkbox" id="zkFill" checked> 구역 안에 갇힌 필지(도로 등) 자동 포함</label>
+            <label><input type="checkbox" id="zkBridge" checked> 떨어진 블록 사이 도로로 잇기</label>
+          </div>
+          <div class="zk-btns">
+            <button class="btn sm" type="button" id="zkJibunBtn">지번으로 구역 만들기</button>
+            <button class="btn ghost sm" type="button" id="zkFileBtn">엑셀·CSV에서 지번 읽기</button>
+            <button class="btn sm" type="button" id="zkSnapBtn" title="손으로 대략 그린 구역계를 실제 필지 경계에 맞춥니다">그린 구역을 필지에 맞추기</button>
+            <span class="zk-anchor"><input id="zkTarget" inputmode="decimal" placeholder="목표 면적 ㎡" aria-label="목표 면적"><button class="btn ghost sm" type="button" id="zkAnchorBtn" title="고시문의 위치 지번들과 면적으로 대략 범위를 추정한 뒤 필지에 맞춥니다">위치 지번 + 면적으로 추정</button></span>
+            <input id="zkFile" type="file" accept=".xlsx,.xls,.csv,.txt" hidden>
+          </div>
+          <p class="hint" id="zkMsg"></p>
+          <div id="zkReport"></div>
+        </div>
+      </details>
       <div class="mapbar">
         <span style="font-size:12px;color:var(--ink-2)">색 구분</span>
         <div class="seg" role="group" aria-label="도면 색 구분">
@@ -206,7 +261,9 @@ a.back:hover{text-decoration:underline}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
-<script src="../js/config.js?v=67"></script>
-<script src="urban.js?v=4"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../js/config.js?v=68"></script>
+<script src="../js/zonekit.js?v=68"></script>
+<script src="urban.js?v=8"></script>
 </body>
 </html>

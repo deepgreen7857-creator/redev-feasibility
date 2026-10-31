@@ -1060,18 +1060,8 @@ function boot() {
         try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { text = new TextDecoder('euc-kr').decode(buf); }
         rows = parseCSV(text);
       }
-      // '지번' 제목이 있는 열을 찾고, '소재지·주소' 열이 있으면 앞에 붙임
-      const hi = rows.findIndex(r => r.some(c => /지번/.test(String(c))));
-      let list;
-      if (hi >= 0) {
-        const jc = rows[hi].findIndex(c => /지번/.test(String(c)));
-        const ac = rows[hi].findIndex(c => /소재지|주소/.test(String(c)));
-        list = rows.slice(hi + 1).map(r => {
-          const j = String(r[jc] ?? '').trim(), a = ac >= 0 ? String(r[ac] ?? '').trim() : '';
-          return a && !/\d+(-\d+)?$/.test(a) ? `${a} ${j}` : j;
-        });
-      } else list = rows.flat().map(c => String(c ?? '').trim());
-      $('#jibunList').value = list.filter(s => /\d/.test(s)).join('\n');
+      // '지번' 제목이 있는 열을 찾고, '소재지·주소' 열이 있으면 앞에 붙임 (js/zonekit.js, /urban과 같은 규칙)
+      $('#jibunList').value = ZoneKit.jibunsFromRows(rows).join('\n');
       $('#jibunMsg').textContent = `${f.name}에서 지번 ${$('#jibunList').value.split('\n').filter(Boolean).length}개를 읽었습니다. 기준 동을 확인하고 "지번으로 구역 만들기"를 누르세요.`;
     };
     i.click();
