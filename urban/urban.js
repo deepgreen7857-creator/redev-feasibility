@@ -756,7 +756,7 @@ const INFRA = {
       z.roads = { key: JSON.stringify(turf.bbox(zone)), edge, fac, facOk: true, at: new Date().toLocaleString('sv-SE').slice(0, 16) };
       saveZ();
       await this.fetchOwn(id);
-      z.roads.ownOk = true; z.roads.ownOk2 = true; z.roads.ownOk3 = true; z.roads.ownOk4 = true; saveZ();
+      z.roads.ownOk = true; z.roads.ownOk2 = true; z.roads.ownOk3 = true; z.roads.ownOk4 = true; z.roads.ownOk5 = true; saveZ();
     } catch (er) { statusMsg(`${id}안: 주변 도로를 불러오지 못했습니다 — ${er.message}`, true); }
     finally { this.loading[id] = false; this.memo = {}; if (S.source === 'map') render(); }
   },
@@ -764,7 +764,7 @@ const INFRA = {
   //  국공유 필지는 토지이용상황(도로등·하천등)을 다시 받아 둠
   async fetchOwn(id) {
     const z = Z.zones[id]; if (!z) return;
-    const list = Object.keys(z.inArea || {}).filter(k => { const c = CACHE.parcels[k]; return c && (c.own == null || (isPublicOwner(c.own) && (c.chgDate == null || c.bldOver == null || c.bldCore == null))); });
+    const list = Object.keys(z.inArea || {}).filter(k => { const c = CACHE.parcels[k]; return c && (c.own == null || (isPublicOwner(c.own) && (c.chgDate == null || c.bldOver == null || c.bldCore == null || (c.bldCore === 0 && c.bldOver > 0.05)))); });
     let i = 0, done = 0;
     const one = async k => {
       try {
@@ -787,7 +787,7 @@ const INFRA = {
               try { const x = turf.intersect(pf, b); if (x && turf.area(x) >= 1) { cover += turf.area(x); n++; } } catch (er) { /* 무시 */ }
               if (core) { try { const y = turf.intersect(core, b); if (y) coverC += turf.area(y); } catch (er) { /* 무시 */ } }
             });
-            c.bldOver = pa ? Math.min(1, cover / pa) : 0; c.bldOverN = n; c.bldCore = ca > 1 ? Math.min(1, coverC / ca) : 0;
+            c.bldOver = pa ? Math.min(1, cover / pa) : 0; c.bldOverN = n; c.bldCore = ca > 3 ? Math.min(1, coverC / ca) : -1;   // -1: 너무 작거나 좁아 안쪽이 없음 → 전체 겹침으로 판단
           } catch (er) { c.bldOver = null; }
         }
         const p = D.byPnu && D.byPnu.get(k); if (p) { p.own = c.own; p.ownInst = c.ownInst; p.chgCause = c.chgCause; p.chgDate = c.chgDate; p.bldOver = c.bldOver; p.bldOverN = c.bldOverN; p.bldCore = c.bldCore; p.landUse = c.landUse || p.landUse || ''; }
@@ -797,7 +797,7 @@ const INFRA = {
     await Promise.all([1, 2, 3, 4, 5, 6].map(async () => { while (i < list.length) await one(list[i++]); }));
     if (list.length) { saveCache(); statusMsg(''); }
   },
-  ready(id) { const z = Z.zones[id]; return !!(z && z.roads && z.roads.facOk && z.roads.ownOk4 && z.geojson && z.roads.key === JSON.stringify(turf.bbox(z.geojson))); },
+  ready(id) { const z = Z.zones[id]; return !!(z && z.roads && z.roads.facOk && z.roads.ownOk5 && z.geojson && z.roads.key === JSON.stringify(turf.bbox(z.geojson))); },
   // 구역 안 한 점(중심이 구역 밖이면 구역 안 아무 점)
   defaultCenter(zone) {
     let c = turf.centerOfMass(zone);
@@ -1337,7 +1337,7 @@ const INFRA = {
       }
       const bl = ((Rg.blds || {})[p.pnu] || []), thin = w < 8, fc = facR >= 0.5;
       const cover = p.bldOver == null ? null : p.bldOver;            // 건물 도형이 필지를 덮는 비율(전체)
-      const coreC = p.bldCore == null ? cover : p.bldCore;           // 가장자리 1.2m를 뺀 안쪽을 덮는 비율(처마·경계 어긋남 제외)
+      const coreC = (p.bldCore == null || p.bldCore < 0) ? cover : p.bldCore;           // 가장자리 1.2m를 뺀 안쪽을 덮는 비율(처마·경계 어긋남 제외)
       // 건물 판단은 안쪽 기준: 길쭉한 도로 필지는 양쪽 처마만으로도 전체 비율이 크게 나옴
       const bldOn = coreC != null ? coreC > 0.2 : bl.length > 0, noBld = coreC != null ? coreC <= 0.05 : !bl.length;
       const nLedger = bl.filter(b => b.src === '대장').length, nGis = bl.length - nLedger;
