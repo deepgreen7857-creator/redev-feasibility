@@ -1100,14 +1100,22 @@ const INFRA = {
     const c0 = turf.centroid(U).geometry.coordinates, lon0 = c0[0], lat0 = c0[1];
     const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
     const toM = ([lon, lat]) => [(lon - lon0) * kx, (lat - lat0) * ky], toLL = ([x, y]) => [lon0 + x / kx, lat0 + y / ky];
-    // 묶음 가운데에서 가장 가까운 구역 경계선
-    let best = Infinity, ed = null;
+    // 기준 경계선: 두 시설이 가장 길게 맞닿은 구역 경계 변(2m 간격으로 재서 시설 2.5m 안에 드는 길이). 없으면 가장 가까운 변
+    let best = Infinity, ed = null, bestLen = 0, edL = null;
+    let nearU = null; try { nearU = turf.buffer(U, 2.5, { units: 'meters' }); } catch (er) { nearU = null; }
     const zr = zone.geometry.type === 'Polygon' ? [zone.geometry.coordinates[0]] : zone.geometry.coordinates.map(p => p[0]);
     zr.forEach(r => { for (let i = 0; i + 1 < r.length; i++) {
       const a = toM(r[i]), b = toM(r[i + 1]), dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy; if (L2 < 4) continue;
       const t = Math.max(0, Math.min(1, -(a[0] * dx + a[1] * dy) / L2)), d = Math.hypot(a[0] + t * dx, a[1] + t * dy);
       if (d < best) { best = d; ed = [a, b]; }
+      if (nearU) {
+        const Ls = Math.sqrt(L2), n = Math.max(1, Math.floor(Ls / 2)); let c = 0;
+        for (let k = 0; k <= n; k++) { const q = toLL([a[0] + dx * k / n, a[1] + dy * k / n]); if (turf.booleanPointInPolygon(q, nearU)) c++; }
+        const len = c / (n + 1) * Ls;
+        if (len > bestLen) { bestLen = len; edL = [a, b]; }
+      }
     } });
+    if (edL && bestLen >= 8) ed = edL;
     if (!ed) return null;
     const [a, b] = ed, L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
     let nx = -uy, ny = ux; if ((0 - a[0]) * nx + (0 - a[1]) * ny < 0) { nx = -nx; ny = -ny; }   // 경계 → 안쪽
@@ -1117,7 +1125,12 @@ const INFRA = {
     const u0 = Math.min(...us), u1 = Math.max(...us);
     let free = zone; if (minus) { try { free = turf.difference(zone, minus) || zone; } catch (er) { free = zone; } }
     const box = (ua, ub, v) => turf.polygon([[P(ua, -60), P(ub, -60), P(ub, v), P(ua, v), P(ua, -60)]]);
-    const cut = (ua, ub, v) => { try { return turf.intersect(box(ua, ub, v), free); } catch (er) { return null; } };
+    // 잘린 조각이 여럿이면(구역이 오목해서) 가장 큰 한 덩어리만 — 시설이 둘로 갈라지지 않게
+    const cut = (ua, ub, v) => {
+      let g = null; try { g = turf.intersect(box(ua, ub, v), free); } catch (er) { return null; }
+      if (!g || g.geometry.type !== 'MultiPolygon') return g;
+      return g.geometry.coordinates.map(c => turf.polygon(c)).sort((x, y) => turf.area(y) - turf.area(x))[0];
+    };
     const total = items.reduce((t, x) => t + x[2], 0);
     // 깊이 v: 띠 면적 = 두 시설 면적 합
     let lo = 1, hi = 200, band = null;
@@ -1132,6 +1145,8 @@ const INFRA = {
     if (!sp) return null;
     const rest = cut(sh, u1, v);
     if (!rest) return null;
+    // 면적이 5% 넘게 어긋나면(띠가 구역 모양에 막힘) 묶지 않고 각자 둠
+    if (Math.abs(turf.area(sp) - first[2]) > first[2] * 0.05 || Math.abs(turf.area(rest) - order[1][2]) > order[1][2] * 0.05) return null;
     // 두 시설 사이 나눔선(끌어서 면적을 주고받는 손잡이)과, 선 위치 → 앞 시설 면적 계산 함수
     const toU = ll => { const m = toM([ll.lng, ll.lat]); return (m[0] - a[0]) * ux + (m[1] - a[1]) * uy; };
     const areaAt = u => { const g = cut(u0, u, v); return g ? turf.area(g) : 0; };
