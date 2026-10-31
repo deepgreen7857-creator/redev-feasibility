@@ -73,6 +73,11 @@ function parseDoc(name, t) {
   const L = String(t || '').replace(/\r/g, '').split('\n').map((x) => x.trim()).filter(Boolean);
   const D = /^\d{4}\.\d{2}\.\d{2}$/;
   const rows = [];
+  // 무료경매.kr 형식: 한 줄에 '2025-09-12 채권자 주OOO … 접수증명서' (송달은 끝에 '2025.09.24 도달')
+  if (L.some((x) => /^\d{4}-\d{2}-\d{2}\s+\S/.test(x))) {
+    for (const x of L) { const m = x.match(/^(\d{4})-(\d{2})-(\d{2})\s+(.+)$/); if (!m) continue; const d = `${m[1]}.${m[2]}.${m[3]}`; if (/송달/.test(name)) { const r = (m[4].match(/(\d{4}\.\d{2}\.\d{2}\s+\S+)\s*$/) || [])[1] || ''; rows.push([d, r ? m[4].slice(0, m[4].lastIndexOf(r)).trim() : m[4], r]); } else rows.push([d, m[4]]); }
+    return rows.slice(0, 400);
+  }
   if (/송달/.test(name)) {
     for (let i = 0; i < L.length; i++) if (D.test(L[i]) && L[i + 1]) { const r = L[i + 2] && /^\d{4}\.\d{2}\.\d{2}\s+\S/.test(L[i + 2]) ? L[i + 2] : ''; rows.push([L[i], L[i + 1], r]); i += r ? 2 : 1; }
   } else {
@@ -128,7 +133,7 @@ async function main() {
           const base = { court: c.name, year: y.name, caseNo: k.name };
           const m = meta[`${c.name}_${k.name}`] || {};
           // 요약·문건·송달 표: 물건정보·글자 문서가 바뀌면 다시 보냄(v2: 요약 추가)
-          const extraFiles = walk(dir, dir, 0, /\.(json|txt)$/i).filter((r) => /물건정보_제이옥션\.json$|(문건접수내역|송달내역)_제이옥션\.txt$/.test(r));
+          const extraFiles = walk(dir, dir, 0, /\.(json|txt)$/i).filter((r) => /물건정보_제이옥션\.json$|(문건접수내역|송달내역)_(제이옥션|무료경매)\.txt$/.test(r));
           const extraSig = extraFiles.map((r) => { try { return `${r}:${fs.statSync(path.join(dir, r)).mtimeMs}`; } catch { return r; } }).join(',');
           const caseSig = `v3|${m.용도 || ''}|${m.주소 || ''}|${m.다음매각기일 || ''}|${m.물건번호 || ''}|${extraSig}`;
           const todo = [];
@@ -146,7 +151,7 @@ async function main() {
               try {
                 const raw = fs.readFileSync(path.join(dir, r), 'utf8');
                 if (/물건정보/.test(r)) { if (!summary) summary = parseInfo(JSON.parse(raw).화면글자); }
-                else { const nm = /문건접수/.test(r) ? '문건접수' : '송달'; const rows = parseDoc(nm, raw); if (rows.length) docs[nm] = rows.map((x) => x.join('\t')); }
+                else { const nm = /문건접수/.test(r) ? '문건접수' : '송달'; if (docs[nm] && /무료경매/.test(r)) continue; const rows = parseDoc(nm, raw); if (rows.length) docs[nm] = rows.map((x) => x.join('\t')); }
               } catch { /* 깨진 파일은 건너뜀 */ }
             }
             // v3: 명세서·현황조사서·감정평가서(앞쪽) 글자도 summary 에 같이(저장소 PDF가 막힌 망에서도 읽게)
