@@ -1566,6 +1566,35 @@ function fitZone(id) {
   const R = D.regions[id];
   if (R && R.geojson) { try { LM.fitBounds(L.geoJSON(R.geojson).getBounds(), { padding: [30, 30] }); } catch (e) { /* 무시 */ } }
 }
+// 토지이동 연혁(브이월드 토지이동이력: 분할·합병·지목변경·구획정리 등 — 종전 지번은 사유에 나옴). 마우스를 올릴 때 받아 둠
+const MOVES = {
+  wait: {},
+  get(pnu) { const c = CACHE.parcels[pnu]; return c && c.moves; },
+  async load(pnu) {
+    const c = CACHE.parcels[pnu]; if (!c || c.moves) return c && c.moves;
+    if (this.wait[pnu]) return this.wait[pnu];
+    this.wait[pnu] = (async () => {
+      try {
+        const d = await jsonp('https://api.vworld.kr/ned/data/getLandMoveAttr', { pnu, key: VW.key, domain: location.origin, format: 'json', numOfRows: 30, pageNo: 1 });
+        const fs = (d && d.landMoves && d.landMoves.field) || [];
+        c.moves = fs.map(f => ({ d: f.ladMvmnDe || '', why: f.ladMvmnPrvonshCodeNm || '', jm: f.lndcgrCodeNm || '', a: num(f.lndpclAr) }))
+          .filter(m => m.d).sort((x, y) => (x.d < y.d ? 1 : -1));
+        saveCache();
+      } catch (er) { c.moves = null; }
+      delete this.wait[pnu];
+      return c.moves;
+    })();
+    return this.wait[pnu];
+  },
+  // 툴팁용 글: 최근 것부터 6개, 분할·합병·지목변경처럼 종전 지번이 드러나는 사유를 앞에
+  text(list) {
+    if (!list) return '\n토지이동: 불러오는 중…';
+    if (!list.length) return '\n토지이동 연혁 없음';
+    const key = m => /분할|합병|등록전환|지목변경|구획|환지|신규등록|말소/.test(m.why) ? 0 : 1;
+    const xs = list.slice().sort((x, y) => key(x) - key(y) || (x.d < y.d ? 1 : -1)).slice(0, 6);
+    return '\n토지이동(종전 지번·사유):' + xs.map(m => `\n · ${m.d} ${m.why}${m.jm ? ` (${m.jm}` : ''}${m.a ? ` ${fmt(m.a, 1)}㎡` : ''}${m.jm ? ')' : ''}`).join('') + (list.length > 6 ? `\n · 외 ${list.length - 6}건` : '');
+  },
+};
 function tipText(p, blds) {
   return `${p.jibun} ${p.jimok || ''} · ${fmt(p.base ?? p.area)}㎡ · ${p.zone || '용도지역 미확인'}\n접도: ${p.accSrc || '–'}`
     + (blds.length ? blds.map(b => `\n${b.use} · ${b.struct || '구조 미상'} · ${b.year || '연도 없음'} · ${b.unknown ? '확인 필요' : b.old ? '노후' : '비노후'}`).join('') : '\n건축물 없음');
@@ -1582,7 +1611,9 @@ function drawLeaflet() {
       const blds = R.blds[pnu] || [];
       const man = p.manual && S.mode === 'access';
       const lyr = L.geoJSON({ type: 'Feature', properties: {}, geometry: p.geom }, { pane: 'parcelPane', style: { color: man ? ink : line, weight: man ? 2 : 0.7, fillColor: cssVar(fillVar(p, blds)), fillOpacity: 0.62, opacity: 1 } });
-      lyr.bindTooltip(tipText(p, blds), { sticky: true });
+      lyr.bindTooltip(tipText(p, blds) + (MOVES.get(pnu) ? MOVES.text(MOVES.get(pnu)) : ''), { sticky: true });
+      // 마우스를 올리면 토지이동 연혁(종전 지번)을 받아 툴팁에 덧붙임
+      lyr.on('mouseover', () => { if (MOVES.get(pnu)) return; lyr.setTooltipContent(tipText(p, blds) + MOVES.text(null)); MOVES.load(pnu).then(list => { lyr.setTooltipContent(tipText(p, blds) + MOVES.text(list || [])); }); });
       if (S.mode === 'access' && blds.length) lyr.on('click', ev => { if (!drawH && !ZK.picking) { L.DomEvent.stop(ev); cycleAccess(p.id); } });
       lyr.addTo(layP);
     });
@@ -1989,6 +2020,7 @@ function bindInfra() {
   side.querySelectorAll('[data-szasp]').forEach(el => el.onchange = () => szSet(el.dataset.szasp, o => { o.asp = num(el.value); }));
   const aa = document.getElementById('autoAbsorb'); if (aa) aa.onchange = () => { P.autoAbsorb = aa.checked; saveP(); INFRA.memo = {}; render(); };
   side.querySelectorAll('[data-gidec]').forEach(el => el.onchange = () => { const z = Z.zones[S.region]; if (!z) return; z.infra = z.infra || {}; z.infra.giDec = z.infra.giDec || {}; if (el.value) z.infra.giDec[el.dataset.gidec] = el.value; else delete z.infra.giDec[el.dataset.gidec]; saveZ(); INFRA.memo = {}; render(); });
+  side.querySelectorAll('[data-gifocus]').forEach(el => { el.onmouseenter = () => { const k = el.dataset.gifocus; const put = l => { el.title = (el.textContent + MOVES.text(l)).trim(); }; put(MOVES.get(k)); if (!MOVES.get(k)) MOVES.load(k).then(l => put(l || [])); }; });
   side.querySelectorAll('[data-gifocus]').forEach(el => el.onclick = () => { const p = D.byPnu.get(el.dataset.gifocus); if (p && p.geom && LM) { LM.fitBounds(L.geoJSON(p.geom).getBounds(), { padding: [80, 80], maxZoom: 20 }); const m = L.geoJSON(p.geom, { style: { color: '#c92a2a', weight: 3, dashArray: '6 4', fillOpacity: 0.12 }, interactive: false }).addTo(LM); setTimeout(() => m.remove(), 6000); document.getElementById('lmap').scrollIntoView({ block: 'center' }); } });
   on('giAsk', () => {
     const inf = plan(analyze(S.region)).infra, z = Z.zones[S.region];
