@@ -30,7 +30,8 @@ const Calc = {
       const u = this.urbanPlan();
       if (u && u.area > 0) {
         const r = (u.infra + u.other) / u.area;
-        return { area: Math.min(site * r, site), urban: u, basis: `/urban 정비계획 ${u.title ? u.title + ' ' : ''}(${u.at}) — 정비기반시설 ${fmt(u.infra / u.area * 100, 1)}%${u.other ? ` + 학교·공공청사·종교용지 ${fmt(u.other / u.area * 100, 1)}%` : ''} 비율 적용` };
+        const diff = site > 0 ? Math.abs(site - u.area) / site : 0;
+        return { area: Math.min(site * r, site), urban: u, mismatch: diff > 0.05, basis: `/urban 정비계획 ${u.title ? u.title + ' ' : ''}(${u.at}) — 정비기반시설 ${fmt(u.infra / u.area * 100, 1)}%${u.other ? ` + 학교·공공청사·종교용지 ${fmt(u.other / u.area * 100, 1)}%` : ''} 비율 적용${diff > 0.05 ? ` ※ 구역 면적이 다름(/urban ${fmt(u.area)}㎡ · 이 화면 ${fmt(site)}㎡) — 같은 구역인지 확인` : ''}` };
       }
       return { ...byRatio(`/urban 정비계획 값이 없어 구역면적의 ${fmt(ratio, 1)}%로 계산 — /urban 정비계획 탭을 한 번 열면 값이 넘어옵니다`), fallback: true };
     }
