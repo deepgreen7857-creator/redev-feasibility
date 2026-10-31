@@ -133,7 +133,7 @@ async function main() {
           const base = { court: c.name, year: y.name, caseNo: k.name };
           const m = meta[`${c.name}_${k.name}`] || {};
           // 요약·문건·송달 표: 물건정보·글자 문서가 바뀌면 다시 보냄(v2: 요약 추가)
-          const extraFiles = walk(dir, dir, 0, /\.(json|txt)$/i).filter((r) => /물건정보_제이옥션\.json$|(문건접수내역|송달내역)_(제이옥션|무료경매)\.txt$/.test(r));
+          const extraFiles = walk(dir, dir, 0, /\.(json|txt)$/i).filter((r) => /물건정보_제이옥션\.json$|결과_무료경매\.json$|(문건접수내역|송달내역)_(제이옥션|무료경매)\.txt$/.test(r));
           const extraSig = extraFiles.map((r) => { try { return `${r}:${fs.statSync(path.join(dir, r)).mtimeMs}`; } catch { return r; } }).join(',');
           const caseSig = `v3|${m.용도 || ''}|${m.주소 || ''}|${m.다음매각기일 || ''}|${m.물건번호 || ''}|${extraSig}`;
           const todo = [];
@@ -150,7 +150,8 @@ async function main() {
             for (const r of extraFiles) {
               try {
                 const raw = fs.readFileSync(path.join(dir, r), 'utf8');
-                if (/물건정보/.test(r)) { if (!summary) summary = parseInfo(JSON.parse(raw).화면글자); }
+                if (/결과_무료경매/.test(r)) { const h = JSON.parse(raw); const last = h[h.length - 1]; if (last) { summary = summary || {}; summary.saleResults = last.기일; summary.saleResultsAt = last.확인일; } }
+                else if (/물건정보/.test(r)) { if (!summary || !summary._info) summary = { ...parseInfo(JSON.parse(raw).화면글자), ...(summary || {}), _info: 1 }; }
                 else { const nm = /문건접수/.test(r) ? '문건접수' : '송달'; if (docs[nm] && /무료경매/.test(r)) continue; const rows = parseDoc(nm, raw); if (rows.length) docs[nm] = rows.map((x) => x.join('\t')); }
               } catch { /* 깨진 파일은 건너뜀 */ }
             }
@@ -160,6 +161,7 @@ async function main() {
               if (pdfRels.length) { const tx = await caseTexts(dir, pdfRels, log); if (Object.keys(tx).length) { summary = summary || {}; Object.assign(summary, tx, { textAt: new Date().toISOString() }); } }
               if (summary && JSON.stringify(summary).length > 29000) { for (const k of ['appraisalText', 'surveyText', 'specText']) { if (JSON.stringify(summary).length <= 29000) break; if (summary[k]) summary[k] = summary[k].slice(0, Math.max(0, summary[k].length - (JSON.stringify(summary).length - 28500))) + '\n…(잘림)'; } }
             } catch (e) { log(`${k.name}: 글자 뽑기 건너뜀 ${e.message}`); }
+            if (summary) delete summary._info;
             const rc = await api({ action: 'dataCase', ...base, meta: { use: m.용도, address: m.주소, sale: m.다음매각기일, itemNo: m.물건번호 }, summary, docs: Object.keys(docs).length ? docs : null });
             // 서버에 자료 보기 기능이 아직 반영 안 됐으면(모르는 동작) 헛걸음하지 말고 바로 멈춤
             if (!rc.ok) { if (/모르는 동작/.test(rc.error || '')) { log('서버에 자료 올리기 기능이 아직 반영되지 않음(firebase deploy 필요) — 멈춤'); return; } log(`${k.name}: 사건 정보 거절 ${rc.error}`); fail++; continue; }

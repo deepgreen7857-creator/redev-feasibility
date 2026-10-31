@@ -355,8 +355,10 @@ export async function readPhotos(page, { max = 12, scope = null } = {}) {
 export async function backToList(page) {
   await sleep((10 + Math.random() * 10) * 1000); // 상세 화면을 읽는 사람처럼 10~20초 머문 뒤 돌아간다
   await closeLayers(page); // 문서 창이 남아 있으면 '이전' 버튼을 덮으므로 먼저 닫는다
+  for (const p of page.context().pages()) if (p !== page) await p.close().catch(() => {}); // 새 창으로 뜬 문서도 닫음
+  await page.keyboard.press('Escape').catch(() => {});
   const btn = page.locator(SEL.backBtn);
-  if (await btn.count()) await btn.click();
+  if (await btn.count()) { try { await btn.click({ timeout: 15000 }); } catch { await closeLayers(page); await btn.click({ timeout: 15000, force: true }); } }
   else await page.locator('input[type=button][value="이전으로"]:visible').first().click();
   await page.waitForSelector(`${SEL.grid} a[onclick*="moveDtlPage"]`, { timeout: 30000 });
   await settle(page);

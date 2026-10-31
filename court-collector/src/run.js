@@ -410,7 +410,14 @@ async function main() {
                 for (const p of await page.context().pages()) if (p !== page) await p.close().catch(() => {}); // 열린 문서 창 정리
               }
             }
-            await backToList(page);
+            // 목록으로 못 돌아가면(문서 창이 '이전' 버튼을 덮는 경우 — 10/31 2025타경103839에서 회차 전체가 멈춤)
+            //  이 물건은 오늘 건너뛰게 표시한 뒤 오류를 올려 브라우저를 새로 연다 → 다음엔 이 물건을 지나쳐 계속 감
+            try { await backToList(page); } catch (e) {
+              badRows[key] = { n: 2, at: Date.now(), why: 'back' }; fs.writeFileSync(badFile, JSON.stringify(badRows));
+              if (detail) { buffer.push(toItem(row, detail)); seen[key] = { minBid: row.minBid, status: row.status, at: Date.now(), v: DETAIL_V }; saveSeen(); }
+              log(`목록 복귀 실패 ${row.caseNo} — 읽은 것은 저장, 오늘은 이 물건 건너뜀`);
+              throw e;
+            }
             stats.detailed++;
             if (detail) { seen[key] = { minBid: row.minBid, status: row.status, at: Date.now(), v: DETAIL_V }; saveSeen(); }
           }

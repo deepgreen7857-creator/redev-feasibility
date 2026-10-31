@@ -648,6 +648,26 @@ const MapView = {
     await this.buildZone(found, report, opts, `지번 ${count}개 → `);
   },
 
+  // 제출 토지조서 폐합 검토 (ZoneKit.closure — 정비계획 검토와 같은 코드)
+  //  조서 지번만 그대로 합쳐(갇힌 필지·도로 자동 채우기 없음) 구역계·조서로 두고, 떨어진 덩어리·빠진 필지·틈을 알려 줌
+  async closureCheck(items, base) {
+    const msg = $('#jibunMsg');
+    if (!VWorld.enabled) { msg.textContent = '브이월드 인증키가 있어야 합니다.'; return; }
+    if (!ZoneKit.items(items).length) { msg.textContent = '토지조서 지번을 넣거나 "엑셀·CSV에서 지번 읽기"로 조서 파일을 고르세요.'; return; }
+    if (S.area.geojson && !confirm('지금 구역계를 제출 조서의 필지 경계로 바꿔 검토할까요?')) return;
+    this.askClearSample();
+    this.remember('제출 조서 폐합 검토');
+    const { found, report } = await ZoneKit.findByJibuns(items, base, t => { msg.textContent = t; });
+    let r = null;
+    try { r = await ZoneKit.closure(found, t => { msg.textContent = t; }); } catch (e) { msg.textContent = '폐합 검토 중 오류: ' + e.message; return; }
+    if (!r) { msg.textContent = '조서 지번을 하나도 찾지 못했습니다. 기준 동 주소를 확인해 주세요.'; this.showReport(report); return; }
+    await this.buildZone(new Map(found), report.slice(), { fillHoles: false, bridge: false, edgeRoad: 'none' }, '제출 조서 → ');
+    this.showReport(report);
+    if (this.closeLayer) this.closeLayer.remove();
+    this.closeLayer = ZoneUI.closureLayer(this.map, r);
+    msg.innerHTML = ZoneKit.closureHtml(r, report);
+  },
+
   // 고시문의 위치 지번들 + 목표 면적 → 지번들을 감싼 범위를 넓혀 가며 면적이 맞는 구역을 추정
   async estimateFromAnchors(items, base, target, opts) {
     const msg = $('#jibunMsg');
