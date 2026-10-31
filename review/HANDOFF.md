@@ -194,7 +194,7 @@
 - 매시간 예약 작업 생성은 권한 거부(2회) — 정민님이 직접 만들거나 승인 필요.
 
 ## 2026.10.29 밤 — 미니PC 원문 직접 읽기 (집안 네트워크 뷰어)
-- 미니PC에서 court-collector\자료보기-집안네트워크.cmd 실행 → 노트북 크롬에서 http://172.30.1.12:8787 (IP 바뀌면 창에 뜬 주소 사용). 801건.
+- 미니PC에서 court-collector\자료보기-집안네트워크.cmd 실행 → 노트북 크롬에서 http://172.30.1.82:8787 (2026.10.31 기준, 이전 172.30.1.12 — IP 바뀌면 창에 뜬 주소 사용. 노트북이 집 공유기에 붙어 있을 때만 열림). 801건.
 - API: /api/cases (목록), /api/case?rel=<rel> (파일목록), 파일은 /f/<rel 경로 각 부분 encodeURIComponent>. 서울중앙 등 _공유문서 명세서는 매각물건명세서.json의 hash → /f/_공유문서/매각물건명세서_<hash>.pdf
 - PDF 텍스트: 페이지에 cdnjs pdf.js 3.11.174 로드 → getTextContent → <article id="_dump">에 넣고 get_page_text. (get_page_text를 목록 화면에서 하면 801건 전체가 나와 너무 김 → body를 _dump로 교체 후 읽기)
 - 노트북 device_bash에서 LAN 접근은 프록시 403 → 크롬으로만.
