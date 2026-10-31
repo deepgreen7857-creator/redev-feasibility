@@ -204,12 +204,13 @@ async function processItem(page, item) {
 
 async function main() {
   if (!cfg.enabled && !DRY) { log('config.json registry.enabled 가 false — 실행하지 않음'); return; }
-  const ctx = await chromium.launchPersistentContext(PROFILE, { headless: LOGIN ? false : cfg.headless !== false, locale: 'ko-KR', viewport: { width: 1366, height: 900 } });
+  const ctx = await chromium.launchPersistentContext(PROFILE, { headless: LOGIN ? false : cfg.headless !== false, locale: 'ko-KR', ...(LOGIN ? { viewport: null, args: ['--start-maximized'] } : { viewport: { width: 1366, height: 900 } }) }); // 로그인 창은 화면 가득 맨 앞에
   const page = ctx.pages()[0] || await ctx.newPage();
   const stats = { targets: 0, saved: 0, files: 0, missed: 0, errors: 0, stoppedBy: null };
   try {
     if (LOGIN) {
       await page.goto(`${BASE}/main/main.php`);
+      await page.bringToFront().catch(() => {});
       log('마이옥션 창에서 로그인하세요("자동로그인"이 있으면 체크). 로그인되면 저장하고 창이 저절로 닫힙니다.');
       let closed = false; ctx.on('close', () => { closed = true; });
       for (let i = 0; i < 600 && !closed; i++) { // 최대 30분 기다림
