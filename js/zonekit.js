@@ -415,3 +415,231 @@ const ZoneKit = {
     return list.filter(s => /\d/.test(s));
   },
 };
+
+
+// ---------- 건축물 행 (두 화면 공통 규칙) ----------
+// GIS건물통합정보·건축물대장 표제부 → 건축물 행. 화면마다 붙이는 값(id·지번·pnu 등)은 각 화면에서 덧붙임
+const zkNum = v => { const n = parseFloat(String(v ?? '').replace(/,/g, '')); return isFinite(n) ? n : 0; };
+const zkStruct = c => { const s = String(c || '').charAt(0); return s === '1' ? '조적' : s === '2' || s === '4' ? '철근콘크리트' : s === '3' ? '철골' : s === '5' ? '목조' : '기타'; };
+const zkDate = d => (/^\d{8}$/.test(String(d || '').trim()) ? `${String(d).trim().slice(0, 4)}-${String(d).trim().slice(4, 6)}-${String(d).trim().slice(6, 8)}` : '');
+const BldgRows = {
+  // GIS건물통합정보 한 동
+  fromGis(f) {
+    const p = f.properties || {};
+    const code = String(p.usability || ''), floors = zkNum(p.grnd_flr), floorArea = Math.round(zkNum(p.totalarea) * 10) / 10;
+    let use = '기타', guessed = false;
+    if (code === '01003') use = '다가구주택';
+    else if (code.startsWith('01')) use = '단독주택';
+    else if (code === '02001') use = '아파트';
+    else if (code === '02002') use = '연립주택';
+    else if (code === '02003') use = '다세대주택';
+    else if (code.startsWith('02')) {
+      // 공동주택 세부 용도가 없으면 층수·면적으로 추정 (5층 이상 아파트, 660㎡ 초과 연립, 이하 다세대)
+      use = floors >= 5 ? '아파트' : floorArea > 660 ? '연립주택' : '다세대주택';
+      guessed = true;
+    } else if (code.startsWith('03') || code.startsWith('04')) use = '근린생활시설';
+    const year = zkNum(String(p.useapr_day || '').slice(0, 4));
+    const isApt = ['아파트', '연립주택', '다세대주택'].includes(use);
+    return {
+      use, structure: zkStruct(p.strct_cd), year, floorArea, archArea: Math.round(zkNum(p.archarea) * 10) / 10,
+      units: isApt ? 0 : (use === '단독주택' || use === '다가구주택' ? 1 : 0),
+      name: p.bld_nm || '', floors, needUnits: isApt, guessed, aprDate: zkDate(p.useapr_day), basement: zkNum(p.ugrnd_flr),
+      noInfo: !year && !floorArea && !code,
+      religion: this.isReligion(code, p.bld_nm),
+    };
+  },
+  // 건축물대장 표제부 한 동. 사용승인일이 비어 있으면 허가일 → 착공일로 연도를 추정(yearSrc에 표시, 실제 준공은 그 뒤)
+  fromLedger(t) {
+    const code = String(t.mainPurpsCd || ''), etc = String(t.etcPurps || '');
+    let use = '기타';
+    if (code === '01003' || /다가구/.test(etc)) use = '다가구주택';
+    else if (code.startsWith('01')) use = '단독주택';
+    else if (code === '02001' || /아파트/.test(etc)) use = '아파트';
+    else if (code === '02002' || /연립/.test(etc)) use = '연립주택';
+    else if (code === '02003' || /다세대/.test(etc)) use = '다세대주택';
+    else if (code.startsWith('02')) use = zkNum(t.grndFlrCnt) >= 5 ? '아파트' : '다세대주택';
+    else if (code.startsWith('03') || code.startsWith('04')) use = '근린생활시설';
+    const aprDate = zkDate(t.useAprDay);
+    const alt = [['허가일', t.pmsDay], ['착공일', t.stcnsDay]].map(([n, v]) => [n, zkDate(v)]).find(([, v]) => v);
+    const isApt = ['아파트', '연립주택', '다세대주택'].includes(use);
+    // 세대수: 공동주택은 세대수, 다가구는 가구수 참고(호수 산정은 1호), 단독 1
+    const units = isApt ? zkNum(t.hhldCnt) || zkNum(t.hoCnt) : (use === '단독주택' || use === '다가구주택' ? 1 : 0);
+    return {
+      ledger: true, name: [String(t.bldNm || '').trim(), String(t.dongNm || '').trim()].filter(Boolean).join(' '),
+      use, structure: zkStruct(t.strctCd), structureName: t.strctCdNm || '', purpose: [t.mainPurpsCdNm, etc.trim()].filter(Boolean).join(' / '),
+      year: aprDate ? +aprDate.slice(0, 4) : alt ? +alt[1].slice(0, 4) : 0, aprDate, yearSrc: aprDate ? '' : alt ? alt[0] : '',
+      floorArea: Math.round(zkNum(t.totArea) * 10) / 10, archArea: Math.round(zkNum(t.archArea) * 10) / 10, floors: zkNum(t.grndFlrCnt), basement: zkNum(t.ugrndFlrCnt),
+      units, families: zkNum(t.fmlyCnt), needUnits: isApt && !units, noInfo: !aprDate && !alt,
+      collective: String(t.regstrGbCd) === '2', dong: String(t.dongNm || '').trim(), annex: String(t.mainAtchGbCd) === '1',
+      religion: this.isReligion(code, `${t.mainPurpsCdNm || ''} ${etc} ${t.bldNm || ''}`),
+    };
+  },
+  // 종교시설(용도코드 06: 교회·성당·사찰 등). 정비계획에서 종교용지로 따로 확보해야 하는지 보려고 표시
+  //  코드가 없으면 이름·용도 글자로 추정
+  isReligion(code, text) {
+    return String(code || '').startsWith('06') || /종교|교회|성당|사찰|선원|교당|예배당|수도원|정사$/.test(String(text || '').trim());
+  },
+  // 공부 정보가 하나도 없는 GIS 건물(용도·면적·연도 모두 빈 것, 대장 없음): 부속·가설·무허가 건물이거나 GIS 오류일 수 있음
+  //  두 화면 모두 노후도에서 기본으로 빼고 따로 셈(넣기 선택 가능)
+  isGhost(r) { return !r.ledger && !zkNum(r.year) && !zkNum(r.floorArea) && (!r.use || r.use === '기타'); },
+};
+
+// ---------- 지도 화면 도구 (Leaflet, 두 화면 공통) ----------
+const ZoneUI = {
+  // 필지를 눌렀을 때 '넣기 / 빼기'를 고르는 창. 반환: Promise('in' | 'out' | null)
+  //  opts: { title, sub, canIn, canOut, inLabel, outLabel, color }
+  choose(map, latlng, f, opts) {
+    return new Promise(resolve => {
+      const mark = L.geoJSON(f, { style: { color: opts.color || '#2563eb', weight: 3, fillOpacity: 0.12 }, interactive: false }).addTo(map);
+      const box = document.createElement('div');
+      box.className = 'zk-pop';
+      const e = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      box.innerHTML = `<div><b>${e(opts.title)}</b></div><div class="zk-pop-sub">${e(opts.sub || '')}</div>
+        <div class="zk-pop-btns"><button type="button" data-act="in" ${opts.canIn === false ? 'disabled' : ''}>${e(opts.inLabel || '구역에 넣기')}</button><button type="button" data-act="out" ${opts.canOut === false ? 'disabled' : ''}>${e(opts.outLabel || '구역에서 빼기')}</button></div>`;
+      let done = false;
+      const finish = v => { if (done) return; done = true; mark.remove(); resolve(v); };
+      const pop = L.popup({ closeButton: true, autoPan: true, maxWidth: 280 }).setLatLng(latlng).setContent(box).openOn(map);
+      map.once('popupclose', () => finish(null));
+      box.querySelectorAll('[data-act]').forEach(b => b.onclick = () => { finish(b.dataset.act); map.closePopup(pop); });
+    });
+  },
+  // 선 긋기 도구 — 오토캐드 객체 스냅처럼 끝점·중간점·수직점·근처점에 붙음. 구역계 자르기 등에 씀
+  //  opts: { features: () => [GeoJSON Feature…](붙을 선분의 출처: 구역계·필지·맞은편 필지), color, onDone(lineFeature), onCancel(), say(text) }
+  //  누르기: 점 추가 · 더블클릭 또는 Enter: 끝내기 · Backspace: 마지막 점 지우기 · Esc: 그만두기 · F3: 스냅 켜기/끄기
+  //  우선순위: 끝점 > 중간점 > 수직점(직전 점에서 선분에 내린 수선의 발) > 근처점(선분 위 가장 가까운 점)
+  SNAP_KINDS: [['end', '끝점', '□'], ['mid', '중간점', '△'], ['perp', '수직점', '⊥'], ['near', '근처점', '⧗']],
+  snapOn: { end: true, mid: true, perp: true, near: true },
+  lineTool(map, opts) {
+    const PX = 12, pts = [], col = opts.color || '#c8322b';
+    // 선분 목록(경위도). 같은 선분은 한 번만
+    const segs = [], seen = new Set();
+    const addRing = r => {
+      for (let i = 0; i + 1 < r.length; i++) {
+        const a = r[i], b = r[i + 1];
+        const k = a[0] < b[0] || (a[0] === b[0] && a[1] <= b[1]) ? `${a}|${b}` : `${b}|${a}`;
+        if (seen.has(k)) continue; seen.add(k);
+        segs.push([L.latLng(a[1], a[0]), L.latLng(b[1], b[0])]);
+      }
+    };
+    const addGeom = g => {
+      if (!g) return;
+      if (g.type === 'Polygon') g.coordinates.forEach(addRing);
+      else if (g.type === 'MultiPolygon') g.coordinates.forEach(p => p.forEach(addRing));
+      else if (g.type === 'LineString') addRing(g.coordinates);
+    };
+    const reload = () => { segs.length = 0; seen.clear(); (opts.features ? opts.features() : []).forEach(f => addGeom(f && (f.geometry || f))); };
+    reload();
+    const line = L.polyline([], { color: col, weight: 3, dashArray: '6 4', interactive: false }).addTo(map);
+    const ghost = L.polyline([], { color: col, weight: 2, dashArray: '2 6', opacity: 0.8, interactive: false }).addTo(map);
+    const segMark = L.polyline([], { color: '#f59f00', weight: 4, opacity: 0.8, interactive: false });
+    const snapMark = L.marker([0, 0], { interactive: false, keyboard: false, icon: L.divIcon({ className: 'zk-snap', html: '', iconSize: [22, 22] }) });
+    const dots = L.layerGroup().addTo(map);
+    const dz = map.doubleClickZoom.enabled(); map.doubleClickZoom.disable();
+    map.getContainer().classList.add('zk-drawing');
+    // 스냅 켜기/끄기 버튼(지도 왼쪽 아래)
+    const bar = L.control({ position: 'bottomleft' });
+    bar.onAdd = () => {
+      const d = L.DomUtil.create('div', 'zk-osnap');
+      d.innerHTML = '<b>스냅</b>' + this.SNAP_KINDS.map(([k, n, sym]) => `<button type="button" data-k="${k}" aria-pressed="${this.snapOn[k]}" title="${n}">${sym} ${n}</button>`).join('');
+      L.DomEvent.disableClickPropagation(d);
+      d.querySelectorAll('button').forEach(b => b.onclick = () => { const k = b.dataset.k; this.snapOn[k] = !this.snapOn[k]; b.setAttribute('aria-pressed', this.snapOn[k]); });
+      return d;
+    };
+    bar.addTo(map);
+    const Z = () => map.getZoom();
+    const P = ll => map.project(ll, Z());
+    const U = pt => map.unproject(pt, Z());
+    // 마우스 위치 → 붙을 점
+    const snap = ll => {
+      const on = this.snapOn;
+      if (!on.end && !on.mid && !on.perp && !on.near) return { ll, kind: '' };
+      const p = P(ll), prev = pts.length ? P(pts[pts.length - 1]) : null;
+      const best = { end: null, mid: null, perp: null, near: null };
+      const consider = (kind, pt, seg) => {
+        const d = Math.hypot(pt.x - p.x, pt.y - p.y);
+        if (d <= PX && (!best[kind] || d < best[kind].d)) best[kind] = { d, pt, seg };
+      };
+      for (const sg of segs) {
+        const a = P(sg[0]), b = P(sg[1]);
+        // 화면 밖 먼 선분은 건너뜀
+        if (Math.min(a.x, b.x) > p.x + PX || Math.max(a.x, b.x) < p.x - PX || Math.min(a.y, b.y) > p.y + PX || Math.max(a.y, b.y) < p.y - PX) {
+          if (!(on.perp && prev)) continue;
+        }
+        const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+        if (on.end) { consider('end', a, sg); consider('end', b, sg); }
+        if (on.mid) consider('mid', L.point((a.x + b.x) / 2, (a.y + b.y) / 2), sg);
+        if (!len2) continue;
+        if (on.near) { let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2; t = Math.max(0, Math.min(1, t)); consider('near', L.point(a.x + t * dx, a.y + t * dy), sg); }
+        if (on.perp && prev) {
+          const t = ((prev.x - a.x) * dx + (prev.y - a.y) * dy) / len2;
+          if (t >= 0 && t <= 1) consider('perp', L.point(a.x + t * dx, a.y + t * dy), sg);
+        }
+      }
+      for (const [k, n, sym] of this.SNAP_KINDS) {
+        const b = best[k];
+        if (b) return { ll: U(b.pt), kind: k, name: n, sym, seg: b.seg };
+      }
+      return { ll, kind: '' };
+    };
+    const showSnap = s => {
+      if (s.kind) {
+        snapMark.setLatLng(s.ll).addTo(map);
+        snapMark.getElement() && (snapMark.getElement().innerHTML = `<span class="zk-snap-sym">${s.sym}</span><span class="zk-snap-name">${s.name}</span>`);
+        segMark.setLatLngs(s.seg || []).addTo(map);
+      } else { snapMark.remove(); segMark.remove(); }
+    };
+    const move = e => {
+      const s = snap(e.latlng); showSnap(s);
+      ghost.setLatLngs(pts.length ? [pts[pts.length - 1], s.ll] : []);
+    };
+    const redraw = () => {
+      line.setLatLngs(pts); dots.clearLayers();
+      pts.forEach(p => L.circleMarker(p, { radius: 4, color: col, weight: 2, fillColor: col, fillOpacity: 1, interactive: false }).addTo(dots));
+      if (opts.say) opts.say(pts.length < 2
+        ? '선의 점을 누르세요. 필지 끝점(□)·중간점(△)·수직점(⊥)·근처점(⧗)에 가까이 가면 붙습니다. 맞은편 도로 필지에도 붙습니다.'
+        : `점 ${pts.length}개 · 더블클릭(또는 Enter)으로 끝내기, Backspace로 마지막 점 지우기, Esc로 그만두기, F3 스냅 켜기/끄기`);
+    };
+    const click = e => { const s = snap(e.latlng); pts.push(s.ll); redraw(); };
+    const finish = () => {
+      if (pts.length < 2) { if (opts.say) opts.say('점을 2개 이상 찍어야 합니다.'); return; }
+      const lf = turf.lineString(pts.map(p => [p.lng, p.lat]));
+      stop(); opts.onDone && opts.onDone(lf);
+    };
+    const dbl = e => { L.DomEvent.stop(e); if (pts.length >= 2 && pts[pts.length - 1].equals(pts[pts.length - 2], 1e-10)) pts.pop(); finish(); };
+    const key = e => {
+      const typing = /INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '');
+      if (e.key === 'Escape') { stop(); opts.onCancel && opts.onCancel(); }
+      else if (e.key === 'Enter' && !typing) finish();
+      else if (e.key === 'Backspace' && !typing) { e.preventDefault(); pts.pop(); redraw(); }
+      else if (e.key === 'F3') { e.preventDefault(); const all = Object.values(this.snapOn).some(Boolean); Object.keys(this.snapOn).forEach(k => { this.snapOn[k] = !all; }); const d = bar.getContainer(); d && d.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', this.snapOn[b.dataset.k])); }
+    };
+    const stop = () => {
+      map.off('mousemove', move); map.off('click', click); map.off('dblclick', dbl); document.removeEventListener('keydown', key);
+      line.remove(); ghost.remove(); snapMark.remove(); segMark.remove(); dots.remove(); bar.remove();
+      if (dz) map.doubleClickZoom.enable();
+      map.getContainer().classList.remove('zk-drawing');
+    };
+    map.on('mousemove', move); map.on('click', click); map.on('dblclick', dbl); document.addEventListener('keydown', key);
+    redraw();
+    return { stop, finish, reload, get points() { return pts.slice(); } };
+  },
+  // 실행 취소 / 다시 실행 이력. snapshot은 화면이 정한 값(구역계·조서 등). 최대 max개
+  History: class {
+    constructor(max = 40) { this.undoS = []; this.redoS = []; this.max = max; }
+    push(snap, label) { this.undoS.push({ snap, label }); if (this.undoS.length > this.max) this.undoS.shift(); this.redoS = []; }
+    canUndo() { return this.undoS.length > 0; }
+    canRedo() { return this.redoS.length > 0; }
+    peekUndo() { return this.undoS[this.undoS.length - 1]; }
+    peekRedo() { return this.redoS[this.redoS.length - 1]; }
+    // current: 지금 상태 스냅숏. 되돌릴 항목 { snap, label }을 돌려줌
+    undo(current) { const it = this.undoS.pop(); if (it) this.redoS.push({ snap: current, label: it.label }); return it; }
+    redo(current) { const it = this.redoS.pop(); if (it) this.undoS.push({ snap: current, label: it.label }); return it; }
+  },
+  // 진행 안내(단계·진행률·끝나면 바뀌는 것) HTML. o: { step, steps, label, done, total, after }
+  progressHtml(o) {
+    const pct = o.total ? Math.round(o.done / o.total * 100) : 15;
+    const e = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    return `<span class="zk-prog"><span class="zk-prog-t"><span class="zk-spin" aria-hidden="true"></span><b>${o.step ? `${o.step}/${o.steps}단계 · ` : ''}${e(o.label)}</b>${o.total ? ` ${o.done}/${o.total}` : ''}</span>`
+      + `<span class="zk-prog-bar"><span style="width:${pct}%"></span></span>${o.after ? `<span class="zk-prog-s">${e(o.after)}</span>` : ''}</span>`;
+  },
+};

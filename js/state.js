@@ -47,7 +47,7 @@ const REGION_PRESETS = {
   },
   incheon: {
     label: '인천광역시', law: '인천시 도시및주거환경정비조례(제7686호, 2025.12.31.) 제2조·제3조·제5조',
-    rcYears: 30, otherYears: 20, detachedOther: true, basementRes20: true, smallLot: 90,
+    rcYears: 30, otherYears: 20, detachedOther: true, basementRes20: true, smallLot: 60,   // 건축조례 제28조① 주거지역 60㎡ (2024.3.28. 개정, 종전 90㎡)
     redev: { oldRatio: 60, minArea: 10000, opt: { road: 50, small: 30, density: 50, oldArea: 50 } },
   },
 };
@@ -62,7 +62,8 @@ function defaultCriteria() {
     otherYears: 20,        // 그 밖의 구조 20년
     detachedOther: true,   // 조례: 단독주택은 구조와 관계없이 20년 (철근콘크리트 30년 항목에서 제외)
     basementRes20: false,  // 인천 조례: 주거용 지하층이 있는 철근콘크리트 공동주택은 30년 항목에서 제외(20년)
-    smallLot: 90,          // 과소필지 기준 면적(㎡ 미만). 서울 90㎡, 인천은 건축조례 분할제한면적(주거지역 90㎡)
+    smallLot: 90,          // 과소필지 기준 면적(㎡ 미만). 서울 90㎡, 인천은 건축조례 분할제한면적(주거지역 60㎡, 2024.3.28. 개정)
+    ghostIn: false,        // 공부 정보가 하나도 없는 GIS 건물(무허가·부속건물 등 확인 필요)을 노후도 동수에 넣을지 (BldgRows.isGhost)
     redev: { oldRatio: 60, minArea: 10000, opt: { road: 40, small: 40, density: 60, oldArea: 60 } },
     recon: { minYears: 30, minUnits: 300, minArea: 10000 }, // 시행령 별표1 제3호
     garo: { maxArea: 10000, oldRatio: 60, minDetached: 10, minApartment: 20, minMixed: 20 }, // 소규모주택정비법 시행령 제3조(2024.3.19. 2/3→60%)
@@ -117,7 +118,7 @@ function defaultSales() {
 
 function defaultState() {
   return {
-    version: 3,
+    version: 4,
     // zoningManual/locationManual: 사용자가 직접 고친 값이면 자동 입력으로 덮어쓰지 않음
     meta: { name: '새 정비사업', type: 'redevelopment', location: '', zoning: '', memo: '', zoningList: [], zoningManual: false, locationManual: false },
     // importedKey: 조서(필지·건축물)를 마지막으로 불러온 구역의 지문(zoneKey), importedAt: 그 시각
@@ -155,6 +156,10 @@ function mergeDefaults(def, val) {
 
 // 예전 기본값으로 저장된 기준을 현행 기준으로 바꿈
 function migrate(s) {
+  // v4: 인천 과소필지 기준 90㎡ → 60㎡ (인천 건축조례 제28조① 2024.3.28. 개정)
+  if ((s.version || 1) < 4) {
+    if (s.criteria && s.criteria.region === 'incheon' && num(s.criteria.smallLot) === 90) s.criteria.smallLot = 60;
+  }
   if ((s.version || 1) < 2) {
     if (s.criteria.garo.oldRatio === 66.7) s.criteria.garo.oldRatio = 60;
     s.version = 2;
@@ -164,6 +169,7 @@ function migrate(s) {
     if (s.area.mode === 'drawn' || s.area.mode === 'lands') s.area.mode = 'ledger';
     s.version = 3;
   }
+  if (s.version < 4) s.version = 4;
   if (s.area.mode === 'lands') s.area.mode = 'ledger';
   // 예전 지도 필지: 면적이 연속지적 도형 면적이었음 → 참고값으로 옮기고 '토지대장 면적 다시 조회' 대상으로
   s.lands.forEach(l => {

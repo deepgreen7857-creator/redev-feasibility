@@ -176,50 +176,9 @@ const LG = {
   },
 };
 const PUBLIC_JIMOK = ['도', '구', '천', '제', '공'];
-// GIS건물통합정보 한 동 → 건축물 행 (본 화면 buildingFromFeature와 같은 규칙)
-function rowFromGis(f) {
-  const p = f.properties || {};
-  const code = String(p.usability || ''), floors = num(p.grnd_flr), floorArea = Math.round(num(p.totalarea) * 10) / 10;
-  let use = '기타';
-  if (code === '01003') use = '다가구주택';
-  else if (code.startsWith('01')) use = '단독주택';
-  else if (code === '02001') use = '아파트';
-  else if (code === '02002') use = '연립주택';
-  else if (code === '02003') use = '다세대주택';
-  else if (code.startsWith('02')) use = floors >= 5 ? '아파트' : floorArea > 660 ? '연립주택' : '다세대주택';
-  else if (code.startsWith('03') || code.startsWith('04')) use = '근린생활시설';
-  const s = String(p.strct_cd || '').charAt(0);
-  const structure = s === '1' ? '조적' : s === '2' || s === '4' ? '철근콘크리트' : s === '3' ? '철골' : s === '5' ? '목조' : '기타';
-  const isApt = ['아파트', '연립주택', '다세대주택'].includes(use);
-  return {
-    use, structure, year: num(String(p.useapr_day || '').slice(0, 4)), floorArea, archArea: num(p.archarea), floors, basement: num(p.ugrnd_flr),
-    units: isApt ? 0 : (use === '단독주택' || use === '다가구주택' ? 1 : 0), needUnits: isApt, name: p.bld_nm || '', src: 'GIS',
-  };
-}
-// 건축물대장 표제부 한 동 → 건축물 행 (본 화면 Ledger.toRow와 같은 규칙)
-function rowFromLedger(t) {
-  const code = String(t.mainPurpsCd || ''), etc = String(t.etcPurps || '');
-  let use = '기타';
-  if (code === '01003' || /다가구/.test(etc)) use = '다가구주택';
-  else if (code.startsWith('01')) use = '단독주택';
-  else if (code === '02001' || /아파트/.test(etc)) use = '아파트';
-  else if (code === '02002' || /연립/.test(etc)) use = '연립주택';
-  else if (code === '02003' || /다세대/.test(etc)) use = '다세대주택';
-  else if (code.startsWith('02')) use = num(t.grndFlrCnt) >= 5 ? '아파트' : '다세대주택';
-  else if (code.startsWith('03') || code.startsWith('04')) use = '근린생활시설';
-  const s = String(t.strctCd || '').charAt(0);
-  const structure = s === '1' ? '조적' : s === '2' || s === '4' ? '철근콘크리트' : s === '3' ? '철골' : s === '5' ? '목조' : '기타';
-  const d = String(t.useAprDay || '').trim();
-  // 사용승인일이 빈 오래된 건물은 허가일 → 착공일 순으로 연도를 추정(실제 준공은 그 뒤)
-  const alt = [['허가일', t.pmsDay], ['착공일', t.stcnsDay]].map(([n, v]) => [n, String(v || '').trim()]).find(([, v]) => /^\d{8}$/.test(v));
-  const isApt = ['아파트', '연립주택', '다세대주택'].includes(use);
-  const units = isApt ? num(t.hhldCnt) || num(t.hoCnt) : (use === '단독주택' || use === '다가구주택' ? 1 : 0);
-  return {
-    use, structure, structureName: t.strctCdNm || '', year: /^\d{8}$/.test(d) ? +d.slice(0, 4) : alt ? +alt[1].slice(0, 4) : 0, yearSrc: /^\d{8}$/.test(d) ? '' : alt ? alt[0] : '',
-    floorArea: Math.round(num(t.totArea) * 10) / 10, archArea: Math.round(num(t.archArea) * 10) / 10, floors: num(t.grndFlrCnt), basement: num(t.ugrndFlrCnt),
-    units, needUnits: isApt && !units, ledger: true, name: [String(t.bldNm || '').trim(), String(t.dongNm || '').trim()].filter(Boolean).join(' '), src: '대장',
-  };
-}
+// 건축물 행 규칙(용도·구조·연도 추정·세대수)은 js/zonekit.js BldgRows — 사업성 검토와 같은 코드
+const rowFromGis = f => ({ ...BldgRows.fromGis(f), src: 'GIS' });
+const rowFromLedger = t => ({ ...BldgRows.fromLedger(t), src: '대장' });
 
 /* ===== 지도 구역계(안)와 공부 캐시 ===== */
 // Z: 안(A~E)별 구역계(GeoJSON)와 편입 필지·편입비율. CACHE: 필지(pnu)별 공부, 건축물 행
@@ -283,11 +242,11 @@ async function fillLandChar(pnus, say, force) {
 //  대장 동수가 GIS보다 적으면 남는 GIS 건물(연도 없는 것 우선)은 '대장 없음'으로 남김(무허가·부속건물 등)
 const ledgerNeeded = k => {
   const p = CACHE.parcels[k], rows = CACHE.blds[k] || [];
-  if (!rows.length || (p && p.lgV === 2)) return false;
+  if (!rows.length || (p && p.lgV === 3)) return false;
   return rows.some(r => (r.needUnits && !r.ledger) || (!r.year && !isGhost(r)) || (!r.year && !(p && p.lgTried)));
 };
 // 공부 정보가 하나도 없는 GIS 건물(용도·면적·연도 모두 빈 것): 부속·가설·무허가 건물이거나 GIS 오류일 수 있음
-const isGhost = r => !r.ledger && r.src !== '조서' && !num(r.year) && !num(r.floorArea) && (!r.use || r.use === '기타');
+const isGhost = r => r.src !== '조서' && BldgRows.isGhost(r);
 async function fillLedger(pnus, say) {
   if (!LG.ok) return 0;
   const list = pnus.filter(ledgerNeeded);
@@ -295,7 +254,7 @@ async function fillLedger(pnus, say) {
   for (const k of list) {
     i++; say(`건축물대장(사용승인 연도·세대수) ${i}/${list.length}필지`, 4, i - 1, list.length);
     try {
-      const rows = await LG.titleRetry(k);
+      const rows = (await LG.titleRetry(k)).filter(t => String(t.mainAtchGbCd) !== '1');   // 부속건축물 제외(사업성 검토와 같음)
       const gis = CACHE.blds[k] || [];
       if (rows.length) {
         const pt = (gis[0] || {}).pt || null;
@@ -303,7 +262,7 @@ async function fillLedger(pnus, say) {
         const extra = gis.filter(r => !r.ledger).sort((a, b) => (a.year ? 1 : 0) - (b.year ? 1 : 0)).slice(0, Math.max(0, gis.length - led.length)).map(r => ({ ...r, src: r.year ? 'GIS' : '대장 없음' }));
         CACHE.blds[k] = led.concat(extra);
       } else CACHE.blds[k] = gis.map(r => ({ ...r, src: r.year ? r.src : '대장 없음' }));
-      if (CACHE.parcels[k]) { CACHE.parcels[k].lgTried = true; CACHE.parcels[k].lgV = 2; }
+      if (CACHE.parcels[k]) { CACHE.parcels[k].lgTried = true; CACHE.parcels[k].lgV = 3; }
     } catch (e) { fail++; }
   }
   return fail;
@@ -454,6 +413,8 @@ function toB(r, p, j) {
     year: num(r.year), semi: false, basement: num(r.basement), unitsMax: kind === '공동' ? Math.max(1, Math.ceil(units / floors)) : 0, units, floors,
     converted: false, foot: num(r.archArea) || num(r.floorArea) / floors, floor: num(r.floorArea), lic: '허가', name: r.name || '', pt: r.pt || null,
     needUnits: !!r.needUnits && !units, src: r.src || '', ghost: isGhost(r), yearSrc: r.yearSrc || '',
+    // 종교시설(용도코드 06 또는 이름). 근생 건물 한 층을 쓰는 교회는 상가 쪽이라 뺌
+    religion: r.use !== '근린생활시설' && (!!r.religion || BldgRows.isReligion('', `${r.name || ''} ${r.purpose || ''}`)),
   };
   Object.assign(b, obsoleteRule(b));
   return b;
@@ -592,13 +553,17 @@ function zoneParts(key) {
   const ps = D.parcels.filter(p => inside(p.cx, p.cy, R.pts));
   return { area: polyArea(R.pts), ps, inR: () => 1, bs: ps.flatMap(p => p.blds) };
 }
+function ghostMode() { return P.ghostMode || (P.ghostIn ? 'unknown' : 'out'); }
 function regionParcels(key) { const zp = zoneParts(key); return zp ? zp.ps : []; }
 function analyze(key) {
   const zp = zoneParts(key); if (!zp) return null;
   const { area, ps } = zp;
   const landA = p => (p.base ?? p.area) * zp.inR(p);
   const ghosts = zp.bs.filter(b => b.ghost);
-  let bs = zp.bs.filter(b => b.lic !== '신발생무허가' && (P.ghostIn || !b.ghost));
+  // 공부 없는 GIS 건물: 빼기(out) / 연도 미확인으로 넣기(unknown) / 기존무허가로 보고 노후로 넣기(old)
+  const gm = ghostMode();
+  ghosts.forEach(b => { b.lic = gm === 'old' ? '기존무허가' : '허가'; Object.assign(b, { unknown: false }, obsoleteRule(b)); });
+  let bs = zp.bs.filter(b => b.lic !== '신발생무허가' && (gm !== 'out' || !b.ghost));
   bs.forEach(b => { if (b.old === undefined) Object.assign(b, obsoleteRule(b)); });
   const N = bs.length, oldN = bs.filter(b => b.old).length, unknownN = bs.filter(b => b.unknown).length;
   const fa = bs.reduce((s, b) => s + b.floor, 0), oldFa = bs.filter(b => b.old).reduce((s, b) => s + b.floor, 0);
@@ -826,20 +791,30 @@ const INFRA = {
     // 구역 안 기존 도로(지목 '도')
     const inner = a.ps.filter(p => p.jimok === '도');
     const innerArea = inner.reduce((s, p) => s + (p.base ?? p.area) * (z.inArea[p.pnu] ?? 1), 0);
+    // 종교용지(존치·대체): 종교시설 건물이 선 필지. 법정 의무는 아니나 실무상 정비계획에서 미리 잡음
+    const Rg = D.regions[id] || {}, infO = z.infra || {}, relOff = infO.relOff || {};
+    const relAll = a.ps.filter(p => ((Rg.blds || {})[p.pnu] || []).some(b => b.religion));
+    const rel = relAll.filter(p => !relOff[p.pnu]);
+    const relLand = rel.reduce((s, p) => s + (p.base ?? p.area) * (z.inArea[p.pnu] ?? 1), 0);
+    const relArea = infO.relArea != null && infO.relArea !== '' ? num(infO.relArea) : relLand;
+    let relGeom = null;
+    if (rel.length) { try { relGeom = turf.intersect(safeUnion(rel.filter(p => p.geom).map(p => ({ type: 'Feature', properties: {}, geometry: p.geom }))), zone); } catch (er) { relGeom = null; } }
     // 2) 공원·녹지
     const legal = a.area >= 50000;
     const parkNeed = legal ? Math.max(units * 2, a.area * 0.05) : (P.parkMode === 'always' ? a.area * 0.05 : 0);
     const inf = z.infra || {};
     const parkC = inf.parkC || this.defaultCenter(zone);
-    const parkGeom = this.block(parkC, parkNeed, zone, roadGeom);
+    const avoid0 = roadGeom && relGeom ? safeUnion([roadGeom, relGeom]) : (roadGeom || relGeom);
+    const parkGeom = this.block(parkC, parkNeed, zone, avoid0);
     // 3) 학교·기타
     const schoolA = num(P.schoolArea);
     const schoolC = inf.schoolC || (() => { const [la, lo] = parkC; return [la, lo + (Math.sqrt(parkNeed || 1) + Math.sqrt(schoolA || 1)) / 2 / (Math.cos(la * Math.PI / 180) * 111320)]; })();
-    const schoolGeom = this.block(schoolC, schoolA, zone, roadGeom ? (parkGeom ? safeUnion([roadGeom, parkGeom]) : roadGeom) : parkGeom);
+    const schoolGeom = this.block(schoolC, schoolA, zone, avoid0 ? (parkGeom ? safeUnion([avoid0, parkGeom]) : avoid0) : parkGeom);
     const parkArea = parkGeom ? turf.area(parkGeom) : 0, schoolArea = schoolGeom ? turf.area(schoolGeom) : 0;
     const other = num(P.otherInfra);
-    const total = roadArea + (P.keepInnerRoads ? innerArea : 0) + parkArea + schoolArea + other;
+    const total = roadArea + (P.keepInnerRoads ? innerArea : 0) + parkArea + schoolArea + other + relArea;
     const res = {
+      relAll, rel, relLand, relArea, relGeom, relManual: infO.relArea != null && infO.relArea !== '',
       W, sideW, units, items, roadGeom, roadArea, inner, innerArea, legal, parkNeed, parkGeom, parkArea, schoolGeom, schoolArea, other, total,
       ratio: a.area ? total / a.area : 0, roadsReady: !!z.roads, edge: z.roads ? z.roads.edge : [],
     };
@@ -850,8 +825,16 @@ const INFRA = {
   draw(layer, a) {
     const pl = plan(a), inf = pl.infra; if (!inf) return;
     const c = n => cssVar(n);
-    (inf.edge || []).forEach(r => L.geoJSON({ type: 'Feature', properties: {}, geometry: r.geom }, { style: { color: c('--ink-2'), weight: 1, fillColor: c('--road'), fillOpacity: 0.6 }, interactive: true })
-      .bindTooltip(`경계 도로 ${esc(r.jibun)} · 폭 약 ${r.w}m(필지 모양으로 추정)`, { sticky: true }).addTo(layer));
+    // 구역 밖 경계 도로는 참고로 구역 둘레 15m 안만 점선 테두리로 (색은 칠하지 않음 — 제안이 아님)
+    const z0 = Z.zones[a.key], near = z0 && z0.geojson ? (() => { try { return turf.buffer(z0.geojson, 15, { units: 'meters' }); } catch (er) { return null; } })() : null;
+    (inf.edge || []).forEach(r => {
+      let g = { type: 'Feature', properties: {}, geometry: r.geom };
+      if (near) { try { g = turf.intersect(g, near) || g; } catch (er) { /* 그대로 */ } }
+      L.geoJSON(g, { style: { color: c('--ink-2'), weight: 1, dashArray: '2 4', fill: true, fillOpacity: 0 }, interactive: true })
+        .bindTooltip(`구역 밖 경계 도로(참고) ${esc(r.jibun)} · 폭 약 ${r.w}m(필지 모양으로 추정)`, { sticky: true }).addTo(layer);
+    });
+    if (inf.relGeom) L.geoJSON(inf.relGeom, { style: { color: '#7b2cbf', weight: 2, fillColor: '#7b2cbf', fillOpacity: 0.3 } })
+      .bindTooltip(`종교용지(존치·대체 검토) ${inf.rel.map(p => esc(p.jibun)).join(', ')} · ${fmt(inf.relArea)}㎡`, { sticky: true }).addTo(layer);
     inf.items.forEach(it => {
       const lyr = L.geoJSON(it.geom, { style: { color: c('--ink'), weight: 1, fillColor: c('--ink-2'), fillOpacity: it.kind === 'manual' ? 0.7 : 0.55, dashArray: it.kind === 'manual' ? null : '4 3' } })
         .bindTooltip(it.kind === 'manual' ? `직접 지정한 도로 ${fmt(it.area)}㎡ · 누르면 지정 취소` : `${it.kind === 'entry' ? '진입도로' : '주변 도로'} 확폭(제안) · ${esc(it.jibun)} 약 ${it.from}m → ${it.to}m · ${fmt(it.area)}㎡`, { sticky: true }).addTo(layer);
@@ -901,7 +884,7 @@ function loadData() {
   D.parcels.forEach(applyAccess);
   if (!D.keys.includes(S.region)) S.region = D.keys[0];
   const isMap = S.source === 'map';
-  $id('lmap').hidden = !isMap; $id('svgbox').hidden = isMap; $id('mapTools').hidden = !isMap;
+  $id('lmap').hidden = !isMap; $id('svgbox').hidden = isMap; $id('mapTools').hidden = !isMap; $id('mapSearch').hidden = !isMap;
   $id('finishBtn').hidden = true; $id('cancelBtn').hidden = true; $id('drawBtn').hidden = false;
   $id('drawHint').innerHTML = isMap
     ? '<b>구역계 그리기</b>를 누르고 지도에서 꼭짓점을 찍은 뒤 첫 점을 다시 누르면 완성됩니다. 완성하면 그 안의 필지(연속지적)·건축물(GIS건물통합정보)·토지특성·공동주택 건축물대장을 자동으로 불러옵니다. 구역계와 10% 이상 겹치는 필지를 편입 필지로 봅니다.'
@@ -1015,15 +998,15 @@ function initLeaflet() {
   layP = L.featureGroup().addTo(LM); layZ = L.featureGroup().addTo(LM); layT = L.featureGroup().addTo(LM);
   editGroup = new L.FeatureGroup().addTo(LM);
   LM.on(L.Draw.Event.CREATED, e => { if (CUT.active) { CUT.onLine(e.layer.toGeoJSON()); return; } drawH = null; $id('drawBtn').textContent = '구역계 그리기'; const gj = e.layer.toGeoJSON(); delete ZK.rough[S.region]; setZoneGeom(S.region, gj, 0, '구역계 그리기'); fitZone(S.region); ZK.checkFit(gj, '손으로 그린 구역계'); });
-  LM.on(L.Draw.Event.DRAWSTOP, () => { if (CUT.active && !CUT.pieces) { CUT.stop(); return; } drawH = null; $id('drawBtn').textContent = '구역계 그리기'; });
+  LM.on(L.Draw.Event.DRAWSTOP, () => { drawH = null; $id('drawBtn').textContent = '구역계 그리기'; });
   LM.on(L.Draw.Event.EDITED, () => { const l = editGroup.getLayers()[0]; if (l) setZoneGeom(S.region, l.toGeoJSON(), 0, '꼭짓점 고치기'); });
   LM.on('moveend', () => { const c = LM.getCenter(); Z.center = [c.lat, c.lng]; Z.zoom = LM.getZoom(); saveZ(); });
-  LM.on('click', e => { if (S.placing) { INFRA.place(S.placing, e.latlng); return; } if (ZK.picking && !drawH && !editH) ZK.pick(e.latlng); });
+  LM.on('click', e => { if (CUT.active && !CUT.pieces) return; if (S.placing) { INFRA.place(S.placing, e.latlng); return; } if (ZK.picking && !drawH && !editH) ZK.pick(e.latlng); });
   const FullBtn = L.Control.extend({ options: { position: 'topleft' }, onAdd: () => {
     const b = L.DomUtil.create('a', 'leaflet-bar lmap-btn'); b.href = '#'; b.title = '지도 크게 보기 (Esc로 닫기)'; b.textContent = '⛶';
     L.DomEvent.on(b, 'click', ev => { L.DomEvent.stop(ev); ZK.toggleFull(); }); return b; } });
   LM.addControl(new FullBtn());
-  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && $id('lmap').classList.contains('full')) ZK.toggleFull(); });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && $id('mapWrap').classList.contains('full')) ZK.toggleFull(); });
   setTimeout(() => LM.invalidateSize(), 60);
 }
 function fitZone(id) {
@@ -1104,17 +1087,19 @@ function startMapDraw() {
   $id('drawBtn').textContent = '그리기 취소';
   toast('지도에서 꼭짓점을 찍고, 첫 점을 다시 누르면 완성됩니다');
 }
+// 왼쪽 도구 막대 버튼 글자(아이콘은 그대로)
+function mtLabel(b, t) { if (!b) return; const x = b.querySelector('.mt-t'); if (x) x.textContent = t; else b.textContent = t; }
 function toggleEdit() {
   if (!LM) return;
   const b = $id('editBtn');
-  if (editH) { editH.save(); editH.disable(); editH = null; b.textContent = '꼭짓점 끌어 고치기'; b.classList.remove('on'); drawLeaflet(); return; }
+  if (editH) { editH.save(); editH.disable(); editH = null; mtLabel(b, '꼭짓점 끌기'); b.classList.remove('on'); drawLeaflet(); return; }
   if (ZK.picking) ZK.setPicking(false);
   if (!editGroup.getLayers().length) { toast('먼저 구역계를 그려 주세요'); return; }
   if (editGroup.getLayers().length > 1 || D.regions[S.region].geojson.geometry.type !== 'Polygon') { toast('여러 덩어리로 된 구역계는 다시 그려 주세요'); return; }
   editH = new L.EditToolbar.Edit(LM, { featureGroup: editGroup });
   editH.enable();
-  b.textContent = '꼭짓점 고치기 끝내기'; b.classList.add('on');
-  toast('흰 네모(꼭짓점)를 끌어 고친 뒤 꼭짓점 고치기 끝내기를 누르세요');
+  mtLabel(b, '끌기 끝내기'); b.classList.add('on');
+  toast('흰 네모(꼭짓점)를 끌어 고친 뒤 왼쪽의 끌기 끝내기를 누르세요');
 }
 function importGeoJSONText(text) {
   let j; try { j = JSON.parse(text); } catch (e) { statusMsg('GeoJSON 파일을 읽지 못했습니다.', true); return; }
@@ -1200,7 +1185,7 @@ function drawLegend() {
     access: [['var(--new)', '접도 충족'], ['var(--old)', '미충족(폭4m·4m 미만)'], ['var(--nobuild)', D.real ? '미확인·건축물 없음' : '건축물 없음'], [null, `${D.map ? '지도의' : '도면의'} 필지를 누르면 충족 → 미충족 → 자동 순으로 지정`]],
     zone: [['var(--accent-soft)', '제2종일반주거'], ['var(--warn-soft)', '제3종일반주거'], ['var(--nobuild)', '기타·미확인']],
     arch: [['var(--accent)', '개략 주동 배치'], ['var(--old)', '노후·불량(현황)']],
-    infra: [['var(--ink-2)', '도로 확폭(제안)'], ['var(--road)', '현황 도로'], ['var(--ok)', '공원·녹지(제안)'], ['var(--accent)', '학교용지(제안)']],
+    infra: [['var(--ink-2)', '도로 확폭(제안)'], ['var(--road)', '구역 안 현황 도로'], ['var(--ok)', '공원·녹지(제안)'], ['var(--accent)', '학교용지(제안)'], ['#7b2cbf', '종교용지(존치·대체)']],
   }[S.mode];
   L.innerHTML = m.map(([c, t]) => c ? `<span><i style="background:${c}"></i>${t}</span>` : `<span>${t}</span>`).join('') + `<span><svg width="26" height="8" style="vertical-align:0"><line x1="0" y1="4" x2="26" y2="4" stroke="var(--redline)" stroke-width="2" stroke-dasharray="7 2 1.2 2"/></svg> 구역계</span>`;
 }
@@ -1238,7 +1223,7 @@ function renderZone(a) {
   <div class="kpis">
     ${kpi('구역 면적', fmt(a.area) + '㎡', D.map ? '그린 구역계 면적(도로 포함)' : '구역계 폴리곤 면적(도로 포함)')}
     ${kpi('편입 필지', a.ps.length + '필지', `${D.map ? '대장 면적×편입비율' : '조서 면적'} 합 ${fmt(a.landArea)}㎡`)}
-    ${kpi('건축물', a.N + '동', `연면적 ${fmt(a.fa)}㎡` + (a.ghostN ? `<br>공부 정보 없는 GIS 건물 ${a.ghostN}동 ${P.ghostIn ? '포함(미확인으로 셈)' : '제외'}` : ''))}
+    ${kpi('건축물', a.N + '동', `연면적 ${fmt(a.fa)}㎡` + (a.ghostN ? `<br>공부 정보 없는 GIS 건물 ${a.ghostN}동 ${({ out: '제외', unknown: '포함(연도 미확인)', old: '포함(기존무허가·노후)' })[ghostMode()]}` : ''))}
     ${kpi('노후도(동수)', oldText(a), `${a.oldN} / ${a.N}동${a.unknownN ? ` · 사용승인 연도 미확인 ${a.unknownN}동` : ''}`)}
     ${kpi('노후도(연면적)', pct(a.oldFaRatio), `${fmt(a.oldFa)} / ${fmt(a.fa)}㎡`)}
     ${kpi('과소필지', pct(a.smallRatio), `분할제한면적 미만 ${a.smallN} / ${a.ps.length}필지`)}
@@ -1246,7 +1231,10 @@ function renderZone(a) {
     ${kpi('호수밀도', a.density.toFixed(1) + '동/ha', `${a.du}동 ÷ ${(a.area / 10000).toFixed(2)}ha`)}
     ${kpi('토지등소유자(추정)', fmt(a.owners) + '명', D.map ? '소유자 정보 없음: 사유지 1필지 1인, 공동주택은 세대별' + (a.needUnits ? ` · 세대수 미확인 ${a.needUnits}동` : '') : '1필지 1인, 다세대는 호수별')}
   </div>
-  ${a.ghostN ? `<div class="ghost-note"><label><input type="checkbox" id="ghostIn" ${P.ghostIn ? 'checked' : ''}> 공부 정보 없는 GIS 건물 ${a.ghostN}동도 건축물 수에 넣기</label><div class="u">GIS건물통합정보에 용도·면적·사용승인일이 모두 비어 있고 건축물대장에도 없는 건물입니다. 부속건물·가설건축물·무허가건물이거나 GIS 오류일 수 있습니다. 기존무허가건축물(1989.1.24. 당시)이면 노후도 산정에 들어가므로(영 별표1 제2호) 현장·항공사진·재산세 자료로 확인한 뒤 넣으세요. 넣으면 '연도 미확인'으로 셉니다.</div></div>` : ''}
+  ${a.ghostN ? `<div class="ghost-note"><b>공부 정보 없는 GIS 건물 ${a.ghostN}동</b> — 무허가건축물일 수 있음
+    <div class="seg" role="group" aria-label="공부 없는 건물 처리" style="margin-top:6px">
+      <button type="button" data-gm="out" aria-pressed="${ghostMode() === 'out'}">빼기</button><button type="button" data-gm="unknown" aria-pressed="${ghostMode() === 'unknown'}">넣기(연도 미확인)</button><button type="button" data-gm="old" aria-pressed="${ghostMode() === 'old'}">기존무허가로 넣기(노후)</button></div>
+    <div class="u">GIS건물통합정보에 용도·면적·사용승인일이 모두 비어 있고 건축물대장에도 없는 건물입니다. 무허가건물·부속건물·가설건축물이거나 GIS 오류일 수 있습니다. 기존무허가건축물(1989.1.24. 당시 있던 무허가건물)은 건축물로 보아 노후도에 넣고 노후로 셉니다. 그 뒤 생긴 신발생 무허가건물은 넣지 않습니다. 오래된 주거지면 대부분 기존무허가일 가능성이 높지만, 부속 창고·화장실 등이 섞이므로 무허가건축물관리대장(구청)·항공사진(1989년 전후)·재산세 과세대장으로 확인해 고르세요. 연면적 정보가 없어 연면적 노후도에는 영향이 없습니다.</div></div>` : ''}
   <h3>건축물 현황 (준공 오래된 순)</h3>
   <div class="tscroll"><table><thead><tr><th>지번</th><th>용도</th><th>구조</th><th class="r">사용승인</th><th class="r">연면적㎡</th><th>판정</th><th>근거</th><th>접도</th><th>허가</th></tr></thead><tbody>${rows || '<tr><td colspan="9">건축물이 없습니다.</td></tr>'}</tbody></table></div>
   <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" id="copyTbl">표 복사(엑셀 붙여넣기용)</button></div>
@@ -1254,7 +1242,7 @@ function renderZone(a) {
   ${D.map ? '<p class="note">자료: 필지는 브이월드 연속지적도와 토지특성(대장 면적·지목·공시지가·용도지역·도로접면), 건축물은 GIS건물통합정보이고, 공동주택은 건축물대장 표제부로 바꿔 세대수를 넣습니다(용도 옆 \'대장\' 표시).</p>' : ''}
   <p class="note">노후·불량 판정은 인천 정비조례 제3조②를 사용승인 연도에 적용한 값입니다.${D.real ? ' 공동주택의 지하층이 주거용인지는 대장만으로 알 수 없어 RC 30년으로 보고, 지하층이 있으면 근거에 표시합니다. 호수밀도의 "세대수가 가장 많은 층"은 세대수 ÷ 지상층수로 어림합니다.' : ''}</p>`;
   side.querySelectorAll('button.acc').forEach(bt => bt.onclick = () => cycleAccess(+bt.dataset.pid));
-  const gi = document.getElementById('ghostIn'); if (gi) gi.onchange = () => { P.ghostIn = gi.checked; saveP(); render(); };
+  side.querySelectorAll('[data-gm]').forEach(b => b.onclick = () => { P.ghostMode = b.dataset.gm; P.ghostIn = P.ghostMode !== 'out'; saveP(); render(); });
   document.getElementById('copyTbl').onclick = async () => {
     const head = '지번\t용도\t구조\t사용승인\t연면적\t판정\t근거\t접도\t허가';
     const body = a.bs.map(b => { const p = b.pid != null ? D.parcels[b.pid] : null; return [p ? p.jibun : '', b.use, b.struct, b.year || '', b.floor, b.unknown ? '확인' : b.old ? '노후' : '비노후', b.why, !p || p.access == null ? '미확인' : p.access ? '충족' : '미충족', b.lic].join('\t'); }).join('\n');
@@ -1332,12 +1320,16 @@ function infraSection(a, pl) {
   rows.push(['공원·녹지', inf.parkArea, inf.legal ? `도시공원 및 녹지 등에 관한 법률 시행규칙 별표2 제4호 — 정비계획 5만㎡ 이상: 세대당 2㎡(${fmt(pl.units * 2)}㎡)와 부지 5%(${fmt(a.area * 0.05)}㎡) 중 큰 면적 ${fmt(inf.parkNeed)}㎡` + (inf.parkArea < inf.parkNeed * 0.95 ? ' · <b class="warn">구역 경계에 걸려 모자람 — 위치를 옮기세요</b>' : '') : (P.parkMode === 'always' ? `5만㎡ 미만이라 법정 의무는 없으나 부지 5%로 제안(${fmt(inf.parkNeed)}㎡)` : `구역 ${fmt(a.area)}㎡ < 5만㎡ — 별표2 의무 없음. 2030 인천 정비기본계획 공원·녹지 기준은 고시문 대조 필요`)]);
   if (num(P.schoolArea)) rows.push(['학교용지', inf.schoolArea, '교육청 협의로 정함(입력값)']);
   if (inf.other) rows.push(['기타 시설', inf.other, '공공청사·주차장·공공공지 등(입력값)']);
+  if (inf.relAll.length || inf.relManual) {
+    const chips = inf.relAll.map(p => `<label class="rel-chip"><input type="checkbox" data-rel="${esc(p.pnu)}" ${inf.rel.includes(p) ? 'checked' : ''}> ${esc(p.jibun)} (${fmt((p.base ?? p.area))}㎡)</label>`).join(' ');
+    rows.push([`종교용지(존치·대체) ${inf.rel.length}필지`, inf.relArea, `구역 안 종교시설(교회 등) 부지. 법정 의무는 없으나 실무상 정비계획에서 존치하거나 구역 안 대체부지로 잡아 공동주택 획지에서 뺍니다. 근생 건물의 한 층을 쓰는 교회는 상가 분양·보상 대상이라 넣지 않습니다.<br>${chips || '자동으로 찾은 필지 없음'}${inf.relManual ? ` · <b>면적 직접 입력(${fmt(inf.relArea)}㎡)</b>` : ''}`]);
+  }
   rows.push([`구역 안 기존 도로 ${inf.inner.length}필지`, inf.innerArea, P.keepInnerRoads ? '존치하여 기반시설로 셈' : '폐도하여 획지에 넣음(존치하려면 아래에서 선택)']);
   return head + `
   <p class="hint">지도의 색 구분 <b>기반시설</b>에 위치를 그렸습니다. 공원·학교는 아래 버튼을 누른 뒤 지도에서 자리를 누르면 옮겨집니다.</p>
   <div class="tscroll"><table><thead><tr><th>구분</th><th class="r">면적㎡</th><th>근거·설명</th></tr></thead><tbody>
   ${rows.map(r => `<tr><td>${r[0]}</td><td class="r">${fmt(r[1])}</td><td class="wrap">${r[2]}</td></tr>`).join('')}
-  <tr class="sum"><td><b>제안 계</b></td><td class="r"><b>${fmt(inf.total)}</b></td><td>구역의 ${(inf.ratio * 100).toFixed(1)}%</td></tr></tbody></table></div>
+  <tr class="sum"><td><b>제안 계${inf.relArea ? '<br><span class="u">(기반시설 + 종교용지)</span>' : ''}</b></td><td class="r"><b>${fmt(inf.total)}</b></td><td>구역의 ${(inf.ratio * 100).toFixed(1)}%</td></tr></tbody></table></div>
   <div class="zk-btns" style="margin-top:8px">
     <button type="button" class="btn ghost sm" id="placePark">공원 위치 지도에서 정하기</button>
     ${num(P.schoolArea) ? '<button type="button" class="btn ghost sm" id="placeSchool">학교 위치 지도에서 정하기</button>' : ''}
@@ -1347,6 +1339,7 @@ function infraSection(a, pl) {
     ${field('sideRoadW', '주변 도로 최소 폭(제안)', P.sideRoadW, 'm · 진입도로는 세대수 기준으로 자동', 'step=0.5')}
     ${field('schoolArea', '학교용지 면적', P.schoolArea, '㎡ · 교육청 협의 전이면 0', 'step=100')}
     ${field('otherInfra', '기타 기반시설 면적', P.otherInfra, '㎡ · 공공청사·주차장·공공공지 등', 'step=100')}
+    <div class="field"><label for="relArea">종교용지 면적</label><input id="relArea" inputmode="decimal" value="${inf.relManual ? esc(String(Z.zones[a.key].infra.relArea)) : ''}" placeholder="자동 ${fmt(inf.relLand)}㎡"><span class="u">㎡ · 비우면 위 필지 대지면적 합. 대체부지 협의 면적이 있으면 넣으세요</span></div>
     <div class="field"><label for="parkMode">5만㎡ 미만일 때 공원·녹지</label><select id="parkMode"><option value="legal">법정 의무만(없으면 0)</option><option value="always">부지 5% 제안</option></select></div>
   </div>
   <label class="zk-opts"><input type="checkbox" id="keepInner" ${P.keepInnerRoads ? 'checked' : ''}> 구역 안 기존 도로를 존치(기반시설로 셈)</label>
@@ -1359,6 +1352,9 @@ function bindInfra() {
   on('placeSchool', () => { S.placing = 'school'; $id('lmap').classList.add('picking'); toast('지도에서 학교용지를 둘 자리를 누르세요'); });
   on('refetchRoads', () => { const z = Z.zones[S.region]; if (z) { delete z.roads; saveZ(); INFRA.memo = {}; INFRA.fetchRoads(S.region); render(); } });
   const pm = document.getElementById('parkMode'); if (pm) { pm.value = P.parkMode; pm.onchange = () => { P.parkMode = pm.value; saveP(); INFRA.memo = {}; render(); }; }
+  const zi = () => { const z = Z.zones[S.region]; if (!z) return null; z.infra = z.infra || {}; return z.infra; };
+  side.querySelectorAll('[data-rel]').forEach(cb => cb.onchange = () => { const inf = zi(); if (!inf) return; inf.relOff = inf.relOff || {}; if (cb.checked) delete inf.relOff[cb.dataset.rel]; else inf.relOff[cb.dataset.rel] = true; saveZ(); INFRA.memo = {}; render(); });
+  const ra = document.getElementById('relArea'); if (ra) ra.onchange = () => { const inf = zi(); if (!inf) return; const v = ra.value.trim(); if (v === '') delete inf.relArea; else inf.relArea = num(v); saveZ(); INFRA.memo = {}; render(); };
   const ki = document.getElementById('keepInner'); if (ki) ki.onchange = () => { P.keepInnerRoads = ki.checked; saveP(); INFRA.memo = {}; render(); };
 }
 function renderArch(a) {
@@ -1466,7 +1462,7 @@ const ZK = {
   },
   setPicking(on) {
     this.picking = on;
-    const b = $id('pickBtn'); b.textContent = on ? '필지 고치기 끝내기' : '구역계 고치기 (필지 넣고 빼기)'; b.classList.toggle('on', on);
+    const b = $id('pickBtn'); mtLabel(b, on ? '넣고 빼기 끝내기' : '필지 넣고 빼기'); b.classList.toggle('on', on);
     $id('lmap').classList.toggle('picking', on);
     if (!on && LM) LM.closePopup();
     if (on) toast('지도에서 필지를 누르면 넣을지 뺄지 고를 수 있습니다');
@@ -1489,25 +1485,26 @@ const ZK = {
         this.msg(`<b>작은 필지(${esc(no)}, ${ZoneKit.f1(fa)}㎡)라 크게 확대했습니다.</b> 빨간 점선이 맞는 필지면 다시 눌러 주세요.`);
         return;
       }
-      // 필지 정보와 함께 '넣기 / 빼기'를 고르게 함
-      const ratio = ZoneKit.inRatio(R.geojson, f), pr = Math.round(ratio * 100);
+      // 필지 정보와 함께 '넣기 / 빼기'를 고르게 함 (ZoneUI.choose — 사업성 검토와 같은 창)
+      //  비율 대신 면적으로 판단: 구역 밖으로 1㎡ 넘게 나간 필지는 '걸침'으로 보고 넣기(나머지까지 채우기)도 할 수 있게
+      const ratio = ZoneKit.inRatio(R.geojson, f), inA = fa * ratio, outA = fa - inA;
       const jm = splitJibun(f.properties.jibun).jimok;
-      const now = !R.geojson ? '구역계가 아직 없습니다' : ratio >= 0.98 ? '지금 구역 안' : ratio <= 0.02 ? '지금 구역 밖' : `지금 ${pr}%만 구역 안 (경계에 걸침)`;
-      const mark = L.geoJSON(f, { style: { color: cssVar('--accent'), weight: 3, fillOpacity: 0.12 }, interactive: false }).addTo(LM);
-      const box = document.createElement('div');
-      box.className = 'pick-pop';
-      box.innerHTML = `<div><b>${esc(no)}</b> ${esc(jm)} · ${ZoneKit.f1(fa)}㎡</div><div class="u">${now}</div>
-        <div class="pick-btns"><button type="button" class="btn sm" data-act="in" ${ratio >= 0.98 ? 'disabled' : ''}>구역에 넣기</button><button type="button" class="btn ghost sm" data-act="out" ${ratio <= 0.02 ? 'disabled' : ''}>구역에서 빼기</button></div>`;
-      const pop = L.popup({ closeButton: true, autoPan: true, maxWidth: 260 }).setLatLng(latlng).setContent(box).openOn(LM);
-      LM.once('popupclose', () => mark.remove());
-      box.querySelectorAll('[data-act]').forEach(btn => btn.onclick = () => {
-        const add = btn.dataset.act === 'in';
-        LM.closePopup(pop);
-        const next = ZoneKit.toggle(D.regions[id].geojson, f, add);
-        setZoneGeom(id, next, 2500, `${no} 필지 ${add ? '넣기' : '빼기'}`);
-        this.say(`${no} 필지를 ${id}안 구역계${add ? '에 넣었습니다' : '에서 뺐습니다'}. 고치기를 멈추면 판정을 새로 고칩니다.`);
-      });
+      const full = R.geojson && outA <= 1, none = !R.geojson || inA <= 1;
+      const now = !R.geojson ? '구역계가 아직 없습니다' : full ? '지금 구역 안' : none ? '지금 구역 밖'
+        : `경계에 걸침 · 구역 안 ${ZoneKit.f1(inA)}㎡ / 밖 ${ZoneKit.f1(outA)}㎡ (${Math.round(ratio * 100)}% 편입)`;
       this.say(`${no} 필지를 골랐습니다. 넣을지 뺄지 선택해 주세요.`);
+      const act = await ZoneUI.choose(LM, latlng, f, {
+        title: `${no} ${jm} · ${ZoneKit.f1(fa)}㎡`, sub: now, color: cssVar('--accent'),
+        canIn: !full, canOut: !none,
+        inLabel: !none && !full ? '필지 전체 넣기' : '구역에 넣기', outLabel: !none && !full ? '걸친 부분까지 빼기' : '구역에서 빼기',
+      });
+      if (!act) { this.say(`${no} 필지: 그대로 두었습니다.`); return; }
+      const add = act === 'in';
+      const next = ZoneKit.toggle(D.regions[id].geojson, f, add);
+      setZoneGeom(id, next, 2500, `${no} 필지 ${add ? '넣기' : '빼기'}`);
+      this.say(`${no} 필지를 ${id}안 구역계${add ? '에 넣었습니다' : '에서 뺐습니다'}. 고치기를 멈추면 판정을 새로 고칩니다.`);
+      return;
+
     } catch (e) { this.say('필지 조회에 실패했습니다: ' + e.message); }
   },
   // 고른 필지 → 구역계 (도로 잇기·갇힌 필지·자투리 정리) → 지금 안에 넣고 공부 조회
@@ -1599,7 +1596,7 @@ const ZK = {
     this.say(`${f.name}에서 지번 ${list.length}개를 읽었습니다. 기준 동을 확인하고 지번으로 구역 만들기를 누르세요.`);
   },
   toggleFull() {
-    const m = $id('lmap'); m.classList.toggle('full');
+    const m = $id('mapWrap'); m.classList.toggle('full');
     document.body.style.overflow = m.classList.contains('full') ? 'hidden' : '';
     setTimeout(() => LM && LM.invalidateSize(), 60);
   },
@@ -1615,17 +1612,44 @@ const CUT = {
     if (drawH || editH) { toast('그리기·고치기를 먼저 마쳐 주세요'); return; }
     if (ZK.picking) ZK.setPicking(false);
     this.active = true; this.pieces = null;
-    $id('cutBtn').textContent = '자르기 취소'; $id('cutBtn').classList.add('on');
-    this.handler = new L.Draw.Polyline(LM, { shapeOptions: { color: cssVar('--redline'), weight: 3, dashArray: '6 4' } });
-    this.handler.enable();
-    statusMsg(`${S.region}안: 구역계를 가로지르는 선을 그으세요. 마지막 점을 다시 누르면 선이 끝납니다.`);
+    mtLabel($id('cutBtn'), '자르기 그만두기'); $id('cutBtn').classList.add('on');
+    // 필지 꼭짓점·구역 경계에 붙는 선 긋기 (ZoneUI.lineTool — 공통)
+    const id = S.region;
+    this.handler = ZoneUI.lineTool(LM, {
+      color: cssVar('--redline'),
+      features: () => {
+        const fs = [R.geojson];
+        Object.keys(R.inArea || {}).forEach(k => { const p = D.byPnu.get(k); if (p && p.geom) fs.push({ type: 'Feature', properties: {}, geometry: p.geom }); });
+        const z = Z.zones[id]; if (z && z.roads) z.roads.edge.forEach(r => fs.push({ type: 'Feature', properties: {}, geometry: r.geom }));
+        const nb = this.near[id]; if (nb && nb.key === this.zoneKey(R)) nb.feats.forEach(f => fs.push(f));
+        return fs;
+      },
+      say: t => statusMsg(`${id}안 자르기: ${t}`),
+      onDone: line => this.onLine(line),
+      onCancel: () => { this.stop(); statusMsg(''); },
+    });
+    this.loadNear(id);
+  },
+  // 맞은편 도로 필지까지 붙도록 구역 둘레 60m 안 필지 경계를 불러 둠(안별로 한 번)
+  near: {},
+  zoneKey(R) { return JSON.stringify(turf.bbox(R.geojson)); },
+  async loadNear(id) {
+    const R = D.regions[id], key = this.zoneKey(R);
+    if (!VWorld.enabled || (this.near[id] && this.near[id].key === key)) return;
+    const [x0, y0, x1, y1] = turf.bbox(R.geojson), e = 60 / 88000, n = 60 / 111000;
+    try {
+      statusMsg(`${id}안 자르기: 맞은편 필지 경계 불러오는 중…`);
+      const fs = await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${x0 - e},${y0 - n},${x1 + e},${y1 + n})`, 20);
+      this.near[id] = { key, feats: fs.map(f => ({ type: 'Feature', properties: {}, geometry: f.geometry })) };
+      if (this.active && this.handler && S.region === id) { this.handler.reload(); statusMsg(`${id}안 자르기: 둘레 필지 ${fs.length}개 경계에도 붙습니다. 끝점(□)·중간점(△)·수직점(⊥)·근처점(⧗)`); }
+    } catch (er) { if (this.active) statusMsg(`${id}안 자르기: 둘레 필지를 못 불러와 구역 안 필지에만 붙습니다.`, true); }
   },
   stop() {
     this.active = false; this.pieces = null;
-    if (this.handler) { try { this.handler.disable(); } catch (e) { /* 무시 */ } this.handler = null; }
+    if (this.handler) { try { this.handler.stop(); } catch (e) { /* 무시 */ } this.handler = null; }
     if (this.layer) { this.layer.remove(); this.layer = null; }
     LM && LM.closePopup();
-    const b = $id('cutBtn'); if (b) { b.textContent = '구역계 자르기'; b.classList.remove('on'); }
+    const b = $id('cutBtn'); if (b) { mtLabel(b, '구역계 자르기'); b.classList.remove('on'); }
   },
   onLine(line) {
     const id = S.region, R = D.regions[id];

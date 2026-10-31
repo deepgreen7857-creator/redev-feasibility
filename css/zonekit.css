@@ -1,0 +1,33 @@
+/* 구역계 만들기 공통 화면 (js/zonekit.js의 ZoneUI) — 사업성 검토·정비계획 검토가 같이 씀 */
+.zk-drawing,.zk-drawing .leaflet-interactive{cursor:crosshair!important}
+.leaflet-container path.leaflet-interactive:focus,.leaflet-container .leaflet-interactive:focus{outline:none}
+/* 넣기/빼기 선택 창 */
+.zk-pop{font-size:13px;display:flex;flex-direction:column;gap:4px}
+.zk-pop-sub{color:#555;font-size:12px}
+.zk-pop-btns{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}
+.zk-pop-btns button{font:inherit;font-size:12px;padding:4px 9px;border-radius:5px;border:1px solid #1f5f8b;background:#1f5f8b;color:#fff;cursor:pointer}
+.zk-pop-btns button[data-act="out"]{background:#fff;color:#1f5f8b}
+.zk-pop-btns button:disabled{opacity:.4;cursor:not-allowed}
+/* 객체 스냅 표시 */
+.zk-snap{pointer-events:none}
+.zk-snap .zk-snap-sym{position:absolute;left:0;top:0;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:700 17px/1 system-ui,sans-serif;color:#e67700;text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #fff}
+.zk-snap .zk-snap-name{position:absolute;left:22px;top:-14px;white-space:nowrap;font:600 11px/1.3 system-ui,sans-serif;color:#fff;background:#e67700;border-radius:3px;padding:1px 5px}
+.zk-osnap{display:flex;gap:3px;align-items:center;flex-wrap:wrap;background:rgba(255,255,255,.94);border:1px solid #bbb;border-radius:6px;padding:4px 6px;font:12px/1.2 system-ui,sans-serif;color:#222;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+.zk-osnap b{margin-right:2px}
+.zk-osnap button{font:inherit;padding:3px 7px;border:1px solid #bbb;border-radius:4px;background:#fff;color:#888;cursor:pointer}
+.zk-osnap button[aria-pressed="true"]{background:#fff4e6;border-color:#e67700;color:#a34e00;font-weight:600}
+/* 진행 안내 */
+.zk-prog,.zk-prog-t,.zk-prog-bar,.zk-prog-s{display:block}
+.zk-prog{border:1px solid #1f5f8b;background:#eef5fa;color:#222;border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px}
+.zk-prog .zk-prog-t{display:flex;align-items:center;gap:8px;color:#1f5f8b}
+.zk-prog-t b{color:#222}
+.zk-prog-bar{height:6px;margin-top:6px;background:#fff;border-radius:3px;overflow:hidden}
+.zk-prog-bar span{display:block;height:100%;background:#1f5f8b;transition:width .3s}
+.zk-prog-s{font-size:12px;color:#555;margin-top:4px}
+.zk-spin{width:13px;height:13px;border:2px solid #1f5f8b;border-right-color:transparent;border-radius:50%;flex:none;animation:zk-spin .8s linear infinite}
+@keyframes zk-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.zk-spin{animation:none}}
+/* 실행 취소 버튼(지도 위) */
+.zk-undo{display:flex;background:#fff;border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.zk-undo button{font:13px/1 system-ui,sans-serif;padding:6px 9px;border:0;background:#fff;color:#222;cursor:pointer;border-radius:4px}
+.zk-undo button:disabled{color:#bbb;cursor:not-allowed}
