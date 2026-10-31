@@ -909,12 +909,37 @@ const INFRA = {
         const grow = (g, k) => (add[k] ? safeUnion([g, ...add[k]]) : g);
         parkGeom = parkGeom && grow(parkGeom, 'park'); schoolGeom = schoolGeom && grow(schoolGeom, 'school'); if (relC && relGeom) relGeom = grow(relGeom, 'rel');
       } }
-    if (relC && relGeom) relArea = turf.area(relGeom);
+    // 남는 땅 = 공동주택 획지(구역 − 도로 확폭·지정 도로 − 공원·학교·종교용지 − 존치하는 기존 기반시설). 떨어진 덩어리마다 획지 번호
+    let lots = [];
+    try {
+      const used = [roadGeom, parkGeom, schoolGeom, relGeom].filter(Boolean);
+      if (P.keepInnerRoads) inner.filter(p => p.geom).forEach(p => used.push({ type: 'Feature', properties: {}, geometry: p.geom }));
+      const rest = used.length ? turf.difference(zone, safeUnion(used)) : zone;
+      if (rest) {
+        const cs = rest.geometry.type === 'Polygon' ? [rest.geometry.coordinates] : rest.geometry.coordinates;
+        lots = cs.map(c => turf.polygon(c)).map(g => ({ geom: g, area: turf.area(g) })).filter(l => l.area >= 5).sort((x, y) => y.area - x.area)
+          .map((l, i) => ({ ...l, no: i + 1, small: l.area < 1000 }));
+      }
+    } catch (er) { lots = []; }
+    // 지도에서 '획지 붙이기'로 고른 땅을 공원·학교·종교용지에 합침 (z.infra.addTo: [{ kind, pt:[lat,lng] }])
+    const merged = {};
+    (infO.addTo || []).forEach(m => {
+      const l = lots.find(x => { try { return turf.booleanPointInPolygon(turf.point([m.pt[1], m.pt[0]]), x.geom); } catch (er) { return false; } });
+      if (!l) return;
+      const tgt = { park: parkGeom, school: schoolGeom, rel: relGeom }[m.kind];
+      if (!tgt) return;
+      const g = safeUnion([tgt, l.geom]);
+      if (m.kind === 'park') parkGeom = g; else if (m.kind === 'school') schoolGeom = g; else relGeom = g;
+      merged[m.kind] = (merged[m.kind] || 0) + l.area;
+      lots = lots.filter(x => x !== l);
+    });
+    lots = lots.map((l, i) => ({ ...l, no: i + 1 }));
+    if ((relC || merged.rel) && relGeom) relArea = turf.area(relGeom);
     const parkArea = parkGeom ? turf.area(parkGeom) : 0, schoolArea = schoolGeom ? turf.area(schoolGeom) : 0;
     const other = num(P.otherInfra);
     const total = roadArea + (P.keepInnerRoads ? innerArea : 0) + parkArea + schoolArea + other + relArea;
     const res = {
-      absorbed, parkC, schoolC, relC, relCenter: relGeom ? (() => { const c = turf.centroid(relGeom).geometry.coordinates; return [c[1], c[0]]; })() : null,
+      lots, merged, absorbed, parkC, schoolC, relC, relCenter: relGeom ? (() => { const c = turf.centroid(relGeom).geometry.coordinates; return [c[1], c[0]]; })() : null,
       relAll, rel, relLand, relArea, relGeom, relManual: szRel.mode !== 'auto', szPark, szSchool, szRel, parkLegal,
       W, sideW, units, items, roadGeom, roadArea, inner, innerArea, legal, parkNeed, parkGeom, parkArea, schoolGeom, schoolArea, other, total,
       ratio: a.area ? total / a.area : 0, roadsReady: !!z.roads, edge: z.roads ? z.roads.edge : [],
@@ -926,6 +951,27 @@ const INFRA = {
   draw(layer, a) {
     const pl = plan(a), inf = pl.infra; if (!inf) return;
     const c = n => cssVar(n);
+    // 공동주택 획지(남는 땅) — 맨 아래에 옅게 칠하고 번호·면적 표시
+    (inf.lots || []).forEach(l => {
+      const g = L.geoJSON(l.geom, { style: { color: '#b08900', weight: 1.5, fillColor: l.small ? '#e8590c' : '#f2c94c', fillOpacity: l.small ? 0.35 : 0.28 }, interactive: true })
+        .bindTooltip(`획지 ${l.no} · 공동주택용지 ${fmt(l.area)}㎡${l.small ? ' — 1,000㎡ 미만이라 단독 개발이 어려움' : ''} · 누르면 옆 시설에 붙이기`, { sticky: true }).addTo(layer);
+      g.on('click', ev => {
+        if (CUT.active || ZK.picking || drawH || editH || S.placing) return;
+        L.DomEvent.stop(ev);
+        const kinds = [['rel', '종교용지', inf.relGeom], ['park', '공원·녹지', inf.parkGeom], ['school', '학교용지', inf.schoolGeom]].filter(k => k[2]);
+        const box = document.createElement('div'); box.className = 'zk-pop';
+        box.innerHTML = `<div><b>획지 ${l.no}</b> · ${fmt(l.area)}㎡</div><div class="zk-pop-sub">이 땅을 어디에 넣을까요?</div><div class="zk-pop-btns">${kinds.map(k => `<button type="button" data-k="${k[0]}">${k[1]}에 붙이기</button>`).join('')}<button type="button" data-act="out" data-k="">공동주택 획지로 두기</button></div>`;
+        const pop = L.popup({ maxWidth: 300 }).setLatLng(ev.latlng).setContent(box).openOn(LM);
+        box.querySelectorAll('button').forEach(b => b.onclick = () => {
+          LM.closePopup(pop);
+          if (!b.dataset.k) return;
+          const z = Z.zones[S.region]; z.infra = z.infra || {}; z.infra.addTo = z.infra.addTo || [];
+          z.infra.addTo.push({ kind: b.dataset.k, pt: [ev.latlng.lat, ev.latlng.lng] });
+          saveZ(); INFRA.memo = {}; render(); toast(`획지 ${l.no}(${fmt(l.area)}㎡)를 붙였습니다`);
+        });
+      });
+      if (l.area >= 300) { try { const pt = turf.pointOnFeature(l.geom).geometry.coordinates; L.tooltip({ permanent: true, direction: 'center', className: 'lot-label' }).setLatLng([pt[1], pt[0]]).setContent(`획지${l.no}<br>${fmt(l.area)}㎡`).addTo(layer); } catch (er) { /* 무시 */ } }
+    });
     // 구역 밖 경계 도로는 참고로 구역 둘레 15m 안만 점선 테두리로 (색은 칠하지 않음 — 제안이 아님)
     const z0 = Z.zones[a.key], near = z0 && z0.geojson ? (() => { try { return turf.buffer(z0.geojson, 15, { units: 'meters' }); } catch (er) { return null; } })() : null;
     (inf.edge || []).forEach(r => {
@@ -976,6 +1022,8 @@ const INFRA = {
     const z = Z.zones[S.region]; if (!z) return;
     z.infra = z.infra || {};
     z.infra[{ park: 'parkC', school: 'schoolC', religion: 'relC' }[kind]] = [latlng.lat, latlng.lng];
+    // 시설을 옮기면 그 시설에 붙였던 획지는 풀어 줌(자리가 바뀌어 다른 땅이 붙지 않게)
+    if (z.infra.addTo) z.infra.addTo = z.infra.addTo.filter(m => m.kind !== { park: 'park', school: 'school', religion: 'rel' }[kind]);
     saveZ(); this.memo = {};
     S.placing = null; $id('lmap').classList.remove('picking');
     toast(`${{ park: '공원·녹지', school: '학교용지', religion: '종교용지(대체부지)' }[kind]} 위치를 옮겼습니다`);
@@ -1308,7 +1356,7 @@ function drawLegend() {
     access: [['var(--new)', '접도 충족'], ['var(--old)', '미충족(폭4m·4m 미만)'], ['var(--nobuild)', D.real ? '미확인·건축물 없음' : '건축물 없음'], [null, `${D.map ? '지도의' : '도면의'} 필지를 누르면 충족 → 미충족 → 자동 순으로 지정`]],
     zone: [['var(--accent-soft)', '제2종일반주거'], ['var(--warn-soft)', '제3종일반주거'], ['var(--nobuild)', '기타·미확인']],
     arch: [['var(--accent)', '개략 주동 배치'], ['var(--old)', '노후·불량(현황)']],
-    infra: [['var(--ink-2)', '도로 확폭(제안)'], ['var(--road)', '구역 안 현황 도로'], ['var(--ok)', '공원·녹지(제안)'], ['var(--accent)', '학교용지(제안)'], ['#7b2cbf', '종교용지(존치·대체)']],
+    infra: [['var(--ink-2)', '도로 확폭(제안)'], ['var(--road)', '구역 안 현황 도로'], ['var(--ok)', '공원·녹지(제안)'], ['var(--accent)', '학교용지(제안)'], ['#7b2cbf', '종교용지(존치·대체)'], ['#f2c94c', '공동주택 획지(남는 땅)']],
   }[S.mode];
   L.innerHTML = m.map(([c, t]) => c ? `<span><i style="background:${c}"></i>${t}</span>` : `<span>${t}</span>`).join('') + `<span><svg width="26" height="8" style="vertical-align:0"><line x1="0" y1="4" x2="26" y2="4" stroke="var(--redline)" stroke-width="2" stroke-dasharray="7 2 1.2 2"/></svg> 구역계</span>`;
 }
@@ -1462,6 +1510,8 @@ function infraSection(a, pl) {
   ${(() => { const newA = inf.roadArea + inf.parkArea + inf.schoolArea + inf.other, oldA = P.keepInnerRoads ? 0 : inf.innerArea;
       return `<tr><td>신설 정비기반시설<br><span class="u">준공 시 국가·지자체에 무상귀속</span></td><td class="r">${fmt(newA)}</td><td class="wrap">도로 확폭·직접 지정한 도로·공원·학교·기타. 사업시행자가 설치해 국가·지자체에 무상귀속(도정법 제97조②). 구역 안 새 도로는 ✂ 구역계 자르기로 그어 '도로로 지정'하세요.</td></tr>
       <tr><td>용도폐지 기존 기반시설<br><span class="u">무상양도 대상</span></td><td class="r">${fmt(oldA)}</td><td class="wrap">${oldA ? `신설 ${fmt(newA)}㎡ 대비 ${newA ? (oldA / newA * 100).toFixed(0) : '–'}%(면적 기준). 실제 양도 범위는 용도폐지 시설의 평가금액과 신설 시설 설치비용을 비교해 정함` : '없음'}</td></tr>`; })()}
+  ${Object.keys(inf.merged || {}).length ? `<tr><td>획지 붙이기</td><td class="r">${fmt(Object.values(inf.merged).reduce((a2, b2) => a2 + b2, 0))}</td><td class="wrap">${Object.entries(inf.merged).map(([k, v]) => `${{ park: '공원·녹지', school: '학교용지', rel: '종교용지' }[k]}에 ${fmt(v)}㎡`).join(' · ')} (위 면적에 포함) <button type="button" class="btn ghost sm" id="undoMerge">붙인 것 모두 되돌리기</button></td></tr>` : ''}
+  ${(inf.lots || []).length ? `<tr><td>공동주택 획지 ${inf.lots.length}개<br><span class="u">남는 땅</span></td><td class="r">${fmt(inf.lots.reduce((s2, l) => s2 + l.area, 0))}</td><td class="wrap">${inf.lots.map(l => `획지${l.no} ${fmt(l.area)}㎡${l.small ? '(<b class="warn">작음</b>)' : ''}`).join(' · ')}${inf.lots.some(l => l.small) ? '<br>1,000㎡ 미만 획지는 공동주택 단독 개발이 어려우니, 지도에서 그 획지를 눌러 옆 종교용지·공원·학교에 붙이거나 시설 위치를 옮기세요.' : ''}</td></tr>` : ''}
   <tr class="sum"><td><b>제안 계${inf.relArea ? '<br><span class="u">(기반시설 + 종교용지)</span>' : ''}</b></td><td class="r"><b>${fmt(inf.total)}</b></td><td>구역의 ${(inf.ratio * 100).toFixed(1)}%</td></tr></tbody></table></div>
   <div class="zk-btns" style="margin-top:8px">
     <button type="button" class="btn ghost sm" id="placePark">공원 위치 지도에서 정하기</button>
@@ -1496,6 +1546,7 @@ function bindInfra() {
   on('refetchRoads', () => { const z = Z.zones[S.region]; if (z) { delete z.roads; saveZ(); INFRA.memo = {}; INFRA.fetchRoads(S.region); render(); } });
   const pm = document.getElementById('parkMode'); if (pm) { pm.value = P.parkMode; pm.onchange = () => { P.parkMode = pm.value; saveP(); INFRA.memo = {}; render(); }; }
   const zi = () => { const z = Z.zones[S.region]; if (!z) return null; z.infra = z.infra || {}; return z.infra; };
+  on('undoMerge', () => { const z = Z.zones[S.region]; if (z && z.infra) { delete z.infra.addTo; saveZ(); INFRA.memo = {}; render(); toast('붙인 획지를 되돌렸습니다'); } });
   side.querySelectorAll('[data-relmode]').forEach(b => b.onclick = () => {
     const inf = zi(); if (!inf) return;
     if (b.dataset.relmode === 'keep') delete inf.relC;
