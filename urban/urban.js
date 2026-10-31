@@ -798,7 +798,9 @@ const INFRA = {
     const relLand = rel.reduce((s, p) => s + (p.base ?? p.area) * (z.inArea[p.pnu] ?? 1), 0);
     const relArea = infO.relArea != null && infO.relArea !== '' ? num(infO.relArea) : relLand;
     let relGeom = null;
-    if (rel.length) { try { relGeom = turf.intersect(safeUnion(rel.filter(p => p.geom).map(p => ({ type: 'Feature', properties: {}, geometry: p.geom }))), zone); } catch (er) { relGeom = null; } }
+    const relC = infO.relC || null;   // 있으면 대체부지(그 자리에 종교용지 면적만큼), 없으면 현 위치 존치(필지 그대로)
+    if (relC && relArea > 0) relGeom = this.block(relC, relArea, zone, roadGeom);
+    else if (rel.length) { try { relGeom = turf.intersect(safeUnion(rel.filter(p => p.geom).map(p => ({ type: 'Feature', properties: {}, geometry: p.geom }))), zone); } catch (er) { relGeom = null; } }
     // 2) 공원·녹지
     const legal = a.area >= 50000;
     const parkNeed = legal ? Math.max(units * 2, a.area * 0.05) : (P.parkMode === 'always' ? a.area * 0.05 : 0);
@@ -814,6 +816,7 @@ const INFRA = {
     const other = num(P.otherInfra);
     const total = roadArea + (P.keepInnerRoads ? innerArea : 0) + parkArea + schoolArea + other + relArea;
     const res = {
+      parkC, schoolC, relC, relCenter: relGeom ? (() => { const c = turf.centroid(relGeom).geometry.coordinates; return [c[1], c[0]]; })() : null,
       relAll, rel, relLand, relArea, relGeom, relManual: infO.relArea != null && infO.relArea !== '',
       W, sideW, units, items, roadGeom, roadArea, inner, innerArea, legal, parkNeed, parkGeom, parkArea, schoolGeom, schoolArea, other, total,
       ratio: a.area ? total / a.area : 0, roadsReady: !!z.roads, edge: z.roads ? z.roads.edge : [],
@@ -833,8 +836,8 @@ const INFRA = {
       L.geoJSON(g, { style: { color: c('--ink-2'), weight: 1, dashArray: '2 4', fill: true, fillOpacity: 0 }, interactive: true })
         .bindTooltip(`구역 밖 경계 도로(참고) ${esc(r.jibun)} · 폭 약 ${r.w}m(필지 모양으로 추정)`, { sticky: true }).addTo(layer);
     });
-    if (inf.relGeom) L.geoJSON(inf.relGeom, { style: { color: '#7b2cbf', weight: 2, fillColor: '#7b2cbf', fillOpacity: 0.3 } })
-      .bindTooltip(`종교용지(존치·대체 검토) ${inf.rel.map(p => esc(p.jibun)).join(', ')} · ${fmt(inf.relArea)}㎡`, { sticky: true }).addTo(layer);
+    if (inf.relGeom) this.movable(L.geoJSON(inf.relGeom, { style: { color: '#7b2cbf', weight: 2, fillColor: '#7b2cbf', fillOpacity: 0.3 } })
+      .bindTooltip(inf.relC ? `종교용지 대체부지(제안) ${fmt(inf.relArea)}㎡ · 끌어서 옮기기` : `종교용지 현 위치 존치 ${inf.rel.map(p => esc(p.jibun)).join(', ')} · ${fmt(inf.relArea)}㎡ · 끌면 대체부지로 옮겨짐`, { sticky: true }).addTo(layer), 'religion', inf.relCenter);
     inf.items.forEach(it => {
       const lyr = L.geoJSON(it.geom, { style: { color: c('--ink'), weight: 1, fillColor: c('--ink-2'), fillOpacity: it.kind === 'manual' ? 0.7 : 0.55, dashArray: it.kind === 'manual' ? null : '4 3' } })
         .bindTooltip(it.kind === 'manual' ? `직접 지정한 도로 ${fmt(it.area)}㎡ · 누르면 지정 취소` : `${it.kind === 'entry' ? '진입도로' : '주변 도로'} 확폭(제안) · ${esc(it.jibun)} 약 ${it.from}m → ${it.to}m · ${fmt(it.area)}㎡`, { sticky: true }).addTo(layer);
@@ -844,18 +847,40 @@ const INFRA = {
         z.infra.manualRoads.splice(it.idx, 1); saveZ(); INFRA.memo = {}; render(); toast('도로 지정을 취소했습니다');
       });
     });
-    if (inf.parkGeom) L.geoJSON(inf.parkGeom, { style: { color: c('--ok'), weight: 2, fillColor: c('--ok'), fillOpacity: 0.35 } })
-      .bindTooltip(`공원·녹지(제안) ${fmt(inf.parkArea)}㎡${inf.parkArea < inf.parkNeed * 0.95 ? ` — 구역 경계에 걸려 필요 ${fmt(inf.parkNeed)}㎡보다 작음, 위치를 옮기세요` : ''}`, { sticky: true }).addTo(layer);
-    if (inf.schoolGeom) L.geoJSON(inf.schoolGeom, { style: { color: c('--accent'), weight: 2, fillColor: c('--accent'), fillOpacity: 0.3 } })
-      .bindTooltip(`학교용지(제안) ${fmt(inf.schoolArea)}㎡`, { sticky: true }).addTo(layer);
+    if (inf.parkGeom) this.movable(L.geoJSON(inf.parkGeom, { style: { color: c('--ok'), weight: 2, fillColor: c('--ok'), fillOpacity: 0.35 } })
+      .bindTooltip(`공원·녹지(제안) ${fmt(inf.parkArea)}㎡ · 끌어서 옮기기${inf.parkArea < inf.parkNeed * 0.95 ? ` — 구역 경계·도로에 걸려 필요 ${fmt(inf.parkNeed)}㎡보다 작음, 위치를 옮기세요` : ''}`, { sticky: true }).addTo(layer), 'park', inf.parkC);
+    if (inf.schoolGeom) this.movable(L.geoJSON(inf.schoolGeom, { style: { color: c('--accent'), weight: 2, fillColor: c('--accent'), fillOpacity: 0.3 } })
+      .bindTooltip(`학교용지(제안) ${fmt(inf.schoolArea)}㎡ · 끌어서 옮기기`, { sticky: true }).addTo(layer), 'school', inf.schoolC);
+  },
+  // 공원·학교·종교용지 도형을 마우스로 끌어 옮기기. center: 지금 블록 중심 [lat, lng]
+  movable(lyr, kind, center) {
+    if (!center) return lyr;
+    const shift = (ll, d) => Array.isArray(ll) ? ll.map(x => shift(x, d)) : L.latLng(ll.lat + d[0], ll.lng + d[1]);
+    lyr.eachLayer(l => { const el = l.getElement && l.getElement(); if (el) el.style.cursor = 'move'; });
+    lyr.on('mousedown', ev => {
+      if (CUT.active || ZK.picking || drawH || editH || S.placing) return;
+      L.DomEvent.stop(ev);
+      const start = ev.latlng, orig = []; lyr.eachLayer(l => orig.push([l, l.getLatLngs()]));
+      let d = [0, 0];
+      LM.dragging.disable(); lyr.closeTooltip && lyr.closeTooltip();
+      const mv = e => { d = [e.latlng.lat - start.lat, e.latlng.lng - start.lng]; orig.forEach(([l, ll]) => l.setLatLngs(shift(ll, d))); };
+      const up = () => {
+        LM.off('mousemove', mv); LM.off('mouseup', up); document.removeEventListener('mouseup', up); LM.dragging.enable();
+        const px = LM.latLngToContainerPoint(start).distanceTo(LM.latLngToContainerPoint(L.latLng(start.lat + d[0], start.lng + d[1])));
+        if (px < 4) { orig.forEach(([l, ll]) => l.setLatLngs(ll)); return; }
+        this.place(kind, L.latLng(center[0] + d[0], center[1] + d[1]));
+      };
+      LM.on('mousemove', mv); LM.on('mouseup', up); document.addEventListener('mouseup', up);
+    });
+    return lyr;
   },
   place(kind, latlng) {
     const z = Z.zones[S.region]; if (!z) return;
     z.infra = z.infra || {};
-    z.infra[kind === 'park' ? 'parkC' : 'schoolC'] = [latlng.lat, latlng.lng];
+    z.infra[{ park: 'parkC', school: 'schoolC', religion: 'relC' }[kind]] = [latlng.lat, latlng.lng];
     saveZ(); this.memo = {};
     S.placing = null; $id('lmap').classList.remove('picking');
-    toast(`${kind === 'park' ? '공원·녹지' : '학교용지'} 위치를 옮겼습니다`);
+    toast(`${{ park: '공원·녹지', school: '학교용지', religion: '종교용지(대체부지)' }[kind]} 위치를 옮겼습니다`);
     render();
   },
 };
@@ -1322,11 +1347,13 @@ function infraSection(a, pl) {
   if (inf.other) rows.push(['기타 시설', inf.other, '공공청사·주차장·공공공지 등(입력값)']);
   if (inf.relAll.length || inf.relManual) {
     const chips = inf.relAll.map(p => `<label class="rel-chip"><input type="checkbox" data-rel="${esc(p.pnu)}" ${inf.rel.includes(p) ? 'checked' : ''}> ${esc(p.jibun)} (${fmt((p.base ?? p.area))}㎡)</label>`).join(' ');
-    rows.push([`종교용지(존치·대체) ${inf.rel.length}필지`, inf.relArea, `구역 안 종교시설(교회 등) 부지. 법정 의무는 없으나 실무상 정비계획에서 존치하거나 구역 안 대체부지로 잡아 공동주택 획지에서 뺍니다. 근생 건물의 한 층을 쓰는 교회는 상가 분양·보상 대상이라 넣지 않습니다.<br>${chips || '자동으로 찾은 필지 없음'}${inf.relManual ? ` · <b>면적 직접 입력(${fmt(inf.relArea)}㎡)</b>` : ''}`]);
+    rows.push([`종교용지(존치·대체) ${inf.rel.length}필지`, inf.relArea, `구역 안 종교시설(교회 등) 부지. 법정 의무는 없으나 실무상 정비계획에서 존치하거나 구역 안 대체부지로 잡아 공동주택 획지에서 뺍니다. 근생 건물의 한 층을 쓰는 교회는 상가 분양·보상 대상이라 넣지 않습니다.<br>${chips || '자동으로 찾은 필지 없음'}${inf.relManual ? ` · <b>면적 직접 입력(${fmt(inf.relArea)}㎡)</b>` : ''}
+      <div class="seg" role="group" aria-label="종교용지 위치" style="margin-top:6px"><button type="button" data-relmode="keep" aria-pressed="${!inf.relC}">현 위치 존치</button><button type="button" data-relmode="move" aria-pressed="${!!inf.relC}">대체부지로 옮기기</button></div>
+      <span class="u">${inf.relC ? '지도에서 보라색 사각형을 끌어 원하는 자리에 두세요(면적은 종교용지 면적).' : '현재 교회 필지 그대로 둡니다. 보라색을 끌면 대체부지로 바뀝니다.'}</span>`]);
   }
   rows.push([`구역 안 기존 도로 ${inf.inner.length}필지`, inf.innerArea, P.keepInnerRoads ? '존치하여 기반시설로 셈' : '폐도하여 획지에 넣음(존치하려면 아래에서 선택)']);
   return head + `
-  <p class="hint">지도의 색 구분 <b>기반시설</b>에 위치를 그렸습니다. 공원·학교는 아래 버튼을 누른 뒤 지도에서 자리를 누르면 옮겨집니다.</p>
+  <p class="hint">지도의 색 구분 <b>기반시설</b>에 위치를 그렸습니다. <b>공원(초록)·학교(파랑)·종교용지(보라)는 지도에서 도형을 끌어 옮기면 됩니다.</b> 아래 버튼을 누른 뒤 지도에서 자리를 눌러도 옮겨집니다.</p>
   <div class="tscroll"><table><thead><tr><th>구분</th><th class="r">면적㎡</th><th>근거·설명</th></tr></thead><tbody>
   ${rows.map(r => `<tr><td>${r[0]}</td><td class="r">${fmt(r[1])}</td><td class="wrap">${r[2]}</td></tr>`).join('')}
   <tr class="sum"><td><b>제안 계${inf.relArea ? '<br><span class="u">(기반시설 + 종교용지)</span>' : ''}</b></td><td class="r"><b>${fmt(inf.total)}</b></td><td>구역의 ${(inf.ratio * 100).toFixed(1)}%</td></tr></tbody></table></div>
@@ -1353,6 +1380,12 @@ function bindInfra() {
   on('refetchRoads', () => { const z = Z.zones[S.region]; if (z) { delete z.roads; saveZ(); INFRA.memo = {}; INFRA.fetchRoads(S.region); render(); } });
   const pm = document.getElementById('parkMode'); if (pm) { pm.value = P.parkMode; pm.onchange = () => { P.parkMode = pm.value; saveP(); INFRA.memo = {}; render(); }; }
   const zi = () => { const z = Z.zones[S.region]; if (!z) return null; z.infra = z.infra || {}; return z.infra; };
+  side.querySelectorAll('[data-relmode]').forEach(b => b.onclick = () => {
+    const inf = zi(); if (!inf) return;
+    if (b.dataset.relmode === 'keep') delete inf.relC;
+    else if (!inf.relC) { const r = plan(analyze(S.region)).infra; inf.relC = (r && r.relCenter) || INFRA.defaultCenter(Z.zones[S.region].geojson); }
+    saveZ(); INFRA.memo = {}; render();
+  });
   side.querySelectorAll('[data-rel]').forEach(cb => cb.onchange = () => { const inf = zi(); if (!inf) return; inf.relOff = inf.relOff || {}; if (cb.checked) delete inf.relOff[cb.dataset.rel]; else inf.relOff[cb.dataset.rel] = true; saveZ(); INFRA.memo = {}; render(); });
   const ra = document.getElementById('relArea'); if (ra) ra.onchange = () => { const inf = zi(); if (!inf) return; const v = ra.value.trim(); if (v === '') delete inf.relArea; else inf.relArea = num(v); saveZ(); INFRA.memo = {}; render(); };
   const ki = document.getElementById('keepInner'); if (ki) ki.onchange = () => { P.keepInnerRoads = ki.checked; saveP(); INFRA.memo = {}; render(); };
