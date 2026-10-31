@@ -55,6 +55,20 @@
     lyrEx.eachLayer(l => { const c = l.toGeoJSON().geometry.coordinates[0]; exclude.push(G.openRing(c).map(pr.to)); });
     saveState(); invalidate();
   }
+  // 같은 성격이면서 방향이 비슷하게(꺾임 30° 이하) 이어진 변들 — 곡선 경계를 한 덩어리로
+  function sideRun(E, i) {
+    const n = E.length, ang = e => Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
+    const turn = (a, b) => { let d = Math.abs(ang(a) - ang(b)); if (d > Math.PI) d = 2 * Math.PI - d; return d; };
+    const run = [i];
+    for (let k = (i + 1) % n; k !== i && tags[k] === tags[i] && turn(E[(k - 1 + n) % n], E[k]) < Math.PI / 6; k = (k + 1) % n) run.push(k);
+    for (let k = (i - 1 + n) % n; k !== i && !run.includes(k) && tags[k] === tags[i] && turn(E[k], E[(k + 1) % n]) < Math.PI / 6; k = (k - 1 + n) % n) run.push(k);
+    return run;
+  }
+  // 출입구는 도로 변에만, 최대 3곳 — 예전에 찍힌 것도 정리
+  function cleanEntries() {
+    entries = entries.filter(en => ['road', 'arterial'].includes(tags[en.edge])).slice(0, 3);
+    entries.forEach((en, k) => { en.label = k === 0 ? '주출입' : `부출입${entries.length > 2 ? k : ''}`; });
+  }
   function drawSite() {
     lyrSite.clearLayers(); lyrEdges.clearLayers();
     if (!pts) return;
@@ -69,7 +83,10 @@
       const hit = L.polyline([e.a, e.b].map(LL), { color: '#000', weight: 18, opacity: 0 }).addTo(lyrEdges);
       hit.bindTooltip(`${t.name} · ${e.len.toFixed(1)}m — ${mode === 'edge' ? '눌러서 성격 바꾸기' : '눌러서 출입구 찍기'}`, { sticky: true });
       hit.on('click', ev => {
-        if (mode === 'edge') { tags[i] = TAGS[(TAGS.indexOf(tags[i]) + 1) % TAGS.length]; entries = entries.filter(en => en.edge !== i || ['road', 'arterial'].includes(tags[i])); drawSite(); saveState(); invalidate(); return; }
+        if (mode === 'edge') {
+          const run = sideRun(E, i), nt = TAGS[(TAGS.indexOf(tags[i]) + 1) % TAGS.length];
+          run.forEach(k => { tags[k] = nt; });
+          msg(`${run.length > 1 ? `이어진 변 ${run.length}개(${run.reduce((a, k) => a + E[k].len, 0).toFixed(0)}m)를` : '이 변을'} '${D.TAG[nt].name}'(으)로 바꿨습니다.`); cleanEntries(); drawSite(); saveState(); invalidate(); return; }
         const p = pr.to([ev.latlng.lng, ev.latlng.lat]), dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1];
         const t2 = Math.max(0.05, Math.min(0.95, ((p[0] - e.a[0]) * dx + (p[1] - e.a[1]) * dy) / (dx * dx + dy * dy)));
         const near = entries.findIndex(en => en.edge === i && Math.abs(en.t - t2) * e.len < 15);
@@ -106,7 +123,7 @@
       if (hit) return hit.w >= 20 ? 'arterial' : 'road';
       return e.out[1] > 0.6 ? 'north' : 'boundary';
     });
-    drawSite(); saveState(); invalidate();
+    cleanEntries(); drawSite(); saveState(); invalidate();
     msg(roads.length ? '/urban 주변 도로 자료로 도로 변을, 방향으로 정북 변을 정했습니다. 다른 점은 경계선을 눌러 고치세요.' : '도로 자료가 없어 방향만으로 정했습니다(북쪽을 향한 변 = 정북 인접대지). 도로 변은 경계선을 눌러 지정하세요.');
   }
 
@@ -133,6 +150,7 @@
     exclude.forEach(ex => lyrEx.addLayer(L.polygon(ex.map(p => pr.back(p).slice().reverse()), { color: '#5d7f5a' })));
     setP(Object.assign(defaults(), filled(a.params)));
     if (!tags) { tags = pts.map(() => 'boundary'); autoTag(); }
+    const nBefore = entries.length; cleanEntries(); if (entries.length !== nBefore) saveState();
     if (!num($('#p_siteArea').value)) $('#p_siteArea').value = Math.round(turf.area(site.geojson) * 10) / 10;
     drawSite(); fillSel();
     try { map.fitBounds(L.polygon(pts.map(p => pr.back(p).slice().reverse())).getBounds(), { padding: [20, 20] }); } catch (e) { /* 무시 */ }
@@ -334,7 +352,7 @@
     if (t.id === 'run') run();
     else if (t.id === 'confirm') confirmAlt();
     else if (t.id === 'autoTag') { if (pts) autoTag(); }
-    else if (t.id === 'mEdge' || t.id === 'mEntry') { mode = t.id === 'mEdge' ? 'edge' : 'entry'; $('#mEdge').setAttribute('aria-pressed', mode === 'edge'); $('#mEntry').setAttribute('aria-pressed', mode === 'entry'); $('#modeHint').textContent = mode === 'edge' ? '지금: 경계 성격 바꾸기 — 경계선을 누를 때마다 성격이 바뀝니다.' : '지금: 차량 출입구 찍기 — 도로 쪽 경계선(파랑·보라)을 누르면 출입구가 찍힙니다. 다 찍었으면 [경계 성격 바꾸기]를 눌러 빠져나오세요.'; if (pts) drawSite(); msg(mode === 'entry' ? '도로 쪽 경계선(파랑·보라)을 누르면 차량 출입구가 찍힙니다(최대 3곳, 표시 근처를 다시 누르면 지움).' : ''); }
+    else if (t.id === 'mEdge' || t.id === 'mEntry') { mode = t.id === 'mEdge' ? 'edge' : 'entry'; $('#mEdge').setAttribute('aria-pressed', mode === 'edge'); $('#mEntry').setAttribute('aria-pressed', mode === 'entry'); $('#modeHint').textContent = mode === 'edge' ? '지금: 경계 성격 바꾸기 — 경계선을 누를 때마다 성격이 바뀝니다(곡선처럼 이어진 짧은 변은 한꺼번에).' : '지금: 차량 출입구 찍기 — 도로 쪽 경계선(파랑·보라)을 누르면 출입구가 찍힙니다. 다 찍었으면 [경계 성격 바꾸기]를 눌러 빠져나오세요.'; if (pts) drawSite(); msg(mode === 'entry' ? '도로 쪽 경계선(파랑·보라)을 누르면 차량 출입구가 찍힙니다(최대 3곳, 표시 근처를 다시 누르면 지움).' : ''); }
     else if (t.dataset.alt !== undefined) { cur = +t.dataset.alt; renderAlts(); drawBuildingsOnMap(); showView(curView); }
     else if (t.dataset.v) showView(t.dataset.v);
     else if (t.id === 'calcSun') { t.classList.add('busy'); msg('동지 일조 계산 중…'); await tick(); await tick(); computeSun(); renderSun(); t.classList.remove('busy'); msg(''); }
