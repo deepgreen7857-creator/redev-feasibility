@@ -126,7 +126,7 @@ function defaultState() {
     area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'ledger', center: [37.5665, 126.978], zoom: 16, importedKey: '', importedAt: '', showParcels: false },
     // mode: 'ledger' 토지대장 면적 합계(조서 편입면적, 조서가 없으면 그린 면적) | 'drawn' 연속지적 도형 면적(참고) | 'manual' 직접 입력
     // 연면적 = (구역면적 − 정비기반시설) × 용적률 × 연면적 배율
-    // infraMode: 'auto' 토지조서 지목(도로·공원 등) 합계 | 'ratio' 구역면적의 infraRatio% | 'area' infraArea㎡ 직접 입력
+    // infraMode: 'auto' 토지조서 지목(도로·공원 등) 합계 | 'ratio' 구역면적의 infraRatio% | 'area' infraArea㎡ 직접 입력 | 'urban' /urban 정비계획 계획값(비율로 적용)
     plan: { far: 250, gfaFactor: 1.45, gfaManual: 0, infraMode: 'auto', infraRatio: 20, infraArea: 0 },
     lands: [],
     buildings: [],
@@ -184,7 +184,7 @@ function migrate(s) {
     s.buildings.forEach(b => { if (!b.auto) b.sample = true; });
   }
   // 예전 파일: 기반시설 값이 없거나 이상하면 기본값 (mergeDefaults가 빈 키는 채움)
-  if (!['auto', 'ratio', 'area'].includes(s.plan.infraMode)) s.plan.infraMode = 'auto';
+  if (!['auto', 'ratio', 'area', 'urban'].includes(s.plan.infraMode)) s.plan.infraMode = 'auto';
   if (!(num(s.plan.infraRatio) >= 0)) s.plan.infraRatio = 20;
   if (!(num(s.plan.infraArea) >= 0)) s.plan.infraArea = 0;
   return s;

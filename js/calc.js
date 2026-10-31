@@ -25,12 +25,23 @@ const Calc = {
     const byRatio = basis => ({ area: site * ratio / 100, basis });
     if (p.infraMode === 'area') return { area: Math.min(num(p.infraArea), site), basis: '직접 입력' };
     if (p.infraMode === 'ratio') return byRatio(`구역면적의 ${fmt(ratio, 1)}%`);
+    // /urban 정비계획에서 잡은 계획값(신설·존치 정비기반시설 + 학교·공공청사·종교용지 등 공동주택 획지 밖 땅). 두 화면의 구역 면적이 조금 다를 수 있어 비율로 적용
+    if (p.infraMode === 'urban') {
+      const u = this.urbanPlan();
+      if (u && u.area > 0) {
+        const r = (u.infra + u.other) / u.area;
+        return { area: Math.min(site * r, site), urban: u, basis: `/urban 정비계획 ${u.title ? u.title + ' ' : ''}(${u.at}) — 정비기반시설 ${fmt(u.infra / u.area * 100, 1)}%${u.other ? ` + 학교·공공청사·종교용지 ${fmt(u.other / u.area * 100, 1)}%` : ''} 비율 적용` };
+      }
+      return { ...byRatio(`/urban 정비계획 값이 없어 구역면적의 ${fmt(ratio, 1)}%로 계산 — /urban 정비계획 탭을 한 번 열면 값이 넘어옵니다`), fallback: true };
+    }
     if (!s.lands.length) return { ...byRatio(`토지조서가 없어 구역면적의 ${fmt(ratio, 1)}%로 계산`), fallback: true };
     const ls = s.lands.filter(l => this.isInfra(l.jimok));
     const sum = ls.reduce((a, l) => a + num(l.area), 0);
     return { area: Math.min(sum, site), count: ls.length, basis: `토지조서 지목 도로 등 ${ls.length}필지 합계` };
   },
   infraArea(s) { return this.infra(s).area; },
+  // /urban이 저장한 정비계획 계획값(localStorage 'jbs-urban-out')
+  urbanPlan() { try { const u = JSON.parse(localStorage.getItem('jbs-urban-out') || 'null'); return u && u.area ? u : null; } catch (e) { return null; } },
 
   // 건축 대지(획지)면적 = 구역면적 − 정비기반시설
   netSite(s) { return Math.max(0, this.siteArea(s) - this.infraArea(s)); },
@@ -240,7 +251,8 @@ const Calc = {
     const landArea = this.landTotal(s);
     const publicArea = lands.filter(l => l.ownerType === '국공유지').reduce((a, l) => a + num(l.area), 0);
     const lot = num(s.criteria.smallLot) || 90;
-    const small = lands.filter(l => l.jimok === '대' && num(l.area) > 0 && num(l.area) < lot).length;
+    // 과소필지: 분할제한면적(서울 90㎡·인천 주거 60㎡) 미만인 '토지' — 지목을 가리지 않음(인천 정비조례 제2조제5호, 요건은 '구역의 전체 필지 중' 비율, 제5조①2나)
+    const small = lands.filter(l => num(l.area) > 0 && num(l.area) < lot).length;
     const owners = new Set(lands.map(l => (l.owner || '').trim()).filter(Boolean)).size;
     const dens = this.density(s, bs);
     return {
@@ -269,7 +281,7 @@ const Calc = {
       const smallRatio = sv.landCount ? sv.small / sv.landCount * 100 : NaN;
       const d = sv.density;
       out.push({ label: `[선택] 노후·불량건축물 연면적 비율 (${rl})`, value: fmtPct(sv.oldAreaRatio), need: `${o.oldArea}% 이상`, pass: isFinite(sv.oldAreaRatio) ? sv.oldAreaRatio >= o.oldArea : null });
-      out.push({ label: `[선택] 과소필지 비율 (${fmt(c.smallLot || 90)}㎡ 미만 대지)`, value: `${sv.small}필지 (${fmtPct(smallRatio)})`, need: `${o.small}% 이상`, pass: isFinite(smallRatio) ? smallRatio >= o.small : null });
+      out.push({ label: `[선택] 과소필지 비율 (${fmt(c.smallLot || 90)}㎡ 미만 토지 / 전체 필지)`, value: `${sv.small}필지 (${fmtPct(smallRatio)})`, need: `${o.small}% 이상`, pass: isFinite(smallRatio) ? smallRatio >= o.small : null });
       out.push({
         label: '[선택] 호수밀도 (동/1만㎡)',
         value: isFinite(d.value) ? `${fmt(d.value, 1)} (${fmt(d.dong)}동)${d.exact ? '' : ` · 추정 – 전유부·건축면적 없는 ${d.approx}동은 1동으로 셈`}` : '–',

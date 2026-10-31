@@ -692,7 +692,7 @@ function landNote(l) {
   return [
     gap > 1 ? `공부-도면 면적 차이 ${fmt(gap, 1)}%` : '',
     l.pnu && (l.ledgerFail || l.areaSrc === '연속지적' || (l.baseYear && String(l.baseYear) !== thisYear)) ? '대장 면적 확인 필요(분할·합병 여부)' : '',
-    l.jimok === '대' && num(l.area) > 0 && num(l.area) < (num(S.criteria.smallLot) || 90) ? '과소필지' : '',
+    num(l.area) > 0 && num(l.area) < (num(S.criteria.smallLot) || 90) ? '과소필지' : '',
     l.enclosed ? '갇힌 필지' : '',
     l.boundary ? `경계 필지(${l.boundary}%)` : '',
     l.partial ? `일부 편입${l.wholeArea ? `(전체 ${fmt(l.wholeArea, 1)}㎡${l.cutBy ? ', ' + l.cutBy : ''})` : ''}` : '',
