@@ -27,7 +27,8 @@
     };
   }
   const P = () => { const o = {}; Object.entries(FIELDS).forEach(([k, id]) => { o[k] = $('#' + id).value; }); return o; };
-  function setP(o) { Object.entries(FIELDS).forEach(([k, id]) => { if (o[k] !== undefined) $('#' + id).value = o[k]; }); $('#p_angle').disabled = $('#p_angleMode').value === 'auto'; }
+  function setP(o) { Object.entries(FIELDS).forEach(([k, id]) => { if (o[k] !== undefined && o[k] !== null && o[k] !== '') $('#' + id).value = o[k]; }); $('#p_angle').disabled = $('#p_angleMode').value === 'auto'; }
+  const filled = o => { const r = {}; Object.entries(o || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') r[k] = v; }); return r; };
   function saveState() {
     if (!site) return;
     site.arch = Object.assign(site.arch || {}, { tags, entries, exclude: exclude.map(ex => ex.map(pr.back)), params: P() });
@@ -57,24 +58,36 @@
   function drawSite() {
     lyrSite.clearLayers(); lyrEdges.clearLayers();
     if (!pts) return;
-    L.polygon(pts.map(p => pr.back(p).slice().reverse()), { color: '#c8322b', weight: 2, dashArray: '8 3 2 3', fillOpacity: .06 }).addTo(lyrSite);
-    G.edges(pts).forEach((e, i) => {
-      const t = D.TAG[tags[i]] || D.TAG.boundary;
-      const ln = L.polyline([e.a, e.b].map(p => pr.back(p).slice().reverse()), { color: t.color, weight: 7, opacity: .85 }).addTo(lyrEdges);
-      ln.bindTooltip(`${t.name} · ${e.len.toFixed(1)}m`, { sticky: true });
-      ln.on('click', ev => {
-        if (mode === 'edge') { tags[i] = TAGS[(TAGS.indexOf(tags[i]) + 1) % TAGS.length]; drawSite(); saveState(); invalidate(); }
+    const LL = p => pr.back(p).slice().reverse();
+    L.polygon(pts.map(LL), { stroke: false, fillColor: '#c8322b', fillOpacity: .06 }).addTo(lyrSite);
+    const E = G.edges(pts);
+    E.forEach((e, i) => {
+      const t = D.TAG[tags[i]] || D.TAG.boundary, off = 2.5;
+      // 경계 성격: 구역 바깥으로 2.5m 띄운 가는 색 띠
+      L.polyline([[e.a[0] + e.out[0] * off, e.a[1] + e.out[1] * off], [e.b[0] + e.out[0] * off, e.b[1] + e.out[1] * off]].map(LL), { color: t.color, weight: 5, opacity: .9, lineCap: 'butt', interactive: false }).addTo(lyrEdges);
+      // 누르기 쉬운 투명한 넓은 선
+      const hit = L.polyline([e.a, e.b].map(LL), { color: '#000', weight: 18, opacity: 0 }).addTo(lyrEdges);
+      hit.bindTooltip(`${t.name} · ${e.len.toFixed(1)}m — ${mode === 'edge' ? '눌러서 성격 바꾸기' : '눌러서 출입구 찍기'}`, { sticky: true });
+      hit.on('click', ev => {
+        if (mode === 'edge') { tags[i] = TAGS[(TAGS.indexOf(tags[i]) + 1) % TAGS.length]; entries = entries.filter(en => en.edge !== i || ['road', 'arterial'].includes(tags[i])); drawSite(); saveState(); invalidate(); return; }
+        const p = pr.to([ev.latlng.lng, ev.latlng.lat]), dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1];
+        const t2 = Math.max(0.05, Math.min(0.95, ((p[0] - e.a[0]) * dx + (p[1] - e.a[1]) * dy) / (dx * dx + dy * dy)));
+        const near = entries.findIndex(en => en.edge === i && Math.abs(en.t - t2) * e.len < 15);
+        if (near >= 0) { entries.splice(near, 1); }
         else {
-          const p = pr.to([ev.latlng.lng, ev.latlng.lat]), dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1];
-          const t2 = Math.max(0.05, Math.min(0.95, ((p[0] - e.a[0]) * dx + (p[1] - e.a[1]) * dy) / (dx * dx + dy * dy)));
-          const near = entries.findIndex(en => en.edge === i && Math.abs(en.t - t2) * e.len < 12);
-          if (near >= 0) entries.splice(near, 1); else entries.push({ edge: i, t: t2, label: entries.length ? '부출입' : '주출입' });
-          drawSite(); saveState(); if (alts.length) renderPlan();
+          if (!['road', 'arterial'].includes(tags[i])) { msg(`이 변은 '${t.name}'입니다. 차량 출입구는 도로 쪽 변(파랑·보라)에만 찍을 수 있습니다. 도로인데 색이 다르면 [경계 성격 바꾸기]로 먼저 바꾸세요.`, true); return; }
+          if (entries.length >= 3) { msg('차량 출입구는 3곳까지 찍을 수 있습니다. 기존 표시를 눌러 지운 뒤 찍으세요.', true); return; }
+          entries.push({ edge: i, t: t2 });
         }
+        entries.forEach((en, k) => { en.label = k === 0 ? '주출입' : `부출입${entries.length > 2 ? k : ''}`; });
+        msg(entries.length ? `차량 출입구 ${entries.length}곳: ${entries.map(en => en.label).join(', ')}` : '차량 출입구를 모두 지웠습니다.');
+        drawSite(); saveState(); if (alts.length) renderPlan();
       });
     });
-    entries.forEach(en => { const e = G.edges(pts)[en.edge]; if (!e) return; const m = [e.a[0] + (e.b[0] - e.a[0]) * en.t, e.a[1] + (e.b[1] - e.a[1]) * en.t]; L.circleMarker(pr.back(m).slice().reverse(), { radius: 7, color: '#1d2a33', fillColor: '#fff', fillOpacity: 1, weight: 2 }).bindTooltip(en.label).addTo(lyrEdges); });
-    $('#tagLegend').innerHTML = TAGS.map(k => `<span class="tag"><i style="background:${D.TAG[k].color}"></i>${D.TAG[k].name}</span>`).join('');
+    // 구역계: 적색 쇄선을 맨 위에
+    L.polygon(pts.map(LL), { color: '#c8322b', weight: 2.5, dashArray: '12 4 2 4', fill: false, interactive: false }).addTo(lyrEdges);
+    entries.forEach(en => { const e = E[en.edge]; if (!e) return; const m = [e.a[0] + (e.b[0] - e.a[0]) * en.t, e.a[1] + (e.b[1] - e.a[1]) * en.t]; L.circleMarker(LL(m), { radius: 7, color: '#1d2a33', fillColor: '#fff', fillOpacity: 1, weight: 2 }).bindTooltip(en.label || '출입', { permanent: true, direction: 'top', offset: [0, -6] }).addTo(lyrEdges); });
+    $('#tagLegend').innerHTML = TAGS.map(k => `<span class="tag"><i style="background:${D.TAG[k].color}"></i>${D.TAG[k].name}</span>`).join('') + '<span class="tag"><i style="background:repeating-linear-gradient(90deg,#c8322b 0 7px,transparent 7px 9px,#c8322b 9px 10px,transparent 10px 12px)"></i>구역계</span>';
   }
   function drawBuildingsOnMap() {
     lyrBld.clearLayers(); const A = alts[cur]; if (!A) return;
@@ -118,8 +131,8 @@
     tags = (a.tags && a.tags.length === pts.length) ? a.tags.slice() : null;
     entries = a.entries || []; exclude = (a.exclude || []).map(ex => ex.map(pr.to));
     exclude.forEach(ex => lyrEx.addLayer(L.polygon(ex.map(p => pr.back(p).slice().reverse()), { color: '#5d7f5a' })));
+    setP(Object.assign(defaults(), filled(a.params)));
     if (!tags) { tags = pts.map(() => 'boundary'); autoTag(); }
-    setP(Object.assign(defaults(), a.params || {}));
     if (!num($('#p_siteArea').value)) $('#p_siteArea').value = Math.round(turf.area(site.geojson) * 10) / 10;
     drawSite(); fillSel();
     try { map.fitBounds(L.polygon(pts.map(p => pr.back(p).slice().reverse())).getBounds(), { padding: [20, 20] }); } catch (e) { /* 무시 */ }
@@ -321,7 +334,7 @@
     if (t.id === 'run') run();
     else if (t.id === 'confirm') confirmAlt();
     else if (t.id === 'autoTag') { if (pts) autoTag(); }
-    else if (t.id === 'mEdge' || t.id === 'mEntry') { mode = t.id === 'mEdge' ? 'edge' : 'entry'; $('#mEdge').setAttribute('aria-pressed', mode === 'edge'); $('#mEntry').setAttribute('aria-pressed', mode === 'entry'); msg(mode === 'entry' ? '도로 쪽 경계선을 누르면 차량 출입구가 찍힙니다(다시 누르면 지움).' : ''); }
+    else if (t.id === 'mEdge' || t.id === 'mEntry') { mode = t.id === 'mEdge' ? 'edge' : 'entry'; $('#mEdge').setAttribute('aria-pressed', mode === 'edge'); $('#mEntry').setAttribute('aria-pressed', mode === 'entry'); $('#modeHint').textContent = mode === 'edge' ? '지금: 경계 성격 바꾸기 — 경계선을 누를 때마다 성격이 바뀝니다.' : '지금: 차량 출입구 찍기 — 도로 쪽 경계선(파랑·보라)을 누르면 출입구가 찍힙니다. 다 찍었으면 [경계 성격 바꾸기]를 눌러 빠져나오세요.'; if (pts) drawSite(); msg(mode === 'entry' ? '도로 쪽 경계선(파랑·보라)을 누르면 차량 출입구가 찍힙니다(최대 3곳, 표시 근처를 다시 누르면 지움).' : ''); }
     else if (t.dataset.alt !== undefined) { cur = +t.dataset.alt; renderAlts(); drawBuildingsOnMap(); showView(curView); }
     else if (t.dataset.v) showView(t.dataset.v);
     else if (t.id === 'calcSun') { t.classList.add('busy'); msg('동지 일조 계산 중…'); await tick(); await tick(); computeSun(); renderSun(); t.classList.remove('busy'); msg(''); }
