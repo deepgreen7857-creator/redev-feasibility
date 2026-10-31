@@ -135,7 +135,10 @@ function headLine(s) {
 const rank = (n) => /감정평가서/.test(n) ? 0 : /매각물건명세서/.test(n) ? 1 : /현황조사서/.test(n) ? 2 : /등기/.test(n) ? 3 : 9;
 const base = (p) => p.split('/').pop();
 async function open(id) {
-  const c = cases.find((x) => x.id === id); if (!c) return;
+  let c = cases.find((x) => x.id === id);
+  // 판단기록장 링크는 사건번호만 넘김(#2026타경12) → 같은 사건번호 중 매각기일이 가장 늦은(진행 중) 것을 연다
+  if (!c && /^\d{4}타경\d+$/.test(id)) { const m = cases.filter((x) => x.caseNo === id).sort((a, b) => String(b.sale || '').localeCompare(String(a.sale || ''))); c = m[0]; if (c) id = c.id; }
+  if (!c) { if (/타경/.test(id)) { const q = document.querySelector('input'); if (q) { q.value = id; q.dispatchEvent(new Event('input', { bubbles: true })); } const mn = $('#main'); if (mn) mn.innerHTML = '<h2>' + esc(id) + '</h2><div class="meta">아직 미니PC가 이 사건 자료를 받지 않았습니다. 판단기록장 후보·보류 사건은 미니PC가 우선 받아 옵니다(보통 몇 시간 안).</div>'; } return; }
   document.querySelectorAll('.row').forEach((r) => r.classList.toggle('on', r.dataset.id === id));
   history.replaceState(null, '', '#' + encodeURIComponent(id));
   const pdf = c.list.filter((f) => f.kind === 'pdf').sort((a, b) => rank(base(a.path)) - rank(base(b.path)) || a.path.localeCompare(b.path));
