@@ -784,9 +784,34 @@ const INFRA = {
       for (const r of zR.concat(mR)) for (const [x, y] of r) { const dx = x - cx, dy = y - cy, u = dx * ca + dy * sa, v = -dx * sa + dy * ca; if (Math.abs(u) < hw - 0.2 && Math.abs(v) < hh - 0.2) return false; }
       return true;
     };
+    // 블록 변 바깥이 구역 경계까지 얕게(평균 12m 이하, 최대 25m 안에서 경계에 닿음) 남고 장애물이 없으면,
+    //  그 변의 양 끝선을 곧게 연장해 경계까지 채움 → 시설 모양은 반듯한 변 + 구역 경계로만 이루어짐
+    const extend = (cx, cy) => {
+      const add = [];
+      for (const [nu, nv, d, l] of [[1, 0, hw, hh], [-1, 0, hw, hh], [0, 1, hh, hw], [0, -1, hh, hw]]) {
+        const E = 25;
+        const loc = nu ? [[nu * d, -l], [nu * (d + E), -l], [nu * (d + E), l], [nu * d, l]] : [[-l, nv * d], [-l, nv * (d + E)], [l, nv * (d + E)], [l, nv * d]];
+        const W = ([u, v]) => [cx + u * ca - v * sa, cy + u * sa + v * ca];
+        // 먼 끝(25m)이 모두 구역 밖이어야 함(그 안에서 경계에 닿음)
+        let farOut = true;
+        for (let k = 0; k <= 10 && farOut; k++) { const t = -l + 2 * l * k / 10, [x, y] = W(nu ? [nu * (d + E), t] : [t, nv * (d + E)]); if (inR(x, y, zR)) farOut = false; }
+        if (!farOut) continue;
+        const band = turf.polygon([[...loc, loc[0]].map(q => toLL(W(q)))]);
+        let inZ = null, inF = null;
+        try { inZ = turf.intersect(band, zone); inF = inZ ? (minus ? turf.intersect(band, free) : inZ) : null; } catch (er) { continue; }
+        if (!inZ || turf.area(inZ) < 1 || !inF) continue;
+        const aZ = turf.area(inZ);
+        if (turf.area(inF) < aZ * 0.98) continue;   // 사이에 도로·다른 시설이 있으면 연장 안 함
+        if (aZ / (2 * l) > 12) continue;            // 평균 깊이 12m 넘으면 쓸 수 있는 땅이라 그대로 둠
+        add.push(inZ);
+      }
+      const g = sq(cx, cy);
+      if (!add.length) return g;
+      try { return safeUnion([g, ...add]); } catch (er) { return g; }
+    };
     // 찾은 자리에서 가장 가까운 선(구역 경계·다른 시설) 쪽으로 붙임 — 사이가 8m 안쪽이라 못 쓰는 띠가 남을 때만
     const flush = (cx, cy) => {
-      if (!edge) return sq(cx, cy);
+      if (!edge) return extend(cx, cy);
       const [a, b] = edge, dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
       let nx = -dy / L, ny = dx / L;   // 경계선의 법선
       if ((cx - a[0]) * nx + (cy - a[1]) * ny > 0) { nx = -nx; ny = -ny; }   // 블록 → 경계선 방향
@@ -794,8 +819,8 @@ const INFRA = {
       // 8m보다 멀면 붙이지 않음(그 사이는 쓸 수 있는 땅이라 놓은 자리를 그대로 둠). 8m 안이면 끝까지 붙임
       let moved = 0;
       for (let s = 0; s < 18; s++) { if (!fitsAt(x + nx * 0.5, y + ny * 0.5)) break; x += nx * 0.5; y += ny * 0.5; moved += 0.5; }
-      if (moved >= 8.5) return sq(cx, cy);
-      return sq(x, y);
+      if (moved >= 8.5) return extend(cx, cy);
+      return extend(x, y);
     };
     // 정사각형 → 1:1.5 → 1:2(경계선 방향으로 길게) 순으로, 가까운 자리부터 최대 120m까지 찾음
     // 놓은 자리 둘레 120m 안에 없으면(구역 밖에 놓았거나 모퉁이라 막힌 경우) 구역 가운데에서 구역 전체를 다시 찾음
