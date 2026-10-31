@@ -356,7 +356,7 @@ async function grabCase(items, light = false) {
       .sort((a, b) => Number((a.match(/(\d+)\.jpe?g$/i) || [])[1]) - Number((b.match(/(\d+)\.jpe?g$/i) || [])[1]));
     fs.mkdirSync(pdir, { recursive: true });
     let k = 0;
-    for (const n of names.slice(0, 60)) {
+    for (const n of names.slice(0, cfg.maxPhotos || 20)) { // 사진은 대법원에서도 받으므로 제이옥션은 앞쪽 20장만(요청 수 줄이기)
       await pause('photoSeconds');
       const b = await get(caseDataDir + n, { binary: true, referer: `${FILES}/auction/pic_view.php` });
       if (isJpg(b)) fs.writeFileSync(path.join(pdir, `사진${String(++k).padStart(2, '0')}.jpg`), b);
@@ -429,7 +429,10 @@ async function main() {
       idxs = new Map(idsIn(await get(`${BASE}/search/search_list.php?stc=1&sno=${m[1]}&tno=${m[2]}`)).map((i) => [i, 'case']));
     } else {
       // 1단계: 검토 범위(용도·최저가 상한) + review 후보. 다 받았으면 2단계: 넓은 지역 전체(config areas)
-      idxs = await collectScope();
+      // 검토 범위 목록은 하루 한 번만 새로 뽑는다 — 실행마다 목록 수백 화면을 다시 넘기던 것이 차단 원인 중 하나(10/31)
+      const scopeCache = path.join(STATE, `jauction-scope-${kstDay()}.json`);
+      if (!DRY && fs.existsSync(scopeCache)) { idxs = new Map(JSON.parse(fs.readFileSync(scopeCache, 'utf8'))); log(`검토 범위 목록 — 오늘 뽑아 둔 것 사용(${idxs.size}건, 목록 화면 안 넘김)`); }
+      else { idxs = await collectScope(); if (!DRY) fs.writeFileSync(scopeCache, JSON.stringify([...idxs])); }
       const scopeLeft = [...idxs.entries()].filter(([i, v]) => !doneFor(i, v.light) && !skip.has(i)).length;
       log(`검토 범위 — 대상 ${idxs.size}건, 남은 것 ${scopeLeft}건`);
       if (!scopeLeft) { log('검토 범위를 다 받음 — 넓은 지역(서울·경기 전체 등)으로 넘어감'); idxs = new Map([...(await collectIdx())].map(([i, src]) => [i, { src, sale: '', light: false }])); }
