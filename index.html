@@ -10,8 +10,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=72">
-<link rel="stylesheet" href="css/zonekit.css?v=72">
+<link rel="stylesheet" href="css/style.css?v=73">
+<link rel="stylesheet" href="css/zonekit.css?v=73">
 </head>
 <body>
 
@@ -271,7 +271,8 @@
     <div class="form-grid three">
       <label>정비기반시설 산정 방식
         <select data-bind="plan.infraMode" data-rerender="1">
-          <option value="auto">자동 (토지조서 현황 지목)</option>
+          <option value="auto">자동 (토지조서 현황 지목 — 기존 기반시설)</option>
+          <option value="urban">정비계획(/urban) 계획값</option>
           <option value="ratio">구역면적의 비율 (%)</option>
           <option value="area">직접 입력 (㎡)</option>
         </select></label>
@@ -469,22 +470,22 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=72"></script>
-<script src="js/util.js?v=72"></script>
-<script src="js/state.js?v=72"></script>
-<script src="js/calc.js?v=72"></script>
-<script src="js/zonekit.js?v=72"></script>
-<script src="js/map.js?v=72"></script>
-<script src="js/ledger.js?v=72"></script>
-<script src="js/pdfsave.js?v=72"></script>
-<script src="js/overlay.js?v=72"></script>
-<script src="js/export.js?v=72"></script>
-<script src="js/roadcut.js?v=72"></script>
-<script src="js/assume.js?v=72"></script>
-<script src="js/app.js?v=72"></script>
-<script src="js/forms.js?v=72"></script>
-<script src="js/hwpx.js?v=72"></script>
-<script src="js/surveymaps.js?v=72"></script>
-<script src="js/review.js?v=72"></script>
+<script src="js/config.js?v=73"></script>
+<script src="js/util.js?v=73"></script>
+<script src="js/state.js?v=73"></script>
+<script src="js/calc.js?v=73"></script>
+<script src="js/zonekit.js?v=73"></script>
+<script src="js/map.js?v=73"></script>
+<script src="js/ledger.js?v=73"></script>
+<script src="js/pdfsave.js?v=73"></script>
+<script src="js/overlay.js?v=73"></script>
+<script src="js/export.js?v=73"></script>
+<script src="js/roadcut.js?v=73"></script>
+<script src="js/assume.js?v=73"></script>
+<script src="js/app.js?v=73"></script>
+<script src="js/forms.js?v=73"></script>
+<script src="js/hwpx.js?v=73"></script>
+<script src="js/surveymaps.js?v=73"></script>
+<script src="js/review.js?v=73"></script>
 </body>
 </html>
