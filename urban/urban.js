@@ -267,15 +267,25 @@ async function fillLandChar(pnus, say, force) {
   await Promise.all([work(), work(), work(), work()]);
   return fail;
 }
-async function fillLedgerApts(pnus, say) {
+// 건축물대장 표제부로 보충: 공동주택 세대수, GIS건물통합정보에 사용승인 연도가 빈 건물
+//  대장 동수가 GIS보다 적으면 남는 GIS 건물(연도 없는 것 우선)은 '대장 없음'으로 남김(무허가·부속건물 등)
+const ledgerNeeded = k => !(CACHE.parcels[k] && CACHE.parcels[k].lgTried) && (CACHE.blds[k] || []).some(r => !r.ledger && (r.needUnits || !r.year));
+async function fillLedger(pnus, say) {
   if (!LG.ok) return 0;
-  const list = pnus.filter(k => (CACHE.blds[k] || []).some(r => r.needUnits && !r.ledger));
+  const list = pnus.filter(ledgerNeeded);
   let i = 0, fail = 0;
   for (const k of list) {
-    i++; say(`공동주택 건축물대장(세대수) ${i}/${list.length}필지`);
+    i++; say(`건축물대장(사용승인 연도·세대수) ${i}/${list.length}필지`);
     try {
       const rows = await LG.titleRetry(k);
-      if (rows.length) { const pt = (CACHE.blds[k][0] || {}).pt || null; CACHE.blds[k] = rows.map(t => ({ ...rowFromLedger(t), pt })); }
+      const gis = CACHE.blds[k] || [];
+      if (rows.length) {
+        const pt = (gis[0] || {}).pt || null;
+        const led = rows.map(t => ({ ...rowFromLedger(t), pt }));
+        const extra = gis.filter(r => !r.ledger).sort((a, b) => (a.year ? 1 : 0) - (b.year ? 1 : 0)).slice(0, Math.max(0, gis.length - led.length)).map(r => ({ ...r, src: r.year ? 'GIS' : '대장 없음' }));
+        CACHE.blds[k] = led.concat(extra);
+      } else CACHE.blds[k] = gis.map(r => ({ ...r, src: r.year ? r.src : '대장 없음' }));
+      if (CACHE.parcels[k]) CACHE.parcels[k].lgTried = true;
     } catch (e) { fail++; }
   }
   return fail;
@@ -320,8 +330,9 @@ async function fetchZoneNow(id) {
     });
     kept.forEach(pf => {
       const k = pf.properties.pnu, old = CACHE.blds[k];
-      if (old && old.length && old.every(r => r.ledger)) return;   // 이미 대장으로 바꾼 필지는 유지
+      if (old && old.length && old.some(r => r.ledger)) return;   // 이미 대장으로 바꾼 필지는 유지
       CACHE.blds[k] = byP[k] || [];
+      if (CACHE.parcels[k]) CACHE.parcels[k].lgTried = false;
     });
     z.inArea = inArea; z.fetchedAt = new Date().toLocaleString('sv-SE').slice(0, 16); z.from = 'map';
     saveZ(); saveCache();
@@ -329,7 +340,7 @@ async function fetchZoneNow(id) {
     failLc = await fillLandChar(Object.keys(inArea), say);
     saveCache();
     if (S.source === 'map') { D = buildMap(); D.parcels.forEach(applyAccess); render(); }
-    failLg = await fillLedgerApts(Object.keys(inArea), say);
+    failLg = await fillLedger(Object.keys(inArea), say);
     saveCache();
     ok = true;
   } catch (e) {
@@ -573,14 +584,22 @@ function accJudge(a, lim) {
   const s = st === 'ok' ? '충족' : st === 'bad' ? `${((a.accRatio - lim) * 100).toFixed(1)}%p 초과` : `미확인 ${a.accU}동에 따라 달라짐 — 도로접면 조회 또는 현황표 접도 칸을 눌러 지정`;
   return { st, v, s };
 }
+// 노후 동수 비율 '이상' 기준: 연도 미확인이 모두 노후여도 미달이면 미충족, 모두 비노후여도 넘으면 충족
+const oldText = a => a.unknownN ? `${pct(a.oldRatio)}~${pct(a.N ? (a.oldN + a.unknownN) / a.N : 0)}` : pct(a.oldRatio);
+function oldJudge(a, lim) {
+  const lo = a.oldRatio, hi = a.N ? (a.oldN + a.unknownN) / a.N : 0;
+  const st = lo >= lim ? 'ok' : hi < lim ? 'bad' : 'unk';
+  const v = `${oldText(a)} (${a.oldN}${a.unknownN ? `+미확인 ${a.unknownN}` : ''}/${a.N}동)`;
+  const s = st === 'ok' ? `기준보다 ${Math.floor(a.oldN - lim * a.N)}동 여유` : st === 'bad' ? `기준 대비 ${Math.ceil(lim * a.N - a.oldN - a.unknownN)}동 부족` : `연도 미확인 ${a.unknownN}동에 따라 달라짐 — 노후 ${Math.ceil(lim * a.N - a.oldN)}동 더 필요`;
+  return { st, v, s };
+}
 function judge(a, type) {
   const out = [];
   const st = (ok) => ok == null ? 'unk' : ok ? 'ok' : 'bad';
   if (type === 'redev') {
     const r = RULES.redevelopment;
     out.push({ req: true, t: '구역 면적 ' + fmt(r.minArea) + '㎡ 이상', basis: '정비조례 제5조①2', v: fmt(a.area) + '㎡', st: st(a.area >= r.minArea), s: a.area >= r.minArea ? '' : `${fmt(r.minArea - a.area)}㎡ 부족` });
-    const need = Math.ceil(r.obsoleteCount * a.N - a.oldN), okO = a.oldRatio >= r.obsoleteCount;
-    out.push({ req: true, t: '노후·불량건축물 수 ' + r.obsoleteCount * 100 + '% 이상', basis: '정비조례 제5조①2, 영 별표1 제2호', v: pct(a.oldRatio) + ` (${a.oldN}/${a.N}동)`, st: st(okO), s: (okO ? `기준보다 ${Math.floor(a.oldN - r.obsoleteCount * a.N)}동 여유` : `기준 대비 ${need}동 부족`) + (a.unknownN ? ` · 연도 미확인 ${a.unknownN}동` : '') });
+    out.push({ req: true, t: '노후·불량건축물 수 ' + r.obsoleteCount * 100 + '% 이상', basis: '정비조례 제5조①2, 영 별표1 제2호', ...oldJudge(a, r.obsoleteCount) });
     const opts = [
       { t: '주택접도율 ' + r.road * 100 + '% 이하', ...accJudge(a, r.road), basis: '제5조①2가, 제2조7호' },
       { t: '과소필지 ' + r.small * 100 + '% 이상', v: pct(a.smallRatio) + ` (${a.smallN}/${a.ps.length}필지)`, st: st(a.smallRatio >= r.small), s: a.smallRatio >= r.small ? '충족' : `${((r.small - a.smallRatio) * 100).toFixed(1)}%p 모자람`, basis: '제5조①2나, 제2조5호(분할제한면적 미만)' },
@@ -590,8 +609,7 @@ function judge(a, type) {
     out.push({ group: true, t: '다음 중 하나 이상', items: opts, st: opts.some(o => o.st === 'ok') ? 'ok' : opts.some(o => o.st === 'unk') ? 'unk' : 'bad' });
   } else {
     const r = RULES.improvement;
-    const okO = a.oldRatio >= r.obsoleteCount;
-    out.push({ req: true, t: '노후·불량건축물 수 ' + r.obsoleteCount * 100 + '% 이상', basis: '정비조례 제5조①1', v: pct(a.oldRatio), st: st(okO), s: okO ? '충족' : `기준 대비 ${Math.ceil(r.obsoleteCount * a.N - a.oldN)}동 부족` });
+    out.push({ req: true, t: '노후·불량건축물 수 ' + r.obsoleteCount * 100 + '% 이상', basis: '정비조례 제5조①1', ...oldJudge(a, r.obsoleteCount) });
     const opts = [
       { t: '접도율 ' + r.road * 100 + '% 이하', ...accJudge(a, r.road), basis: '제5조①1가' },
       { t: '과소·부정형·세장형 필지 ' + r.small * 100 + '% 이상', v: pct(a.smallRatio) + ' (과소필지만 집계)', st: st(a.smallRatio >= r.small), basis: '제5조①1나 — 부정형·세장형 미판정' },
@@ -692,6 +710,11 @@ function roadTargets() {
   const R = D.regions[S.region]; if (!R || !R.fetched) return [];
   return Object.keys(R.inArea).filter(k => { const p = D.byPnu.get(k); return p && !p.roadSide && (R.blds[k] || []).length; });
 }
+function ledgerTargets() {
+  if (!D.map || !LG.ok) return [];
+  const R = D.regions[S.region]; if (!R || !R.fetched) return [];
+  return Object.keys(R.inArea).filter(ledgerNeeded);
+}
 function renderSourceBar() {
   const bar = $id('source'), tag = $id('demoTag');
   if (S.source === 'sample') {
@@ -703,6 +726,7 @@ function renderSourceBar() {
     const proj = loadProject(), hasProj = !!(proj && proj.area && proj.area.geojson);
     bar.innerHTML = `<b>지도에서 구역계를 그려 판정합니다</b> · 그린 안 ${used}개`
       + (rt ? ` <button class="btn sm" id="roadBtn">도로접면 조회 (${rt}필지)</button>` : '')
+      + (ledgerTargets().length ? ` <button class="btn sm" id="ledBtn" title="사용승인 연도가 빈 건물과 공동주택 세대수를 건축물대장 표제부로 채웁니다">건축물대장으로 연도·세대수 채우기 (${ledgerTargets().length}필지)</button>` : '')
       + (hasProj ? ` <button class="btn ghost sm" id="fromProj" title="사업성 검토 화면에 그린 구역계와 토지·건축물 조서를 지금 고른 안으로 가져옵니다">사업성 검토 구역 가져오기 → ${esc(S.region)}안</button>` : '')
       + ` <button class="btn ghost sm" id="toSample">예시 구역 보기</button>`;
   }
@@ -713,6 +737,12 @@ function renderSourceBar() {
     const R = D.regions[S.region];
     if (R.geojson && !confirm(`${R.name}에 이미 구역계가 있습니다. 사업성 검토 구역으로 바꿀까요?`)) return;
     importProject(S.region);
+  });
+  on('ledBtn', async () => {
+    if (busy) return; busy = true;
+    const b = $id('ledBtn'); if (b) b.disabled = true;
+    try { const f = await fillLedger(ledgerTargets(), t => statusMsg(`${S.region}안: ${t}`)); saveCache(); statusMsg(f ? `건축물대장 조회 완료 · ${f}필지 실패(다시 누르면 재시도)` : '건축물대장으로 연도·세대수를 채웠습니다.'); }
+    finally { busy = false; D = buildMap(); D.parcels.forEach(applyAccess); renderSourceBar(); render(); }
   });
   on('roadBtn', async () => {
     if (busy) return; busy = true;
@@ -975,7 +1005,7 @@ function renderZone(a) {
     ${kpi('구역 면적', fmt(a.area) + '㎡', D.map ? '그린 구역계 면적(도로 포함)' : '구역계 폴리곤 면적(도로 포함)')}
     ${kpi('편입 필지', a.ps.length + '필지', `${D.map ? '대장 면적×편입비율' : '조서 면적'} 합 ${fmt(a.landArea)}㎡`)}
     ${kpi('건축물', a.N + '동', `연면적 ${fmt(a.fa)}㎡`)}
-    ${kpi('노후도(동수)', pct(a.oldRatio), `${a.oldN} / ${a.N}동${a.unknownN ? ` · 연도 없음 ${a.unknownN}` : ''}`)}
+    ${kpi('노후도(동수)', oldText(a), `${a.oldN} / ${a.N}동${a.unknownN ? ` · 사용승인 연도 미확인 ${a.unknownN}동` : ''}`)}
     ${kpi('노후도(연면적)', pct(a.oldFaRatio), `${fmt(a.oldFa)} / ${fmt(a.fa)}㎡`)}
     ${kpi('과소필지', pct(a.smallRatio), `분할제한면적 미만 ${a.smallN} / ${a.ps.length}필지`)}
     ${kpi('주택접도율', accText(a), `폭4m·4m 이상 접도 ${a.accN} / ${a.N}동${a.accU ? ` · 미확인 ${a.accU}동` : ''}`)}
@@ -1001,7 +1031,7 @@ function renderReq(a) {
   const item = o => `<div class="chk ${o.req ? 'req' : ''}"><span class="pill ${PILL[o.st][0]}">${PILL[o.st][1]}</span><div><div class="t">${o.t}</div><div class="s">${o.basis || ''}${o.s ? ' · ' + o.s : ''}</div></div><div class="num">${o.v}</div></div>`;
   const list = j.items.map(o => o.group ? `<div class="chk"><span class="pill ${PILL[o.st][0]}">${PILL[o.st][1]}</span><div style="grid-column:2/4"><div class="t">${o.t}</div><div class="checks" style="margin-top:6px">${o.items.map(item).join('')}</div></div></div>` : item(o)).join('');
   const keys = D.keys.filter(k => analyze(k));
-  const cmp = keys.map(k => { const x = analyze(k), jj = judge(x, P.type); return `<tr class="${k === S.region ? 'hl' : ''}"><td>${esc(D.regions[k].name)}</td><td class="r">${fmt(x.area)}</td><td class="r">${pct(x.oldRatio)}</td><td class="r">${pct(x.oldFaRatio)}</td><td class="r">${pct(x.smallRatio)}</td><td class="r">${accText(x)}</td><td class="r">${x.density.toFixed(1)}</td><td>${jj.pass === true ? '<span class="pill ok">입안 가능</span>' : jj.pass === false ? '<span class="pill bad">요건 미달</span>' : '<span class="pill warn">확인 필요</span>'}</td></tr>`; }).join('');
+  const cmp = keys.map(k => { const x = analyze(k), jj = judge(x, P.type); return `<tr class="${k === S.region ? 'hl' : ''}"><td>${esc(D.regions[k].name)}</td><td class="r">${fmt(x.area)}</td><td class="r">${oldText(x)}</td><td class="r">${pct(x.oldFaRatio)}</td><td class="r">${pct(x.smallRatio)}</td><td class="r">${accText(x)}</td><td class="r">${x.density.toFixed(1)}</td><td>${jj.pass === true ? '<span class="pill ok">입안 가능</span>' : jj.pass === false ? '<span class="pill bad">요건 미달</span>' : '<span class="pill warn">확인 필요</span>'}</td></tr>`; }).join('');
   const vtxt = j.pass === true ? '인천 정비조례 제5조 요건을 충족합니다' : j.pass === false ? '요건을 충족하지 못합니다 — 아래 미충족 항목을 보세요' : '확인이 필요한 항목이 있어 판정을 끝내지 못했습니다';
   side.innerHTML = `<h2>${regName()} 입안대상지역 요건판정</h2>
   <div class="field" style="max-width:260px;margin-bottom:10px"><label for="ptype">사업 유형</label><select id="ptype"><option value="redev">재개발사업</option><option value="improve">주거환경개선사업</option></select></div>
