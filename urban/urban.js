@@ -647,7 +647,7 @@ const P = {
   bcr: 18, mix59: 40, mix84: 50, mix114: 10, supplyFactor: 1.33, rentalRatio: 15, coreUnits: 4,
   landPrice: 300, bldValue: 60, memberPrice: 1800, salePrice: 2300, rentalPrice: 18000,
   constCost: 700, basementRatio: 55, etcRatio: 20, priorMode: 'jiga', priorMult: 1.4, ghostIn: false,
-  infraMode: 'proposal', parkMode: 'legal', sideRoadW: 6, schoolArea: 0, otherInfra: 0, greenInfra: 0, keepInnerRoads: false,
+  infraMode: 'proposal', parkMode: 'legal', sideRoadW: 6, schoolArea: 0, otherInfra: 0, greenInfra: 0, pubBldg: 0, keepInnerRoads: false,
 };
 try { const s = localStorage.getItem('jbs-urban-plan'); if (s) Object.assign(P, JSON.parse(s)); } catch (e) { /* 무시 */ }
 const saveP = () => { try { localStorage.setItem('jbs-urban-plan', JSON.stringify(P)); } catch (e) { /* 무시 */ } };
@@ -933,7 +933,7 @@ const INFRA = {
   compute(a, units, opt = {}) {
     const id = a.key, z = Z.zones[id];
     if (!D.map || !z || !z.geojson) return null;
-    const mk = [id, units, opt.roadAdd || 0, a.area, P.autoAbsorb, P.parkMode, P.sideRoadW, P.schoolArea, P.otherInfra, P.greenInfra, P.keepInnerRoads, JSON.stringify(z.infra || {}), z.roads && z.roads.at, Object.keys(z.inArea || {}).length].join('|');
+    const mk = [id, units, opt.roadAdd || 0, a.area, P.autoAbsorb, P.parkMode, P.sideRoadW, P.schoolArea, P.otherInfra, P.greenInfra, P.pubBldg, P.keepInnerRoads, JSON.stringify(z.infra || {}), z.roads && z.roads.at, Object.keys(z.inArea || {}).length].join('|');
     if (this.memo[mk]) return this.memo[mk];
     const zone = z.geojson, items = [];
     const W = this.entryWidth(units), sideW = num(P.sideRoadW) || 6;
@@ -1109,8 +1109,9 @@ const INFRA = {
     lots = lots.map((l, i) => ({ ...l, no: i + 1 }));
     if ((relC || merged.rel || relGrown) && relGeom) relArea = turf.area(relGeom);
     const parkArea = parkGeom ? turf.area(parkGeom) : 0, schoolArea = schoolGeom ? turf.area(schoolGeom) : 0;
-    const other = num(P.otherInfra), green = num(P.greenInfra);   // green: 완충·경관·연결녹지 등(입력값, 지도에는 그리지 않음)
-    const total = roadArea + (P.keepInnerRoads ? innerFull : 0) + parkArea + green + schoolArea + other + relArea;
+    // green: 완충·경관·연결녹지 등 · other: 공용주차장·공공공지·광장 등 그 밖의 정비기반시설 · pubB: 공공청사 등(정비기반시설 아님) — 모두 입력값, 지도에는 그리지 않음
+    const other = num(P.otherInfra), green = num(P.greenInfra), pubB = num(P.pubBldg);
+    const total = roadArea + (P.keepInnerRoads ? innerFull : 0) + parkArea + green + schoolArea + other + pubB + relArea;
     // 확보 목표: 구역 안 기존 공공시설(도로·구거 등 공공 지목 필지) + 도시계획시설 — 겹치는 땅은 한 번만
     let keepGeom = null, keepArea = 0, facArea = 0;
     const facList = (z.roads && z.roads.fac) || [];
@@ -1120,7 +1121,8 @@ const INFRA = {
       if (gs.length) { keepGeom = safeUnion(gs); keepArea = Math.max(0, turf.area(keepGeom) - innerOcc); }   // 국공유 공공시설 안 건물 점유 부분은 뺌
       facArea = facList.length ? turf.area(safeUnion(facList.map(f => ({ type: 'Feature', properties: {}, geometry: f.geom })))) : 0;
     } catch (er) { keepArea = innerArea; }
-    const newArea = roadArea + parkArea + green + schoolArea + other;   // 신설 정비기반시설(무상귀속)
+    // 신설 정비기반시설(무상귀속, 도정법 제97조②) — 정비기반시설(법 제2조제4호·영 제3조)만 셈. 학교용지·공공청사는 정비기반시설이 아니라 뺌
+    const newArea = roadArea + parkArea + green + other;
     const short = Math.max(0, keepArea - newArea);
     // 모자라면 경계 도로를 넓혀 채우기(선택). 한 번만 다시 계산
     if ((z.infra || {}).widenShort && short > 1 && !opt.roadAdd && !P.keepInnerRoads) {
@@ -1131,7 +1133,7 @@ const INFRA = {
       giAll, keepArea, facArea, facList, newArea, short, roadAdd: opt.roadAdd || 0,
       widenExtra, paired, lots, merged, mergeList, skipped, absorbed, parkC, schoolC, relC, relCenter: relGeom ? (() => { const c = turf.centroid(relGeom).geometry.coordinates; return [c[1], c[0]]; })() : null,
       relAll, rel, relLand, relArea, relGeom, relManual: szRel.mode !== 'auto', szPark, szSchool, szRel, parkLegal,
-      W, sideW, units, items, roadGeom, roadArea, inner, innerArea, innerFull, innerOcc, legal, parkNeed, parkGeom, parkArea, green, schoolGeom, schoolArea, other, total,
+      W, sideW, units, items, roadGeom, roadArea, inner, innerArea, innerFull, innerOcc, legal, parkNeed, parkGeom, parkArea, green, pubB, schoolGeom, schoolArea, other, total,
       ratio: a.area ? total / a.area : 0, roadsReady: !!z.roads, edge: z.roads ? z.roads.edge : [],
     };
     this.memo = {}; this.memo[mk] = res;
@@ -1872,24 +1874,27 @@ function renderReq(a) {
 const field = (id, label, val, unit, attrs = '') => `<div class="field"><label for="${id}">${label}</label><input id="${id}" type="number" value="${val}" ${attrs}><span class="u">${unit}</span></div>`;
 function bindNum(ids) { ids.forEach(id => { const e = document.getElementById(id); if (!e) return; e.addEventListener('change', () => { const v = parseFloat(e.value); if (!isNaN(v)) { P[id] = v; saveP(); render(); } }); }); }
 // 토지이용계획표의 정비기반시설·종교용지 행
-//  정비기반시설 계 = 도로 + 공원 + 녹지 + 학교 + 기타 (종교용지는 기반시설이 아니라 따로 줄을 둠)
-//  도로 = 계 − 공원 − 녹지 − 학교 − 기타 → 경계 도로 확폭·직접 지정한 도로·존치하는 기존 도로를 모두 담아 하위 합이 계와 같게 함
+//  정비기반시설 계 = 도로 + 공원 + 녹지 + 그 밖의 정비기반시설(공용주차장·공공공지·광장 등) — 도정법 제2조제4호·영 제3조
+//  학교용지·공공청사·종교용지는 정비기반시설이 아니라 따로 줄을 둠(무상귀속 대상 아님)
+//  도로 = 계 − 공원 − 녹지 − 그 밖의 정비기반시설 → 경계 도로 확폭·직접 지정한 도로·존치하는 기존 도로를 모두 담아 하위 합이 계와 같게 함
 function luRows(a, pl) {
   const inf = pl.infra, A = a.area || 1, pc = v => (v / A * 100).toFixed(1) + '%';
   const tr = (t, v, cls = '') => `<tr${cls ? ` class="${cls}"` : ''}><td>${t}</td><td class="r">${fmt(v)}</td><td class="r">${pc(v)}</td></tr>`;
   if (!inf) return tr('정비기반시설 계', A * pl.infraPct / 100);
-  const infraA = inf.total - (inf.relArea || 0);
-  const roadT = Math.max(0, infraA - inf.parkArea - (inf.green || 0) - inf.schoolArea - inf.other);
+  const infraA = inf.total - (inf.relArea || 0) - inf.schoolArea - (inf.pubB || 0);
+  const roadT = Math.max(0, infraA - inf.parkArea - (inf.green || 0) - inf.other);
   const manual = inf.items.filter(it => it.kind === 'manual').reduce((t, it) => t + it.area, 0), widen = inf.roadArea - manual;
   const kept = P.keepInnerRoads ? inf.innerFull : 0;
   const parts = [widen > 0.5 ? `경계 도로 확폭 ${fmt(widen)}` : '', manual > 0.5 ? `직접 지정 ${fmt(manual)}` : '', kept > 0.5 ? `기존 도로 존치 ${fmt(kept)}` : ''].filter(Boolean);
-  let h = (inf.relArea ? tr('종교용지(존치·대체)<br><span class="u">정비기반시설 아님 — 공동주택 획지에서 뺌</span>', inf.relArea) : '')
+  const notInfra = '<br><span class="u">정비기반시설 아님(무상귀속 대상 아님) — 공동주택 획지에서 뺌</span>';
+  let h = (inf.schoolArea ? tr('학교용지' + notInfra, inf.schoolArea) : '')
+    + ((inf.pubB || 0) ? tr('공공청사 등' + notInfra, inf.pubB) : '')
+    + (inf.relArea ? tr('종교용지(존치·대체)' + notInfra, inf.relArea) : '')
     + tr('정비기반시설 계 (제안)', infraA)
     + tr(`&nbsp;└ 도로(신설·존치)<br><span class="u">${parts.join(' · ') || '도로로 잡은 면적 없음'}</span>`, roadT)
     + tr('&nbsp;└ 공원', inf.parkArea)
     + tr('&nbsp;└ 녹지<br><span class="u">완충·경관·연결녹지 등 — 아래 \'녹지 면적\'에 입력</span>', inf.green || 0)
-    + (inf.schoolArea ? tr('&nbsp;└ 학교용지', inf.schoolArea) : '')
-    + (inf.other ? tr('&nbsp;└ 기타(공공청사·주차장·공공공지 등)', inf.other) : '');
+    + (inf.other ? tr('&nbsp;└ 그 밖의 정비기반시설<br><span class="u">공용주차장·공공공지·광장 등</span>', inf.other) : '');
   // 확보 목표와 맞춰 보기: 모자라면 그만큼은 구역 안 도로로 더 잡아야 하므로 참고 줄로 보여 줌(면적 계산에는 넣지 않음)
   if (inf.short > 1) {
     const inf2 = infraA + inf.short, site2 = Math.max(0, pl.site - inf.short);
@@ -1925,7 +1930,7 @@ function renderPlan(a) {
   <p class="note">허용용적률은 인센티브 항목을, 상한용적률은 공공시설 부지 제공 등 공공기여를 전제로 합니다. 이 화면은 인센티브 배점과 공공기여 산식을 아직 계산하지 않고 단계만 고릅니다.</p>`;
   const z = document.getElementById('zone'); z.value = P.zone; z.onchange = () => { P.zone = z.value; saveP(); render(); };
   const f = document.getElementById('farMode'); f.value = P.farMode; f.onchange = () => { P.farMode = f.value; saveP(); render(); };
-  bindNum(['infraRatio', 'farCustom', 'sideRoadW', 'schoolArea', 'otherInfra', 'greenInfra']);
+  bindNum(['infraRatio', 'farCustom', 'sideRoadW', 'schoolArea', 'otherInfra', 'greenInfra', 'pubBldg']);
   bindInfra();
 }
 function sideWOf() { return num(P.sideRoadW) || 6; }
@@ -1972,9 +1977,10 @@ function infraSection(a, pl) {
   else if (((Z.zones[a.key] || {}).infra || {}).noPair) rows.push(['따로 놓음', 0, `공원·녹지와 종교용지를 각자 따로 놓았습니다. <button type="button" class="btn ghost sm" id="repair">맞닿으면 한 띠로 묶기</button>`]);
   if (inf.paired && inf.paired.custom) rows.push(['나눔선 조정', 0, `맞닿은 ${{ park: '공원·녹지', rel: '종교용지', school: '학교용지' }[inf.paired.kinds[0]]} ${fmt(inf.paired.a1)}㎡ · ${{ park: '공원·녹지', rel: '종교용지', school: '학교용지' }[inf.paired.kinds[1]]} ${fmt(inf.paired.a2)}㎡ (합 ${fmt(inf.paired.total)}㎡ 그대로, 위 면적에 반영) <button type="button" class="btn ghost sm" id="resetSplit">처음 나눔으로</button>`]);
   if (inf.absorbed >= 1) rows.push(['자투리 편입', 0, `큰 공동주택 획지와 떨어져 갇힌 1,000㎡ 미만 조각 ${fmt(inf.absorbed)}㎡를 가장 많이 맞닿은 공원·학교·대체부지에 붙였습니다(위 면적에 포함).`]);
-  if (inf.szSchool.A > 0) rows.push(['학교용지', inf.schoolArea, `${szTxt(inf.szSchool) || '입력값'} — 교육청 협의로 정함`]);
+  if (inf.szSchool.A > 0) rows.push(['학교용지', inf.schoolArea, `${szTxt(inf.szSchool) || '입력값'} — 교육청 협의로 정함. 정비기반시설이 아니어서 신설(무상귀속) 면적에는 넣지 않음`]);
   if (inf.green) rows.push(['녹지', inf.green, '완충녹지·경관녹지·연결녹지 등(입력값) — 지도에는 그리지 않음']);
-  if (inf.other) rows.push(['기타 시설', inf.other, '공공청사·주차장·공공공지 등(입력값)']);
+  if (inf.other) rows.push(['그 밖의 정비기반시설', inf.other, '공용주차장·공공공지·광장·소방용수시설 등(입력값) — 도정법 제2조제4호·영 제3조']);
+  if (inf.pubB) rows.push(['공공청사 등', inf.pubB, '정비기반시설이 아님(입력값). 기부채납·공공기여로 다루며 신설(무상귀속) 면적에는 넣지 않음']);
   if (inf.relAll.length || inf.relManual) {
     const chips = inf.relAll.map(p => `<label class="rel-chip"><input type="checkbox" data-rel="${esc(p.pnu)}" ${inf.rel.includes(p) ? 'checked' : ''}> ${esc(p.jibun)} (${fmt((p.base ?? p.area))}㎡)</label>`).join(' ');
     rows.push([`종교용지(존치·대체) ${inf.rel.length}필지`, inf.relArea, `구역 안 종교시설(교회 등) 부지. 법정 의무는 없으나 실무상 정비계획에서 존치하거나 구역 안 대체부지로 잡아 공동주택 획지에서 뺍니다. 근생 건물의 한 층을 쓰는 교회는 상가 분양·보상 대상이라 넣지 않습니다.<br>${chips || '자동으로 찾은 필지 없음'}${inf.relManual ? ` · <b>${szTxt(inf.szRel)}</b>` : ''}
@@ -1997,7 +2003,7 @@ function infraSection(a, pl) {
   <div class="tscroll"><table><thead><tr><th>구분</th><th class="r">면적㎡</th><th>근거·설명</th></tr></thead><tbody>
   ${rows.map(r => `<tr><td>${r[0]}</td><td class="r">${fmt(r[1])}</td><td class="wrap">${r[2]}</td></tr>`).join('')}
   ${(() => { const newA = inf.newArea, oldA = P.keepInnerRoads ? 0 : inf.innerArea;
-      return `<tr><td>신설 정비기반시설<br><span class="u">준공 시 국가·지자체에 무상귀속</span></td><td class="r">${fmt(newA)}</td><td class="wrap">도로 확폭·직접 지정한 도로·공원·녹지·학교·기타. 사업시행자가 설치해 국가·지자체에 무상귀속(도정법 제97조②). 구역 안 새 도로는 ✂ 구역계 자르기로 그어 '도로로 지정'하세요.</td></tr>
+      return `<tr><td>신설 정비기반시설<br><span class="u">준공 시 국가·지자체에 무상귀속</span></td><td class="r">${fmt(newA)}</td><td class="wrap">도로 확폭·직접 지정한 도로·공원·녹지·그 밖의 정비기반시설(학교·공공청사 제외). 사업시행자가 설치해 국가·지자체에 무상귀속(도정법 제97조②). 구역 안 새 도로는 ✂ 구역계 자르기로 그어 '도로로 지정'하세요.</td></tr>
       <tr><td>용도폐지 기존 기반시설<br><span class="u">무상양도 대상</span></td><td class="r">${fmt(oldA)}</td><td class="wrap">${oldA ? `신설 ${fmt(newA)}㎡ 대비 ${newA ? (oldA / newA * 100).toFixed(0) : '–'}%(면적 기준). 실제 양도 범위는 용도폐지 시설의 평가금액과 신설 시설 설치비용을 비교해 정함` : '없음'}</td></tr>`; })()}
   ${(inf.skipped || []).length ? `<tr><td>획지 붙이기<br><span class="u">적용 안 함</span></td><td class="r">0</td><td class="wrap">${inf.skipped.map(m => `주된 공동주택 획지 ${fmt(m.area)}㎡ 전체를 ${{ park: '공원·녹지', school: '학교용지', rel: '종교용지' }[m.kind]}에 붙인 것 <button type="button" class="btn ghost sm" data-unmerge="${m.idx}">지우기</button>`).join(' · ')} — 실수로 보여 적용하지 않았습니다. 필요하면 획지를 눌러 붙일 면적을 넣어 다시 붙이세요.</td></tr>` : ''}
   ${Object.keys(inf.merged || {}).length ? `<tr><td>획지 붙이기</td><td class="r">${fmt(Object.values(inf.merged).reduce((a2, b2) => a2 + b2, 0))}</td><td class="wrap">${inf.mergeList.map(m => `${{ park: '공원·녹지', school: '학교용지', rel: '종교용지' }[m.kind]}에 ${fmt(m.area)}㎡ <button type="button" class="btn ghost sm" data-unmerge="${m.idx}" aria-label="이 붙이기 되돌리기">✕</button>`).join(' · ')} (위 면적에 포함) <button type="button" class="btn ghost sm" id="undoMerge">모두 되돌리기</button></td></tr>` : ''}
@@ -2024,7 +2030,8 @@ function infraSection(a, pl) {
   <div class="form" style="margin-top:8px">
     ${field('sideRoadW', '주변 도로 최소 폭(제안)', P.sideRoadW, 'm · 진입도로는 세대수 기준으로 자동', 'step=0.5')}
     ${field('greenInfra', '녹지 면적', P.greenInfra, '㎡ · 완충·경관·연결녹지 등(공원과 따로)', 'step=100')}
-    ${field('otherInfra', '기타 기반시설 면적', P.otherInfra, '㎡ · 공공청사·주차장·공공공지 등', 'step=100')}
+    ${field('otherInfra', '그 밖의 정비기반시설 면적', P.otherInfra, '㎡ · 공용주차장·공공공지·광장 등', 'step=100')}
+    ${field('pubBldg', '공공청사 등 면적', P.pubBldg, '㎡ · 정비기반시설 아님(무상귀속 제외)', 'step=100')}
     <div class="field"><label for="parkMode">5만㎡ 미만일 때 공원·녹지</label><select id="parkMode"><option value="legal">법정 의무만(없으면 0)</option><option value="always">부지 5% 제안</option></select></div>
   </div>
  <label class="zk-opts"><input type="checkbox" id="autoAbsorb" ${P.autoAbsorb !== false ? 'checked' : ''}> 큰 획지와 떨어져 갇힌 1,000㎡ 미만 조각을 맞닿은 시설에 자동으로 붙이기 — 끄면 그 조각은 주황 획지로 남음(눌러서 면적을 정해 붙일 수 있음)</label>
