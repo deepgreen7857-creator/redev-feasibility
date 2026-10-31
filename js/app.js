@@ -324,7 +324,7 @@ const Tabs = {
           { key: 'old', label: '노후 판정', computed: r => (Calc.isOld(S, r, year) ? '노후' : '–'), cls: r => (Calc.isOld(S, r, year) ? 'tag bad' : 'tag') },
           {
             key: 'check', label: '비고',
-            computed: r => [r.ledger ? '대장' : '', r.noLedger ? '대장 없음 – 무허가 등 확인' : '', r.noInfo && !num(r.year) ? '정보 없음 – 건축물대장 확인' : '', r.needUnits && !num(r.units) ? '세대수 확인 필요' : '', r.guessed ? '용도 추정' : ''].filter(Boolean).join(' · '),
+            computed: r => [r.ledger ? '대장' : '', r.yearSrc ? `${r.yearSrc} 기준 연도 추정` : '', BldgRows.isGhost(r) ? '공부 정보 없음 – 노후도 동수에서 뺌' : '', r.noLedger ? '대장 없음 – 무허가 등 확인' : '', r.noInfo && !num(r.year) ? '정보 없음 – 건축물대장 확인' : '', r.needUnits && !num(r.units) ? '세대수 확인 필요' : '', r.guessed ? '용도 추정' : ''].filter(Boolean).join(' · '),
             cls: r => ((r.noInfo && !num(r.year)) || (r.needUnits && !num(r.units)) ? 'tag warn' : 'tag'),
           },
         ],
@@ -346,6 +346,7 @@ const Tabs = {
         <div><span>3년 안에 노후 도래</span><b>${fmt(sv.soon3)}동</b></div>
         ${isFinite(sv.req) && sv.count ? `<div class="hl"><span>노후도 ${fmt(sv.req, 1)}% 요건</span><b class="${sv.needMore ? 'warn' : 'good'}">${sv.needMore ? (sv.reachDate ? `${sv.needMore}동 부족 → ${sv.reachDate.toLocaleDateString('sv-SE')} 충족 예상` : `${sv.needMore}동 부족 (도래 예정 건물로 충족 불가)`) : '충족'}</b></div>` : ''}
         ${sv.unknown ? `<div><span>사용승인연도 없음 (판정 불가)</span><b class="warn">${fmt(sv.unknown)}동</b></div>` : ''}
+        ${sv.ghost ? `<div class="hl"><span>공부 정보 없는 지도 건물 ${S.criteria.ghostIn ? '(동수에 넣음)' : '(동수에서 뺌)'}</span><b class="warn">${fmt(sv.ghost)}동 <label style="font-weight:400;font-size:12px"><input type="checkbox" id="ghostIn" ${S.criteria.ghostIn ? 'checked' : ''}> 넣기</label></b></div>` : ''}
         <div class="hl"><span>노후도 (동수 기준)</span><b class="${sv.oldRatio >= 60 ? 'good' : ''}">${fmtPct(sv.oldRatio)}</b></div>
         <div><span>노후도 (연면적 기준)</span><b>${fmtPct(sv.oldAreaRatio)}</b></div>
         <div><span>단독·다가구</span><b>${fmt(sv.detached)}호</b></div>
@@ -353,8 +354,9 @@ const Tabs = {
         ${(S.exposUnits || []).length ? `<div><span>전유부 호수 (집합건물)</span><b>${fmt(S.exposUnits.length)}호 · ${fmt(new Set(S.exposUnits.map(u => u.pnu)).size)}필지</b></div>` : ''}
         <div><span>토지</span><b>${fmt(sv.landCount)}필지 · ${fmt(sv.landArea)}㎡</b></div>
         <div><span>국공유지</span><b>${fmt(sv.publicArea)}㎡ (${fmtPct(sv.landArea ? sv.publicArea / sv.landArea * 100 : NaN)})</b></div>
-        <div><span>과소필지 (90㎡ 미만)</span><b>${fmt(sv.small)}필지</b></div>
+        <div><span>과소필지 (${fmt(num(S.criteria.smallLot) || 90)}㎡ 미만)</span><b>${fmt(sv.small)}필지</b></div>
         <div><span>토지 소유자</span><b>${fmt(sv.owners)}명</b></div>`;
+      const gi = $('#ghostIn'); if (gi) gi.onchange = () => { S.criteria.ghostIn = gi.checked; App.update(true); };
       $('#reqTitle').textContent = `${TYPES[S.meta.type].label} 요건 검토`;
       const reqs = Calc.requirements(S, sv);
       $('#reqList').innerHTML = reqs.map(r => `
@@ -719,7 +721,7 @@ function surveyRows() {
     '노후도래일': Calc.oldDate(S, b) ? Calc.oldDate(S, b).toLocaleDateString('sv-SE') : '',
     '연면적(㎡)': num(b.floorArea), '호·세대수': num(b.units) || '', '전유 호수': num(b.hoCount) || '',
     '노후여부': Calc.isOld(S, b, year) ? '노후' : (num(b.year) ? '' : '판정불가'),
-    '비고': [b.ledger ? '건축물대장' : '', b.noLedger ? '대장 없음' : '', b.purpose || '', b.noInfo && !num(b.year) ? '건축물대장 확인' : '', b.needUnits && !num(b.units) ? '세대수 확인' : '', b.guessed ? '용도 추정' : ''].filter(Boolean).join(', '),
+    '비고': [b.ledger ? '건축물대장' : '', b.yearSrc ? `${b.yearSrc} 기준 연도 추정` : '', BldgRows.isGhost(b) ? '공부 정보 없음(노후도 동수 제외)' : '', b.noLedger ? '대장 없음' : '', b.purpose || '', b.noInfo && !num(b.year) ? '건축물대장 확인' : '', b.needUnits && !num(b.units) ? '세대수 확인' : '', b.guessed ? '용도 추정' : ''].filter(Boolean).join(', '),
   }));
   return { lands, bldgs };
 }
@@ -891,7 +893,7 @@ function saveSurveyXlsx() {
   if (units.length) XLSX.utils.book_append_sheet(wb, sheet('호별 목록(건축물대장 전유부)', units, [5, 10, 16, 8, 14, 6, 11, 11, 14]), '호별목록(전유부)');
   const sum = [
     ['구분', '값'], ['필지 수', sv.landCount], ['토지 면적(㎡)', Math.round(sv.landArea * 10) / 10], ['국공유지 면적(㎡)', Math.round(sv.publicArea * 10) / 10],
-    ['과소필지(90㎡ 미만)', sv.small], ['건축물 동수', sv.count], ['노후·불량건축물', sv.old], ['노후도(동수, %)', Math.round(sv.oldRatio * 10) / 10],
+    [`과소필지(${num(S.criteria.smallLot) || 90}㎡ 미만)`, sv.small], ['공부 정보 없는 지도 건물(동수 제외)', S.criteria.ghostIn ? 0 : sv.ghost], ['건축물 동수', sv.count], ['노후·불량건축물', sv.old], ['노후도(동수, %)', Math.round(sv.oldRatio * 10) / 10],
     ['노후도(연면적, %)', Math.round(sv.oldAreaRatio * 10) / 10], ['사용승인연도 없음(판정 불가)', sv.unknown],
     ['노후 기준', `철근콘크리트·철골 ${S.criteria.rcYears}년, 기타 ${S.criteria.otherYears}년`],
     ['노후도 기준일', sv.base.toLocaleDateString('sv-SE')],
@@ -1060,18 +1062,8 @@ function boot() {
         try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { text = new TextDecoder('euc-kr').decode(buf); }
         rows = parseCSV(text);
       }
-      // '지번' 제목이 있는 열을 찾고, '소재지·주소' 열이 있으면 앞에 붙임
-      const hi = rows.findIndex(r => r.some(c => /지번/.test(String(c))));
-      let list;
-      if (hi >= 0) {
-        const jc = rows[hi].findIndex(c => /지번/.test(String(c)));
-        const ac = rows[hi].findIndex(c => /소재지|주소/.test(String(c)));
-        list = rows.slice(hi + 1).map(r => {
-          const j = String(r[jc] ?? '').trim(), a = ac >= 0 ? String(r[ac] ?? '').trim() : '';
-          return a && !/\d+(-\d+)?$/.test(a) ? `${a} ${j}` : j;
-        });
-      } else list = rows.flat().map(c => String(c ?? '').trim());
-      $('#jibunList').value = list.filter(s => /\d/.test(s)).join('\n');
+      // '지번' 제목이 있는 열을 찾고, '소재지·주소' 열이 있으면 앞에 붙임 (js/zonekit.js, /urban과 같은 규칙)
+      $('#jibunList').value = ZoneKit.jibunsFromRows(rows).join('\n');
       $('#jibunMsg').textContent = `${f.name}에서 지번 ${$('#jibunList').value.split('\n').filter(Boolean).length}개를 읽었습니다. 기준 동을 확인하고 "지번으로 구역 만들기"를 누르세요.`;
     };
     i.click();

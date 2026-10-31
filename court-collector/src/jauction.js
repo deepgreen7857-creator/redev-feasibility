@@ -176,7 +176,8 @@ async function collectScope() {
         for (const r of rows) {
           if (out.has(r.idx)) continue;
           if (addrRe && !addrRe.test(r.text)) continue;
-          out.set(r.idx, { src: `범위:${sc.name}`, sale: r.sale, light: true });
+          // 매각기일 7일 안이면 감정평가서·사진까지 전부(매각되면 서류가 내려가므로 먼저 확보, 10/31), 그 밖은 가볍게
+          out.set(r.idx, { src: `범위:${sc.name}`, sale: r.sale, light: !(r.sale && r.sale <= kstDay(7)) });
         }
         const seen = rows.length ? rows.map((r) => r.idx).join(',') : '';
         if (!rows.length || seen === before) break; before = seen;

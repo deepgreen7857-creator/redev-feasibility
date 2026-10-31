@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>jbslab 정비계획 검토</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
+<link rel="stylesheet" href="../css/zonekit.css?v=70">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -123,6 +126,74 @@ tr.hl td{background:var(--accent-soft)}
 .acc.bad{border-color:var(--bad);color:var(--bad)}
 .acc.man{font-weight:600}
 .acc:hover{background:var(--grid)}
+.lmap{height:560px;border:1px solid var(--line);border-radius:6px;background:var(--grid)}
+@media (max-width:900px){.lmap{height:420px}}
+.lmap .leaflet-tooltip{font-family:var(--f-body);font-size:12px;line-height:1.45;white-space:pre}
+.search{display:flex;gap:6px;flex:1 1 240px;min-width:0}
+.search input{flex:1;min-width:0;font:inherit;font-size:13px;padding:4px 8px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink)}
+.status{font-size:13px;padding:6px 10px;border-radius:6px;background:var(--accent-soft);color:var(--accent);margin-bottom:8px}
+.status.err{background:var(--bad-soft);color:var(--bad)}
+.chip.empty{color:var(--ink-2);border-style:dashed}
+.empty-guide{color:var(--ink-2)}
+.empty-guide ol{padding-left:18px;margin:8px 0}
+[hidden]{display:none!important}
+.cut-tip{background:rgba(255,255,255,.85);border:0;box-shadow:none;font-weight:600}
+.infra-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 6px}
+td.wrap{white-space:normal;min-width:220px;font-size:12px;color:var(--ink-2)}
+tr.sum td{border-top:1px solid var(--ink-2)}
+.lmap path.leaflet-interactive:focus,.lmap .leaflet-interactive:focus{outline:none}
+.ghost-note{border:1px dashed var(--line);border-radius:6px;padding:8px 10px;margin-top:12px;font-size:13px}
+.rel-chip{display:inline-block;margin:3px 8px 0 0;white-space:nowrap;font-size:12px}
+td .u{font-size:11px;font-weight:400;color:var(--ink-2)}
+.ghost-note .u{font-size:12px;color:var(--ink-2);margin-top:4px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.pick-pop{font-family:var(--f-body);font-size:13px;display:flex;flex-direction:column;gap:4px}
+.pick-pop .u{color:#555;font-size:12px}
+.pick-btns{display:flex;gap:6px;margin-top:4px}
+.pick-pop .btn:disabled{opacity:.4;cursor:not-allowed}
+.job{border:1px solid var(--accent);background:var(--accent-soft);color:var(--ink);border-radius:8px;padding:10px 12px;margin-bottom:12px}
+.job-t{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--accent)}
+.job-t b{color:var(--ink)}
+.job .bar{height:6px;margin-top:8px;background:var(--sheet)}
+.job .bar span{background:var(--accent);transition:width .3s}
+.job-s{font-size:12.5px;color:var(--ink-2);margin-top:6px}
+.spin{width:14px;height:14px;border:2px solid var(--accent);border-right-color:transparent;border-radius:50%;flex:none;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.spin{animation:none}}
+.zk{border:1px solid var(--line);border-radius:6px;margin-bottom:8px;background:var(--paper)}
+.zk summary{cursor:pointer;padding:7px 10px;font-weight:600;font-size:13px}
+.zk summary .u{font-weight:400;color:var(--ink-2);font-size:12px;margin-left:6px}
+.zk-body{padding:0 10px 10px}
+.zk textarea{width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--sheet);color:var(--ink);resize:vertical}
+.zk-opts{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;margin:6px 0}
+.zk-btns{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.zk-anchor{display:inline-flex;gap:4px}
+.zk-anchor input{width:120px;font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:var(--sheet);color:var(--ink)}
+.zk-head{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px}
+.zk .warn,.status .warn{color:var(--bad)}
+.pill.info{background:var(--accent-soft);color:var(--accent)}
+#pickBtn.on,#editBtn.on,#cutBtn.on{background:var(--redline);border-color:var(--redline);color:var(--sheet)}
+#pickBtn.on{background:var(--redline);border-color:var(--redline)}
+.lmap.picking{cursor:pointer}
+.lmap.picking .leaflet-interactive{cursor:pointer}
+.mapwrap{display:flex;gap:8px;align-items:stretch}
+.mapwrap .lmap{flex:1;min-width:0}
+.maptools{flex:none;width:136px;display:flex;flex-direction:column;gap:4px}
+.maptools .mt-h{font-size:11px;color:var(--ink-2);margin:6px 2px 0}
+.maptools .mt-h:first-child{margin-top:0}
+.maptools .mt{display:flex;align-items:center;gap:6px;width:100%;text-align:left;font:inherit;font-size:12.5px;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink);cursor:pointer;line-height:1.2;white-space:nowrap}
+.maptools .mt:hover{background:var(--grid)}
+.maptools .mt.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.maptools .mt:disabled{opacity:.45;cursor:not-allowed}
+.maptools .mt.danger{color:var(--bad)}
+.maptools .mt-i{width:16px;text-align:center;font-size:14px;flex:none}
+.maptools .mt-row{display:flex;gap:4px}
+.maptools .mt.sq{flex:1;justify-content:center;padding:7px 4px;gap:3px}
+.mapwrap.full{position:fixed;inset:0;z-index:2000;background:var(--paper);padding:8px}
+.mapwrap.full .lmap{height:auto;border-radius:0}
+@media (max-width:700px){.mapwrap{flex-direction:column}.maptools{width:auto;flex-direction:row;flex-wrap:wrap}.maptools .mt{width:auto}.maptools .mt-h{display:none}}
+.lmap-btn{display:block;width:30px;height:30px;line-height:30px;text-align:center;font-size:16px;background:#fff;color:#222;text-decoration:none}
+td .u{font-size:11px;color:var(--ink-2);font-family:var(--f-mono)}
 a.back{color:var(--accent);font-size:13px;text-decoration:none}
 a.back:hover{text-decoration:underline}
 </style>
@@ -153,14 +224,38 @@ a.back:hover{text-decoration:underline}
     <section class="panel" aria-label="도면">
       <div class="mapbar">
         <span style="font-size:12px;color:var(--ink-2)">구역계</span>
-        <button class="chip" data-region="A" aria-pressed="true">A안</button>
-        <button class="chip" data-region="B" aria-pressed="false">B안</button>
-        <button class="chip" data-region="C" aria-pressed="false" id="chipC">직접 그린 안</button>
+        <span id="zoneChips" style="display:contents"></span>
         <span style="flex:1"></span>
         <button class="btn ghost" id="drawBtn">구역계 그리기</button>
         <button class="btn" id="finishBtn" hidden>완성</button>
         <button class="btn ghost" id="cancelBtn" hidden>취소</button>
       </div>
+      <div class="mapbar" id="mapSearch">
+        <form id="searchForm" class="search"><input id="searchQ" type="search" placeholder="주소·지번 검색 (예: 용현동 340)" aria-label="주소 검색"><button class="btn ghost sm" type="submit">이동</button></form>
+      </div>
+      <details class="zk" id="zkTools">
+        <summary>지번 목록·필지 경계로 구역계 만들기 <span class="u">사업성 검토와 같은 도구</span></summary>
+        <div class="zk-body">
+          <div class="form">
+            <div class="field"><label for="zkBase">기준 동 주소</label><input id="zkBase" placeholder="예: 인천광역시 미추홀구 용현동"><span class="u">지번만 쓴 줄 앞에 붙입니다. 주소 검색을 하면 자동으로 채웁니다</span></div>
+            <div class="field"><label for="zkTh">필지 포함 기준(필지에 맞추기)</label><select id="zkTh"><option value="0.5">필지의 50% 이상이 범위 안</option><option value="0.3">30% 이상</option><option value="0.7">70% 이상</option><option value="0.9">90% 이상</option></select></div>
+          </div>
+          <div class="field" style="margin-top:8px"><label for="zkList">지번 목록 (한 줄에 하나)</label><textarea id="zkList" rows="5" placeholder="340&#10;340-1&#10;산12-3&#10;용현동 341"></textarea></div>
+          <div class="zk-opts">
+            <label><input type="checkbox" id="zkFill" checked> 구역 안에 갇힌 필지(도로 등) 자동 포함</label>
+            <label><input type="checkbox" id="zkBridge" checked> 떨어진 블록 사이 도로로 잇기</label>
+          </div>
+          <div class="zk-btns">
+            <button class="btn sm" type="button" id="zkJibunBtn">지번으로 구역 만들기</button>
+            <button class="btn ghost sm" type="button" id="zkFileBtn">엑셀·CSV에서 지번 읽기</button>
+            <button class="btn sm" type="button" id="zkSnapBtn" title="손으로 대략 그린 구역계를 실제 필지 경계에 맞춥니다">그린 구역을 필지에 맞추기</button>
+            <span class="zk-anchor"><input id="zkTarget" inputmode="decimal" placeholder="목표 면적 ㎡" aria-label="목표 면적"><button class="btn ghost sm" type="button" id="zkAnchorBtn" title="고시문의 위치 지번들과 면적으로 대략 범위를 추정한 뒤 필지에 맞춥니다">위치 지번 + 면적으로 추정</button></span>
+            <input id="zkFile" type="file" accept=".xlsx,.xls,.csv,.txt" hidden>
+          </div>
+          <p class="hint" id="zkMsg"></p>
+          <div id="zkReport"></div>
+        </div>
+      </details>
       <div class="mapbar">
         <span style="font-size:12px;color:var(--ink-2)">색 구분</span>
         <div class="seg" role="group" aria-label="도면 색 구분">
@@ -168,19 +263,45 @@ a.back:hover{text-decoration:underline}
           <button data-mode="small" aria-pressed="false">과소필지</button>
           <button data-mode="access" aria-pressed="false">접도</button>
           <button data-mode="zone" aria-pressed="false">용도지역</button>
+          <button data-mode="infra" aria-pressed="false">기반시설</button>
           <button data-mode="arch" aria-pressed="false">개략 배치</button>
         </div>
       </div>
-      <div class="svgbox"><svg id="map" viewBox="-6 -6 416 328" role="img" aria-label="예시 구역 지적도"></svg></div>
+      <div class="status" id="status" hidden></div>
+      <div class="mapwrap" id="mapWrap">
+        <div class="maptools" id="mapTools" role="toolbar" aria-label="구역계 도구" aria-orientation="vertical">
+          <span class="mt-h">구역계 고치기</span>
+          <button class="mt" id="pickBtn" type="button" title="지도에서 필지를 누르면 구역에 넣을지 뺄지 고릅니다"><span class="mt-i" aria-hidden="true">±</span><span class="mt-t">필지 넣고 빼기</span></button>
+          <button class="mt" id="editBtn" type="button" title="구역계 꼭짓점을 끌어서 고칩니다"><span class="mt-i" aria-hidden="true">◇</span><span class="mt-t">꼭짓점 끌기</span></button>
+          <button class="mt" id="cutBtn" type="button" title="선을 그어 구역계를 자르고, 조각을 빼거나 도로로 지정합니다. 필지 끝점·중간점·수직점·근처점에 붙습니다"><span class="mt-i" aria-hidden="true">✂</span><span class="mt-t">구역계 자르기</span></button>
+          <div class="mt-row">
+            <button class="mt sq" id="undoBtn" type="button" disabled title="되돌릴 작업이 없습니다" aria-label="실행 취소"><span class="mt-i" aria-hidden="true">↶</span><span class="mt-t">취소</span></button>
+            <button class="mt sq" id="redoBtn" type="button" disabled title="다시 할 작업이 없습니다" aria-label="다시 실행"><span class="mt-i" aria-hidden="true">↷</span><span class="mt-t">다시</span></button>
+          </div>
+          <span class="mt-h">공부·파일</span>
+          <button class="mt" id="fetchBtn" type="button" title="이 안의 필지·건축물·토지특성·건축물대장을 다시 불러옵니다"><span class="mt-i" aria-hidden="true">⟳</span><span class="mt-t">다시 불러오기</span></button>
+          <button class="mt" id="geoInBtn" type="button"><span class="mt-i" aria-hidden="true">⇩</span><span class="mt-t">GeoJSON 열기</span></button>
+          <button class="mt" id="geoOutBtn" type="button"><span class="mt-i" aria-hidden="true">⇧</span><span class="mt-t">GeoJSON 저장</span></button>
+          <button class="mt danger" id="clearBtn" type="button"><span class="mt-i" aria-hidden="true">✕</span><span class="mt-t">이 안 지우기</span></button>
+          <input id="geoFile" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
+        </div>
+        <div id="lmap" class="lmap"></div>
+      </div>
+      <div class="svgbox" id="svgbox" hidden><svg id="map" viewBox="-6 -6 416 328" role="img" aria-label="예시 구역 지적도"></svg></div>
       <div class="legend" id="legend"></div>
-      <p class="hint" id="drawHint">그리기: 도면을 눌러 꼭짓점을 찍고 <b>완성</b>을 누르면 '직접 그린 안'으로 판정합니다. 구역계 안에 중심점이 들어온 필지를 편입 필지로 봅니다.</p>
+      <p class="hint" id="drawHint"></p>
     </section>
 
     <section class="panel" id="side" aria-live="polite"></section>
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
-<script src="../js/config.js?v=67"></script>
-<script src="urban.js?v=2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../js/config.js?v=68"></script>
+<script src="../js/zonekit.js?v=70"></script>
+<script src="urban.js?v=14"></script>
 </body>
 </html>

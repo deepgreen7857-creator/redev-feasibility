@@ -201,7 +201,9 @@ const Calc = {
     const base = this.baseDate(s);
     const year = base.getFullYear();
     // 기준일에 아직 사용승인 전인 건물은 그때 없던 건물이므로 제외
-    const bs = s.buildings.filter(b => {
+    //  공부 정보가 하나도 없는 GIS 건물(BldgRows.isGhost — /urban과 같은 규칙)은 '넣기'를 고르지 않으면 제외하고 따로 셈
+    const ghost = s.buildings.filter(b => BldgRows.isGhost(b)).length;
+    const bs = s.buildings.filter(b => s.criteria.ghostIn || !BldgRows.isGhost(b)).filter(b => {
       const p = this.aprParts(b);
       if (p) return new Date(p[0], p[1] - 1, p[2]) <= base;
       return !num(b.year) || num(b.year) <= year;
@@ -243,7 +245,7 @@ const Calc = {
     const dens = this.density(s, bs);
     return {
       year, base, soon1, soon3, req, needMore, reachDate, density: dens,
-      count: bs.length, old, unknown, oldRatio: bs.length ? old / bs.length * 100 : NaN,
+      count: bs.length, old, unknown, ghost, oldRatio: bs.length ? old / bs.length * 100 : NaN,
       area, oldArea, oldAreaRatio: area ? oldArea / area * 100 : NaN,
       detached, apartment,
       minAge: isFinite(minAge) ? minAge : NaN,

@@ -75,34 +75,12 @@ const Ledger = {
     return !it ? [] : Array.isArray(it) ? it : [it];
   },
 
-  // 표제부 한 동 → 건축물조서 한 행
+  // 표제부 한 동 → 건축물조서 한 행 (용도·구조·연도·세대수 규칙은 js/zonekit.js BldgRows.fromLedger — /urban과 같음)
+  //  사용승인일이 비어 있으면 허가일 → 착공일로 연도 추정(yearSrc)
   toRow(t, land) {
-    const code = String(t.mainPurpsCd || ''), etc = String(t.etcPurps || '');
-    let use = '기타';
-    if (code === '01003' || /다가구/.test(etc)) use = '다가구주택';
-    else if (code.startsWith('01')) use = '단독주택';
-    else if (code === '02001' || /아파트/.test(etc)) use = '아파트';
-    else if (code === '02002' || /연립/.test(etc)) use = '연립주택';
-    else if (code === '02003' || /다세대/.test(etc)) use = '다세대주택';
-    else if (code.startsWith('02')) use = num(t.grndFlrCnt) >= 5 ? '아파트' : '다세대주택';
-    else if (code.startsWith('03') || code.startsWith('04')) use = '근린생활시설';
-    const s = String(t.strctCd || '').charAt(0);
-    const structure = s === '1' ? '조적' : s === '2' || s === '4' ? '철근콘크리트' : s === '3' ? '철골' : s === '5' ? '목조' : '기타';
-    const d = String(t.useAprDay || '').trim();
-    const aprDate = /^\d{8}$/.test(d) ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : '';
-    const isApt = ['아파트', '연립주택', '다세대주택'].includes(use);
-    // 세대수: 공동주택은 세대수, 다가구는 가구수 참고(호수 산정은 1호), 단독 1
-    const units = isApt ? num(t.hhldCnt) || num(t.hoCnt) : (use === '단독주택' || use === '다가구주택' ? 1 : 0);
-    return {
-      id: uid(), jibun: land.jibun, pnu: land.pnu, auto: true, ledger: true,
-      name: [String(t.bldNm || '').trim(), String(t.dongNm || '').trim()].filter(Boolean).join(' '),
-      use, structure, structureName: t.strctCdNm || '', purpose: [t.mainPurpsCdNm, etc.trim()].filter(Boolean).join(' / '),
-      year: aprDate ? +aprDate.slice(0, 4) : 0, aprDate,
-      floorArea: Math.round(num(t.totArea) * 10) / 10, archArea: Math.round(num(t.archArea) * 10) / 10, floors: num(t.grndFlrCnt), basement: num(t.ugrndFlrCnt),
-      units, families: num(t.fmlyCnt), needUnits: isApt && !units, noInfo: !aprDate,
-      collective: String(t.regstrGbCd) === '2', dong: String(t.dongNm || '').trim(),
-    };
+    return { id: uid(), jibun: land.jibun, pnu: land.pnu, auto: true, ...BldgRows.fromLedger(t) };
   },
+
 
   // 토지조서의 필지마다 대장을 조회해, 대장이 있는 필지의 건축물은 대장 기준으로 바꿈
   async fill() {
@@ -131,7 +109,8 @@ const Ledger = {
       } catch (e) { errors.push(`${land.jibun}: ${e.message}`); }
       done++;
       const left = Math.round((Date.now() - t0) / done * (lands.length - done) / 1000);
-      msg.textContent = `건축물대장 조회 중… ${done}/${lands.length}` + (done < lands.length ? ` (약 ${left >= 60 ? Math.ceil(left / 60) + '분' : left + '초'} 남음)` : '');
+      msg.innerHTML = ZoneUI.progressHtml({ step: 1, steps: 2, label: '건축물대장(표제부) 조회', done, total: lands.length,
+        after: (done < lands.length ? `약 ${left >= 60 ? Math.ceil(left / 60) + '분' : left + '초'} 남음 · ` : '') + '끝나면 건축물조서의 연도·세대수·면적이 대장 기준으로 바뀝니다' });
     };
     // 요청 간격은 throttle이 지키므로 동시에 2개까지만
     await Promise.all([1, 2].map(async () => { while (queue.length) await work(queue.shift()); }));
@@ -141,7 +120,7 @@ const Ledger = {
     const unitRows = [], unitErr = [];
     for (let i = 0; i < collective.length; i++) {
       const [pnu, rows] = collective[i];
-      msg.textContent = `전유부(호별) 조회 중… ${i + 1}/${collective.length}`;
+      msg.innerHTML = ZoneUI.progressHtml({ step: 2, steps: 2, label: '집합건물 전유부(호별) 조회', done: i + 1, total: collective.length, after: '다세대·연립·아파트의 호 수와 전유면적을 받습니다' });
       try {
         const us = await this.unitsOf(pnu);
         us.forEach(u => unitRows.push({

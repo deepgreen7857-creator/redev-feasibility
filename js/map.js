@@ -1,100 +1,5 @@
 'use strict';
-
-// 브이월드 API는 브라우저에서 직접 fetch하면 CORS로 막혀서 JSONP(callback)로 호출
-function jsonp(url, params, timeout = 10000) {
-  return new Promise((resolve, reject) => {
-    const cb = '__vw' + Math.random().toString(36).slice(2);
-    const s = document.createElement('script');
-    const t = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, timeout);
-    function cleanup() { clearTimeout(t); delete window[cb]; s.remove(); }
-    window[cb] = data => { cleanup(); resolve(data); };
-    s.src = url + '?' + new URLSearchParams({ ...params, callback: cb });
-    s.onerror = () => { cleanup(); reject(new Error('load')); };
-    document.head.append(s);
-  });
-}
-
-const VWorld = {
-  get enabled() { return typeof VWORLD_KEY === 'string' && VWORLD_KEY.trim() !== ''; },
-  get key() { return VWORLD_KEY.trim(); },
-  get domain() { return location.origin; },
-
-  // 주소 검색. category: 'parcel'(지번) | 'road'(도로명), type: 'address' | 'place'
-  async search(query, type = 'address', category = 'parcel') {
-    const p = {
-      service: 'search', request: 'search', version: '2.0', crs: 'EPSG:4326',
-      size: 8, page: 1, query, type, format: 'json', errorformat: 'json', key: this.key, domain: this.domain,
-    };
-    if (type === 'address') p.category = category;
-    const d = await jsonp('https://api.vworld.kr/req/search', p);
-    const r = d && d.response;
-    if (!r || r.status !== 'OK') {
-      if (r && r.status === 'ERROR') throw new Error((r.error && r.error.text) || 'VWorld 오류');
-      return [];
-    }
-    return (r.result.items || []).map(it => ({
-      lat: +it.point.y, lon: +it.point.x, precise: true,
-      label: it.title || (category === 'road' ? it.address.road : it.address.parcel) || it.address.road || it.address.parcel,
-      sub: type === 'place' ? (it.address.road || it.address.parcel) : (category === 'road' ? it.address.parcel : it.address.road),
-    }));
-  },
-
-  // 2D 데이터 API 한 페이지 조회. data: LP_PA_CBND_BUBUN(연속지적도), LT_C_UQ111(용도지역), LT_C_BLDGINFO(GIS건물통합정보)
-  async dataPage(data, geomFilter, page = 1, size = 1000, geometry = true) {
-    const d = await jsonp('https://api.vworld.kr/req/data', {
-      service: 'data', request: 'GetFeature', data, key: this.key, domain: this.domain,
-      geomFilter, geometry: String(geometry), attribute: 'true', crs: 'EPSG:4326',
-      format: 'json', errorformat: 'json', size, page,
-    }, 20000);
-    const r = d && d.response;
-    if (!r || r.status === 'NOT_FOUND') return { features: [], pages: 0 };
-    if (r.status !== 'OK') throw new Error((r.error && r.error.text) || 'VWorld 오류');
-    return { features: r.result.featureCollection.features || [], pages: +(r.page && r.page.total) || 1 };
-  },
-
-  // 범위 안의 모든 객체 (여러 페이지)
-  async dataAll(data, geomFilter, maxPages = 10) {
-    const first = await this.dataPage(data, geomFilter, 1);
-    let all = first.features;
-    for (let p = 2; p <= Math.min(first.pages, maxPages); p++) all = all.concat((await this.dataPage(data, geomFilter, p)).features);
-    return all;
-  },
-
-  // 한 점을 포함하는 필지(연속지적도) 조회
-  async parcelAt(lat, lon) {
-    return (await this.dataPage('LP_PA_CBND_BUBUN', `POINT(${lon} ${lat})`, 1, 1)).features[0] || null;
-  },
-
-  // 한 점의 용도지역 이름 (예: 제2종일반주거지역)
-  async zoningAt(lat, lon) {
-    const fs = (await this.dataPage('LT_C_UQ111', `POINT(${lon} ${lat})`, 1, 10, false)).features;
-    const f = fs.find(x => x.properties && x.properties.uname);
-    return f ? f.properties.uname : '';
-  },
-
-  // 범위(bbox) 안에 걸친 용도지역 이름 목록
-  async zoningsInBox(b) {
-    const fs = (await this.dataPage('LT_C_UQ111', `BOX(${b.join(',')})`, 1, 100, false)).features;
-    return [...new Set(fs.map(f => f.properties && f.properties.uname).filter(Boolean))];
-  },
-
-  // 토지특성(토지대장 면적·지목·공시지가·용도지역) 한 필지. 올해 자료가 없으면 전년도, 둘 다 없으면 null
-  //  설정 모드(조서)와 검토 모드가 같이 씀
-  async landChar(pnu, timeout = 15000) {
-    const yr = new Date().getFullYear();
-    const get = async y => {
-      const d = await jsonp('https://api.vworld.kr/ned/data/getLandCharacteristics', { pnu, key: this.key, domain: this.domain, format: 'json', numOfRows: 1, pageNo: 1, stdrYear: String(y) }, timeout);
-      return d && d.landCharacteristicss && d.landCharacteristicss.field && d.landCharacteristicss.field[0];
-    };
-    const f = (await get(yr)) || (await get(yr - 1));
-    if (!f) return null;
-    return {
-      ledgerArea: +f.lndpclAr, ledgerJimok: f.lndcgrCodeNm, jiga: +f.pblntfPclnd || 0, baseYear: f.stdrYear, landUse: f.ladUseSittnNm,
-      zoning: [f.prposArea1Nm, f.prposArea2Nm].filter(x => x && x !== '지정되지않음').join(', '),
-      roadSide: f.roadSideCodeNm || '',   // 도로접면 (정비계획 검토의 주택접도율 추정에 씀)
-    };
-  },
-};
+// 브이월드(VWorld)·jsonp·필지 합치기(safeUnion)·splitJibun·구역계 계산(ZoneKit)은 js/zonekit.js (정비계획 검토 /urban과 같이 씀)
 
 // ---------- 토지조서 면적 ----------
 // 공식 기준은 토지대장 면적. 연속지적 면적(cadArea)은 도형·편입비율 계산용 참고값
@@ -147,69 +52,10 @@ function clearSampleRows() {
 // GIS건물통합정보 → 건축물조서 한 행
 // usability: 건축물대장 주용도코드, strct_cd: 구조코드 (1x 조적, 2x 철근콘크리트, 3x 철골, 4x 철골철근콘크리트, 5x 목구조)
 function buildingFromFeature(f, jibun, pnu) {
-  const p = f.properties || {};
-  const code = String(p.usability || '');
-  const floors = num(p.grnd_flr);
-  const floorArea = Math.round(num(p.totalarea) * 10) / 10;
-  let use = '기타', guessed = false;
-  if (code === '01003') use = '다가구주택';
-  else if (code.startsWith('01')) use = '단독주택';
-  else if (code === '02001') use = '아파트';
-  else if (code === '02002') use = '연립주택';
-  else if (code === '02003') use = '다세대주택';
-  else if (code.startsWith('02')) {
-    // 공동주택 세부 용도가 없으면 층수·면적으로 추정 (5층 이상 아파트, 660㎡ 초과 연립, 이하 다세대)
-    use = floors >= 5 ? '아파트' : floorArea > 660 ? '연립주택' : '다세대주택';
-    guessed = true;
-  } else if (code.startsWith('03') || code.startsWith('04')) use = '근린생활시설';
-  const s = String(p.strct_cd || '').charAt(0);
-  const structure = s === '1' ? '조적' : s === '2' || s === '4' ? '철근콘크리트' : s === '3' ? '철골' : s === '5' ? '목조' : '기타';
-  const year = num(String(p.useapr_day || '').slice(0, 4));
-  const isApt = ['아파트', '연립주택', '다세대주택'].includes(use);
-  return {
-    id: uid(), jibun: jibun || '', use, structure, year, floorArea,
-    units: isApt ? 0 : (use === '단독주택' || use === '다가구주택' ? 1 : 0),
-    name: p.bld_nm || '', floors, pnu: pnu || '', auto: true, needUnits: isApt, guessed,
-    aprDate: /^\d{8}$/.test(String(p.useapr_day || '')) ? `${String(p.useapr_day).slice(0, 4)}-${String(p.useapr_day).slice(4, 6)}-${String(p.useapr_day).slice(6, 8)}` : '',
-    basement: num(p.ugrnd_flr),
-    noInfo: !year && !floorArea && !code,
-  };
+  // 용도·구조·연도 규칙은 js/zonekit.js BldgRows.fromGis (정비계획 검토 /urban과 같음)
+  return { id: uid(), jibun: jibun || '', pnu: pnu || '', auto: true, ...BldgRows.fromGis(f) };
 }
 
-// 필지 여러 개를 하나로 합침. 연속지적도는 이웃 필지 경계 좌표가 미세하게 어긋나 있어
-// 그냥 합치면 계산이 실패하는 경우가 있음 → 좌표 정리(1cm) → 살짝 부풀려 합치기 → 그래도 안 되면 따로 둠
-function safeUnion2(a, b) {
-  try { const u = turf.union(a, b); if (u) return u; } catch (e) { /* 아래에서 다시 시도 */ }
-  try { const u = turf.union(turf.truncate(a, { precision: 7 }), turf.truncate(b, { precision: 7 })); if (u) return u; } catch (e) { /* 다음 */ }
-  try {
-    const grow = f => turf.buffer(turf.truncate(f, { precision: 7 }), 0.02, { units: 'meters' });
-    const u = turf.union(grow(a), grow(b)); if (u) return u;
-  } catch (e) { /* 다음 */ }
-  // 마지막: 합치지 않고 두 도형을 한 묶음(MultiPolygon)으로
-  const polys = f => (f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates);
-  return turf.multiPolygon([...polys(a), ...polys(b)]);
-}
-// 반씩 나눠 합치면 빠르고, 한 번의 실패가 전체로 번지지 않음
-function safeUnion(fs) {
-  fs = fs.filter(Boolean);
-  if (!fs.length) return null;
-  while (fs.length > 1) {
-    const next = [];
-    for (let i = 0; i < fs.length; i += 2) next.push(i + 1 < fs.length ? safeUnion2(fs[i], fs[i + 1]) : fs[i]);
-    fs = next;
-  }
-  return fs[0];
-}
-
-// 구역계에 남은 10㎡ 미만 구멍(이웃 필지 경계·좌표 반올림 틈)을 메움 → 구역 안에 중간선이 생기지 않게
-function fillSmallHoles(f) {
-  if (!f || !f.geometry || !window.turf) return f;
-  const g = f.geometry;
-  const fill = p => [p[0], ...p.slice(1).filter(h => turf.area(turf.polygon([h])) >= 10)];
-  if (g.type === 'Polygon') g.coordinates = fill(g.coordinates);
-  else if (g.type === 'MultiPolygon') g.coordinates = g.coordinates.map(fill);
-  return f;
-}
 
 // 연속지적도 객체 → 토지조서 한 행. inArea: 구역에 들어간 연속지적 면적(없으면 전체 편입)
 //  면적은 우선 연속지적 기준으로 두고, MapView.fillLedger가 토지대장 면적으로 바꿈
@@ -231,11 +77,6 @@ function landFromFeature(f, inArea) {
   return land;
 }
 
-// 연속지적도 jibun 값은 "233-42대", "산12-3임" 형태
-function splitJibun(s) {
-  const m = String(s || '').trim().match(/^(산?\s*[\d-]+)\s*(\D*)$/);
-  return m ? { no: m[1].replace(/\s/g, ''), jimok: m[2] || '' } : { no: String(s || ''), jimok: '' };
-}
 
 // 구역계 지도 (Leaflet + Leaflet.draw)
 // 구역계 선 모양 (주황 외곽선, 옅은 채움)
@@ -246,6 +87,39 @@ const MapView = {
   items: null,
   parcels: null,
   picking: false,
+  hist: new ZoneUI.History(),
+
+  // ---- 실행 취소 / 다시 실행 (ZoneUI.History — 정비계획 검토와 같은 코드) ----
+  //  구역계·토지조서·건축물조서를 한꺼번에 기억함
+  snapshot() {
+    return JSON.stringify({ g: S.area.geojson, d: S.area.drawnArea, k: S.area.importedKey, l: S.lands, b: S.buildings });
+  },
+  remember(label) { this.hist.push(this.snapshot(), label); this.syncUndo(); },
+  restore(snap) {
+    const o = JSON.parse(snap);
+    S.area.geojson = o.g; S.area.drawnArea = o.d || 0; S.area.importedKey = o.k || ''; S.lands = o.l || []; S.buildings = o.b || [];
+    if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; }
+    if (this.items) { this.items.clearLayers(); if (o.g) L.geoJSON(o.g, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l)); }
+    this.drawParcels();
+    App.update(true);
+  },
+  undo() {
+    if (!this.hist.canUndo()) return;
+    const it = this.hist.undo(this.snapshot());
+    this.restore(it.snap); this.syncUndo();
+    $('#pickMsg').textContent = `실행 취소: ${it.label}`;
+  },
+  redo() {
+    if (!this.hist.canRedo()) return;
+    const it = this.hist.redo(this.snapshot());
+    this.restore(it.snap); this.syncUndo();
+    $('#pickMsg').textContent = `다시 실행: ${it.label}`;
+  },
+  syncUndo() {
+    const u = $('#mapUndoBtn'), r = $('#mapRedoBtn');
+    if (u) { u.disabled = !this.hist.canUndo(); u.title = this.hist.canUndo() ? `실행 취소: ${this.hist.peekUndo().label} (Ctrl+Z)` : '되돌릴 작업 없음'; }
+    if (r) { r.disabled = !this.hist.canRedo(); r.title = this.hist.canRedo() ? `다시 실행: ${this.hist.peekRedo().label} (Ctrl+Y)` : '다시 할 작업 없음'; }
+  },
 
   init() {
     if (this.map) { setTimeout(() => this.map.invalidateSize(), 50); return; }
@@ -329,6 +203,26 @@ const MapView = {
       $('#mapPickBtn').textContent = '필지 선택';
     }
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#map').classList.contains('map-full')) this.toggleFull(); });
+    // 실행 취소 / 다시 실행 (지도 왼쪽 위 + Ctrl+Z / Ctrl+Y)
+    const UndoBtn = L.Control.extend({
+      options: { position: 'topleft' },
+      onAdd: () => {
+        const d = L.DomUtil.create('div', 'zk-undo');
+        d.innerHTML = '<button type="button" id="mapUndoBtn" aria-label="실행 취소">↶ 취소</button><button type="button" id="mapRedoBtn" aria-label="다시 실행">↷</button>';
+        L.DomEvent.disableClickPropagation(d);
+        d.querySelector('#mapUndoBtn').onclick = () => this.undo();
+        d.querySelector('#mapRedoBtn').onclick = () => this.redo();
+        return d;
+      },
+    });
+    this.map.addControl(new UndoBtn());
+    this.syncUndo();
+    document.addEventListener('keydown', e => {
+      if (!(e.ctrlKey || e.metaKey) || /INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '') || !$('#map').offsetParent) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); this.undo(); }
+      else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); this.redo(); }
+    });
 
     // 층 순서: 선택만 된 필지(390) < 구역계(overlayPane 400) < 합쳐진 필지 마우스 영역(410, 평소 투명)
     //  필지를 다시 그려도 필지선이 구역계를 가리지 않음 (구역계는 leaflet.draw 편집 때문에 기본 overlayPane에 둠)
@@ -349,10 +243,11 @@ const MapView = {
 
     this.map.on(L.Draw.Event.CREATED, e => {
       if (typeof LotCut !== 'undefined' && LotCut.lineHandler) { LotCut.onLine(e.layer); return; }   // 대지 자르기 선
+      this.remember('구역계 그리기');
       if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; } this.items.clearLayers(); this.items.addLayer(e.layer); this.save();
     });
-    this.map.on(L.Draw.Event.EDITED, () => this.save());
-    this.map.on(L.Draw.Event.DELETED, () => this.save());
+    this.map.on(L.Draw.Event.EDITED, () => { this.remember('꼭짓점 고치기'); this.save(); });
+    this.map.on(L.Draw.Event.DELETED, () => { this.remember('구역계 지우기'); this.save(); });
     // 그리기 중에는 필지 선택이 끼어들지 않도록
     this.map.on(L.Draw.Event.DRAWSTART, () => { this.drawing = true; });
     this.map.on(L.Draw.Event.DRAWSTOP, () => { this.drawing = false; });
@@ -472,7 +367,7 @@ const MapView = {
     this.ledgerBusy = true;
     let done = 0, fail = 0;
     const queue = lands.slice();
-    say(`토지대장 면적 조회 중 0/${lands.length}`);
+    say(`토지대장 면적 조회 중 0/${lands.length}`, 0, lands.length);
     try {
       await Promise.all([1, 2, 3, 4].map(async () => {
         while (queue.length) {
@@ -481,7 +376,7 @@ const MapView = {
           try { c = await VWorld.landChar(l.pnu); } catch (e) { c = null; }
           applyLandChar(l, c);
           if (l.ledgerFail) fail++;
-          say(`토지대장 면적 조회 중 ${++done}/${lands.length}`);
+          ++done; say(`토지대장 면적 조회 중 ${done}/${lands.length}`, done, lands.length);
         }
       }));
     } finally { this.ledgerBusy = false; }
@@ -508,15 +403,18 @@ const MapView = {
     // 진행 문구는 2단계(#pickMsg)와 3단계 상단에 같이
     const outs = [...new Set([msg, $('#pickMsg'), $('#surveySyncMsg')].filter(Boolean))];
     const say = t => outs.forEach(o => { o.textContent = t; });
+    // 단계·진행률 안내 (ZoneUI.progressHtml — 정비계획 검토와 같은 모양)
+    const prog = (step, label, done, total, after) => { const h = ZoneUI.progressHtml({ step, steps: 3, label, done, total, after }); outs.forEach(o => { o.innerHTML = h; }); };
     const autoLands = S.lands.filter(l => l.pnu).length;
     const autoBldgs = S.buildings.filter(b => b.auto).length;
     if (!opts.silent && (autoLands || autoBldgs) && !confirm(`이미 지도에서 불러온 필지 ${autoLands}개, 건축물 ${autoBldgs}동이 있습니다. 구역계 기준으로 다시 불러올까요?\n(직접 입력한 행은 그대로 둡니다)`)) return false;
     const zone = S.area.geojson;
+    if (!opts.silent) this.remember('필지·건축물 다시 불러오기');
     this.importing = true;
     const box = `BOX(${turf.bbox(zone).join(',')})`;
     const inZone = f => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), zone); } catch (e) { return false; } };
     try {
-      say('구역 안 필지를 불러오는 중…');
+      prog(1, '구역 안 필지(연속지적) 불러오기', 0, 0, '구역에 10% 이상 걸친 필지를 고릅니다');
       // 구역에 든 필지: 겹친 연속지적 면적이 10% 이상이거나 필지 안 한 점이 구역 안
       //  (한 점만 보면 구역선과 경계가 조금 어긋난 필지를 놓침 – 예: 간석동 387-2, 327.1㎡ 중 326.3㎡ 겹침)
       const inArea = new Map();
@@ -527,7 +425,7 @@ const MapView = {
         if (ok) inArea.set(f, inA);
         return ok;
       });
-      say(`필지 ${parcels.length}개 확인. 건축물을 불러오는 중…`);
+      prog(2, '건축물(GIS건물통합정보) 불러오기', 0, 0, `필지 ${parcels.length}개 확인 · 다음은 토지대장 면적 조회`);
       const onParcel = (bf, pf) => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(bf), pf); } catch (e) { return false; } };
       const bldgs = (await VWorld.dataAll('LT_C_BLDGINFO', box)).filter(bf => inZone(bf) || parcels.some(pf => inArea.get(pf) / turf.area(pf) >= 0.98 && onParcel(bf, pf)));
 
@@ -546,7 +444,7 @@ const MapView = {
         S.buildings.push(buildingFromFeature(f, splitJibun(pp.jibun).no, pp.pnu));
       });
       App.update(true);   // 대장 조회 동안 표를 먼저 보여 줌
-      const fail = await this.fillLedger(added, say);
+      const fail = await this.fillLedger(added, (t, d, n) => prog(3, '토지대장 면적 조회', d, n, '끝나면 조서 면적이 토지대장 기준으로 바뀝니다'));
       const need = S.buildings.filter(b => b.needUnits).length;
       const noInfo = S.buildings.filter(b => b.noInfo).length;
       const tot = added.reduce((a, l) => a + num(l.area), 0);
@@ -594,7 +492,7 @@ const MapView = {
       const no = splitJibun(p.jibun).no;
       // 작은 필지는 덜 확대된 화면에서 옆 필지를 잘못 누르기 쉬우므로, 먼저 크게 확대해 보여주고 다시 누르게 함
       const fa = turf.area(f);
-      if (fa < (num(S.criteria.smallLot) || 90) && this.map.getZoom() < 19) {
+      if (fa < (num(S.criteria.smallLot) || 60) && this.map.getZoom() < 19) {
         this.map.fitBounds(L.geoJSON(f).getBounds(), { padding: [80, 80], maxZoom: 21 });
         if (this.map.getZoom() < 20) this.map.setView(L.geoJSON(f).getBounds().getCenter(), 20);
         if (this.smallMark) this.smallMark.remove();
@@ -604,18 +502,30 @@ const MapView = {
         return;
       }
       const zoneOn = !$('#pickZone') || $('#pickZone').checked;
-      // 구역에 넣고 빼기가 켜져 있고, 조서에는 없지만 구역(손으로 그린 구역 등) 안에 든 필지 → 구역에서 뺌
-      if (zoneOn && idx < 0 && S.area.geojson) {
-        let r = 0;
-        try { const x = turf.intersect(f, S.area.geojson); r = x ? turf.area(x) / fa : 0; } catch (e) { r = 0; }
-        if (r >= 0.5) {
-          this.toggleZoneParcel(f, false);
-          msg.textContent = `${no} 필지를 구역계에서 뺐습니다.`;
-          this.save();
-          return;
-        }
+      // 넣을지 뺄지 지도 위 작은 창에서 고름 (ZoneUI.choose — 정비계획 검토와 같은 창)
+      let r = 0;
+      if (S.area.geojson) { try { const x = turf.intersect(f, S.area.geojson); r = x ? turf.area(x) / fa : 0; } catch (e) { r = 0; } }
+      const inZone = zoneOn && r >= 0.5, isIn = idx >= 0 || inZone;
+      const straddle = zoneOn && S.area.geojson && fa * r > 1 && fa * (1 - r) > 1;   // 경계에 걸침(면적으로 판단)
+      const jm0 = splitJibun(p.jibun).jimok;
+      msg.textContent = `${no} 필지: 넣을지 뺄지 지도에서 고르세요.`;
+      const act = await ZoneUI.choose(this.map, latlng, f, {
+        title: `${no} ${jm0} · ${fmt(fa, 1)}㎡`,
+        sub: straddle ? `경계에 걸침 · 구역 안 ${fmt(fa * r, 1)}㎡ / 밖 ${fmt(fa * (1 - r), 1)}㎡${idx >= 0 ? ' · 조서에 있음' : ''}` : idx >= 0 ? '조서·구역에 들어 있습니다' : inZone ? `구역 안(${fmt(r * 100)}% 겹침)이지만 조서에는 없습니다` : r > 0 ? `구역에 ${fmt(r * 100)}% 걸쳐 있습니다` : '구역 밖 필지입니다',
+        canIn: idx < 0 || straddle, canOut: isIn || straddle,
+        inLabel: zoneOn ? '구역·조서에 넣기' : '조서에 넣기', outLabel: zoneOn ? '구역·조서에서 빼기' : '조서에서 빼기',
+      });
+      if (!act) { msg.textContent = `${no} 필지: 그대로 두었습니다.`; return; }
+      this.remember(`${no} ${act === 'in' ? '넣기' : '빼기'}`);
+      if (act === 'out' && idx < 0) {
+        this.toggleZoneParcel(f, false);
+        msg.textContent = `${no} 필지를 구역계에서 뺐습니다.`;
+        this.save();
+        return;
       }
-      if (idx >= 0) {
+      if (act === 'in' && idx >= 0) {
+        msg.textContent = `${no} 필지 전체를 구역계에 넣었습니다.`;
+      } else if (act === 'out') {
         S.lands.splice(idx, 1);
         S.buildings = S.buildings.filter(b => !(b.auto && b.pnu === p.pnu));
         msg.textContent = `${no} 필지와 그 위 건축물을 조서에서 뺐습니다.`;
@@ -643,7 +553,7 @@ const MapView = {
       if (zoneOn) {
         // 조서와 구역이 함께 바뀌므로, 원래 맞아 있었으면(또는 구역이 없었으면) 계속 맞는 것으로 봄
         const inSync = !S.area.geojson || S.area.importedKey === zoneKey(S.area.geojson);
-        this.toggleZoneParcel(f, idx < 0);
+        this.toggleZoneParcel(f, act === 'in');
         if (inSync) S.area.importedKey = zoneKey(S.area.geojson);
       }
       this.drawParcels();
@@ -655,13 +565,7 @@ const MapView = {
 
   // 필지 하나를 구역계에 더하거나(add=true) 뺌
   toggleZoneParcel(f, add) {
-    const zone = S.area.geojson;
-    let next = null;
-    if (add) next = zone ? fillSmallHoles(safeUnion([zone, f])) : f;
-    else if (zone) {
-      try { next = turf.difference(zone, f); }
-      catch (e) { try { next = turf.difference(turf.truncate(zone, { precision: 7 }), turf.truncate(f, { precision: 7 })); } catch (e2) { next = zone; } }
-    }
+    const next = ZoneKit.toggle(S.area.geojson, f, add);
     this.items.clearLayers();
     if (next) L.geoJSON(next, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l));
     const layers = this.items.getLayers();
@@ -686,6 +590,7 @@ const MapView = {
     if (!polys.length) { alert('파일에 면(Polygon) 도형이 없습니다.'); return; }
     if (S.area.geojson && !confirm('지금 구역계를 파일의 경계로 바꿀까요?')) return;
     const merged = safeUnion(polys);
+    this.remember('GeoJSON 불러오기');
     if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; }
     this.items.clearLayers();
     L.geoJSON(merged, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l));
@@ -698,33 +603,12 @@ const MapView = {
   // 구역계가 현재 지적 경계와 얼마나 맞는지 확인하고, 많이 어긋나면 먼저 알림
   // (옛 고시 도면을 옮긴 선 등은 필지를 가로지르므로, 사이트 지적도가 틀린 것으로 오해하지 않게)
   async checkFit(what = '구역계') {
-    const zone = S.area.geojson;
-    if (!zone || !VWorld.enabled) return;
-    let fs;
-    try { fs = await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${turf.bbox(zone).join(',')})`, 20); }
-    catch (e) { return; }
-    const zA = turf.area(zone);
-    let dev = 0, cut = 0, roadCut = 0;
-    const cutList = [];
-    for (let i = 0; i < fs.length; i++) {
-      if (i % 200 === 199) await new Promise(r => setTimeout(r));
-      const f = fs[i], A = turf.area(f);
-      if (!A) continue;
-      let ratio;
-      try { const x = turf.intersect(f, zone); ratio = x ? turf.area(x) / A : 0; } catch (e) { continue; }
-      if (ratio <= 0.02 || ratio >= 0.98) continue;
-      const sp = splitJibun(f.properties.jibun);
-      // 도로·구거·하천은 경계선이 가운데를 지나는 일이 흔해서 따로 셈
-      if (['도', '구', '천'].includes(sp.jimok)) { roadCut++; continue; }
-      dev += Math.min(ratio, 1 - ratio) * A;
-      if (ratio > 0.15 && ratio < 0.85) { cut++; if (cutList.length < 8) cutList.push(`${sp.no}(${Math.round(ratio * 100)}%)`); }
-    }
-    const pct = zA ? dev / zA * 100 : 0;
-    if (pct < 2 && cut < 10) return;
+    const r = await ZoneKit.fit(S.area.geojson);
+    if (!r) return;
     const d = $('#fitDialog');
     $('#fitText').innerHTML = `${what}는 지금 지적도(국토교통부 브이월드 연속지적도)의 필지 경계와 <b>맞지 않습니다</b>.<br>`
-      + `필지를 가로지르는 곳 <b>${fmt(cut)}필지</b>(도로·구거 제외), 어긋난 면적 약 <b>${fmt(dev)}㎡ (구역의 ${fmt(pct, 1)}%)</b>.`
-      + (cutList.length ? `<br><small>예: ${cutList.map(esc).join(', ')}${cut > cutList.length ? ' 등' : ''}</small>` : '');
+      + `필지를 가로지르는 곳 <b>${fmt(r.cut)}필지</b>(도로·구거 제외), 어긋난 면적 약 <b>${fmt(r.dev)}㎡ (구역의 ${fmt(r.pct, 1)}%)</b>.`
+      + (r.cutList.length ? `<br><small>예: ${r.cutList.map(esc).join(', ')}${r.cut > r.cutList.length ? ' 등' : ''}</small>` : '');
     if (!d.open) d.showModal();
   },
 
@@ -736,6 +620,7 @@ const MapView = {
     if (!sel.length) { alert('구역계에 합칠 선택 필지가 없습니다. "필지 선택"을 켜고 지도에서 필지를 눌러 추가하세요.'); return; }
     const polys = sel.map(l => ({ type: 'Feature', properties: {}, geometry: l.geom }));
     const inSync = !S.area.geojson || S.area.importedKey === zoneKey(S.area.geojson);
+    this.remember('선택 필지 합치기');
     const merged = fillSmallHoles(safeUnion(S.area.geojson ? [S.area.geojson, ...polys] : polys));
     if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; }
     this.items.clearLayers();
@@ -755,92 +640,31 @@ const MapView = {
   async zoneFromJibuns(items, base, opts = { fillHoles: true, bridge: true }) {
     const msg = $('#jibunMsg');
     if (!VWorld.enabled) { msg.textContent = '브이월드 인증키가 있어야 지번으로 필지를 찾을 수 있습니다.'; return; }
-    items = [...new Set(items.map(s => String(s).trim()).filter(s => /\d/.test(s)))];
-    if (!items.length) { msg.textContent = '지번이 없습니다. 한 줄에 하나씩 넣어 주세요. 예: 387, 388-1, 산12'; return; }
+    if (!ZoneKit.items(items).length) { msg.textContent = '지번이 없습니다. 한 줄에 하나씩 넣어 주세요. 예: 387, 388-1, 산12'; return; }
     if (S.area.geojson && !confirm('지금 그려진 구역계를 지번 목록의 필지로 바꿀까요?')) return;
     this.askClearSample();
-
-    const report = [];            // 대조표 행
-    const found = new Map();      // pnu → 필지
-    // 동·리 이름이 들어 있으면 그대로, 숫자만 있으면 기준 동을 앞에 붙임
-    const query = it => (/[가-힣]+(동|리|가)\s*(산\s*)?\d/.test(it) || /[가-힣]+(시|군|구)\s/.test(it) ? it : `${base} ${it}`.trim());
-    const norm = s => String(s).replace(/번지/g, '').replace(/.*[가-힣](동|리|가)\s*/, '').replace(/\s/g, '');
-    const area1 = f => Math.round(turf.area(f) * 10) / 10;
-    let done = 0;
-    const work = async it => {
-      try {
-        const list = await VWorld.search(query(it), 'address', 'parcel');
-        const f = list.length ? await VWorld.parcelAt(list[0].lat, list[0].lon) : null;
-        const sp = f ? splitJibun(f.properties.jibun) : null;
-        if (!f) report.push({ input: it, result: '실패', jibun: '', jimok: '', area: '', note: '검색 결과 없음 – 지번·기준 동(법정동) 확인' });
-        else if (sp.no !== norm(it)) report.push({ input: it, result: '확인 필요', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: `다른 지번(${sp.no})으로 검색됨 – 분할·합병·표기 확인, 구역에 넣지 않음` });
-        else {
-          if (!found.has(f.properties.pnu)) report.push({ input: it, result: '포함', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: '' });
-          else report.push({ input: it, result: '중복', jibun: sp.no, jimok: sp.jimok, area: '', note: '같은 필지가 이미 있음' });
-          found.set(f.properties.pnu, f);
-        }
-      } catch (e) {
-        report.push({ input: it, result: '실패', jibun: '', jimok: '', area: '', note: '조회 오류: ' + e.message });
-      }
-      done++;
-      msg.textContent = `필지를 찾는 중… ${done}/${items.length}`;
-    };
-    // 브이월드에 무리가 가지 않게 4개씩 동시에
-    const queue = items.slice();
-    await Promise.all([1, 2, 3, 4].map(async () => { while (queue.length) await work(queue.shift()); }));
-
-    await this.buildZone(found, report, opts, `지번 ${items.length}개 → `);
+    this.remember('지번 목록으로 구역계');
+    const { found, report, count } = await ZoneKit.findByJibuns(items, base, t => { msg.textContent = t; });
+    await this.buildZone(found, report, opts, `지번 ${count}개 → `);
   },
 
   // 고시문의 위치 지번들 + 목표 면적 → 지번들을 감싼 범위를 넓혀 가며 면적이 맞는 구역을 추정
   async estimateFromAnchors(items, base, target, opts) {
     const msg = $('#jibunMsg');
     if (!VWorld.enabled) { msg.textContent = '브이월드 인증키가 있어야 합니다.'; return; }
-    items = [...new Set(items.map(s => String(s).trim()).filter(s => /\d/.test(s)))];
-    if (!items.length || !(target > 0)) { msg.textContent = '위치 지번(한 줄에 하나)과 목표 면적(㎡)을 넣어 주세요.'; return; }
+    if (!ZoneKit.items(items).length || !(target > 0)) { msg.textContent = '위치 지번(한 줄에 하나)과 목표 면적(㎡)을 넣어 주세요.'; return; }
     this.askClearSample();
-    const query = it => (/[가-힣]+(동|리|가)\s*(산\s*)?\d/.test(it) ? it : `${base} ${it}`.trim());
-    const pts = [], miss = [];
-    for (const it of items) {
-      msg.textContent = `위치 지번을 찾는 중… ${pts.length + miss.length + 1}/${items.length}`;
-      try {
-        const l = await VWorld.search(query(it), 'address', 'parcel');
-        if (l.length) pts.push(turf.point([l[0].lon, l[0].lat])); else miss.push(it);
-      } catch (e) { miss.push(it); }
-    }
-    if (!pts.length) { msg.textContent = '위치 지번을 하나도 찾지 못했습니다. 기준 동 주소를 확인해 주세요.'; return; }
-    const core = pts.length >= 3 ? turf.convex(turf.featureCollection(pts)) : turf.buffer(turf.featureCollection(pts).features[0], 30, { units: 'meters' });
-    msg.textContent = '주변 필지를 불러오는 중…';
-    const reach = Math.sqrt(target) * 0.8;
-    const big = turf.buffer(core, reach, { units: 'meters' });
-    const fs = await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${turf.bbox(big).join(',')})`, 20);
-    const snapped = d => {
-      const rough = d > 0 ? turf.buffer(core, d, { units: 'meters' }) : core;
-      let sum = 0;
-      for (const f of fs) {
-        const A = turf.area(f);
-        if (!A) continue;
-        try { const x = turf.intersect(f, rough); if (x && turf.area(x) / A >= (opts.threshold || 0.5)) sum += A; } catch (e) { /* 건너뜀 */ }
-      }
-      return { rough, sum };
-    };
-    // 넓히는 거리를 이분 탐색해 목표 면적에 맞춤
-    let lo = 0, hi = reach, best = null;
-    for (let k = 0; k < 9; k++) {
-      const mid = (lo + hi) / 2;
-      msg.textContent = `목표 면적에 맞추는 중… (${k + 1}/9)`;
-      await new Promise(r => setTimeout(r));
-      const r = snapped(mid);
-      if (!best || Math.abs(r.sum - target) < Math.abs(best.sum - target)) best = { ...r, d: mid };
-      if (r.sum < target) lo = mid; else hi = mid;
-    }
-    S.area.geojson = best.rough;
+    this.remember('위치 지번+면적으로 구역 추정');
+    this._noHist = true;
+    const r = await ZoneKit.roughFromAnchors(items, base, target, opts.threshold || 0.5, t => { msg.textContent = t; });
+    if (!r.rough) { this._noHist = false; msg.textContent = '위치 지번을 하나도 찾지 못했습니다. 기준 동 주소를 확인해 주세요.'; return; }
+    S.area.geojson = r.rough;
     this.items.clearLayers();
-    L.geoJSON(best.rough).eachLayer(l => this.items.addLayer(l));
-    await this.snapToParcels(opts);
+    L.geoJSON(r.rough).eachLayer(l => this.items.addLayer(l));
+    try { await this.snapToParcels(opts); } finally { this._noHist = false; }
     const diff = (S.area.drawnArea / target - 1) * 100;
-    msg.insertAdjacentHTML('afterbegin', `<b>추정 구역</b>: 위치 지번 ${pts.length}개를 감싼 범위를 ${fmt(best.d)}m 넓혀 목표 면적 ${fmt(target, 1)}㎡에 맞췄습니다 (차이 ${diff >= 0 ? '+' : ''}${fmt(diff, 1)}%). 경계는 추정이니 필지 선택으로 넣고 빼며 다듬으세요.`
-      + (miss.length ? ` 못 찾은 지번: ${miss.map(esc).join(', ')}.` : '') + '<br>');
+    msg.insertAdjacentHTML('afterbegin', `<b>추정 구역</b>: 위치 지번 ${r.pts.length}개를 감싼 범위를 ${fmt(r.d)}m 넓혀 목표 면적 ${fmt(target, 1)}㎡에 맞췄습니다 (차이 ${diff >= 0 ? '+' : ''}${fmt(diff, 1)}%). 경계는 추정이니 필지 선택으로 넣고 빼며 다듬으세요.`
+      + (r.miss.length ? ` 못 찾은 지번: ${r.miss.map(esc).join(', ')}.` : '') + '<br>');
   },
 
   // 대략 그린 구역 → 필지 경계에 맞춘 구역계
@@ -850,116 +674,26 @@ const MapView = {
     if (!VWorld.enabled) { msg.textContent = '브이월드 인증키가 있어야 필지에 맞출 수 있습니다.'; return; }
     if (!S.area.geojson) { msg.textContent = '먼저 지도 왼쪽 다각형 도구로 구역을 대략 그려 주세요.'; return; }
     this.askClearSample();
+    if (!this._noHist) this.remember('그린 구역을 필지에 맞추기');
     const rough = JSON.parse(JSON.stringify(S.area.geojson));
-    const TH = opts.threshold || 0.5;
-    msg.textContent = '그린 범위의 필지를 불러오는 중…';
-    const [x0, y0, x1, y1] = turf.bbox(rough);
-    let fs;
-    try { fs = await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${x0},${y0},${x1},${y1})`, 20); }
+    let r;
+    try { r = await ZoneKit.snapPick(rough, opts.threshold || 0.5, t => { msg.textContent = t; }); }
     catch (e) { msg.textContent = '필지를 불러오지 못했습니다: ' + e.message; return; }
-
-    const found = new Map(), report = [], boundary = new Map();
-    const area1 = f => Math.round(turf.area(f) * 10) / 10;
-    let i = 0;
-    for (const f of fs) {
-      if (++i % 200 === 0) { msg.textContent = `필지 포함 여부 계산 중… ${i}/${fs.length}`; await new Promise(r => setTimeout(r)); }
-      const A = turf.area(f);
-      if (!A) continue;
-      let ratio;
-      try { const x = turf.intersect(f, rough); ratio = x ? turf.area(x) / A : 0; }
-      catch (e) { try { ratio = turf.booleanPointInPolygon(turf.pointOnFeature(f), rough) ? 1 : 0; } catch (e2) { ratio = 0; } }
-      if (ratio < 0.02) continue;
-      const sp = splitJibun(f.properties.jibun), pct = Math.round(ratio * 100);
-      if (ratio >= 0.98) {
-        found.set(f.properties.pnu, f);
-        report.push({ input: '', result: '포함', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: '' });
-      } else if (ratio >= TH) {
-        found.set(f.properties.pnu, f);
-        boundary.set(f.properties.pnu, pct);
-        report.push({ input: '', result: '경계 필지', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: `그린 범위 안 ${pct}% – 포함함` });
-      } else {
-        report.push({ input: '', result: '경계 제외', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: `그린 범위 안 ${pct}% – 제외함 (필요하면 필지 선택으로 추가)` });
-      }
-    }
     // 대략 그린 선은 점선으로 남겨 비교할 수 있게
     if (this.roughLayer) this.roughLayer.remove();
     this.roughLayer = L.geoJSON(rough, { style: { color: '#555', weight: 2, dashArray: '6 6', fill: false }, interactive: false }).addTo(this.map);
-    await this.buildZone(found, report, { ...opts, boundary }, `그린 범위에 걸친 필지 ${report.length}개 → `);
+    await this.buildZone(r.found, r.report, { ...opts, boundary: r.boundary }, `그린 범위에 걸친 필지 ${r.report.length}개 → `);
   },
 
   // 고른 필지들로 구역계를 만들고(블록 사이 도로 잇기·갇힌 필지 포함) 조서·대조표까지
   // found: pnu → 필지, report: 대조표 행, intro: 결과 문구 앞부분
   async buildZone(found, report, opts, intro) {
     const msg = $('#jibunMsg');
-    const area1 = f => Math.round(turf.area(f) * 10) / 10;
-    let feats = [...found.values()];
-    if (!feats.length) { msg.textContent = '구역에 넣을 필지가 없습니다.'; this.showReport(report); return; }
-
-    const unionAll = fs => safeUnion(fs);
-    const polysOf = g => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates);
-    let merged;
-    try { merged = unionAll(feats); } catch (e) { msg.textContent = '필지 경계를 합치는 중 오류가 났습니다.'; return; }
-
-    // 주변 필지 (도로·둘러싸인 필지를 찾기 위해)
-    let around = [];
-    const enclosed = new Set();
-    if (opts.fillHoles || opts.bridge) {
-      msg.textContent = '주변 도로·필지를 확인하는 중…';
-      const [x0, y0, x1, y1] = turf.bbox(merged), e = 30 / 88000, n = 30 / 111000;
-      around = (await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${x0 - e},${y0 - n},${x1 + e},${y1 + n})`)).filter(f => !found.has(f.properties.pnu));
-    }
-    const ptIn = (f, poly) => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), poly); } catch (e) { return false; } };
-
-    // 1) 떨어진 덩어리 사이를 도로·구거·하천 필지로 잇기 (구역 외곽선 안쪽 부분만)
-    let partial = [];
-    if (opts.bridge && merged.geometry.type === 'MultiPolygon' && merged.geometry.coordinates.length > 1) {
-      const hull = turf.convex(merged);
-      const parts = merged.geometry.coordinates.map(c => turf.buffer(turf.polygon(c), 1.5, { units: 'meters' }));
-      const roads = around.filter(f => !found.has(f.properties.pnu) && ['도', '구', '천'].includes(splitJibun(f.properties.jibun).jimok));
-      roads.forEach(f => {
-        const touching = parts.filter(p => { try { return turf.booleanIntersects(p, f); } catch (e) { return false; } }).length;
-        if (touching < 2) return;
-        let piece = null;
-        try { piece = turf.intersect(f, hull); } catch (e) { piece = null; }
-        if (!piece || turf.area(piece) < 1) return;
-        const sp = splitJibun(f.properties.jibun);
-        const whole = area1(f), part = area1(piece);
-        const isPart = part < whole * 0.98;
-        partial.push({ f, piece, isPart, part });
-        found.set(f.properties.pnu, f);
-        report.push({ input: '', result: '도로 잇기', jibun: sp.no, jimok: sp.jimok, area: part, note: `떨어진 블록 사이 도로${isPart ? ` – 일부 편입 (전체 ${fmt(whole, 1)}㎡)` : ''}` });
-      });
-      if (partial.length) merged = unionAll([merged, ...partial.map(p => p.piece)]);
-    }
-
-    // 2) 구역 안에 둘러싸인 필지(구멍) 자동 포함 – 도로를 이은 뒤에 갇히는 필지도 잡도록 나중에 (10㎡ 미만 틈은 그냥 메움)
-    if (opts.fillHoles) {
-      const holes = polysOf(merged.geometry).flatMap(p => p.slice(1)).map(h => turf.polygon([h])).filter(h => turf.area(h) >= 10);
-      const inHole = around.filter(f => !found.has(f.properties.pnu) && holes.some(h => ptIn(f, h)));
-      inHole.forEach(f => {
-        const sp = splitJibun(f.properties.jibun);
-        found.set(f.properties.pnu, f);
-        report.push({ input: '', result: '갇힌 필지', jibun: sp.no, jimok: sp.jimok, area: area1(f), note: '목록에 없지만 구역 안에 갇혀 자동 포함' });
-        enclosed.add(f.properties.pnu);
-      });
-      if (inHole.length) merged = unionAll([merged, ...inHole]);
-    }
-
-    // 본 구역과 떨어진 100㎡ 미만 자투리 조각은 뺌
-    if (merged.geometry.type === 'MultiPolygon') {
-      const ps = merged.geometry.coordinates.map(c => ({ c, a: turf.area(turf.polygon(c)) }));
-      const keep = ps.filter(p => p.a >= 100), drop = ps.filter(p => p.a < 100);
-      if (keep.length && drop.length) {
-        drop.forEach(p => report.push({ input: '', result: '경계 제외', jibun: '', jimok: '', area: Math.round(p.a * 10) / 10, note: '본 구역과 떨어진 자투리 조각이라 뺌' }));
-        merged = keep.length === 1 ? turf.polygon(keep[0].c) : turf.multiPolygon(keep.map(p => p.c));
-      }
-    }
-
-    // 붙어 있는 필지 사이에 생기는 아주 작은 틈(10㎡ 미만 구멍)은 메움
-    const g = merged.geometry;
-    const fill = poly => [poly[0], ...poly.slice(1).filter(h => turf.area(turf.polygon([h])) >= 10)];
-    if (g.type === 'Polygon') g.coordinates = fill(g.coordinates);
-    else if (g.type === 'MultiPolygon') g.coordinates = g.coordinates.map(fill);
+    if (!found.size) { msg.textContent = '구역에 넣을 필지가 없습니다.'; this.showReport(report); return; }
+    let res;
+    try { res = await ZoneKit.assemble(found, report, opts, t => { msg.textContent = t; }); }
+    catch (e) { msg.textContent = '필지 경계를 합치는 중 오류가 났습니다.'; return; }
+    const { merged, partial, enclosed } = res;
 
     this.items.clearLayers();
     L.geoJSON(merged, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l));
@@ -983,23 +717,15 @@ const MapView = {
       if (opts.boundary && opts.boundary.has(l.pnu)) l.boundary = opts.boundary.get(l.pnu);
     });
     App.update(true);
-
-    const parts = g.type === 'MultiPolygon' ? g.coordinates.length : 1;
-    const cnt = r => report.filter(x => x.result === r).length;
-    msg.innerHTML = `${intro}포함 <b>${cnt('포함')}필지</b>`
-      + (cnt('경계 필지') ? `, 경계 필지 <b>${cnt('경계 필지')}필지</b>` : '') + (cnt('경계 제외') ? `, 경계에서 제외 ${cnt('경계 제외')}필지` : '') + (cnt('갇힌 필지') ? `, 갇힌 필지 <b>${cnt('갇힌 필지')}필지</b>` : '') + (cnt('도로 잇기') ? `, 블록 사이 도로 <b>${cnt('도로 잇기')}필지</b>` : '')
-      + `로 구역계를 그리고 조서를 불러왔습니다.`
-      + (parts > 1 ? ` <b class="warn">구역이 아직 ${parts}덩어리로 떨어져 있습니다.</b>` : '')
-      + (cnt('실패') + cnt('확인 필요') ? `<br><b class="warn">확인 필요 ${cnt('실패') + cnt('확인 필요')}건</b> – 아래 대조표를 보세요.` : '');
+    msg.innerHTML = ZoneKit.summary(report, merged, intro).replace('로 구역계를 그렸습니다.', '로 구역계를 그리고 조서를 불러왔습니다.').replace('필지 대조표를 보세요', '아래 대조표를 보세요');
     this.showReport(report);
   },
 
   // 입력 지번 대조표
   showReport(report) {
     this.lastReport = report;
-    const order = { '실패': 0, '확인 필요': 1, '경계 정리': 2, '경계 필지': 3, '경계 제외': 4, '갇힌 필지': 5, '도로 잇기': 6, '포함': 7, '중복': 8 };
-    const rows = report.slice().sort((a, b) => (order[a.result] ?? 9) - (order[b.result] ?? 9));
-    const cls = r => (r === '포함' ? 'good' : ['갇힌 필지', '도로 잇기', '경계 필지', '경계 정리'].includes(r) ? 'auto' : r === '중복' ? '' : 'warn');
+    const rows = ZoneKit.reportRows(report);
+    const cls = r => ZoneKit.reportClass(r);
     $('#jibunReport').innerHTML = `
       <div class="report-head"><b>필지 대조표</b> <button class="btn small" id="btnReportXlsx">엑셀 저장</button></div>
       <div class="table-wrap"><table class="grid"><thead><tr><th>입력</th><th>결과</th><th>필지</th><th>지목</th><th class="num">면적(㎡)</th><th>비고</th></tr></thead><tbody>
