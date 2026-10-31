@@ -456,8 +456,8 @@ async function main() {
         const listed = idsIn(await get(`${BASE}/search/search_list.php?stc=1&sno=${it.year}&tno=${it.caseNo.split('타경')[1]}`)).filter((i) => i !== idx);
         for (const o of listed.slice(0, 11)) { await pause('pageSeconds'); const s = await readItem(o); if (s && s.court === it.court && s.caseNo === it.caseNo) sib.push(s); }
         n++; bump(); failRun = 0;
-        // 30사건마다 사이트(/data) 올리기를 따로 돌림(이미 돌고 있으면 그쪽이 알아서 건너뜀)
-        if (!DRY && n % 30 === 0) { try { const { spawn } = await import('node:child_process'); spawn(process.execPath, [path.join(ROOT, 'src', 'datasync.js')], { cwd: ROOT, detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch { /* */ } }
+        // 5사건마다 사이트(/data) 올리기를 따로 돌림(이미 돌고 있으면 그쪽이 알아서 건너뜀)
+        if (!DRY && n % 5 === 0) { try { const { spawn } = await import('node:child_process'); spawn(process.execPath, [path.join(ROOT, 'src', 'datasync.js')], { cwd: ROOT, detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch { /* */ } }
         await grabCase(sib, !!idxs.get(idx)?.light && !sib.some((s) => idxs.get(s.idx) && !idxs.get(s.idx).light));
       } catch (e) {
         if (e instanceof Blocked || e instanceof NeedLogin) throw e;
