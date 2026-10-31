@@ -922,12 +922,12 @@ const INFRA = {
     const parkC = inf.parkC || this.defaultCenter(zone);
     const avoid0 = roadGeom && relGeom ? safeUnion([roadGeom, relGeom]) : (roadGeom || relGeom);
     let parkGeom = this.block(parkC, parkNeed, zone, avoid0, szPark.asp);
-    // 공원과 종교 대체부지가 맞닿아 있으면 한 띠로 묶음: 가까운 구역 경계와 나란한 곧은 안쪽 선 하나로,
+    // 공원과 종교 대체부지가 맞닿거나 12m 안으로 가까우면 한 띠로 묶음: 가까운 구역 경계와 나란한 곧은 안쪽 선 하나로,
     //  두 시설 면적의 합만큼 깊이를 정하고 경계에 수직인 선 하나로 나눔(각자 정한 면적)
     let paired = false;
     if (relC && parkGeom && relGeom) {
       try {
-        if (turf.booleanIntersects(turf.buffer(parkGeom, 1.5, { units: 'meters' }), relGeom)) {
+        if (turf.booleanIntersects(turf.buffer(parkGeom, 12, { units: 'meters' }), relGeom)) {
           const pr = this.pairBand(zone, roadGeom, [['park', parkGeom, parkNeed], ['rel', relGeom, relArea]]);
           if (pr) { parkGeom = pr.park; relGeom = pr.rel; paired = true; }
         }
@@ -1009,8 +1009,20 @@ const INFRA = {
       const restLots = left ? (left.geometry.type === 'Polygon' ? [left.geometry.coordinates] : left.geometry.coordinates).map(c => turf.polygon(c)).map(gg => ({ geom: gg, area: turf.area(gg) })).filter(x => x.area >= 5).map(x => ({ ...x, small: x.area < 1000 })) : [];
       lots = lots.filter(x => x !== l).concat(restLots).sort((x, y) => y.area - x.area);
     });
+    // 붙이기 뒤에도 큰 획지와 떨어져 남은 1,000㎡ 미만 조각은 가장 많이 맞닿은 시설에 붙임
+    let relGrown = false;
+    if (P.autoAbsorb !== false && lots.length > 1) {
+      const blk = () => [['park', parkGeom], ['school', schoolGeom], ['rel', relGeom]].filter(b => b[1]);
+      lots.slice(1).filter(l => l.area < 1000).forEach(l => {
+        let near = null, bestC = 0;
+        try { const pb = turf.buffer(l.geom, 1, { units: 'meters' }); blk().forEach(b => { let c = 0; try { const x = turf.intersect(pb, b[1]); c = x ? turf.area(x) : 0; } catch (er) { c = 0; } if (c > bestC) { bestC = c; near = b[0]; } }); } catch (er) { near = null; }
+        if (!near) return;
+        if (near === 'park') parkGeom = safeUnion([parkGeom, l.geom]); else if (near === 'school') schoolGeom = safeUnion([schoolGeom, l.geom]); else { relGeom = safeUnion([relGeom, l.geom]); relGrown = true; }
+        absorbed += l.area; lots = lots.filter(x => x !== l);
+      });
+    }
     lots = lots.map((l, i) => ({ ...l, no: i + 1 }));
-    if ((relC || merged.rel) && relGeom) relArea = turf.area(relGeom);
+    if ((relC || merged.rel || relGrown) && relGeom) relArea = turf.area(relGeom);
     const parkArea = parkGeom ? turf.area(parkGeom) : 0, schoolArea = schoolGeom ? turf.area(schoolGeom) : 0;
     const other = num(P.otherInfra);
     const total = roadArea + (P.keepInnerRoads ? innerArea : 0) + parkArea + schoolArea + other + relArea;
