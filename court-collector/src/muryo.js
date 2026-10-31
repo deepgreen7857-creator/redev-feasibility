@@ -77,6 +77,8 @@ const stopFile = path.join(STATE, 'muryo-stop.txt');
 const blockedFile = path.join(STATE, 'muryo-blocked.txt');
 const countFile = path.join(STATE, `muryo-${kstDay()}.json`);
 let today = fs.existsSync(countFile) ? JSON.parse(fs.readFileSync(countFile, 'utf8')).count || 0 : 0;
+const resCountFile = path.join(STATE, `muryo-results-${kstDay()}.json`);
+let resToday = fs.existsSync(resCountFile) ? JSON.parse(fs.readFileSync(resCountFile, 'utf8')).count || 0 : 0;
 const bump = () => { today++; if (!DRY) fs.writeFileSync(countFile, JSON.stringify({ count: today })); };
 const inHours = () => { const h = kstNow().getUTCHours(); return cfg.allowedHours.some(([a, b]) => h >= a && h < b); };
 const lockFile = path.join(STATE, 'muryo.lock');
@@ -230,7 +232,7 @@ let jdb = {};
 try { jdb = JSON.parse(fs.readFileSync(path.join(ARCHIVE, '_제이옥션_목록.json'), 'utf8')); } catch { /* 없음 */ }
 function saveDb() {
   fs.writeFileSync(dbFile, JSON.stringify(db, null, 1));
-  const cols = ['법원', '사건번호', '물건번호', '용도', '주소', '감정가', '최저가', '현재회차', '다음매각기일', '현황조사서', '표시목록', '기일내역', '문건접수', '송달', '마지막확인', '폴더'];
+  const cols = ['법원', '사건번호', '물건번호', '용도', '주소', '감정가', '최저가', '현재회차', '다음매각기일', '현황조사서', '표시목록', '기일내역', '문건접수', '송달', '결과', '결과기일', '낙찰가', '입찰인원', '2등입찰가', '결과확인', '마지막확인', '폴더'];
   const esc = (v) => { const s = Array.isArray(v) ? v.join(' ') : String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const rows = Object.values(db).sort((a, b) => String(a.다음매각기일 || '9').localeCompare(String(b.다음매각기일 || '9'))).map((r) => cols.map((c) => esc(r[c])).join(','));
   fs.writeFileSync(path.join(ARCHIVE, '_무료경매_목록.csv'), '\uFEFF' + [cols.join(','), ...rows].join('\r\n'));
@@ -314,7 +316,7 @@ async function grabCase(v) {
   }
   const key = `${r0.court}_${r0.caseNo}`;
   const full = !!(got.현황조사서 && got.기일내역 && got.물건.length);
-  db[key] = {
+  db[key] = { ...(db[key] || {}), // 결과 칸 등 앞서 남긴 것은 그대로 두고 덮음
     법원: r0.court, 사건번호: r0.caseNo, 물건번호: got.물건.join(' '), 용도: r0.use, 주소: r0.address, 감정가: r0.appraisal, 최저가: r0.minPrice, 현재회차: r0.round, 다음매각기일: r0.sale || v.sale,
     현황조사서: got.현황조사서, 표시목록: got.표시목록, 기일내역: got.기일내역, 문건접수: got.문건접수, 송달: got.송달,
     마지막확인: kstDay(), 폴더: path.relative(ARCHIVE, dir), 열쇠: v.rows[0].key, _at: Date.now(), _완료: !!(got.물건.length && got.현황조사서), _full: full, _light: light && !full,
@@ -343,6 +345,61 @@ async function loginMode() {
   } finally { await ctx.close().catch(() => {}); }
 }
 
+// ── 매각 결과 확인(검토가 맞았는지 채점용) ─────────────────
+//  매각기일이 지난 사건(무료경매·제이옥션 목록 + review 후보)을 한 화면씩 다시 열어 결과(매각/유찰/변경…)·낙찰가·입찰인원·2등 입찰가를 남긴다.
+//  저장: <사건폴더>\결과_무료경매.json (기일마다 쌓음), 목록 _무료경매_목록.json 의 결과 칸. 하루 resultsMax 건, 검토 범위보다 먼저.
+const resultsFile = (dir) => path.join(dir, '결과_무료경매.json');
+function parseResults(t) {
+  const out = [];
+  const s0 = t.indexOf('기일현황'); const s1 = t.indexOf('감정평가', s0 + 1);
+  const sched = s0 >= 0 ? t.slice(s0, s1 > s0 ? s1 : undefined).replace(/\s+/g, ' ') : '';
+  const re = /(신건|\d+차)\s+(\d{4}-\d{2}-\d{2})\s+([\d,]+)원\s+(유찰|매각|변경|취하|기각|정지|연기|예정|진행|불허|대금미납|재매각|각하|취소)([^]*?)(?=(?:신건|\d+차)\s+\d{4}-\d{2}-\d{2}|$)/g;
+  let m; let fails = 0;
+  while ((m = re.exec(sched))) {
+    const extra = m[5] || '';
+    const r = { 회차: m[1] === '신건' ? '최초' : `${fails}회 유찰`, 매각기일: m[2], 최저가: Number(m[3].replace(/,/g, '')), 결과: m[4] };
+    const w = extra.match(/입찰\s*(\d+)\s*명\s*\/\s*낙찰\s*([\d,]+)\s*원\s*\((\d+)%\)/); if (w) { r.입찰인원 = Number(w[1]); r.낙찰가 = Number(w[2].replace(/,/g, '')); r.낙찰가율 = Number(w[3]); }
+    const s2 = extra.match(/2등\s*입찰가\s*[:：]?\s*([\d,]+)\s*원/); if (s2) r['2등입찰가'] = Number(s2[1].replace(/,/g, ''));
+    out.push(r); if (m[4] === '유찰') fails++;
+  }
+  return out;
+}
+async function checkResults(maxN) {
+  const today0 = kstDay(); const cand = new Map();
+  const addC = (court, caseNo, sale, review) => { if (!court || !/^\d{4}타경\d+$/.test(caseNo || '') || !sale || sale >= today0) return; const k = `${court}_${caseNo}`; const v = cand.get(k) || { court, caseNo, sale, review }; if (review) v.review = true; cand.set(k, v); };
+  for (const r of Object.values(db)) addC(r.법원, r.사건번호, r.다음매각기일, false);
+  for (const r of Object.values(jdb)) addC(r.법원, r.사건번호, r.다음매각기일, false);
+  const todo = [...cand.values()].filter((v) => { const r = db[`${v.court}_${v.caseNo}`]; return !(r && r.결과확인 && r.결과확인 >= v.sale); })
+    .sort((a, b) => (b.review - a.review) || String(b.sale).localeCompare(String(a.sale))).slice(0, maxN);
+  if (!todo.length) return 0;
+  log(`매각 결과 확인 — 기일 지난 사건 ${todo.length}건`);
+  let n = 0;
+  for (const v of todo) {
+    if (fs.existsSync(stopFile)) break;
+    await pause('itemSeconds');
+    const [y, num] = v.caseNo.split('타경');
+    const cc = courtCode(v.court);
+    const rows = (await listPage(searchForm({ courtMain: cc, year: y, num, all: true }))).filter((x) => x.year === y && x.num === num && (cc === '0' || x.courtNo === cc));
+    if (!rows.length) { const r = db[`${v.court}_${v.caseNo}`] || (db[`${v.court}_${v.caseNo}`] = { 법원: v.court, 사건번호: v.caseNo }); r.결과확인 = today0; r.결과 = '못 찾음'; continue; }
+    await pause('pageSeconds');
+    const r0 = rows[0];
+    const h = await get('/auctionInfo/view.php', { method: 'POST', form: { courtNo: r0.courtNo, courtNo2: r0.courtNo2, eventNo1: r0.year, eventNo2: r0.num, objNo: r0.objNo }, referer: `${BASE}/auctionInfo/info_result_switch.php` });
+    const info = parseView(h); const res = parseResults(info.text);
+    const dir = path.join(ARCHIVE, info.court || v.court, y, v.caseNo); fs.mkdirSync(dir, { recursive: true });
+    let hist = []; try { hist = JSON.parse(fs.readFileSync(resultsFile(dir), 'utf8')); } catch { /* 처음 */ }
+    hist.push({ 확인일: today0, 출처: '무료경매.kr', 기일: res });
+    fs.writeFileSync(resultsFile(dir), JSON.stringify(hist, null, 1));
+    const last = [...res].reverse().find((x) => x.결과 !== '예정' && x.매각기일 <= today0) || {};
+    const next = res.find((x) => x.결과 === '예정' && x.매각기일 > today0);
+    const rec = db[`${v.court}_${v.caseNo}`] || (db[`${v.court}_${v.caseNo}`] = { 법원: v.court, 사건번호: v.caseNo, 폴더: path.relative(ARCHIVE, dir) });
+    Object.assign(rec, { 결과: last.결과 || '', 결과기일: last.매각기일 || '', 낙찰가: last.낙찰가 || '', 입찰인원: last.입찰인원 ?? '', '2등입찰가': last['2등입찰가'] || '', 결과확인: today0 });
+    if (next) rec.다음매각기일 = next.매각기일; // 유찰이면 다음 기일로 → 그날 지나면 다시 확인
+    saveDb(); n++;
+    log(`${v.court} ${v.caseNo}${v.review ? ' [review]' : ''}: ${last.매각기일 || '-'} ${last.결과 || '?'}${last.낙찰가 ? ` · 낙찰 ${last.낙찰가.toLocaleString()}원(${last.낙찰가율}%) · ${last.입찰인원}명${last['2등입찰가'] ? ` · 2등 ${last['2등입찰가'].toLocaleString()}원` : ''}` : ''}${next ? ` → 다음 ${next.매각기일}` : ''}`);
+  }
+  return n;
+}
+
 async function main() {
   if (LOGIN) return loginMode();
   if (!cfg.enabled) return log('config.json muryo.enabled=false — 쉼');
@@ -352,7 +409,7 @@ async function main() {
   let n = 0;
   try {
     if (!anyHour && !inHours()) return log('쉬는 시간대 — 다음 실행에 이어서');
-    if (today >= cfg.dailyMax) return log('오늘 한도 — 내일 이어서');
+    if (today >= cfg.dailyMax) { if (!DRY && (await robotsAllows(['/v1/s01/01.htm', '/auctionInfo/view.php']))) { const rn = await checkResults(Math.max(0, (cfg.resultsMax ?? 60) - resToday)); resToday += rn; fs.writeFileSync(resCountFile, JSON.stringify({ count: resToday })); } return log('오늘 한도 — 내일 이어서(매각 결과 확인은 했음)'); }
     if (!(await robotsAllows(['/v1/s01/01.htm', '/auctionInfo/view.php', '/auctionInfo/zoom/']))) return log('robots.txt 가 막고 있음 — 받지 않고 끝냄');
     let todo;
     if (arg('--case')) {
@@ -363,6 +420,8 @@ async function main() {
       todo = [...by.values()];
       if (!todo.length) log(`${arg('--case')}: 무료경매.kr 에서 못 찾음`);
     } else {
+      // 먼저: 매각기일 지난 사건의 결과 확인(하루 resultsMax 건 — 검토 채점용)
+      if (!DRY) { const rn = await checkResults(Math.max(0, (cfg.resultsMax ?? 60) - resToday)); resToday += rn; fs.writeFileSync(resCountFile, JSON.stringify({ count: resToday })); }
       const all = await collectScope();
       const caseOf = (v) => `${v.rows[0].year}타경${v.rows[0].num}`;
       const left = [...all.values()].filter((v) => !doneByCaseNo(caseOf(v), v.light));
