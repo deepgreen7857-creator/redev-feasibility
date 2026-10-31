@@ -1335,7 +1335,7 @@ const INFRA = {
       const nLedger = bl.filter(b => b.src === '대장').length, nGis = bl.length - nLedger;
       // 지목에 맞는 도시계획시설이 결정돼 있는지(공원 지목인데 공원 결정이 없으면 해제·미조성 의심)
       let facKind = '';
-      if (f && fac.length) { try { const hit = fac.filter(x => { const xi = turf.intersect(f, { type: 'Feature', properties: {}, geometry: x.geom }); return xi && turf.area(xi) >= turf.area(f) * 0.3; }); facKind = [...new Set(hit.map(x => x.name))].join(', '); } catch (er) { facKind = ''; } }
+      if (f && fac.length) { try { const hit = fac.filter(x => { const xi = turf.intersect(f, { type: 'Feature', properties: {}, geometry: x.geom }); return xi && (turf.area(xi) >= turf.area(f) * 0.05 || turf.area(xi) >= 30); }); facKind = [...new Set(hit.map(x => x.name))].join(', '); } catch (er) { facKind = ''; } }
       // 지목은 공공(도로·공원 등)인데 토지이용상황이 주거·상업 등이면 실제 쓰임이 달라 '확인 필요'
       //  확실: 공공 지목이고 이용상황도 맞고 건물이 없음
       //  확인 필요: 지목·이용상황·건물이 서로 어긋남(지목은 공공인데 주거로 쓰임, 이용상황은 도로인데 건물이 덮음 등)
@@ -1869,7 +1869,7 @@ function giSection(inf) {
     ${g.map(x => `<tr class="${x.include ? 'inc' : ''}">
       <td><button type="button" class="linkbtn" data-gifocus="${esc(x.p.pnu)}">${esc(x.p.jibun)}</button></td>
       <td>${esc(x.p.jimok)}</td><td>${esc(x.p.own || '확인 중')}${x.p.ownInst && x.p.ownInst !== '구분없음' ? `<br><span class="u">${esc(x.p.ownInst)}</span>` : ''}</td><td>${esc(x.p.landUse || '–')}</td>
-      <td class="evs">${chk(x.jm, '공공 지목')}${chk(x.lu, '이용상황 도로등')}${chk(x.fc, '도시계획시설 안')}${chk(x.thin, `길쭉함(폭 약 ${x.w}m)`)}${chk(x.noBld, '건물 없음')}${x.bldOn ? '<span class="ev bad">✕ 건물 있음</span>' : ''}</td>
+      <td class="evs">${chk(x.jm, '공공 지목')}${chk(x.lu, '이용상황 도로등')}${chk(x.fc, '도시계획시설 안')}${chk(x.thin, `길쭉함(폭 약 ${x.w}m)`)}${x.bldOn ? '<span class="ev bad">✕ 건물 있음</span>' : chk(x.noBld, '건물 없음')}</td>
       <td class="u">${x.noBld ? '건물 없음' : `건물 ${x.nLedger + x.nGis}동${x.nGis ? `(대장 없음 ${x.nGis})` : ''}`}${x.cover > 0.05 ? `<br><b class="warn">건물이 필지의 ${Math.round(x.cover * 100)}% 덮음</b>` : ''}<br>${x.facKind ? `결정: ${esc(x.facKind)}` : '도시계획시설 결정 없음'}<br>${x.p.chgDate ? `${esc(x.p.chgDate)} ${esc(x.p.chgCause || '')}` : ''}</td>
       <td><span class="pill ${gradeCls[x.grade]}">${x.grade}</span></td>
       <td>${x.pub ? `<select data-gidec="${esc(x.p.pnu)}" aria-label="${esc(x.p.jibun)} 판단"><option value="" ${!x.dec ? 'selected' : ''}>자동(${x.grade === '아닐 가능성' ? '뺌' : '넣음'})</option><option value="in" ${x.dec === 'in' ? 'selected' : ''}>넣기(무상양도 대상)</option><option value="out" ${x.dec === 'out' ? 'selected' : ''}>빼기</option></select>` : '<span class="u">사유 — 제외</span>'}</td>
