@@ -254,6 +254,30 @@ const ZoneKit = {
     return { found, report, boundary };
   },
 
+  // 구역에 닿은 바깥 도로(지목 도) 조각. mode 'half': 중심선까지(구역 쪽 절반), 'all': 도로 폭 전체(구역에 닿은 구간만)
+  //  도로 폭은 구역 둘레 25m 안 조각의 면적·둘레로 어림(2×면적÷둘레, 2~40m). 반환 [{f, piece, part, whole, isPart, w}]
+  edgeRoads(zone, cands, mode) {
+    const out = [];
+    let near1 = null; try { near1 = turf.buffer(zone, 1.5, { units: 'meters' }); } catch (e) { return out; }
+    cands.forEach(f => {
+      if (splitJibun(f.properties.jibun).jimok !== '도') return;
+      try {
+        if (!turf.booleanIntersects(near1, f)) return;
+        const inX = turf.intersect(f, zone);
+        if (inX && turf.area(inX) / turf.area(f) >= 0.5) return;   // 이미 구역 안 도로
+        const local = turf.intersect(f, turf.buffer(zone, 25, { units: 'meters' }));
+        if (!local) return;
+        const w = Math.min(40, Math.max(2, 2 * turf.area(local) / (turf.length(turf.polygonToLine(local), { units: 'kilometers' }) * 1000 || 1)));
+        const reach = mode === 'half' ? w / 2 : w + 0.5;
+        let piece = turf.intersect(f, turf.buffer(zone, reach, { units: 'meters' }));
+        if (!piece || turf.area(piece) < 2) return;
+        const whole = this.area1(f), part = this.area1(piece);
+        out.push({ f, piece, part, whole, isPart: part < whole * 0.98, w: Math.round(w * 10) / 10 });
+      } catch (e) { /* 그 도로는 건너뜀 */ }
+    });
+    return out;
+  },
+
   // 고른 필지들 → 구역계 (떨어진 블록 사이 도로 잇기·갇힌 필지 포함·자투리 제거·작은 틈 메움)
   //  found·report는 고쳐서 돌려줌. 반환 { merged, partial: [{f, piece, isPart, part}], enclosed: Set(pnu) } (필지가 없으면 merged null)
   async assemble(found, report, opts = {}, say = () => {}) {
@@ -265,7 +289,7 @@ const ZoneKit = {
 
     // 주변 필지 (도로·둘러싸인 필지를 찾기 위해)
     let around = [];
-    if (opts.fillHoles || opts.bridge) {
+    if (opts.fillHoles || opts.bridge || (opts.edgeRoad && opts.edgeRoad !== 'none')) {
       say('주변 도로·필지를 확인하는 중…');
       const [x0, y0, x1, y1] = turf.bbox(merged), e = 30 / 88000, n = 30 / 111000;
       around = (await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${x0 - e},${y0 - n},${x1 + e},${y1 + n})`)).filter(f => !found.has(f.properties.pnu));
@@ -304,6 +328,19 @@ const ZoneKit = {
         enclosed.add(f.properties.pnu);
       });
       if (inHole.length) merged = safeUnion([merged, ...inHole]);
+    }
+
+    // 3) 구역 바깥 경계 도로: 불포함(기본) / 중심선까지(half) / 도로 폭 전체(all) — 구역에 닿은 구간만
+    if (opts.edgeRoad === 'half' || opts.edgeRoad === 'all') {
+      say(`구역 경계 도로를 ${opts.edgeRoad === 'half' ? '중심선까지' : '도로 폭 전체'} 넣는 중…`);
+      const er = this.edgeRoads(merged, around.filter(f => !found.has(f.properties.pnu)), opts.edgeRoad);
+      er.forEach(r => {
+        partial.push({ f: r.f, piece: r.piece, isPart: r.isPart, part: r.part });
+        found.set(r.f.properties.pnu, r.f);
+        const sp = splitJibun(r.f.properties.jibun);
+        report.push({ input: '', result: '경계 도로', jibun: sp.no, jimok: sp.jimok, area: r.part, note: `${opts.edgeRoad === 'half' ? '중심선까지' : '도로 폭 전체'} 편입 · 폭 약 ${r.w}m${r.isPart ? ` – 일부 편입 (전체 ${this.f1(r.whole)}㎡)` : ''}` });
+      });
+      if (er.length) merged = safeUnion([merged, ...er.map(r => r.piece)]);
     }
 
     // 본 구역과 떨어진 100㎡ 미만 자투리 조각은 뺌

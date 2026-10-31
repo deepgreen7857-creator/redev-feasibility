@@ -1449,7 +1449,7 @@ function renderRules() {
 const ZK = {
   picking: false,
   rough: {},   // 안별 '대략 그린 범위' (필지에 맞추기 전 선, 점선으로 비교용)
-  opts() { return { fillHoles: $id('zkFill').checked, bridge: $id('zkBridge').checked, threshold: num($id('zkTh').value) || 0.5 }; },
+  opts() { return { fillHoles: $id('zkFill').checked, bridge: $id('zkBridge').checked, edgeRoad: $id('zkEdge').value, threshold: num($id('zkTh').value) || 0.5 }; },
   base() { return $id('zkBase').value.trim(); },
   list() { return $id('zkList').value.split(/[\n,;\t]+/); },
   msg(h) { $id('zkMsg').innerHTML = h; },
@@ -1809,4 +1809,36 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
   key(v, 'ArrowUp', 'ArrowDown', d => { st.mh = Math.max(260, (st.mh || 560) + d * 20); });
   if (h) h.addEventListener('dblclick', () => { delete st.lw; apply(); save(); });
   if (v) v.addEventListener('dblclick', () => { delete st.mh; apply(); save(); });
+})();
+
+/* ===== 도구 막대 설명 줄(지도 위): 아이콘과 이름을 늘 보여 주고, 버튼에 마우스를 올리면 자세한 설명 ===== */
+(() => {
+  const box = document.getElementById('toolHelp'), bar = document.getElementById('mapTools');
+  if (!box || !bar) return;
+  const btns = [...bar.querySelectorAll('button.mt')];
+  const build = () => {
+    const parts = [];
+    bar.querySelectorAll('button.mt, .mt-sep').forEach(el => {
+      if (el.classList.contains('mt-sep')) { parts.push('<span class="sep" aria-hidden="true">|</span>'); return; }
+      const name = el.getAttribute('aria-label') || '';
+      parts.push(`<button type="button" data-for="${el.id}" ${el.disabled ? 'disabled' : ''} class="${el.classList.contains('on') ? 'hot' : ''}"><span class="k" aria-hidden="true">${el.textContent}</span>${esc(name)}</button>`);
+    });
+    box.innerHTML = parts.join('') + '<span class="tip idle" id="toolTip"></span>';
+    show(null);
+    box.querySelectorAll('[data-for]').forEach(b => {
+      const t = document.getElementById(b.dataset.for);
+      b.onclick = () => t.click();
+      b.onmouseenter = b.onfocus = () => show(t);
+      b.onmouseleave = b.onblur = () => show(null);
+    });
+  };
+  // 설명 칸 높이는 늘 같게(누르는 도중 화면이 밀려 클릭이 빗나가지 않게)
+  const show = t => { const tip = document.getElementById('toolTip'); if (!tip) return; tip.textContent = t ? (t.dataset.tip || '') : '버튼이나 이름에 마우스를 올리면 자세한 설명이 여기에 나옵니다'; tip.classList.toggle('idle', !t); };
+  btns.forEach(t => { t.addEventListener('mouseenter', () => show(t)); t.addEventListener('focus', () => show(t)); t.addEventListener('mouseleave', () => show(null)); t.addEventListener('blur', () => show(null)); });
+  // 버튼 상태(켜짐·꺼짐·이름)가 바뀌면 설명 줄도 다시 그림
+  new MutationObserver(build).observe(bar, { subtree: true, attributes: true, attributeFilter: ['disabled', 'class', 'aria-label'] });
+  build();
+  const syncHidden = () => { box.hidden = bar.hidden; };
+  new MutationObserver(syncHidden).observe(bar, { attributes: true, attributeFilter: ['hidden'] });
+  syncHidden();
 })();

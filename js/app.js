@@ -1034,16 +1034,16 @@ function boot() {
     $('#jibunList').value.split(/[\n,;\t]+/),
     $('#jibunBase').value.trim() || guessBase(),
     num($('#anchorTarget').value),
-    { threshold: num($('#snapThreshold').value) || 0.5, fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked },
+    { threshold: num($('#snapThreshold').value) || 0.5, fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked, edgeRoad: ($('#optEdgeRoad') || {}).value || 'none' },
   );
   $('#btnSnapZone').onclick = () => MapView.snapToParcels({
     threshold: num($('#snapThreshold').value) || 0.5,
-    fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked,
+    fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked, edgeRoad: ($('#optEdgeRoad') || {}).value || 'none',
   });
   $('#btnJibunZone').onclick = () => {
     const base = $('#jibunBase').value.trim() || guessBase();
     const items = $('#jibunList').value.split(/[\n,;\t]+/);
-    MapView.zoneFromJibuns(items, base, { fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked });
+    MapView.zoneFromJibuns(items, base, { fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked, edgeRoad: ($('#optEdgeRoad') || {}).value || 'none' });
   };
   $('#btnJibunFile').onclick = () => {
     const i = document.createElement('input');
@@ -1079,7 +1079,7 @@ function boot() {
     await new Promise(r => setTimeout(r, 300));   // 지도가 그려진 뒤
     const jb = $('#jibunMsg');
     if (jb) jb.closest('details') && (jb.closest('details').open = true);
-    MapView.snapToParcels({ threshold: 0.5, fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked });
+    MapView.snapToParcels({ threshold: 0.5, fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked, edgeRoad: ($('#optEdgeRoad') || {}).value || 'none' });
   };
   $('#regionSelect').onchange = e => {
     applyRegion(S.criteria, e.target.value);

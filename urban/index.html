@@ -195,6 +195,14 @@ td .u{font-size:11px;font-weight:400;color:var(--ink-2)}
 .vsplit{cursor:row-resize;height:10px;margin:2px 0 4px;position:relative;touch-action:none}
 .vsplit::before{content:"";position:absolute;left:42px;right:0;top:50%;height:2px;transform:translateY(-50%);background:var(--line);border-radius:2px}
 .vsplit:hover::before,.vsplit:focus-visible::before,.vsplit.drag::before{background:var(--accent);height:4px}
+.toolhelp{display:flex;flex-wrap:wrap;gap:2px 4px;align-items:center;font-size:12px;color:var(--ink-2);margin:0 0 6px;min-height:22px}
+.toolhelp button{font:inherit;font-size:12px;border:0;background:none;color:var(--ink-2);padding:2px 5px;border-radius:4px;cursor:pointer}
+.toolhelp button:hover,.toolhelp button.hot{background:var(--grid);color:var(--ink)}
+.toolhelp button:disabled{opacity:.45;cursor:not-allowed}
+.toolhelp .k{display:inline-block;width:16px;text-align:center;color:var(--ink)}
+.toolhelp .tip{flex-basis:100%;height:19px;line-height:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-weight:500;padding:0 5px}
+.toolhelp .tip.idle{color:var(--ink-2);font-weight:400}
+.toolhelp .sep{color:var(--line)}
 body.resizing{user-select:none}
 body.resizing .lmap{pointer-events:none}
 .lmap-btn{display:block;width:30px;height:30px;line-height:30px;text-align:center;font-size:16px;background:#fff;color:#222;text-decoration:none}
@@ -249,6 +257,7 @@ a.back:hover{text-decoration:underline}
           <div class="zk-opts">
             <label><input type="checkbox" id="zkFill" checked> 구역 안에 갇힌 필지(도로 등) 자동 포함</label>
             <label><input type="checkbox" id="zkBridge" checked> 떨어진 블록 사이 도로로 잇기</label>
+            <label class="zk-edge">구역 경계 도로 <select id="zkEdge"><option value="none">불포함(기본)</option><option value="half">일부 포함 – 중심선까지</option><option value="all">포함 – 도로 폭 전체</option></select></label>
           </div>
           <div class="zk-btns">
             <button class="btn sm" type="button" id="zkJibunBtn">지번으로 구역 만들기</button>
@@ -273,6 +282,7 @@ a.back:hover{text-decoration:underline}
         </div>
       </div>
       <div class="status" id="status" hidden></div>
+      <div class="toolhelp" id="toolHelp" aria-live="polite"></div>
       <div class="mapwrap" id="mapWrap">
         <div class="maptools" id="mapTools" role="toolbar" aria-label="구역계 도구" aria-orientation="vertical">
           <button class="mt" id="pickBtn" type="button" data-tip="필지 넣고 빼기 — 지도에서 필지를 누르면 넣을지 뺄지 고릅니다" aria-label="필지 넣고 빼기">±</button>
@@ -306,7 +316,7 @@ a.back:hover{text-decoration:underline}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../js/config.js?v=68"></script>
-<script src="../js/zonekit.js?v=70"></script>
-<script src="urban.js?v=15"></script>
+<script src="../js/zonekit.js?v=71"></script>
+<script src="urban.js?v=16"></script>
 </body>
 </html>
