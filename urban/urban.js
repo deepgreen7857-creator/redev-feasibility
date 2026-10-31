@@ -794,13 +794,18 @@ const INFRA = {
       return sq(x, y);
     };
     // 정사각형 → 1:1.5 → 1:2(경계선 방향으로 길게) 순으로, 가까운 자리부터 최대 120m까지 찾음
-    for (const asp of [...new Set([asp0, 1, 1.5, 2])]) {
-      hw = side * Math.sqrt(asp) / 2; hh = side / Math.sqrt(asp) / 2;
-      for (let r = 0; r <= 120; r += r < 30 ? 3 : 6) {
-        const n = r ? Math.max(8, Math.round(r / 2)) : 1;
-        for (let k = 0; k < n; k++) {
-          const cx = r * Math.cos(2 * Math.PI * k / n), cy = r * Math.sin(2 * Math.PI * k / n);
-          if (fitsAt(cx, cy)) return flush(cx, cy);
+    // 놓은 자리 둘레 120m 안에 없으면(구역 밖에 놓았거나 모퉁이라 막힌 경우) 구역 가운데에서 구역 전체를 다시 찾음
+    const [zx0, zy0, zx1, zy1] = turf.bbox(zone), zc = toM([(zx0 + zx1) / 2, (zy0 + zy1) / 2]);
+    const reach = Math.hypot((zx1 - zx0) * kx, (zy1 - zy0) * ky) / 2 + side;
+    for (const [ox, oy, R] of [[0, 0, 120], [zc[0], zc[1], reach]]) {
+      for (const asp of [...new Set([asp0, 1, 1.5, 2])]) {
+        hw = side * Math.sqrt(asp) / 2; hh = side / Math.sqrt(asp) / 2;
+        for (let r = 0; r <= R; r += r < 30 ? 3 : 6) {
+          const n = r ? Math.max(8, Math.round(r / 2)) : 1;
+          for (let k = 0; k < n; k++) {
+            const cx = ox + r * Math.cos(2 * Math.PI * k / n), cy = oy + r * Math.sin(2 * Math.PI * k / n);
+            if (fitsAt(cx, cy)) return flush(cx, cy);
+          }
         }
       }
     }
@@ -821,7 +826,7 @@ const INFRA = {
   compute(a, units) {
     const id = a.key, z = Z.zones[id];
     if (!D.map || !z || !z.geojson) return null;
-    const mk = [id, units, a.area, P.parkMode, P.sideRoadW, P.schoolArea, P.otherInfra, P.keepInnerRoads, JSON.stringify(z.infra || {}), z.roads && z.roads.at, Object.keys(z.inArea || {}).length].join('|');
+    const mk = [id, units, a.area, P.autoAbsorb, P.parkMode, P.sideRoadW, P.schoolArea, P.otherInfra, P.keepInnerRoads, JSON.stringify(z.infra || {}), z.roads && z.roads.at, Object.keys(z.inArea || {}).length].join('|');
     if (this.memo[mk]) return this.memo[mk];
     const zone = z.geojson, items = [];
     const W = this.entryWidth(units), sideW = num(P.sideRoadW) || 6;
@@ -878,7 +883,7 @@ const INFRA = {
     // 블록 옆에 쓸 수 없는 자투리(폭 8m 미만이거나 300㎡ 미만)가 남으면 그 블록에 붙여 빈 땅이 생기지 않게 함
     let absorbed = 0;
     { const blocks = [['park', parkGeom], ['school', schoolGeom]].concat(relC ? [['rel', relGeom]] : []).filter(b => b[1]);
-      if (blocks.length) {
+      if (blocks.length && P.autoAbsorb !== false) {
         let rest = null;
         try { rest = turf.difference(zone, safeUnion([...(roadGeom ? [roadGeom] : []), ...(!relC && relGeom ? [relGeom] : []), ...blocks.map(b => b[1])])); } catch (er) { rest = null; }
         // 폭 8m 미만으로 가늘게 남는 부분(블록과 경계 사이 띠·뾰족한 모서리)을 열림 연산(-4m → +4m)으로 골라냄
@@ -928,10 +933,31 @@ const INFRA = {
       if (!l) return;
       const tgt = { park: parkGeom, school: schoolGeom, rel: relGeom }[m.kind];
       if (!tgt) return;
-      const g = safeUnion([tgt, l.geom]);
+      // 붙일 면적을 정했으면 시설에 가까운 쪽부터 그만큼만 떼어 붙임(시설 둘레를 넓혀 가며 면적을 맞춤), 나머지는 획지로 남김
+      let piece = l.geom;
+      const want = num(m.area);
+      if (want > 0 && want < l.area * 0.98) {
+        let lo = 0, hi = 5, cut = null;
+        const take = d => { try { return turf.intersect(l.geom, turf.buffer(tgt, d, { units: 'meters', steps: 4 })); } catch (er) { return null; } };
+        while (hi < 400) { const x = take(hi); if (x && turf.area(x) >= want) break; hi *= 2; }
+        for (let k = 0; k < 18; k++) { const mid = (lo + hi) / 2, x = take(mid), A = x ? turf.area(x) : 0; if (A < want) lo = mid; else { hi = mid; cut = x; } }
+        if (cut) piece = cut;
+      }
+      // 떼고 남은 쪽이 300㎡ 미만 자투리로 갈라지면 같이 붙임
+      if (piece !== l.geom) {
+        try {
+          const lf = turf.difference(l.geom, piece);
+          const bits = lf ? (lf.geometry.type === 'Polygon' ? [lf.geometry.coordinates] : lf.geometry.coordinates).map(c => turf.polygon(c)).filter(x => turf.area(x) < 300) : [];
+          if (bits.length) piece = safeUnion([piece, ...bits]);
+        } catch (er) { /* 그대로 */ }
+      }
+      const g = safeUnion([tgt, piece]);
       if (m.kind === 'park') parkGeom = g; else if (m.kind === 'school') schoolGeom = g; else relGeom = g;
-      merged[m.kind] = (merged[m.kind] || 0) + l.area;
-      lots = lots.filter(x => x !== l);
+      const pa = turf.area(piece);
+      merged[m.kind] = (merged[m.kind] || 0) + pa;
+      const left = piece === l.geom ? null : (() => { try { return turf.difference(l.geom, piece); } catch (er) { return null; } })();
+      const restLots = left ? (left.geometry.type === 'Polygon' ? [left.geometry.coordinates] : left.geometry.coordinates).map(c => turf.polygon(c)).map(gg => ({ geom: gg, area: turf.area(gg) })).filter(x => x.area >= 5).map(x => ({ ...x, small: x.area < 1000 })) : [];
+      lots = lots.filter(x => x !== l).concat(restLots).sort((x, y) => y.area - x.area);
     });
     lots = lots.map((l, i) => ({ ...l, no: i + 1 }));
     if ((relC || merged.rel) && relGeom) relArea = turf.area(relGeom);
@@ -960,14 +986,17 @@ const INFRA = {
         L.DomEvent.stop(ev);
         const kinds = [['rel', '종교용지', inf.relGeom], ['park', '공원·녹지', inf.parkGeom], ['school', '학교용지', inf.schoolGeom]].filter(k => k[2]);
         const box = document.createElement('div'); box.className = 'zk-pop';
-        box.innerHTML = `<div><b>획지 ${l.no}</b> · ${fmt(l.area)}㎡</div><div class="zk-pop-sub">이 땅을 어디에 넣을까요?</div><div class="zk-pop-btns">${kinds.map(k => `<button type="button" data-k="${k[0]}">${k[1]}에 붙이기</button>`).join('')}<button type="button" data-act="out" data-k="">공동주택 획지로 두기</button></div>`;
+        box.innerHTML = `<div><b>획지 ${l.no}</b> · ${fmt(l.area)}㎡</div><div class="zk-pop-sub">이 땅을 어디에 넣을까요?</div>
+          <label class="zk-pop-sub" style="display:flex;gap:6px;align-items:center;margin-top:4px">붙일 면적 <input type="number" min="1" max="${Math.round(l.area)}" step="10" value="${Math.round(l.area)}" style="width:90px" data-want> ㎡</label>
+          <div class="zk-pop-sub">줄이면 시설에 가까운 쪽부터 그만큼만 붙이고 나머지는 획지로 남깁니다.</div><div class="zk-pop-btns">${kinds.map(k => `<button type="button" data-k="${k[0]}">${k[1]}에 붙이기</button>`).join('')}<button type="button" data-act="out" data-k="">공동주택 획지로 두기</button></div>`;
         const pop = L.popup({ maxWidth: 300 }).setLatLng(ev.latlng).setContent(box).openOn(LM);
         box.querySelectorAll('button').forEach(b => b.onclick = () => {
           LM.closePopup(pop);
           if (!b.dataset.k) return;
           const z = Z.zones[S.region]; z.infra = z.infra || {}; z.infra.addTo = z.infra.addTo || [];
-          z.infra.addTo.push({ kind: b.dataset.k, pt: [ev.latlng.lat, ev.latlng.lng] });
-          saveZ(); INFRA.memo = {}; render(); toast(`획지 ${l.no}(${fmt(l.area)}㎡)를 붙였습니다`);
+          const want = num(box.querySelector('[data-want]').value);
+          z.infra.addTo.push({ kind: b.dataset.k, pt: [ev.latlng.lat, ev.latlng.lng], area: want > 0 && want < l.area * 0.98 ? want : null });
+          saveZ(); INFRA.memo = {}; render(); toast(`획지 ${l.no}에서 ${fmt(Math.min(l.area, num(box.querySelector('[data-want]').value) || l.area))}㎡를 붙였습니다`);
         });
       });
       if (l.area >= 300) { try { const pt = turf.pointOnFeature(l.geom).geometry.coordinates; L.tooltip({ permanent: true, direction: 'center', className: 'lot-label' }).setLatLng([pt[1], pt[0]]).setContent(`획지${l.no}<br>${fmt(l.area)}㎡`).addTo(layer); } catch (er) { /* 무시 */ } }
@@ -1535,6 +1564,7 @@ function infraSection(a, pl) {
     ${field('otherInfra', '기타 기반시설 면적', P.otherInfra, '㎡ · 공공청사·주차장·공공공지 등', 'step=100')}
     <div class="field"><label for="parkMode">5만㎡ 미만일 때 공원·녹지</label><select id="parkMode"><option value="legal">법정 의무만(없으면 0)</option><option value="always">부지 5% 제안</option></select></div>
   </div>
+ <label class="zk-opts"><input type="checkbox" id="autoAbsorb" ${P.autoAbsorb !== false ? 'checked' : ''}> 블록 옆 가는 자투리(폭 8m·300㎡ 미만)를 자동으로 붙이기 — 끄면 블록은 반듯한 사각형 그대로 두고, 남는 땅은 획지로 보여 줌(눌러서 면적을 정해 붙일 수 있음)</label>
   <label class="zk-opts"><input type="checkbox" id="keepInner" ${P.keepInnerRoads ? 'checked' : ''}> 구역 안 기존 도로를 존치(기반시설로 셈)</label>
   <p class="note">도로 폭은 연속지적도 필지 모양으로 어림한 값이라 실제 측량 폭과 다를 수 있습니다. 확폭 부분은 구역 안쪽으로만 잡았습니다. 위치·형태는 정비계획 입안 때 교통·공원 담당 부서 협의와 도시계획위원회 심의로 정합니다.</p>`;
 }
@@ -1558,6 +1588,7 @@ function bindInfra() {
   side.querySelectorAll('[data-szmode]').forEach(el => el.onchange = () => szSet(el.dataset.szmode, o => { o.mode = el.value; if (el.value === 'auto') o.val = ''; }));
   side.querySelectorAll('[data-szval]').forEach(el => el.onchange = () => szSet(el.dataset.szval, o => { o.val = num(el.value); }));
   side.querySelectorAll('[data-szasp]').forEach(el => el.onchange = () => szSet(el.dataset.szasp, o => { o.asp = num(el.value); }));
+  const aa = document.getElementById('autoAbsorb'); if (aa) aa.onchange = () => { P.autoAbsorb = aa.checked; saveP(); INFRA.memo = {}; render(); };
   const ki = document.getElementById('keepInner'); if (ki) ki.onchange = () => { P.keepInnerRoads = ki.checked; saveP(); INFRA.memo = {}; render(); };
 }
 function renderArch(a) {
