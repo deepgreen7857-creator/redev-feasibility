@@ -429,7 +429,7 @@ function buildMap() {
   const pn = new Set(); used.forEach(k => Object.keys(Z.zones[k].inArea || {}).forEach(x => pn.add(x)));
   const parcels = [...pn].filter(k => CACHE.parcels[k]).map((pnu, i) => {
     const c = CACHE.parcels[pnu], base = num(c.ledgerArea) || num(c.cadArea);
-    const p = { id: i, pnu, landUse: c.landUse || '', own: c.own || '', ownInst: c.ownInst || '', chgCause: c.chgCause || '', chgDate: c.chgDate || '', bldOver: c.bldOver, bldOverN: c.bldOverN || 0, jibun: c.jibun || pnu, jimok: c.jimok || '', base, area: base, zone: c.zoning || '', price: num(c.jiga), public: isPublicJimok(c.jimok), roadSide: c.roadSide || '', geom: c.geom, owner: '', blds: [] };
+    const p = { id: i, pnu, landUse: c.landUse || '', own: c.own || '', ownInst: c.ownInst || '', chgCause: c.chgCause || '', chgDate: c.chgDate || '', bldOver: c.bldOver, bldOverN: c.bldOverN || 0, bldCore: c.bldCore, jibun: c.jibun || pnu, jimok: c.jimok || '', base, area: base, zone: c.zoning || '', price: num(c.jiga), public: isPublicJimok(c.jimok), roadSide: c.roadSide || '', geom: c.geom, owner: '', blds: [] };
     p.allBlds = (CACHE.blds[pnu] || []).map((r, j) => toB(r, p, j));
     return p;
   });
@@ -756,7 +756,7 @@ const INFRA = {
       z.roads = { key: JSON.stringify(turf.bbox(zone)), edge, fac, facOk: true, at: new Date().toLocaleString('sv-SE').slice(0, 16) };
       saveZ();
       await this.fetchOwn(id);
-      z.roads.ownOk = true; z.roads.ownOk2 = true; z.roads.ownOk3 = true; saveZ();
+      z.roads.ownOk = true; z.roads.ownOk2 = true; z.roads.ownOk3 = true; z.roads.ownOk4 = true; saveZ();
     } catch (er) { statusMsg(`${id}안: 주변 도로를 불러오지 못했습니다 — ${er.message}`, true); }
     finally { this.loading[id] = false; this.memo = {}; if (S.source === 'map') render(); }
   },
@@ -764,7 +764,7 @@ const INFRA = {
   //  국공유 필지는 토지이용상황(도로등·하천등)을 다시 받아 둠
   async fetchOwn(id) {
     const z = Z.zones[id]; if (!z) return;
-    const list = Object.keys(z.inArea || {}).filter(k => { const c = CACHE.parcels[k]; return c && (c.own == null || (isPublicOwner(c.own) && (c.chgDate == null || c.bldOver == null))); });
+    const list = Object.keys(z.inArea || {}).filter(k => { const c = CACHE.parcels[k]; return c && (c.own == null || (isPublicOwner(c.own) && (c.chgDate == null || c.bldOver == null || c.bldCore == null))); });
     let i = 0, done = 0;
     const one = async k => {
       try {
@@ -775,23 +775,29 @@ const INFRA = {
         c.chgCause = f ? (f.ownshipChgCauseCodeNm || '') : ''; c.chgDate = f ? (f.ownshipChgDe || '') : '';
         if (isPublicOwner(c.own) && !c.landUse) { try { const lc = await VW.landChar(k); if (lc) c.landUse = lc.landUse || ''; } catch (er) { /* 무시 */ } }
         // 국공유 필지: GIS 건물 도형이 필지를 얼마나 덮는지(옆 필지에 중심이 있는 건물이 걸쳐 있어도 잡힘)
-        if (isPublicOwner(c.own) && c.bldOver == null && c.geom) {
+        if (isPublicOwner(c.own) && (c.bldOver == null || c.bldCore == null) && c.geom) {
           try {
             const pf = { type: 'Feature', properties: {}, geometry: c.geom }, pa = turf.area(pf);
+            // 가장자리 1.2m는 처마·지적 경계 어긋남으로 보고, 그 안쪽(core)을 건물이 덮는 비율을 따로 잼
+            let core = null; try { core = turf.buffer(pf, -1.2, { units: 'meters' }); } catch (er) { core = null; }
+            const ca = core ? turf.area(core) : 0;
             const bs = await VW.dataAll('LT_C_BLDGINFO', `BOX(${turf.bbox(pf).join(',')})`, 2);
-            let cover = 0, n = 0;
-            bs.forEach(b => { try { const x = turf.intersect(pf, b); if (x && turf.area(x) >= 1) { cover += turf.area(x); n++; } } catch (er) { /* 무시 */ } });
-            c.bldOver = pa ? Math.min(1, cover / pa) : 0; c.bldOverN = n;
+            let cover = 0, coverC = 0, n = 0;
+            bs.forEach(b => {
+              try { const x = turf.intersect(pf, b); if (x && turf.area(x) >= 1) { cover += turf.area(x); n++; } } catch (er) { /* 무시 */ }
+              if (core) { try { const y = turf.intersect(core, b); if (y) coverC += turf.area(y); } catch (er) { /* 무시 */ } }
+            });
+            c.bldOver = pa ? Math.min(1, cover / pa) : 0; c.bldOverN = n; c.bldCore = ca > 1 ? Math.min(1, coverC / ca) : 0;
           } catch (er) { c.bldOver = null; }
         }
-        const p = D.byPnu && D.byPnu.get(k); if (p) { p.own = c.own; p.ownInst = c.ownInst; p.chgCause = c.chgCause; p.chgDate = c.chgDate; p.bldOver = c.bldOver; p.bldOverN = c.bldOverN; p.landUse = c.landUse || p.landUse || ''; }
+        const p = D.byPnu && D.byPnu.get(k); if (p) { p.own = c.own; p.ownInst = c.ownInst; p.chgCause = c.chgCause; p.chgDate = c.chgDate; p.bldOver = c.bldOver; p.bldOverN = c.bldOverN; p.bldCore = c.bldCore; p.landUse = c.landUse || p.landUse || ''; }
       } catch (er) { /* 다음에 다시 */ }
       done++; if (done % 20 === 0 || done === list.length) statusMsg(`${id}안: 필지 소유구분 확인 ${done}/${list.length}`);
     };
     await Promise.all([1, 2, 3, 4, 5, 6].map(async () => { while (i < list.length) await one(list[i++]); }));
     if (list.length) { saveCache(); statusMsg(''); }
   },
-  ready(id) { const z = Z.zones[id]; return !!(z && z.roads && z.roads.facOk && z.roads.ownOk3 && z.geojson && z.roads.key === JSON.stringify(turf.bbox(z.geojson))); },
+  ready(id) { const z = Z.zones[id]; return !!(z && z.roads && z.roads.facOk && z.roads.ownOk4 && z.geojson && z.roads.key === JSON.stringify(turf.bbox(z.geojson))); },
   // 구역 안 한 점(중심이 구역 밖이면 구역 안 아무 점)
   defaultCenter(zone) {
     let c = turf.centerOfMass(zone);
@@ -1330,8 +1336,10 @@ const INFRA = {
         try { const A = turf.area(f), P = turf.length(turf.polygonToLine(f), { units: 'kilometers' }) * 1000; w = 2 * A / (P || 1); } catch (er) { w = 99; }
       }
       const bl = ((Rg.blds || {})[p.pnu] || []), thin = w < 8, fc = facR >= 0.5;
-      const cover = p.bldOver == null ? null : p.bldOver;            // 건물 도형이 필지를 덮는 비율
-      const noBld = !bl.length && !(cover > 0.05), bldOn = bl.length > 0 || cover > 0.2;
+      const cover = p.bldOver == null ? null : p.bldOver;            // 건물 도형이 필지를 덮는 비율(전체)
+      const coreC = p.bldCore == null ? cover : p.bldCore;           // 가장자리 1.2m를 뺀 안쪽을 덮는 비율(처마·경계 어긋남 제외)
+      // 건물 판단은 안쪽 기준: 길쭉한 도로 필지는 양쪽 처마만으로도 전체 비율이 크게 나옴
+      const bldOn = coreC != null ? coreC > 0.2 : bl.length > 0, noBld = coreC != null ? coreC <= 0.05 : !bl.length;
       const nLedger = bl.filter(b => b.src === '대장').length, nGis = bl.length - nLedger;
       // 지목에 맞는 도시계획시설이 결정돼 있는지(공원 지목인데 공원 결정이 없으면 해제·미조성 의심)
       let facKind = '';
@@ -1342,7 +1350,7 @@ const INFRA = {
       //  가능성 높음: 지목은 '대'인데 이용상황 도로등·도시계획시설 안·(길쭉+건물 없음) 중 하나
       const conflict = (jm && !!p.landUse && !lu) || ((jm || lu) && bldOn);
       const grade = !pub ? '사유(참고)' : conflict ? '확인 필요' : (jm && (lu || !p.landUse)) ? '확실' : (lu || fc || (thin && noBld)) ? '가능성 높음' : '아닐 가능성';
-      out.push({ p, pub, jm, lu, fc, thin, noBld, cover, bldOn, nLedger, nGis, facKind, w: Math.round(w * 10) / 10, grade, area: (p.base ?? p.area) * (z.inArea[p.pnu] ?? 1) });
+      out.push({ p, pub, jm, lu, fc, thin, noBld, cover, coreC, bldOn, nLedger, nGis, facKind, w: Math.round(w * 10) / 10, grade, area: (p.base ?? p.area) * (z.inArea[p.pnu] ?? 1) });
     });
     const ord = { '확실': 0, '확인 필요': 1, '가능성 높음': 2, '아닐 가능성': 3, '사유(참고)': 4 };
     return out.sort((x, y) => ord[x.grade] - ord[y.grade] || y.area - x.area);
@@ -1870,7 +1878,7 @@ function giSection(inf) {
       <td><button type="button" class="linkbtn" data-gifocus="${esc(x.p.pnu)}">${esc(x.p.jibun)}</button></td>
       <td>${esc(x.p.jimok)}</td><td>${esc(x.p.own || '확인 중')}${x.p.ownInst && x.p.ownInst !== '구분없음' ? `<br><span class="u">${esc(x.p.ownInst)}</span>` : ''}</td><td>${esc(x.p.landUse || '–')}</td>
       <td class="evs">${chk(x.jm, '공공 지목')}${chk(x.lu, '이용상황 도로등')}${chk(x.fc, '도시계획시설 안')}${chk(x.thin, `길쭉함(폭 약 ${x.w}m)`)}${x.bldOn ? '<span class="ev bad">✕ 건물 있음</span>' : chk(x.noBld, '건물 없음')}</td>
-      <td class="u">${x.noBld ? '건물 없음' : `건물 ${x.nLedger + x.nGis}동${x.nGis ? `(대장 없음 ${x.nGis})` : ''}`}${x.cover > 0.05 ? `<br><b class="warn">건물이 필지의 ${Math.round(x.cover * 100)}% 덮음</b>` : ''}<br>${x.facKind ? `결정: ${esc(x.facKind)}` : '도시계획시설 결정 없음'}<br>${x.p.chgDate ? `${esc(x.p.chgDate)} ${esc(x.p.chgCause || '')}` : ''}</td>
+      <td class="u">${x.noBld ? '건물 없음' : `건물 ${x.nLedger + x.nGis}동${x.nGis ? `(대장 없음 ${x.nGis})` : ''}`}${x.cover > 0.05 ? `<br>건물 겹침 ${Math.round(x.cover * 100)}% <span title="필지 가장자리 1.2m(처마·지적 경계 어긋남)를 뺀 안쪽 기준">(안쪽 ${Math.round((x.coreC || 0) * 100)}%)</span>${x.bldOn ? ' <b class="warn">점유 의심</b>' : ' — 대부분 가장자리(처마·경계 어긋남)'}` : ''}<br>${x.facKind ? `결정: ${esc(x.facKind)}` : '도시계획시설 결정 없음'}<br>${x.p.chgDate ? `${esc(x.p.chgDate)} ${esc(x.p.chgCause || '')}` : ''}</td>
       <td><span class="pill ${gradeCls[x.grade]}">${x.grade}</span></td>
       <td>${x.pub ? `<select data-gidec="${esc(x.p.pnu)}" aria-label="${esc(x.p.jibun)} 판단"><option value="" ${!x.dec ? 'selected' : ''}>자동(${x.grade === '아닐 가능성' ? '뺌' : '넣음'})</option><option value="in" ${x.dec === 'in' ? 'selected' : ''}>넣기(무상양도 대상)</option><option value="out" ${x.dec === 'out' ? 'selected' : ''}>빼기</option></select>` : '<span class="u">사유 — 제외</span>'}</td>
       <td class="r">${fmt(x.area)}</td></tr>`).join('') || '<tr><td colspan="9" class="u">구역 안 국공유·공공 지목 필지 없음</td></tr>'}
