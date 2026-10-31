@@ -6,7 +6,7 @@
 <title>jbslab 정비계획 검토</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="../css/zonekit.css?v=70">
+<link rel="stylesheet" href="../css/zonekit.css?v=72">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -168,6 +168,14 @@ td .u{font-size:11px;font-weight:400;color:var(--ink-2)}
 .zk-opts{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;margin:6px 0}
 .zk-btns{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .zk-anchor{display:inline-flex;gap:4px}
+.zk-closure{border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-top:6px;font-size:13px;color:var(--ink)}
+.zk-closure.ok{border-color:var(--ok)}
+.zk-closure.ng{border-color:var(--bad)}
+.zk-closure ul{margin:6px 0;padding-left:18px}
+.zk-closure li{margin:2px 0}
+.zk-closure li.good{color:var(--ok)}
+.zk-closure li.warn{color:var(--bad)}
+.zk-closure .u{font-size:12px;color:var(--ink-2)}
 .zk-anchor input{width:120px;font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:var(--sheet);color:var(--ink)}
 .zk-head{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px}
 .zk .warn,.status .warn{color:var(--bad)}
@@ -261,6 +269,7 @@ a.back:hover{text-decoration:underline}
           </div>
           <div class="zk-btns">
             <button class="btn sm" type="button" id="zkJibunBtn">지번으로 구역 만들기</button>
+            <button class="btn sm" type="button" id="zkCloseBtn" title="제출된 토지조서의 지번만 그대로 합쳐, 한 덩어리로 닫히는지(폐합)·안에 빠진 필지·틈을 확인합니다">제출 조서 폐합 검토</button>
             <button class="btn ghost sm" type="button" id="zkFileBtn">엑셀·CSV에서 지번 읽기</button>
             <button class="btn sm" type="button" id="zkSnapBtn" title="손으로 대략 그린 구역계를 실제 필지 경계에 맞춥니다">그린 구역을 필지에 맞추기</button>
             <span class="zk-anchor"><input id="zkTarget" inputmode="decimal" placeholder="목표 면적 ㎡" aria-label="목표 면적"><button class="btn ghost sm" type="button" id="zkAnchorBtn" title="고시문의 위치 지번들과 면적으로 대략 범위를 추정한 뒤 필지에 맞춥니다">위치 지번 + 면적으로 추정</button></span>
@@ -316,7 +325,7 @@ a.back:hover{text-decoration:underline}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../js/config.js?v=68"></script>
-<script src="../js/zonekit.js?v=71"></script>
-<script src="urban.js?v=16"></script>
+<script src="../js/zonekit.js?v=72"></script>
+<script src="urban.js?v=17"></script>
 </body>
 </html>

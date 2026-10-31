@@ -1530,6 +1530,28 @@ const ZK = {
       await this.build(found, report, `지번 ${count}개 → `);
     } catch (e) { this.say('실패했습니다: ' + e.message); } finally { this.working = false; }
   },
+  // 제출 토지조서 폐합 검토: 조서 지번만 그대로 합쳐(자동 채우기 없음) 구역계로 두고, 떨어진 덩어리·빠진 필지·틈을 알려 줌
+  async closure() {
+    if (!this.ready()) return;
+    if (!ZoneKit.items(this.list()).length) { this.say('토지조서 지번을 넣거나 "엑셀·CSV에서 지번 읽기"로 조서 파일을 고르세요.'); return; }
+    if (!this.base()) { this.say('기준 동 주소를 넣어 주세요. 예: 인천광역시 미추홀구 용현동'); $id('zkBase').focus(); return; }
+    const id = S.region, R = D.regions[id];
+    if (R.geojson && !confirm(`${R.name} 구역계를 제출 조서의 필지 경계로 바꿔 검토할까요?`)) return;
+    this.working = true;
+    try {
+      delete this.rough[id];
+      const { found, report, count } = await ZoneKit.findByJibuns(this.list(), this.base(), t => this.say(t));
+      const r = await ZoneKit.closure(found, t => this.say(t));
+      if (!r) { this.say('조서 지번을 하나도 찾지 못했습니다. 기준 동 주소를 확인해 주세요.'); this.showReport(report); return; }
+      this.showReport(report);
+      if (this.closeLayer) this.closeLayer.remove();
+      setZoneGeom(id, r.merged, 0, `제출 조서 ${count}필지로 구역계`);
+      fitZone(id);
+      this.closeLayer = ZoneUI.closureLayer(LM, r);
+      $id('zkMsg').innerHTML = ZoneKit.closureHtml(r, report);
+      statusMsg(`${id}안: 제출 조서 폐합 검토 ${r.ok ? '이상 없음' : '— 확인할 곳이 있습니다(아래 목록·지도 빨강/주황/보라)'}`, !r.ok);
+    } catch (e) { this.say('실패했습니다: ' + e.message); } finally { this.working = false; }
+  },
   async snap() {
     if (!this.ready()) return;
     const id = S.region, R = D.regions[id];
@@ -1729,6 +1751,7 @@ document.addEventListener('keydown', e => {
 });
 $id('pickBtn').onclick = () => { if (!LM) return; if (drawH) { toast('그리기를 먼저 마쳐 주세요'); return; } ZK.setPicking(!ZK.picking); };
 $id('zkJibunBtn').onclick = () => ZK.fromJibuns();
+$id('zkCloseBtn').onclick = () => ZK.closure();
 $id('zkSnapBtn').onclick = () => ZK.snap();
 $id('zkAnchorBtn').onclick = () => ZK.fromAnchors();
 $id('zkFileBtn').onclick = () => { $id('zkFile').value = ''; $id('zkFile').click(); };

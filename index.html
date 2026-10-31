@@ -10,8 +10,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=71">
-<link rel="stylesheet" href="css/zonekit.css?v=71">
+<link rel="stylesheet" href="css/style.css?v=72">
+<link rel="stylesheet" href="css/zonekit.css?v=72">
 </head>
 <body>
 
@@ -236,6 +236,7 @@
         <label class="radio"><input type="checkbox" id="optBridge" checked> 떨어진 블록 사이 도로로 잇기</label>
         <label class="radio">구역 경계 도로 <select id="optEdgeRoad"><option value="none">불포함(기본)</option><option value="half">일부 포함 – 중심선까지</option><option value="all">포함 – 도로 폭 전체</option></select></label>
         <button class="btn small primary" id="btnJibunZone">지번으로 구역 만들기</button>
+        <button class="btn small" id="btnCloseZone" title="제출된 토지조서의 지번만 그대로 합쳐, 한 덩어리로 닫히는지(폐합)·안에 빠진 필지·틈을 확인합니다">제출 조서 폐합 검토</button>
         <button class="btn small" id="btnJibunFile">파일 불러오기</button>
         <p class="note" style="margin-top:10px"><b>방법 3. 고시문 위치 지번 + 면적으로 추정</b> – 구역도가 없을 때, 위 칸에 고시문의 위치 지번(○○번지 일원, 획지 위치 등)을 넣고 목표 면적을 넣으세요.</p>
         <div class="snap-row">
@@ -468,22 +469,22 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=71"></script>
-<script src="js/util.js?v=71"></script>
-<script src="js/state.js?v=71"></script>
-<script src="js/calc.js?v=71"></script>
-<script src="js/zonekit.js?v=71"></script>
-<script src="js/map.js?v=71"></script>
-<script src="js/ledger.js?v=71"></script>
-<script src="js/pdfsave.js?v=71"></script>
-<script src="js/overlay.js?v=71"></script>
-<script src="js/export.js?v=71"></script>
-<script src="js/roadcut.js?v=71"></script>
-<script src="js/assume.js?v=71"></script>
-<script src="js/app.js?v=71"></script>
-<script src="js/forms.js?v=71"></script>
-<script src="js/hwpx.js?v=71"></script>
-<script src="js/surveymaps.js?v=71"></script>
-<script src="js/review.js?v=71"></script>
+<script src="js/config.js?v=72"></script>
+<script src="js/util.js?v=72"></script>
+<script src="js/state.js?v=72"></script>
+<script src="js/calc.js?v=72"></script>
+<script src="js/zonekit.js?v=72"></script>
+<script src="js/map.js?v=72"></script>
+<script src="js/ledger.js?v=72"></script>
+<script src="js/pdfsave.js?v=72"></script>
+<script src="js/overlay.js?v=72"></script>
+<script src="js/export.js?v=72"></script>
+<script src="js/roadcut.js?v=72"></script>
+<script src="js/assume.js?v=72"></script>
+<script src="js/app.js?v=72"></script>
+<script src="js/forms.js?v=72"></script>
+<script src="js/hwpx.js?v=72"></script>
+<script src="js/surveymaps.js?v=72"></script>
+<script src="js/review.js?v=72"></script>
 </body>
 </html>

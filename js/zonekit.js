@@ -372,6 +372,60 @@ const ZoneKit = {
       + (cnt('실패') + cnt('확인 필요') ? `<br><b class="warn">확인 필요 ${cnt('실패') + cnt('확인 필요')}건</b> – 필지 대조표를 보세요.` : '');
   },
 
+  // 제출된 토지조서(지번 목록) 폐합 검토 — 아무것도 자동으로 채우지 않고 그대로 합쳐 문제만 찾음
+  //  found: findByJibuns 결과. 반환 { ok, merged, pieces:[{area, jibuns, geom}], holeParcels:[{jibun,jimok,area,f}], gaps:[{area, geom}], bridges:[{jibun,jimok,area,f}] }
+  //   pieces 2개 이상: 떨어진 덩어리(폐합 안 됨) / holeParcels: 구역 안에 둘러싸였는데 조서에 없는 필지(누락 의심)
+  //   gaps: 필지가 없는 틈(지적 경계 어긋남, 10㎡ 미만은 무시) / bridges: 덩어리 사이를 잇는 도로·구거 필지(조서에 없음)
+  async closure(found, say = () => {}) {
+    const feats = [...found.values()];
+    if (!feats.length) return null;
+    say('조서 필지를 그대로 합치는 중…');
+    const merged = safeUnion(feats);
+    const polys = merged.geometry.type === 'Polygon' ? [merged.geometry.coordinates] : merged.geometry.coordinates;
+    const pieces = polys.map(c => {
+      const g = turf.polygon([c[0]]);
+      const jibuns = feats.filter(f => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), g); } catch (e) { return false; } }).map(f => splitJibun(f.properties.jibun).no);
+      return { area: Math.round(turf.area(turf.polygon(c)) * 10) / 10, jibuns, geom: turf.polygon(c) };
+    }).sort((x, y) => y.area - x.area);
+    say('구역 안팎 필지를 확인하는 중…');
+    const [x0, y0, x1, y1] = turf.bbox(merged), e = 20 / 88000, n = 20 / 111000;
+    const around = (await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${x0 - e},${y0 - n},${x1 + e},${y1 + n})`, 20)).filter(f => !found.has(f.properties.pnu));
+    const holes = polys.flatMap(p => p.slice(1)).map(h => turf.polygon([h])).filter(h => turf.area(h) >= 1);
+    const holeParcels = [], gaps = [];
+    holes.forEach(h => {
+      const inH = around.filter(f => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), h); } catch (er) { return false; } });
+      if (inH.length) inH.forEach(f => { if (!holeParcels.some(x => x.f === f)) holeParcels.push({ f, jibun: splitJibun(f.properties.jibun).no, jimok: splitJibun(f.properties.jibun).jimok, area: this.area1(f) }); });
+      else if (turf.area(h) >= 10) gaps.push({ area: Math.round(turf.area(h) * 10) / 10, geom: h });
+    });
+    const bridges = [];
+    if (pieces.length > 1) {
+      const bufs = pieces.map(p => turf.buffer(p.geom, 1.5, { units: 'meters' }));
+      around.forEach(f => {
+        const jm = splitJibun(f.properties.jibun).jimok;
+        if (!['도', '구', '천'].includes(jm)) return;
+        const t = bufs.filter(b => { try { return turf.booleanIntersects(b, f); } catch (er) { return false; } }).length;
+        if (t >= 2) bridges.push({ f, jibun: splitJibun(f.properties.jibun).no, jimok: jm, area: this.area1(f) });
+      });
+    }
+    return { ok: pieces.length === 1 && !holeParcels.length && !gaps.length, merged, pieces, holeParcels, gaps, bridges };
+  },
+  // 폐합 검토 결과 → HTML (두 화면 공통)
+  closureHtml(r, report) {
+    const e = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const bad = report.filter(x => x.result === '실패' || x.result === '확인 필요').length, dup = report.filter(x => x.result === '중복').length;
+    const ok = r.ok && !bad;
+    const li = [];
+    li.push(r.pieces.length === 1 ? `<li class="good">한 덩어리로 닫혀 있음(폐합) · ${this.f1(r.pieces[0].area)}㎡</li>`
+      : `<li class="warn"><b>${r.pieces.length}덩어리로 떨어져 있음(폐합 안 됨)</b> — ${r.pieces.map((p, i) => `${i + 1}) ${this.f1(p.area)}㎡ (${e(p.jibuns.slice(0, 4).join(', '))}${p.jibuns.length > 4 ? ` 외 ${p.jibuns.length - 4}` : ''})`).join(' · ')}`
+        + (r.bridges.length ? `<br>덩어리 사이 도로·구거(조서에 없음): ${r.bridges.map(b => `${e(b.jibun)} ${e(b.jimok)} ${this.f1(b.area)}㎡`).join(', ')} — 편입 누락인지 확인` : '') + '</li>');
+    li.push(r.holeParcels.length ? `<li class="warn"><b>구역 안에 둘러싸였는데 조서에 없는 필지 ${r.holeParcels.length}개</b>(누락 의심): ${r.holeParcels.map(h => `${e(h.jibun)} ${e(h.jimok)} ${this.f1(h.area)}㎡`).join(', ')}</li>` : '<li class="good">구역 안에 빠진 필지 없음</li>');
+    if (r.gaps.length) li.push(`<li class="warn">필지가 없는 틈 ${r.gaps.length}곳(${r.gaps.map(g => this.f1(g.area) + '㎡').join(', ')}) — 지적 경계 어긋남·미등록지 확인</li>`);
+    li.push(bad ? `<li class="warn">지번을 못 찾았거나 다른 지번으로 나온 것 ${bad}건 — 아래 대조표(분할·합병·오기 확인)</li>` : '<li class="good">조서 지번 모두 지적도에서 찾음</li>');
+    if (dup) li.push(`<li>같은 지번이 두 번 이상 적힌 것 ${dup}건</li>`);
+    return `<div class="zk-closure ${ok ? 'ok' : 'ng'}"><b>제출 토지조서 폐합 검토: ${ok ? '이상 없음' : '확인 필요'}</b><ul>${li.join('')}</ul>`
+      + '<div class="u">조서 필지만 그대로 합쳐 봤습니다(갇힌 필지·도로를 자동으로 채우지 않음). 지도에 빨간 빗금은 누락 의심 필지, 주황은 틈, 보라 점선은 덩어리 사이 도로입니다.</div></div>';
+  },
+
   // 필지 하나를 구역계에 더하거나(add=true) 뺌 → 새 구역계(Feature) 또는 null
   toggle(zone, f, add) {
     if (add) return zone ? fillSmallHoles(safeUnion([zone, f])) : f;
@@ -671,6 +725,14 @@ const ZoneUI = {
     // current: 지금 상태 스냅숏. 되돌릴 항목 { snap, label }을 돌려줌
     undo(current) { const it = this.undoS.pop(); if (it) this.redoS.push({ snap: current, label: it.label }); return it; }
     redo(current) { const it = this.redoS.pop(); if (it) this.undoS.push({ snap: current, label: it.label }); return it; }
+  },
+  // 폐합 검토 문제 위치를 지도에 표시하는 층
+  closureLayer(map, r) {
+    const g = L.featureGroup();
+    r.holeParcels.forEach(h => L.geoJSON(h.f, { style: { color: '#c92a2a', weight: 2, fillColor: '#c92a2a', fillOpacity: 0.35, dashArray: '4 3' } }).bindTooltip(`조서에 없는 필지(누락 의심) ${h.jibun} ${h.jimok} ${h.area}㎡`, { sticky: true }).addTo(g));
+    r.gaps.forEach(x => L.geoJSON(x.geom, { style: { color: '#e67700', weight: 2, fillColor: '#e67700', fillOpacity: 0.4 } }).bindTooltip(`필지 없는 틈 ${x.area}㎡`, { sticky: true }).addTo(g));
+    r.bridges.forEach(b => L.geoJSON(b.f, { style: { color: '#7b2cbf', weight: 2, dashArray: '6 4', fillOpacity: 0.08 } }).bindTooltip(`덩어리 사이 도로·구거(조서에 없음) ${b.jibun} ${b.area}㎡`, { sticky: true }).addTo(g));
+    return g.addTo(map);
   },
   // 진행 안내(단계·진행률·끝나면 바뀌는 것) HTML. o: { step, steps, label, done, total, after }
   progressHtml(o) {

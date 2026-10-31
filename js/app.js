@@ -1040,6 +1040,7 @@ function boot() {
     threshold: num($('#snapThreshold').value) || 0.5,
     fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked, edgeRoad: ($('#optEdgeRoad') || {}).value || 'none',
   });
+  $('#btnCloseZone').onclick = () => MapView.closureCheck($('#jibunList').value.split(/[\n,;\t]+/), $('#jibunBase').value.trim() || guessBase());
   $('#btnJibunZone').onclick = () => {
     const base = $('#jibunBase').value.trim() || guessBase();
     const items = $('#jibunList').value.split(/[\n,;\t]+/);
