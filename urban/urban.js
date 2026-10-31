@@ -1093,7 +1093,7 @@ const INFRA = {
     if (inf.schoolGeom) this.movable(L.geoJSON(inf.schoolGeom, { style: { color: c('--accent'), weight: 2, fillColor: c('--accent'), fillOpacity: 0.3 } })
       .bindTooltip(`학교용지(제안) ${fmt(inf.schoolArea)}㎡ · 끌어서 옮기기`, { sticky: true }).addTo(layer), 'school', this.centerOf(inf.schoolGeom));
     // 맞닿은 시설 사이 나눔선(맨 위에): 끌면 두 시설이 면적을 주고받음(합은 그대로)
-    if (inf.paired) this.divider(layer, inf.paired);
+    if (inf.paired) this.divider(layer, inf.paired, { park: inf.parkLegal || 0 });
   },
   // 맞닿은 두 블록을 경계 따라 한 띠로 다시 그림. items: [[kind, geom, 목표면적], …] → { kind: geom } 또는 null
   // split: 나눔선을 끌어 정한 { kind, area } — 띠(위치·깊이)는 그대로 두고 나누는 자리만 바꿈
@@ -1158,13 +1158,18 @@ const INFRA = {
     // 두 시설 사이 나눔선(끌어서 면적을 주고받는 손잡이)과, 선 위치 → 앞 시설 면적 계산 함수
     const toU = ll => { const m = toM([ll.lng, ll.lat]); return (m[0] - a[0]) * ux + (m[1] - a[1]) * uy; };
     const areaAt = u => { const g = cut(u0, u, v); return g ? turf.area(g) : 0; };
-    const lineAt = u => { const p1 = P(u, -2), p2 = P(u, v); return [[p1[1], p1[0]], [p2[1], p2[0]]]; };
+    const lineAt = u => { const p1 = P(u, 0), p2 = P(u, v); return [[p1[1], p1[0]], [p2[1], p2[0]]]; };
     return { [order[0][0]]: sp, [order[1][0]]: rest, pair: { kinds: [order[0][0], order[1][0]], total, u0, u1, s: sh, toU, areaAt, lineAt, custom, a1: turf.area(sp), a2: turf.area(rest) } };
   },
-  divider(layer, pr) {
+  // mins: { park: 최소 면적 } — 끌다가 그 아래로 줄어들면 더 못 가게 막음
+  divider(layer, pr, mins = {}) {
     const name = k => ({ park: '공원·녹지', rel: '종교용지', school: '학교용지' }[k]);
-    const line = L.polyline(pr.lineAt(pr.s), { color: '#111', weight: 7, opacity: 0.55, dashArray: '2 8', lineCap: 'round' }).addTo(layer);
-    const hit = L.polyline(pr.lineAt(pr.s), { color: '#000', weight: 30, opacity: 0.01 }).addTo(layer)
+    // 보이는 선: 흰 실선(가는 테두리) + 가운데 작은 손잡이
+    const edge = L.polyline(pr.lineAt(pr.s), { color: '#333', weight: 4, opacity: 0.35, interactive: false }).addTo(layer);
+    const line = L.polyline(pr.lineAt(pr.s), { color: '#fff', weight: 2, opacity: 0.95, interactive: false }).addTo(layer);
+    const mid = ll => [(ll[0][0] + ll[1][0]) / 2, (ll[0][1] + ll[1][1]) / 2];
+    const grip = L.marker(mid(pr.lineAt(pr.s)), { keyboard: false, icon: L.divIcon({ className: 'div-grip', html: '<span>⇆</span>', iconSize: [26, 18], iconAnchor: [13, 9] }) }).addTo(layer);
+    const hit = L.polyline(pr.lineAt(pr.s), { color: '#000', weight: 30, opacity: 0 }).addTo(layer)
       .bindTooltip(`${name(pr.kinds[0])} ↔ ${name(pr.kinds[1])} 나눔선 · 끌어서 면적 주고받기`, { sticky: true });
     hit.on('add', () => { const el = hit.getElement(); if (el) el.style.cursor = 'ew-resize'; });
     const el0 = hit.getElement && hit.getElement(); if (el0) el0.style.cursor = 'ew-resize';
@@ -1178,10 +1183,20 @@ const INFRA = {
     const start = ev => {
       if (CUT.active || ZK.picking || drawH || editH || S.placing) return;
       L.DomEvent.stop(ev); LM.dragging.disable(); hit.closeTooltip();
-      const lo = pr.u0 + 3, hi = pr.u1 - 3;
+      let lo = pr.u0 + 3, hi = pr.u1 - 3;
+      // 공원 최소 면적(법정·제안 기준) 아래로는 못 가게: 나눔선이 갈 수 있는 끝을 미리 구함
+      pr.kinds.forEach((k, idx) => {
+        const m = num(mins[k]); if (!(m > 0)) return;
+        const ok = u => (idx === 0 ? pr.areaAt(u) : pr.total - pr.areaAt(u)) >= m - 0.5;
+        if (!ok(pr.s)) return;   // 지금도 이미 작으면 막지 않음
+        let a0 = idx === 0 ? lo : pr.s, b0 = idx === 0 ? pr.s : hi;   // 앞 시설이면 왼쪽 끝, 뒤 시설이면 오른쪽 끝을 찾음
+        for (let it = 0; it < 22; it++) { const mm = (a0 + b0) / 2; if (idx === 0 ? ok(mm) : !ok(mm)) { if (idx === 0) b0 = mm; else b0 = mm; } else { if (idx === 0) a0 = mm; else a0 = mm; } }
+        if (idx === 0) lo = Math.max(lo, b0); else hi = Math.min(hi, a0);
+      });
+      let blocked = false; const loMin = lo > pr.u0 + 3 + 0.01, hiMin = hi < pr.u1 - 3 - 0.01;
       let u = pr.s;
       const u00 = pr.toU(ev.latlng);   // 잡은 자리에서 끈 만큼만 옮김(처음에 튀지 않게)
-      const mv = e => { u = Math.max(lo, Math.min(hi, pr.s + pr.toU(e.latlng) - u00)); const ll = pr.lineAt(u); line.setLatLngs(ll); hit.setLatLngs(ll); };
+      const mv = e => { const want = pr.s + pr.toU(e.latlng) - u00; u = Math.max(lo, Math.min(hi, want)); if ((loMin && want < lo - 0.5) || (hiMin && want > hi + 0.5)) { if (!blocked) { blocked = true; toast('공원 최소 면적(법정·제안 기준)보다 작아지지 않게 여기서 멈춥니다'); } } else blocked = false; const ll = pr.lineAt(u); line.setLatLngs(ll); edge.setLatLngs(ll); hit.setLatLngs(ll); grip.setLatLng(mid(ll)); };
       const up = () => {
         LM.off('mousemove', mv); LM.off('mouseup', up); document.removeEventListener('mouseup', up); LM.dragging.enable();
         if (Math.abs(u - pr.s) < 0.5) return;
@@ -1194,6 +1209,8 @@ const INFRA = {
       LM.on('mousemove', mv); LM.on('mouseup', up); document.addEventListener('mouseup', up);
     };
     hit.on('mousedown', start);
+    grip.on('mousedown', start);
+    grip.bindTooltip(`${name(pr.kinds[0])} ↔ ${name(pr.kinds[1])} 나눔선 · 끌어서 면적 주고받기`, { direction: 'top', offset: [0, -8] });
   },
   // 지금 그려진 블록의 가운데 [lat, lng] — 끌어 옮길 때 기준(저장된 위치가 구역 밖이어도 보이는 자리에서 옮겨지게)
   centerOf(g) { if (!g) return null; try { const c = turf.centroid(g).geometry.coordinates; return [c[1], c[0]]; } catch (er) { return null; } },
