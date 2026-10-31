@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>jbslab 정비계획 검토</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -123,6 +125,18 @@ tr.hl td{background:var(--accent-soft)}
 .acc.bad{border-color:var(--bad);color:var(--bad)}
 .acc.man{font-weight:600}
 .acc:hover{background:var(--grid)}
+.lmap{height:560px;border:1px solid var(--line);border-radius:6px;background:var(--grid)}
+@media (max-width:900px){.lmap{height:420px}}
+.lmap .leaflet-tooltip{font-family:var(--f-body);font-size:12px;line-height:1.45;white-space:pre}
+.search{display:flex;gap:6px;flex:1 1 240px;min-width:0}
+.search input{flex:1;min-width:0;font:inherit;font-size:13px;padding:4px 8px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink)}
+.status{font-size:13px;padding:6px 10px;border-radius:6px;background:var(--accent-soft);color:var(--accent);margin-bottom:8px}
+.status.err{background:var(--bad-soft);color:var(--bad)}
+.chip.empty{color:var(--ink-2);border-style:dashed}
+.empty-guide{color:var(--ink-2)}
+.empty-guide ol{padding-left:18px;margin:8px 0}
+[hidden]{display:none!important}
+td .u{font-size:11px;color:var(--ink-2);font-family:var(--f-mono)}
 a.back{color:var(--accent);font-size:13px;text-decoration:none}
 a.back:hover{text-decoration:underline}
 </style>
@@ -153,13 +167,20 @@ a.back:hover{text-decoration:underline}
     <section class="panel" aria-label="도면">
       <div class="mapbar">
         <span style="font-size:12px;color:var(--ink-2)">구역계</span>
-        <button class="chip" data-region="A" aria-pressed="true">A안</button>
-        <button class="chip" data-region="B" aria-pressed="false">B안</button>
-        <button class="chip" data-region="C" aria-pressed="false" id="chipC">직접 그린 안</button>
+        <span id="zoneChips" style="display:contents"></span>
         <span style="flex:1"></span>
         <button class="btn ghost" id="drawBtn">구역계 그리기</button>
         <button class="btn" id="finishBtn" hidden>완성</button>
         <button class="btn ghost" id="cancelBtn" hidden>취소</button>
+      </div>
+      <div class="mapbar" id="mapTools">
+        <form id="searchForm" class="search"><input id="searchQ" type="search" placeholder="주소·지번 검색 (예: 용현동 340)" aria-label="주소 검색"><button class="btn ghost sm" type="submit">이동</button></form>
+        <button class="btn ghost sm" id="editBtn" type="button">구역계 고치기</button>
+        <button class="btn ghost sm" id="fetchBtn" type="button">필지·건축물 다시 불러오기</button>
+        <button class="btn ghost sm" id="geoInBtn" type="button">GeoJSON 불러오기</button>
+        <button class="btn ghost sm" id="geoOutBtn" type="button">GeoJSON 내보내기</button>
+        <button class="btn ghost sm" id="clearBtn" type="button">이 안 지우기</button>
+        <input id="geoFile" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
       </div>
       <div class="mapbar">
         <span style="font-size:12px;color:var(--ink-2)">색 구분</span>
@@ -171,16 +192,21 @@ a.back:hover{text-decoration:underline}
           <button data-mode="arch" aria-pressed="false">개략 배치</button>
         </div>
       </div>
-      <div class="svgbox"><svg id="map" viewBox="-6 -6 416 328" role="img" aria-label="예시 구역 지적도"></svg></div>
+      <div class="status" id="status" hidden></div>
+      <div id="lmap" class="lmap"></div>
+      <div class="svgbox" id="svgbox" hidden><svg id="map" viewBox="-6 -6 416 328" role="img" aria-label="예시 구역 지적도"></svg></div>
       <div class="legend" id="legend"></div>
-      <p class="hint" id="drawHint">그리기: 도면을 눌러 꼭짓점을 찍고 <b>완성</b>을 누르면 '직접 그린 안'으로 판정합니다. 구역계 안에 중심점이 들어온 필지를 편입 필지로 봅니다.</p>
+      <p class="hint" id="drawHint"></p>
     </section>
 
     <section class="panel" id="side" aria-live="polite"></section>
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <script src="../js/config.js?v=67"></script>
-<script src="urban.js?v=2"></script>
+<script src="urban.js?v=3"></script>
 </body>
 </html>

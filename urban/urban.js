@@ -1,8 +1,8 @@
 'use strict';
 // jbslab.co.kr/urban — 정비구역 지정·정비계획 검토
-// 데이터: 같은 도메인의 사업성 검토(본 화면) 프로젝트(localStorage 'jbsc.project.v1')의 구역계·토지조서·건축물조서를 그대로 읽음.
-//         프로젝트가 없거나 '예시 구역 보기'를 고르면 시드 고정 예시 구역으로 동작.
-// 기준값: rules/incheon.json (인천 조례 원문 대조본). 읽기 실패 시 아래 FALLBACK 사용.
+// 구역계: 이 화면의 지도(브이월드)에서 안(A~E)별로 직접 그림 → 필지(연속지적)·건축물(GIS건물통합정보)·토지특성·공동주택 대장 자동 조회
+//         사업성 검토 화면(localStorage 'jbsc.project.v1')의 구역계·조서를 가져올 수도 있음. '예시 구역'은 고정 그림 시연용.
+// 기준값: rules/incheon.json (인천 조례 원문 대조본). 읽기 실패 시 RULES 기본값 사용.
 
 const PY = 3.3058;
 const YEAR = new Date().getFullYear();
@@ -68,11 +68,12 @@ const centroid = pts => { let a = 0, cx = 0, cy = 0; for (let i = 0; i < pts.len
 
 /* ===== 주택접도율: 도로접면 추정 + 직접 지정 ===== */
 // 토지특성 도로접면: 광대로·중로·소로·세로(가) = 폭 4m 이상 도로에 접한 것으로 추정, 세로(불)·맹지 = 미충족
-//  세로(가)는 '폭 8m 미만·자동차 통행 가능'이라 4m 미만일 수 있음 → 판정 칸·도면 필지를 눌러 직접 지정 가능
-const ROAD_CACHE = 'jbs-urban-road', ACC_OVR = 'jbs-urban-access';
+//  세로(가)는 '폭 8m 미만·자동차 통행 가능'이라 4m 미만일 수 있음 → 판정 칸·지도 필지를 눌러 직접 지정 가능
+const ACC_OVR = 'jbs-urban-access';
+const num = v => { const n = parseFloat(String(v ?? '').replace(/,/g, '')); return isFinite(n) ? n : 0; };
 const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (e) { return {}; } };
-const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* 무시 */ } };
-const roadCache = lsGet(ROAD_CACHE), accOvr = lsGet(ACC_OVR);
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+const accOvr = lsGet(ACC_OVR);
 function accessFromRoad(nm) {
   if (!nm) return null;
   if (/맹지|\(불\)/.test(nm)) return false;
@@ -85,7 +86,7 @@ function applyAccess(p) {
   if (o === true || o === false) { p.access = o; p.manual = true; p.accSrc = '직접 지정'; p.accessStr = p.accSrc; return; }
   p.manual = false;
   if (D.real) {
-    const nm = p.roadSide || roadCache[p.pnu] || '';
+    const nm = p.roadSide || '';
     p.roadNm = nm;
     p.access = accessFromRoad(nm);
     p.accSrc = p.access == null ? (nm ? `도로접면 '${nm}' — 자동 판단 불가` : '도로접면 미조회') : `도로접면 '${nm}' 기준 추정`;
@@ -101,50 +102,329 @@ function cycleAccess(id) {
   render();
   toast(`${p.jibun}: ${p.manual ? (p.access ? '접도 충족으로 지정' : '접도 미충족으로 지정') : '자동 판단으로 되돌림'}`);
 }
+
+/* ===== 공공 데이터 조회 (브이월드·건축물대장) ===== */
+// 브이월드는 CORS로 막혀 JSONP로 호출. 인증키는 www.jbslab.co.kr 도메인 전용(../js/config.js)
 function jsonp(url, params, timeout = 15000) {
   return new Promise((resolve, reject) => {
     const cb = '__vwu' + Math.random().toString(36).slice(2);
     const s = document.createElement('script');
-    const t = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, timeout);
+    const t = setTimeout(() => { cleanup(); reject(new Error('시간 초과')); }, timeout);
     function cleanup() { clearTimeout(t); delete window[cb]; s.remove(); }
     window[cb] = data => { cleanup(); resolve(data); };
     s.src = url + '?' + new URLSearchParams({ ...params, callback: cb });
-    s.onerror = () => { cleanup(); reject(new Error('load')); };
+    s.onerror = () => { cleanup(); reject(new Error('연결 실패')); };
     document.head.append(s);
   });
 }
-async function vwRoadSide(pnu) {
-  const yr = new Date().getFullYear();
-  for (const y of [yr, yr - 1]) {
-    const d = await jsonp('https://api.vworld.kr/ned/data/getLandCharacteristics', { pnu, key: VWORLD_KEY.trim(), domain: location.origin, format: 'json', numOfRows: 1, pageNo: 1, stdrYear: String(y) });
-    const f = d && d.landCharacteristicss && d.landCharacteristicss.field && d.landCharacteristicss.field[0];
-    if (f) return f.roadSideCodeNm || '';
-  }
-  return '';
+const VW = {
+  get ok() { return typeof VWORLD_KEY === 'string' && VWORLD_KEY.trim() !== ''; },
+  get key() { return VWORLD_KEY.trim(); },
+  async dataPage(data, geomFilter, page = 1, size = 1000) {
+    const d = await jsonp('https://api.vworld.kr/req/data', {
+      service: 'data', request: 'GetFeature', data, key: this.key, domain: location.origin,
+      geomFilter, geometry: 'true', attribute: 'true', crs: 'EPSG:4326', format: 'json', errorformat: 'json', size, page,
+    }, 25000);
+    const r = d && d.response;
+    if (!r || r.status === 'NOT_FOUND') return { features: [], pages: 0 };
+    if (r.status !== 'OK') throw new Error((r.error && r.error.text) || '브이월드 오류');
+    return { features: r.result.featureCollection.features || [], pages: +(r.page && r.page.total) || 1 };
+  },
+  async dataAll(data, geomFilter, maxPages = 10) {
+    const first = await this.dataPage(data, geomFilter, 1);
+    let all = first.features;
+    for (let p = 2; p <= Math.min(first.pages, maxPages); p++) all = all.concat((await this.dataPage(data, geomFilter, p)).features);
+    return all;
+  },
+  // 토지특성: 토지대장 면적·지목·공시지가·용도지역·도로접면. 올해 자료가 없으면 전년도
+  async landChar(pnu) {
+    const yr = new Date().getFullYear();
+    for (const y of [yr, yr - 1]) {
+      const d = await jsonp('https://api.vworld.kr/ned/data/getLandCharacteristics', { pnu, key: this.key, domain: location.origin, format: 'json', numOfRows: 1, pageNo: 1, stdrYear: String(y) });
+      const f = d && d.landCharacteristicss && d.landCharacteristicss.field && d.landCharacteristicss.field[0];
+      if (f) return {
+        ledgerArea: num(f.lndpclAr), jimok: f.lndcgrCodeNm || '', jiga: num(f.pblntfPclnd),
+        zoning: [f.prposArea1Nm, f.prposArea2Nm].filter(x => x && x !== '지정되지않음').join(', '), roadSide: f.roadSideCodeNm || '',
+      };
+    }
+    return null;
+  },
+  async search(q) {
+    for (const category of ['parcel', 'road']) {
+      const d = await jsonp('https://api.vworld.kr/req/search', { service: 'search', request: 'search', version: '2.0', crs: 'EPSG:4326', size: 5, page: 1, query: q, type: 'address', category, format: 'json', errorformat: 'json', key: this.key, domain: location.origin });
+      const r = d && d.response;
+      if (r && r.status === 'OK' && r.result && r.result.items && r.result.items.length) {
+        const it = r.result.items[0];
+        return { lat: +it.point.y, lon: +it.point.x, label: (category === 'road' ? it.address.road : it.address.parcel) || it.title || q };
+      }
+    }
+    return null;
+  },
+};
+// 건축물대장 표제부 (공공데이터포털 건축HUB) — 공동주택 세대수 확인에 씀
+const LG = {
+  URL: 'https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo',
+  get ok() { return typeof DATA_GO_KR_KEY === 'string' && DATA_GO_KR_KEY.trim() !== ''; },
+  GAP: 300, last: 0,
+  async throttle() { const w = this.last + this.GAP - Date.now(); this.last = Math.max(Date.now(), this.last + this.GAP); if (w > 0) await new Promise(r => setTimeout(r, w)); },
+  async titleOf(pnu) {
+    const p = String(pnu);
+    const q = new URLSearchParams({ serviceKey: DATA_GO_KR_KEY.trim(), sigunguCd: p.slice(0, 5), bjdongCd: p.slice(5, 10), platGbCd: p.charAt(10) === '2' ? '1' : '0', bun: p.slice(11, 15), ji: p.slice(15, 19), numOfRows: '100', pageNo: '1', _type: 'json' });
+    const res = await fetch(`${this.URL}?${q}`);
+    const j = await res.json().catch(() => null);
+    const h = j && j.response && j.response.header;
+    if (!h || h.resultCode !== '00') throw new Error((j && j.OpenAPI_ServiceResponse && j.OpenAPI_ServiceResponse.cmmMsgHeader && j.OpenAPI_ServiceResponse.cmmMsgHeader.errMsg) || (h && h.resultMsg) || '빈 응답');
+    const it = j.response.body && j.response.body.items && j.response.body.items.item;
+    return !it ? [] : Array.isArray(it) ? it : [it];
+  },
+  async titleRetry(pnu) {
+    for (let k = 0; ; k++) {
+      await this.throttle();
+      try { return await this.titleOf(pnu); } catch (e) {
+        if (!/PER_SECOND|LIMITED_NUMBER|TIMEOUT|빈 응답/.test(e.message) || k >= 4) throw e;
+        this.GAP = Math.min(1500, this.GAP + 100); await new Promise(r => setTimeout(r, 800 * (k + 1)));
+      }
+    }
+  },
+};
+const PUBLIC_JIMOK = ['도', '구', '천', '제', '공'];
+function splitJibun(s) {
+  const m = String(s || '').trim().match(/^(산?\s*[\d-]+)\s*(\D*)$/);
+  return m ? { no: m[1].replace(/\s/g, ''), jimok: m[2] || '' } : { no: String(s || ''), jimok: '' };
 }
-const roadTargets = () => D.parcels.filter(p => p.pnu && !p.roadSide && roadCache[p.pnu] === undefined && p.blds.length);
-let roadBusy = false;
-async function fetchRoads(btn) {
-  if (roadBusy) return;
-  if (typeof VWORLD_KEY !== 'string' || !VWORLD_KEY.trim()) { toast('브이월드 인증키가 없습니다'); return; }
-  if (!/jbslab\.co\.kr$/.test(location.hostname)) toast('브이월드 키는 www.jbslab.co.kr에서만 조회됩니다');
-  const list = roadTargets(); if (!list.length) { toast('조회할 필지가 없습니다'); return; }
-  roadBusy = true; let done = 0, fail = 0;
+// GIS건물통합정보 한 동 → 건축물 행 (본 화면 buildingFromFeature와 같은 규칙)
+function rowFromGis(f) {
+  const p = f.properties || {};
+  const code = String(p.usability || ''), floors = num(p.grnd_flr), floorArea = Math.round(num(p.totalarea) * 10) / 10;
+  let use = '기타';
+  if (code === '01003') use = '다가구주택';
+  else if (code.startsWith('01')) use = '단독주택';
+  else if (code === '02001') use = '아파트';
+  else if (code === '02002') use = '연립주택';
+  else if (code === '02003') use = '다세대주택';
+  else if (code.startsWith('02')) use = floors >= 5 ? '아파트' : floorArea > 660 ? '연립주택' : '다세대주택';
+  else if (code.startsWith('03') || code.startsWith('04')) use = '근린생활시설';
+  const s = String(p.strct_cd || '').charAt(0);
+  const structure = s === '1' ? '조적' : s === '2' || s === '4' ? '철근콘크리트' : s === '3' ? '철골' : s === '5' ? '목조' : '기타';
+  const isApt = ['아파트', '연립주택', '다세대주택'].includes(use);
+  return {
+    use, structure, year: num(String(p.useapr_day || '').slice(0, 4)), floorArea, archArea: num(p.archarea), floors, basement: num(p.ugrnd_flr),
+    units: isApt ? 0 : (use === '단독주택' || use === '다가구주택' ? 1 : 0), needUnits: isApt, name: p.bld_nm || '', src: 'GIS',
+  };
+}
+// 건축물대장 표제부 한 동 → 건축물 행 (본 화면 Ledger.toRow와 같은 규칙)
+function rowFromLedger(t) {
+  const code = String(t.mainPurpsCd || ''), etc = String(t.etcPurps || '');
+  let use = '기타';
+  if (code === '01003' || /다가구/.test(etc)) use = '다가구주택';
+  else if (code.startsWith('01')) use = '단독주택';
+  else if (code === '02001' || /아파트/.test(etc)) use = '아파트';
+  else if (code === '02002' || /연립/.test(etc)) use = '연립주택';
+  else if (code === '02003' || /다세대/.test(etc)) use = '다세대주택';
+  else if (code.startsWith('02')) use = num(t.grndFlrCnt) >= 5 ? '아파트' : '다세대주택';
+  else if (code.startsWith('03') || code.startsWith('04')) use = '근린생활시설';
+  const s = String(t.strctCd || '').charAt(0);
+  const structure = s === '1' ? '조적' : s === '2' || s === '4' ? '철근콘크리트' : s === '3' ? '철골' : s === '5' ? '목조' : '기타';
+  const d = String(t.useAprDay || '').trim();
+  const isApt = ['아파트', '연립주택', '다세대주택'].includes(use);
+  const units = isApt ? num(t.hhldCnt) || num(t.hoCnt) : (use === '단독주택' || use === '다가구주택' ? 1 : 0);
+  return {
+    use, structure, structureName: t.strctCdNm || '', year: /^\d{8}$/.test(d) ? +d.slice(0, 4) : 0,
+    floorArea: Math.round(num(t.totArea) * 10) / 10, archArea: Math.round(num(t.archArea) * 10) / 10, floors: num(t.grndFlrCnt), basement: num(t.ugrndFlrCnt),
+    units, needUnits: isApt && !units, ledger: true, name: [String(t.bldNm || '').trim(), String(t.dongNm || '').trim()].filter(Boolean).join(' '), src: '대장',
+  };
+}
+
+/* ===== 지도 구역계(안)와 공부 캐시 ===== */
+// Z: 안(A~E)별 구역계(GeoJSON)와 편입 필지·편입비율. CACHE: 필지(pnu)별 공부, 건축물 행
+const ZONE_KEY = 'jbs-urban-zones-v1', CACHE_KEY = 'jbs-urban-cache-v1', UI_KEY = 'jbs-urban-ui';
+const ZONE_IDS = ['A', 'B', 'C', 'D', 'E'];
+const Z = (() => { const z = lsGet(ZONE_KEY); return { center: z.center || [37.4553, 126.6577], zoom: z.zoom || 16, count: z.count || 3, zones: z.zones || {} }; })();
+const CACHE = (() => { const c = lsGet(CACHE_KEY); return { parcels: c.parcels || {}, blds: c.blds || {} }; })();
+const saveZ = () => lsSet(ZONE_KEY, Z);
+function saveCache() { if (!lsSet(CACHE_KEY, CACHE)) console.warn('/urban 공부 캐시가 커서 브라우저에 저장하지 못했습니다(이번 창에서는 그대로 씀)'); }
+function zoneOf(id) { const z = Z.zones[id] || (Z.zones[id] = {}); z.inArea = z.inArea || {}; return z; }
+const ptIn = (pt, gj) => { try { return turf.booleanPointInPolygon(turf.point([pt[1], pt[0]]), gj); } catch (e) { return false; } };
+function statusMsg(t, err) { const s = document.getElementById('status'); s.hidden = !t; s.textContent = t || ''; s.classList.toggle('err', !!err); }
+let busy = false;
+
+async function fillLandChar(pnus, say, force) {
+  const list = pnus.filter(k => CACHE.parcels[k] && (force || !CACHE.parcels[k].lc));
+  const n = list.length; let done = 0, fail = 0;
+  if (!n) return 0;
   const work = async () => {
     while (list.length) {
-      const p = list.shift();
-      try { roadCache[p.pnu] = await vwRoadSide(p.pnu); } catch (e) { fail++; }
-      done++; if (btn) btn.textContent = `조회 중 ${done}/${done + list.length}`;
-      if (done % 20 === 0) lsSet(ROAD_CACHE, roadCache);
+      const k = list.shift(), p = CACHE.parcels[k];
+      try {
+        const c = await VW.landChar(k);
+        if (c) Object.assign(p, { ledgerArea: c.ledgerArea || p.ledgerArea || 0, jimok: c.jimok || p.jimok, jiga: c.jiga || p.jiga, zoning: c.zoning || p.zoning || '', roadSide: c.roadSide, lc: true });
+        else p.lc = true;
+      } catch (e) { fail++; }
+      done++;
+      if (done % 10 === 0 || done === n) say(`토지특성(대장 면적·용도지역·공시지가·도로접면) ${done}/${n}필지`);
     }
   };
   await Promise.all([work(), work(), work(), work()]);
-  lsSet(ROAD_CACHE, roadCache);
-  roadBusy = false;
-  D.parcels.forEach(applyAccess);
-  renderSourceBar(loadProject());
-  render();
-  toast(fail ? `도로접면 조회 완료 · 실패 ${fail}필지(다시 누르면 재시도)` : '도로접면 조회 완료');
+  return fail;
+}
+async function fillLedgerApts(pnus, say) {
+  if (!LG.ok) return 0;
+  const list = pnus.filter(k => (CACHE.blds[k] || []).some(r => r.needUnits && !r.ledger));
+  let i = 0, fail = 0;
+  for (const k of list) {
+    i++; say(`공동주택 건축물대장(세대수) ${i}/${list.length}필지`);
+    try {
+      const rows = await LG.titleRetry(k);
+      if (rows.length) { const pt = (CACHE.blds[k][0] || {}).pt || null; CACHE.blds[k] = rows.map(t => ({ ...rowFromLedger(t), pt })); }
+    } catch (e) { fail++; }
+  }
+  return fail;
+}
+// 안 하나의 필지·건축물·토지특성을 불러옴 (구역계와 10% 이상 겹치거나 한 점이 구역 안인 필지)
+// 여러 안을 연달아 그려도 차례로 불러오도록 줄을 세움
+let fetchQueue = Promise.resolve();
+function fetchZone(id) { fetchQueue = fetchQueue.then(() => fetchZoneNow(id)).catch(() => {}); return fetchQueue; }
+async function fetchZoneNow(id) {
+  const z = zoneOf(id);
+  if (!z.geojson) return;
+  if (!VW.ok) { statusMsg('브이월드 인증키가 없어 필지를 불러올 수 없습니다.', true); return; }
+  if (!/jbslab\.co\.kr$/.test(location.hostname)) toast('브이월드 키는 www.jbslab.co.kr에서만 조회됩니다');
+  busy = true;
+  const name = id + '안', say = t => statusMsg(`${name}: ${t}`);
+  let ok = false, failLc = 0, failLg = 0, nParcels = 0;
+  try {
+    const zone = z.geojson, box = `BOX(${turf.bbox(zone).join(',')})`;
+    const inZone = f => { try { return turf.booleanPointInPolygon(turf.pointOnFeature(f), zone); } catch (e) { return false; } };
+    say('구역 안 필지(연속지적)를 불러오는 중…');
+    const feats = await VW.dataAll('LP_PA_CBND_BUBUN', box);
+    const inArea = {}, kept = [];
+    feats.forEach(f => {
+      const pr = f.properties || {}; if (!pr.pnu) return;
+      const tot = turf.area(f); let a = 0;
+      try { const x = turf.intersect(f, zone); a = x ? turf.area(x) : 0; } catch (e) { a = inZone(f) ? tot : 0; }
+      if (!(a >= 1 && (a / tot >= 0.1 || inZone(f)))) return;
+      const r = a / tot; inArea[pr.pnu] = r >= 0.98 ? 1 : Math.round(r * 1000) / 1000; kept.push(f);
+      const sp = splitJibun(pr.jibun), old = CACHE.parcels[pr.pnu] || {};
+      CACHE.parcels[pr.pnu] = { ...old, jibun: sp.no, jimok: old.lc ? old.jimok : (sp.jimok === '임' ? '임야' : sp.jimok), jiga: old.jiga || num(pr.jiga), geom: f.geometry, cadArea: Math.round(tot * 10) / 10 };
+    });
+    nParcels = kept.length;
+    say(`필지 ${kept.length}개 확인. 건축물(GIS건물통합정보)을 불러오는 중…`);
+    const bf = await VW.dataAll('LT_C_BLDGINFO', box);
+    const byP = {};
+    bf.forEach(b => {
+      let pt; try { pt = turf.pointOnFeature(b); } catch (e) { return; }
+      const own = kept.find(pf => { try { return turf.booleanPointInPolygon(pt, pf); } catch (e) { return false; } });
+      if (!own) return;
+      const k = own.properties.pnu;
+      (byP[k] = byP[k] || []).push({ ...rowFromGis(b), pt: [pt.geometry.coordinates[1], pt.geometry.coordinates[0]] });
+    });
+    kept.forEach(pf => {
+      const k = pf.properties.pnu, old = CACHE.blds[k];
+      if (old && old.length && old.every(r => r.ledger)) return;   // 이미 대장으로 바꾼 필지는 유지
+      CACHE.blds[k] = byP[k] || [];
+    });
+    z.inArea = inArea; z.fetchedAt = new Date().toLocaleString('sv-SE').slice(0, 16); z.from = 'map';
+    saveZ(); saveCache();
+    if (S.source === 'map') { D = buildMap(); D.parcels.forEach(applyAccess); render(); }
+    failLc = await fillLandChar(Object.keys(inArea), say);
+    saveCache();
+    if (S.source === 'map') { D = buildMap(); D.parcels.forEach(applyAccess); render(); }
+    failLg = await fillLedgerApts(Object.keys(inArea), say);
+    saveCache();
+    ok = true;
+  } catch (e) {
+    statusMsg(`${name}: 불러오기에 실패했습니다 — ${e.message}`, true);
+  } finally {
+    busy = false;
+    if (S.source === 'map') { D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); render(); }
+  }
+  if (ok) statusMsg(`${name}: 필지 ${nParcels}개와 그 위 건축물을 불러왔습니다.` + (failLc ? ` 토지특성 ${failLc}필지는 조회 실패(다시 불러오기로 재시도).` : '') + (failLg ? ` 건축물대장 ${failLg}필지는 조회 실패.` : ''));
+}
+// 사업성 검토 화면 프로젝트의 구역계·조서를 안으로 가져옴 (조서가 없으면 구역계만 가져와 공부를 새로 조회)
+function loadProject() { try { const raw = localStorage.getItem(PROJECT_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+async function importProject(id) {
+  const p = loadProject();
+  if (!p || !p.area || !p.area.geojson) { toast('사업성 검토 화면에 그린 구역계가 없습니다'); return; }
+  const z = zoneOf(id);
+  const g = p.area.geojson;
+  z.geojson = g.type === 'Feature' ? { type: 'Feature', properties: {}, geometry: g.geometry } : { type: 'Feature', properties: {}, geometry: g };
+  z.inArea = {}; z.fetchedAt = '';
+  const lands = (p.lands || []).filter(l => l.pnu && l.geom && !l.sample);
+  if (lands.length) {
+    lands.forEach(l => {
+      const old = CACHE.parcels[l.pnu] || {};
+      CACHE.parcels[l.pnu] = {
+        ...old, jibun: l.jibun, jimok: l.ledgerJimok || l.jimok || old.jimok || '', jiga: num(l.price) || old.jiga || 0, geom: l.geom,
+        cadArea: num(l.cadArea) || turf.area({ type: 'Feature', properties: {}, geometry: l.geom }), ledgerArea: num(l.ledgerArea) || old.ledgerArea || 0,
+        zoning: l.zoning || old.zoning || '', roadSide: l.roadSide || old.roadSide || '', lc: !!(l.ledgerArea && l.roadSide) || !!old.lc,
+      };
+      z.inArea[l.pnu] = l.inRatio == null ? 1 : num(l.inRatio);
+    });
+    const byP = {};
+    (p.buildings || []).filter(b => !b.sample && b.pnu).forEach(b => {
+      (byP[b.pnu] = byP[b.pnu] || []).push({ use: b.use, structure: b.structure, structureName: b.structureName || '', year: num(b.year), floorArea: num(b.floorArea), archArea: num(b.archArea), floors: num(b.floors), basement: num(b.basement), units: num(b.units), needUnits: !!b.needUnits, ledger: !!b.ledger, name: b.name || '', src: b.ledger ? '대장' : '조서' });
+    });
+    Object.keys(z.inArea).forEach(k => { CACHE.blds[k] = byP[k] || []; });
+    z.fetchedAt = new Date().toLocaleString('sv-SE').slice(0, 16); z.from = 'project';
+  }
+  saveZ(); saveCache();
+  S.region = id; D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); fitZone(id); render();
+  if (!lands.length) { fetchZone(id); return; }
+  statusMsg(`${id}안: 사업성 검토 구역계와 조서(필지 ${lands.length}개)를 가져왔습니다.`);
+  const miss = Object.keys(z.inArea).filter(k => !CACHE.parcels[k].roadSide);
+  if (miss.length && VW.ok && !busy) {
+    busy = true;
+    try { await fillLandChar(miss, t => statusMsg(`${id}안: ${t}`)); saveCache(); statusMsg(`${id}안: 사업성 검토 조서를 가져오고 도로접면을 조회했습니다.`); }
+    finally { busy = false; D = buildMap(); D.parcels.forEach(applyAccess); render(); }
+  }
+}
+function setZoneGeom(id, gj) {
+  const z = zoneOf(id);
+  const geom = gj.type === 'Feature' ? gj.geometry : gj;
+  z.geojson = { type: 'Feature', properties: {}, geometry: geom };
+  z.inArea = {}; z.fetchedAt = ''; z.from = 'map';
+  saveZ();
+  D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); render();
+  fetchZone(id);
+}
+
+/* ===== 지도 모드 데이터 ===== */
+function toB(r, p, j) {
+  const kind = kindOf(r.use), floors = num(r.floors) || 1, units = num(r.units) || 0;
+  const b = {
+    id: p.pnu + ':' + j, pid: p.id, use: r.use, kind, struct: r.structureName || r.structure || '', rc: ['철근콘크리트', '철골'].includes(r.structure),
+    year: num(r.year), semi: false, basement: num(r.basement), unitsMax: kind === '공동' ? Math.max(1, Math.ceil(units / floors)) : 0, units, floors,
+    converted: false, foot: num(r.archArea) || num(r.floorArea) / floors, floor: num(r.floorArea), lic: '허가', name: r.name || '', pt: r.pt || null,
+    needUnits: !!r.needUnits && !units, src: r.src || '',
+  };
+  Object.assign(b, obsoleteRule(b));
+  return b;
+}
+function buildMap() {
+  const used = ZONE_IDS.filter(k => Z.zones[k] && Z.zones[k].geojson);
+  const pn = new Set(); used.forEach(k => Object.keys(Z.zones[k].inArea || {}).forEach(x => pn.add(x)));
+  const parcels = [...pn].filter(k => CACHE.parcels[k]).map((pnu, i) => {
+    const c = CACHE.parcels[pnu], base = num(c.ledgerArea) || num(c.cadArea);
+    const p = { id: i, pnu, jibun: c.jibun || pnu, jimok: c.jimok || '', base, area: base, zone: c.zoning || '', price: num(c.jiga), public: PUBLIC_JIMOK.includes(c.jimok), roadSide: c.roadSide || '', geom: c.geom, owner: '', blds: [] };
+    p.allBlds = (CACHE.blds[pnu] || []).map((r, j) => toB(r, p, j));
+    return p;
+  });
+  const byPnu = new Map(parcels.map(p => [p.pnu, p]));
+  const lastUsed = used.length ? ZONE_IDS.indexOf(used[used.length - 1]) + 1 : 0;
+  const keys = ZONE_IDS.slice(0, Math.min(5, Math.max(Z.count || 3, lastUsed, 1)));
+  const regions = {};
+  keys.forEach(k => {
+    const z = Z.zones[k] || {};
+    const R = { name: k + '안', geojson: z.geojson || null, fetched: !!z.fetchedAt, at: z.fetchedAt || '', from: z.from || '', inArea: z.inArea || {}, blds: {} };
+    if (R.geojson) Object.keys(R.inArea).forEach(pnu => {
+      const p = byPnu.get(pnu); if (!p) return;
+      const r = R.inArea[pnu];
+      R.blds[pnu] = p.allBlds.filter(b => r >= 0.98 || !b.pt || ptIn(b.pt, R.geojson));
+    });
+    regions[k] = R;
+  });
+  parcels.forEach(p => { p.blds = p.allBlds; });
+  return { real: true, map: true, title: '지도에서 그린 구역계', parcels, byPnu, regions, keys };
 }
 
 /* ===== 건축물 판정 ===== */
@@ -238,108 +518,53 @@ function buildSample() {
   };
 }
 
-/* ===== 데이터: 사업성 검토 프로젝트(실제 구역) ===== */
-function loadProject() {
-  try { const raw = localStorage.getItem(PROJECT_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
-}
-function projectUsable(p) {
-  return p && p.area && p.area.geojson && Array.isArray(p.lands) && p.lands.some(l => l.geom && !l.sample);
-}
-function outerRings(geom) {
-  if (!geom) return [];
-  if (geom.type === 'Polygon') return [geom.coordinates[0]];
-  if (geom.type === 'MultiPolygon') return geom.coordinates.map(c => c[0]);
-  return [];
-}
-function buildReal(p) {
-  const zoneG = p.area.geojson.geometry || p.area.geojson;
-  const zRings = outerRings(zoneG);
-  const all = zRings.flat();
-  const lon0 = all.reduce((s, c) => s + c[0], 0) / all.length, lat0 = all.reduce((s, c) => s + c[1], 0) / all.length;
-  const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
-  const proj = c => [(c[0] - lon0) * kx, -(c[1] - lat0) * ky];
-  const lands = p.lands.filter(l => l.geom && !l.sample);
-  let pr = lands.map(l => outerRings(l.geom).map(r => r.map(proj)));
-  let zr = zRings.map(r => r.map(proj));
-  const pts = [...zr.flat(), ...pr.flat(2)];
-  const minX = Math.min(...pts.map(q => q[0])) - 10, minY = Math.min(...pts.map(q => q[1])) - 10;
-  const shift = r => r.map(([x, y]) => [x - minX, y - minY]);
-  zr = zr.map(shift); pr = pr.map(rs => rs.map(shift));
-  const W = Math.max(...pts.map(q => q[0])) - minX + 10, H = Math.max(...pts.map(q => q[1])) - minY + 10;
-  const parcels = lands.map((l, i) => {
-    const rings = pr[i];
-    const big = rings.slice().sort((a, b) => polyArea(b) - polyArea(a))[0] || [[0, 0]];
-    const [cx, cy] = centroid(big);
-    return {
-      id: i, rings, area: Number(l.area) || polyArea(big), cx, cy, zone: l.zoning || p.meta?.zoning || '', jibun: (l.addr ? '' : '') + l.jibun, jimok: l.jimok,
-      price: Number(l.price) || 0, owner: l.owner || '', public: l.ownerType === '국공유지', pnu: l.pnu || '', roadSide: l.roadSide || '',
-      access: null, accessStr: '도로 폭 정보 없음', blds: [],
-    };
-  });
-  const byPnu = new Map(parcels.filter(q => q.pnu).map(q => [q.pnu, q])), byJibun = new Map(parcels.map(q => [String(q.jibun), q]));
-  const buildings = [], orphans = [];
-  (p.buildings || []).filter(b => !b.sample).forEach((b, i) => {
-    const kind = kindOf(b.use);
-    const floors = Number(b.floors) || 1, units = Number(b.units) || 0;
-    const nb = {
-      id: i, use: b.use, kind, struct: b.structureName || b.structure || '', rc: ['철근콘크리트', '철골'].includes(b.structure),
-      year: Number(b.year) || 0, semi: false, basement: Number(b.basement) || 0, unitsMax: kind === '공동' ? Math.max(1, Math.ceil(units / floors)) : 0, units,
-      floors, converted: false, foot: Number(b.archArea) || (Number(b.floorArea) || 0) / floors, floor: Number(b.floorArea) || 0, lic: '허가', name: b.name || '',
-    };
-    const par = (b.pnu && byPnu.get(b.pnu)) || byJibun.get(String(b.jibun));
-    if (par) { nb.pid = par.id; par.blds.push(nb); } else { nb.pid = null; orphans.push(nb); }
-    buildings.push(nb);
-  });
-  return {
-    real: true, title: p.meta?.name || '사업성 검토 구역', W, H, roads: [], parcels, buildings, orphans,
-    zoneArea: Number(p.area.drawnArea) || zr.reduce((s, r) => s + polyArea(r), 0),
-    priorMult: Number(p.prior?.multiplier) || 1.4,
-    regions: {
-      A: { name: '프로젝트 구역계', pts: zr.slice().sort((a, b) => polyArea(b) - polyArea(a))[0], rings: zr, project: true },
-      B: { name: 'B안', pts: null },
-      C: { name: '직접 그린 안', pts: null },
-    },
-  };
-}
-
 /* ===== 분석·판정 ===== */
 let D = null;
-function regionParcels(key) {
-  const reg = D.regions[key];
-  if (reg.project) return D.parcels;   // 프로젝트 구역계: 토지조서 전부(이미 편입 필지)
-  return D.parcels.filter(p => inside(p.cx, p.cy, reg.pts));
+// 안 하나의 구역 면적·편입 필지·건축물. 지도 모드는 편입비율(inArea)로 필지 면적을 나눔
+function zoneParts(key) {
+  const R = D.regions[key];
+  if (!R) return null;
+  if (D.map) {
+    if (!R.geojson || !R.fetched) return null;
+    const ps = Object.keys(R.inArea).map(k => D.byPnu.get(k)).filter(Boolean);
+    return { area: turf.area(R.geojson), ps, inR: p => R.inArea[p.pnu] ?? 1, bs: ps.flatMap(p => R.blds[p.pnu] || []) };
+  }
+  if (!R.pts) return null;
+  const ps = D.parcels.filter(p => inside(p.cx, p.cy, R.pts));
+  return { area: polyArea(R.pts), ps, inR: () => 1, bs: ps.flatMap(p => p.blds) };
 }
+function regionParcels(key) { const zp = zoneParts(key); return zp ? zp.ps : []; }
 function analyze(key) {
-  const reg = D.regions[key]; if (!reg || !reg.pts) return null;
-  const area = reg.project ? (reg.rings.reduce((s, r) => s + polyArea(r), 0)) : polyArea(reg.pts);
-  const ps = regionParcels(key);
-  let bs = ps.flatMap(p => p.blds);
-  if (reg.project) bs = bs.concat(D.orphans);
-  bs = bs.filter(b => b.lic !== '신발생무허가');
+  const zp = zoneParts(key); if (!zp) return null;
+  const { area, ps } = zp;
+  const landA = p => (p.base ?? p.area) * zp.inR(p);
+  let bs = zp.bs.filter(b => b.lic !== '신발생무허가');
   bs.forEach(b => { if (b.old === undefined) Object.assign(b, obsoleteRule(b)); });
   const N = bs.length, oldN = bs.filter(b => b.old).length, unknownN = bs.filter(b => b.unknown).length;
   const fa = bs.reduce((s, b) => s + b.floor, 0), oldFa = bs.filter(b => b.old).reduce((s, b) => s + b.floor, 0);
-  const smallN = ps.filter(p => p.area < smallLimit(p.zone)).length;
+  const smallN = ps.filter(p => (p.base ?? p.area) < smallLimit(p.zone)).length;
   let accN = 0, accU = 0;
   bs.forEach(b => { const a = b.pid != null ? D.parcels[b.pid].access : null; if (a === true) accN++; else if (a == null) accU++; });
   const du = bs.reduce((s, b) => s + densityUnits(b), 0);
-  const landArea = ps.reduce((s, p) => s + p.area, 0);
-  const zoneArea = {}; ps.forEach(p => { const z = p.zone || '미확인'; zoneArea[z] = (zoneArea[z] || 0) + p.area; });
-  let owners = 0;
-  const names = new Set();
+  const landArea = ps.reduce((s, p) => s + landA(p), 0);
+  const zoneArea = {}; ps.forEach(p => { const z = p.zone || '미확인'; zoneArea[z] = (zoneArea[z] || 0) + landA(p); });
+  const bsOf = p => (D.map ? (D.regions[key].blds[p.pnu] || []) : p.blds);
+  let owners = 0; const names = new Set();
   ps.forEach(p => {
-    const apt = p.blds.filter(b => b.kind === '공동' && !b.converted);
+    const apt = bsOf(p).filter(b => b.kind === '공동' && !b.converted);
     if (apt.length) owners += apt.reduce((s, b) => s + Math.max(1, b.units), 0);
     else if (!p.public) { if (p.owner) { if (!names.has(p.owner)) { names.add(p.owner); owners++; } } else owners++; }
   });
-  const priorLand = ps.reduce((s, p) => s + p.area * p.price, 0);
+  const priorLand = ps.reduce((s, p) => s + landA(p) * p.price, 0);
+  const needUnits = bs.filter(b => b.needUnits).length;
   return {
-    key, area, ps, bs, N, oldN, unknownN, fa, oldFa, smallN, accN, accU, du, landArea, zoneArea, owners: Math.max(owners, 1), priorLand,
+    key, area, ps, bs, N, oldN, unknownN, fa, oldFa, smallN, accN, accU, du, landArea, zoneArea, owners: Math.max(owners, 1), priorLand, needUnits, bsOf,
     oldRatio: N ? oldN / N : 0, oldFaRatio: fa ? oldFa / fa : 0, smallRatio: ps.length ? smallN / ps.length : 0,
     // 미확인 건축물이 있으면 접도율은 범위(accRatio ~ accMax)
     accRatio: N ? accN / N : 0, accMax: N ? (accN + accU) / N : 0, density: du / (area / 10000),
   };
 }
+
 const accText = a => a.accU ? `${pct(a.accRatio)}~${pct(a.accMax)}` : pct(a.accRatio);
 // 접도율 '이하' 기준: 미확인이 모두 접도여도 기준 이하면 충족, 모두 미접도여도 기준 초과면 미충족, 그 사이는 확인 필요
 function accJudge(a, lim) {
@@ -430,50 +655,218 @@ function biz(a, pl) {
 }
 
 /* ===== 화면 상태 ===== */
-const S = { tab: 'zone', region: 'A', mode: 'old', drawing: false, draft: [], source: 'auto', placed: null };
+const S = { tab: 'zone', region: 'A', mode: 'old', drawing: false, draft: [], source: lsGet(UI_KEY).source === 'sample' ? 'sample' : 'map', placed: null };
 const NS = 'http://www.w3.org/2000/svg';
 const svg = document.getElementById('map');
 function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); (parent || svg).appendChild(e); return e; }
 const ringStr = r => r.map(p => p.map(v => v.toFixed(2)).join(',')).join(' ');
-function cKey() { return 'jbs-urban-C-' + (D.real ? 'real' : 'sample'); }
+const $id = id => document.getElementById(id);
 
-function loadData() {
-  const proj = loadProject();
-  const useReal = S.source === 'real' || (S.source === 'auto' && projectUsable(proj));
-  D = useReal && projectUsable(proj) ? buildReal(proj) : buildSample();
-  try { const s = localStorage.getItem(cKey()); if (s) D.regions.C.pts = JSON.parse(s); } catch (e) { /* 무시 */ }
-  D.parcels.forEach(applyAccess);
-  const pad = Math.max(D.W, D.H) * 0.015;
-  svg.setAttribute('viewBox', `${-pad} ${-pad} ${D.W + pad * 2} ${D.H + pad * 2}`);
-  if (!D.regions[S.region] || !D.regions[S.region].pts && S.region !== 'C') S.region = 'A';
-  renderSourceBar(proj);
+function setSource(src) {
+  S.source = src; lsSet(UI_KEY, { source: src });
+  S.drawing = false; S.draft = [];
+  loadData(); render();
+  if (src === 'map') fitZone(S.region);
 }
-function renderSourceBar(proj) {
-  const bar = document.getElementById('source');
-  const has = projectUsable(proj);
-  document.getElementById('demoTag').textContent = D.real ? '실제 구역 · 사업성 검토 프로젝트에서 불러옴' : '예시 구역 데이터 · 실제 지번 아님';
-  document.getElementById('demoTag').className = D.real ? 'demo real' : 'demo';
-  bar.innerHTML = D.real
-    ? `<b>${esc(D.title)}</b> · 토지조서 ${D.parcels.length}필지 · 건축물조서 ${D.buildings.length}동 <button class="btn sm" id="roadBtn">${roadTargets().length ? `도로접면 조회 (${roadTargets().length}필지)` : '도로접면 다시 조회'}</button> <button class="btn ghost sm" id="toSample">예시 구역 보기</button> <a class="btn ghost sm" href="../">구역계 고치기(사업성 검토)</a>`
-    : has ? `예시 구역을 보는 중입니다. <button class="btn ghost sm" id="toReal">내 프로젝트 구역 불러오기 (${esc(proj.meta?.name || '')})</button>`
-      : `사업성 검토 화면에서 구역계를 그리고 토지·건축물 조서를 불러오면 여기서 그 구역으로 판정합니다. <a class="btn ghost sm" href="../">사업성 검토로 가기</a>`;
-  const rb = document.getElementById('roadBtn');
-  if (rb) rb.onclick = () => {
-    if (!roadTargets().length) { D.parcels.forEach(p => { if (p.pnu && !p.roadSide) delete roadCache[p.pnu]; }); }
-    fetchRoads(rb);
-  };
-  const ts = document.getElementById('toSample'), tr = document.getElementById('toReal');
-  if (ts) ts.onclick = () => { S.source = 'sample'; S.region = 'A'; loadData(); syncRegionChips(); render(); };
-  if (tr) tr.onclick = () => { S.source = 'real'; S.region = 'A'; loadData(); syncRegionChips(); render(); };
-  syncRegionChips();
+function loadData() {
+  if (S.source === 'sample') {
+    D = buildSample(); D.keys = ['A', 'B', 'C'];
+    try { const s = localStorage.getItem('jbs-urban-C-sample'); if (s) D.regions.C.pts = JSON.parse(s); } catch (e) { /* 무시 */ }
+    const pad = Math.max(D.W, D.H) * 0.015;
+    svg.setAttribute('viewBox', `${-pad} ${-pad} ${D.W + pad * 2} ${D.H + pad * 2}`);
+  } else D = buildMap();
+  D.parcels.forEach(applyAccess);
+  if (!D.keys.includes(S.region)) S.region = D.keys[0];
+  const isMap = S.source === 'map';
+  $id('lmap').hidden = !isMap; $id('svgbox').hidden = isMap; $id('mapTools').hidden = !isMap;
+  $id('finishBtn').hidden = true; $id('cancelBtn').hidden = true; $id('drawBtn').hidden = false;
+  $id('drawHint').innerHTML = isMap
+    ? '<b>구역계 그리기</b>를 누르고 지도에서 꼭짓점을 찍은 뒤 첫 점을 다시 누르면 완성됩니다. 완성하면 그 안의 필지(연속지적)·건축물(GIS건물통합정보)·토지특성·공동주택 건축물대장을 자동으로 불러옵니다. 구역계와 10% 이상 겹치는 필지를 편입 필지로 봅니다.'
+    : '그리기: 도면을 눌러 꼭짓점을 찍고 <b>완성</b>을 누르면 \'직접 그린 안\'으로 판정합니다. 구역계 안에 중심점이 들어온 필지를 편입 필지로 봅니다.';
+  if (!isMap) statusMsg('');
+  renderSourceBar(); syncRegionChips();
+  if (isMap) initLeaflet();
+}
+function roadTargets() {
+  if (!D.map) return [];
+  const R = D.regions[S.region]; if (!R || !R.fetched) return [];
+  return Object.keys(R.inArea).filter(k => { const p = D.byPnu.get(k); return p && !p.roadSide && (R.blds[k] || []).length; });
+}
+function renderSourceBar() {
+  const bar = $id('source'), tag = $id('demoTag');
+  if (S.source === 'sample') {
+    tag.textContent = '예시 구역 데이터 · 실제 지번 아님'; tag.className = 'demo';
+    bar.innerHTML = `예시 구역(고정 그림)을 보는 중입니다. <button class="btn sm" id="toMap">지도에서 구역계 그리기로 돌아가기</button>`;
+  } else {
+    tag.textContent = '실제 지도 · 브이월드 공부 조회'; tag.className = 'demo real';
+    const used = D.keys.filter(k => D.regions[k].geojson).length, rt = roadTargets().length;
+    const proj = loadProject(), hasProj = !!(proj && proj.area && proj.area.geojson);
+    bar.innerHTML = `<b>지도에서 구역계를 그려 판정합니다</b> · 그린 안 ${used}개`
+      + (rt ? ` <button class="btn sm" id="roadBtn">도로접면 조회 (${rt}필지)</button>` : '')
+      + (hasProj ? ` <button class="btn ghost sm" id="fromProj" title="사업성 검토 화면에 그린 구역계와 토지·건축물 조서를 지금 고른 안으로 가져옵니다">사업성 검토 구역 가져오기 → ${esc(S.region)}안</button>` : '')
+      + ` <button class="btn ghost sm" id="toSample">예시 구역 보기</button>`;
+  }
+  const on = (id, fn) => { const b = $id(id); if (b) b.onclick = fn; };
+  on('toMap', () => setSource('map'));
+  on('toSample', () => setSource('sample'));
+  on('fromProj', () => {
+    const R = D.regions[S.region];
+    if (R.geojson && !confirm(`${R.name}에 이미 구역계가 있습니다. 사업성 검토 구역으로 바꿀까요?`)) return;
+    importProject(S.region);
+  });
+  on('roadBtn', async () => {
+    if (busy) return; busy = true;
+    const b = $id('roadBtn'); if (b) b.disabled = true;
+    try { const f = await fillLandChar(roadTargets(), t => statusMsg(`${S.region}안: ${t}`), true); saveCache(); statusMsg(f ? `도로접면 조회 완료 · ${f}필지 실패(다시 누르면 재시도)` : '도로접면 조회를 마쳤습니다.'); }
+    finally { busy = false; D = buildMap(); D.parcels.forEach(applyAccess); renderSourceBar(); render(); }
+  });
 }
 function syncRegionChips() {
-  document.querySelectorAll('[data-region]').forEach(x => {
-    const k = x.dataset.region, reg = D.regions[k];
-    x.hidden = k === 'B' && !reg.pts;
-    x.textContent = reg.name;
-    x.setAttribute('aria-pressed', k === S.region);
+  const box = $id('zoneChips');
+  box.innerHTML = D.keys.map(k => {
+    const R = D.regions[k], has = D.map ? !!R.geojson : !!R.pts;
+    return `<button class="chip ${has ? '' : 'empty'}" data-region="${k}" aria-pressed="${k === S.region}">${esc(R.name)}${has ? '' : ' · 비어 있음'}</button>`;
+  }).join('') + (D.map && D.keys.length < ZONE_IDS.length ? '<button class="chip empty" id="addZone">+ 안 추가</button>' : '');
+  box.querySelectorAll('[data-region]').forEach(b => b.onclick = () => {
+    if (editH) { toast('구역계 고치기를 먼저 마쳐 주세요'); return; }
+    S.region = b.dataset.region; syncRegionChips(); renderSourceBar(); if (D.map) fitZone(S.region); render();
   });
+  const add = $id('addZone');
+  if (add) add.onclick = () => { Z.count = D.keys.length + 1; saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); S.region = D.keys[D.keys.length - 1]; syncRegionChips(); render(); toast(`${S.region}안을 추가했습니다. 구역계 그리기를 누르세요`); };
+}
+function fillVar(p, blds) {
+  const old = blds.some(b => (b.old === undefined ? obsoleteRule(b).old : b.old)), area = p.base ?? p.area;
+  if (S.mode === 'old' || S.mode === 'arch') return !blds.length ? '--nobuild' : old ? '--old' : '--new';
+  if (S.mode === 'small') return area < smallLimit(p.zone) ? '--small' : '--new';
+  if (S.mode === 'access') return !blds.length || p.access == null ? '--nobuild' : p.access ? '--new' : '--old';
+  return /2종/.test(p.zone) ? '--accent-soft' : /3종/.test(p.zone) ? '--warn-soft' : '--nobuild';
+}
+function parcelFill(p) { return `var(${fillVar(p, p.blds)})`; }
+function drawMap() { if (D.map) drawLeaflet(); else drawSvg(); }
+
+/* ===== 실제 지도 (Leaflet + 브이월드) ===== */
+let LM = null, layP = null, layZ = null, layT = null, editGroup = null, editH = null, drawH = null;
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || '#888';
+function initLeaflet() {
+  if (LM) { setTimeout(() => LM.invalidateSize(), 30); return; }
+  if (!window.L || !L.Draw || !window.turf) { statusMsg('지도 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하고 새로고침해 주세요.', true); return; }
+  LM = L.map('lmap', { maxZoom: 21 }).setView(Z.center, Z.zoom);
+  const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
+  if (VW.ok) {
+    const k = VW.key, attr = '&copy; <a href="https://www.vworld.kr">VWorld</a>';
+    const base = L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Base/{z}/{y}/{x}.png`, { minZoom: 6, maxZoom: 21, maxNativeZoom: 19, attribution: attr });
+    const sat = L.layerGroup([
+      L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Satellite/{z}/{y}/{x}.jpeg`, { minZoom: 6, maxZoom: 21, maxNativeZoom: 19, attribution: attr }),
+      L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Hybrid/{z}/{y}/{x}.png`, { minZoom: 6, maxZoom: 21, maxNativeZoom: 19 }),
+    ]);
+    // WMS 지적도는 domain을 보내면 거절됨(Referer로 확인)
+    const cad = L.tileLayer.wms('https://api.vworld.kr/req/wms', { layers: 'lp_pa_cbnd_bubun', styles: 'lp_pa_cbnd_bubun', format: 'image/png', transparent: true, version: '1.3.0', minZoom: 16, maxZoom: 21, key: k });
+    base.addTo(LM); cad.addTo(LM);
+    L.control.layers({ '브이월드 지도': base, '위성사진': sat, 'OpenStreetMap': osm }, { '지적도 (16레벨 이상 확대 시)': cad }, { collapsed: true }).addTo(LM);
+  } else osm.addTo(LM);
+  L.control.scale({ imperial: false }).addTo(LM);
+  LM.createPane('parcelPane').style.zIndex = 390;
+  layP = L.featureGroup().addTo(LM); layZ = L.featureGroup().addTo(LM); layT = L.featureGroup().addTo(LM);
+  editGroup = new L.FeatureGroup().addTo(LM);
+  LM.on(L.Draw.Event.CREATED, e => { drawH = null; $id('drawBtn').textContent = '구역계 그리기'; setZoneGeom(S.region, e.layer.toGeoJSON()); fitZone(S.region); });
+  LM.on(L.Draw.Event.DRAWSTOP, () => { drawH = null; $id('drawBtn').textContent = '구역계 그리기'; });
+  LM.on(L.Draw.Event.EDITED, () => { const l = editGroup.getLayers()[0]; if (l) setZoneGeom(S.region, l.toGeoJSON()); });
+  LM.on('moveend', () => { const c = LM.getCenter(); Z.center = [c.lat, c.lng]; Z.zoom = LM.getZoom(); saveZ(); });
+  setTimeout(() => LM.invalidateSize(), 60);
+}
+function fitZone(id) {
+  if (!LM || !D.map) return;
+  const R = D.regions[id];
+  if (R && R.geojson) { try { LM.fitBounds(L.geoJSON(R.geojson).getBounds(), { padding: [30, 30] }); } catch (e) { /* 무시 */ } }
+}
+function tipText(p, blds) {
+  return `${p.jibun} ${p.jimok || ''} · ${fmt(p.base ?? p.area)}㎡ · ${p.zone || '용도지역 미확인'}\n접도: ${p.accSrc || '–'}`
+    + (blds.length ? blds.map(b => `\n${b.use} · ${b.struct || '구조 미상'} · ${b.year || '연도 없음'} · ${b.unknown ? '확인 필요' : b.old ? '노후' : '비노후'}`).join('') : '\n건축물 없음');
+}
+function drawLeaflet() {
+  if (!LM) { drawLegend(); return; }
+  if (editH) return;   // 고치는 동안에는 다시 그리지 않음
+  layP.clearLayers(); layZ.clearLayers(); layT.clearLayers(); editGroup.clearLayers();
+  const R = D.regions[S.region];
+  if (R && R.geojson && R.fetched) {
+    const line = cssVar('--roadline'), ink = cssVar('--ink');
+    Object.keys(R.inArea).forEach(pnu => {
+      const p = D.byPnu.get(pnu); if (!p || !p.geom) return;
+      const blds = R.blds[pnu] || [];
+      const man = p.manual && S.mode === 'access';
+      const lyr = L.geoJSON({ type: 'Feature', properties: {}, geometry: p.geom }, { pane: 'parcelPane', style: { color: man ? ink : line, weight: man ? 2 : 0.7, fillColor: cssVar(fillVar(p, blds)), fillOpacity: 0.62, opacity: 1 } });
+      lyr.bindTooltip(tipText(p, blds), { sticky: true });
+      if (S.mode === 'access' && blds.length) lyr.on('click', () => { if (!drawH) cycleAccess(p.id); });
+      lyr.addTo(layP);
+    });
+  }
+  D.keys.forEach(k => {
+    const r = D.regions[k]; if (!r.geojson) return;
+    const act = k === S.region;
+    const style = act ? { color: cssVar('--redline'), weight: 3, dashArray: '12 4 2 4', fill: false } : { color: cssVar('--ink-2'), weight: 2, dashArray: '5 5', fill: false, opacity: 0.7 };
+    L.geoJSON(r.geojson, { style }).eachLayer(l => { l.bindTooltip(r.name + ' 구역계', { sticky: true }); (act ? editGroup : layZ).addLayer(l); });
+  });
+  S.placed = null;
+  if (S.mode === 'arch' && R && R.geojson) { const a = analyze(S.region); if (a) drawTowersMap(R.geojson, plan(a)); }
+  drawLegend();
+}
+// 개략 주동 배치: 구역계를 미터 좌표로 펴서 격자로 놓은 뒤 다시 경위도로
+function drawTowersMap(gj, pl) {
+  const g = gj.geometry;
+  const rings = g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map(c => c[0]) : [];
+  if (!rings.length) return;
+  const ring = rings.slice().sort((a, b) => turf.area(turf.polygon([b])) - turf.area(turf.polygon([a])))[0];
+  const lat0 = ring.reduce((s, c) => s + c[1], 0) / ring.length, lon0 = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+  const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+  const pts = ring.map(c => [(c[0] - lon0) * kx, -(c[1] - lat0) * ky]);
+  const back = ([x, y]) => [lat0 - y / ky, lon0 + x / kx];
+  const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
+  const fw = Math.sqrt(pl.towerFoot * 2.2), fh = pl.towerFoot / fw;
+  const gap = Math.max(fw + 14, 0.8 * pl.floorsTower * 2.9 + fh);
+  const col = cssVar('--accent');
+  let placed = 0;
+  for (let y = Math.min(...ys) + 12; y < Math.max(...ys) - fh && placed < pl.towers; y += gap) {
+    for (let x = Math.min(...xs) + 10; x < Math.max(...xs) - fw && placed < pl.towers; x += fw + 16) {
+      const c = [[x, y], [x + fw, y], [x + fw, y + fh], [x, y + fh]];
+      if (!c.every(([px, py]) => inside(px, py, pts))) continue;
+      L.polygon(c.map(back), { color: col, weight: 1, fillColor: col, fillOpacity: 0.85 }).bindTooltip(`${pl.floorsTower}층 · ${P.coreUnits}세대/층`, { sticky: true }).addTo(layT);
+      placed++;
+    }
+  }
+  S.placed = placed;
+}
+function startMapDraw() {
+  if (!LM) return;
+  if (drawH) { drawH.disable(); drawH = null; $id('drawBtn').textContent = '구역계 그리기'; return; }
+  const R = D.regions[S.region];
+  if (R.geojson && !confirm(`${R.name} 구역계를 새로 그릴까요? 지금 구역계는 지워집니다.`)) return;
+  drawH = new L.Draw.Polygon(LM, { allowIntersection: false, showArea: false, shapeOptions: { color: cssVar('--redline'), weight: 3 } });
+  drawH.enable();
+  $id('drawBtn').textContent = '그리기 취소';
+  toast('지도에서 꼭짓점을 찍고, 첫 점을 다시 누르면 완성됩니다');
+}
+function toggleEdit() {
+  if (!LM) return;
+  const b = $id('editBtn');
+  if (editH) { editH.save(); editH.disable(); editH = null; b.textContent = '구역계 고치기'; drawLeaflet(); return; }
+  if (!editGroup.getLayers().length) { toast('먼저 구역계를 그려 주세요'); return; }
+  if (editGroup.getLayers().length > 1 || D.regions[S.region].geojson.geometry.type !== 'Polygon') { toast('여러 덩어리로 된 구역계는 다시 그려 주세요'); return; }
+  editH = new L.EditToolbar.Edit(LM, { featureGroup: editGroup });
+  editH.enable();
+  b.textContent = '고치기 완료';
+  toast('꼭짓점을 끌어 고친 뒤 고치기 완료를 누르세요');
+}
+function importGeoJSONText(text) {
+  let j; try { j = JSON.parse(text); } catch (e) { statusMsg('GeoJSON 파일을 읽지 못했습니다.', true); return; }
+  const feats = j.type === 'FeatureCollection' ? j.features : j.type === 'Feature' ? [j] : [{ type: 'Feature', properties: {}, geometry: j }];
+  const polys = [];
+  feats.forEach(f => { const g = f && f.geometry; if (!g) return; if (g.type === 'Polygon') polys.push(g.coordinates); else if (g.type === 'MultiPolygon') polys.push(...g.coordinates); });
+  if (!polys.length) { statusMsg('파일에 다각형(Polygon)이 없습니다.', true); return; }
+  const c0 = polys[0][0][0];
+  if (Math.abs(c0[0]) > 180 || Math.abs(c0[1]) > 90) { statusMsg('경위도(WGS84, EPSG:4326) 좌표의 GeoJSON만 읽을 수 있습니다. 파일 좌표계를 확인해 주세요.', true); return; }
+  const geom = polys.length === 1 ? { type: 'Polygon', coordinates: polys[0] } : { type: 'MultiPolygon', coordinates: polys };
+  setZoneGeom(S.region, { type: 'Feature', properties: {}, geometry: geom });
+  fitZone(S.region);
 }
 
 function parcelFill(p) {
@@ -483,7 +876,7 @@ function parcelFill(p) {
   if (S.mode === 'access') return p.access == null ? 'var(--nobuild)' : !p.blds.length ? 'var(--nobuild)' : p.access ? 'var(--new)' : 'var(--old)';
   if (S.mode === 'zone') return /2종/.test(p.zone) ? 'var(--accent-soft)' : /3종/.test(p.zone) ? 'var(--warn-soft)' : 'var(--nobuild)';
 }
-function drawMap() {
+function drawSvg() {
   svg.innerHTML = '';
   svg.classList.toggle('drawing', S.drawing);
   const vb = svg.viewBox.baseVal, u = Math.max(D.W, D.H) / 410;   // 선 굵기 단위
@@ -502,7 +895,7 @@ function drawMap() {
         (p.blds.length ? p.blds.map(b => `\n${b.use} · ${b.struct} · ${b.year || '연도 없음'} · ${(b.old ?? obsoleteRule(b).old) ? '노후' : '비노후'}`).join('') : '\n건축물 없음');
     });
   });
-  for (const k of ['A', 'B', 'C']) {
+  for (const k of D.keys) {
     const rr = D.regions[k]; if (k === S.region || !rr.pts) continue;
     el('polygon', { points: ringStr(rr.pts), fill: 'none', stroke: 'var(--ink-2)', 'stroke-width': 0.8 * u, 'stroke-dasharray': `${3 * u} ${2 * u}`, opacity: 0.5 });
   }
@@ -542,14 +935,14 @@ function drawLegend() {
   const m = {
     old: [['var(--old)', '노후·불량'], ['var(--new)', '비노후'], ['var(--nobuild)', '건축물 없음']],
     small: [['var(--small)', '과소필지(분할제한면적 미만, 주거 60㎡)'], ['var(--new)', '그 외']],
-    access: [['var(--new)', '접도 충족'], ['var(--old)', '미충족(폭4m·4m 미만)'], ['var(--nobuild)', D.real ? '미확인·건축물 없음' : '건축물 없음'], [null, '필지를 누르면 충족 → 미충족 → 자동 순으로 지정']],
+    access: [['var(--new)', '접도 충족'], ['var(--old)', '미충족(폭4m·4m 미만)'], ['var(--nobuild)', D.real ? '미확인·건축물 없음' : '건축물 없음'], [null, `${D.map ? '지도의' : '도면의'} 필지를 누르면 충족 → 미충족 → 자동 순으로 지정`]],
     zone: [['var(--accent-soft)', '제2종일반주거'], ['var(--warn-soft)', '제3종일반주거'], ['var(--nobuild)', '기타·미확인']],
     arch: [['var(--accent)', '개략 주동 배치'], ['var(--old)', '노후·불량(현황)']],
   }[S.mode];
   L.innerHTML = m.map(([c, t]) => c ? `<span><i style="background:${c}"></i>${t}</span>` : `<span>${t}</span>`).join('') + `<span><svg width="26" height="8" style="vertical-align:0"><line x1="0" y1="4" x2="26" y2="4" stroke="var(--redline)" stroke-width="2" stroke-dasharray="7 2 1.2 2"/></svg> 구역계</span>`;
 }
 function svgPoint(evt) { const pt = svg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY; const q = pt.matrixTransform(svg.getScreenCTM().inverse()); return [Math.round(Math.max(0, Math.min(D.W, q.x)) * 10) / 10, Math.round(Math.max(0, Math.min(D.H, q.y)) * 10) / 10]; }
-svg.addEventListener('click', e => { if (!S.drawing) return; S.draft.push(svgPoint(e)); document.getElementById('finishBtn').disabled = S.draft.length < 3; drawMap(); });
+svg.addEventListener('click', e => { if (!S.drawing) return; S.draft.push(svgPoint(e)); document.getElementById('finishBtn').disabled = S.draft.length < 3; drawSvg(); });
 
 /* ===== 우측 패널 ===== */
 const side = document.getElementById('side');
@@ -557,7 +950,17 @@ function render() {
   drawMap();
   if (S.tab === 'rules') { renderRules(); return; }
   const a = analyze(S.region);
-  if (!a) { side.innerHTML = `<h2>직접 그린 안</h2><p>아직 그린 구역계가 없습니다. 도면 위 <b>구역계 그리기</b>를 눌러 꼭짓점을 찍어 보세요.</p>`; return; }
+  if (!a) {
+    const R = D.regions[S.region];
+    if (!D.map) side.innerHTML = `<h2>${regName()}</h2><p>아직 그린 구역계가 없습니다. 도면 위 <b>구역계 그리기</b>를 눌러 꼭짓점을 찍어 보세요.</p>`;
+    else if (R.geojson) side.innerHTML = `<h2>${regName()}</h2><p class="empty-guide">${busy ? '필지·건축물을 불러오는 중입니다. 지도 위 안내를 보세요.' : '아직 필지·건축물을 불러오지 않았습니다. <b>필지·건축물 다시 불러오기</b>를 눌러 주세요.'}</p>`;
+    else side.innerHTML = `<h2>${regName()} · 구역계가 없습니다</h2><div class="empty-guide"><ol>
+      <li>지도 위 검색 칸에 주소나 지번을 넣어 대상지로 이동합니다. 예: 용현동 340</li>
+      <li><b>구역계 그리기</b>를 누르고 지도에서 꼭짓점을 찍습니다. 첫 점을 다시 누르면 완성됩니다.</li>
+      <li>완성하면 그 안의 필지·건축물·토지특성을 자동으로 불러와 요건판정부터 사업성까지 보여 줍니다.</li></ol>
+      <p>안을 여러 개(A·B·C…) 그려 같은 기준으로 비교할 수 있습니다. 사업성 검토 화면에 그린 구역이 있으면 위의 <b>사업성 검토 구역 가져오기</b>로, 경위도(WGS84) GeoJSON 파일은 <b>GeoJSON 불러오기</b>로 넣을 수 있습니다.</p></div>`;
+    return;
+  }
   ({ zone: renderZone, req: renderReq, plan: renderPlan, arch: renderArch, biz: renderBiz })[S.tab](a);
 }
 const kpi = (l, v, f) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="f">${f || ''}</div></div>`;
@@ -565,24 +968,25 @@ const regName = () => esc(D.regions[S.region].name);
 function renderZone(a) {
   const rows = a.bs.slice().sort((x, y) => (x.year || 9999) - (y.year || 9999)).map(b => {
     const p = b.pid != null ? D.parcels[b.pid] : null;
-    return `<tr><td>${esc(p ? p.jibun : '(필지 연결 안 됨)')}</td><td>${esc(b.use)}</td><td>${esc(b.struct)}</td><td class="r">${b.year || '–'}</td><td class="r">${fmt(b.floor)}</td><td>${b.unknown ? '<span class="pill warn">확인</span>' : b.old ? '<span class="pill bad">노후</span>' : '<span class="pill ok">비노후</span>'}</td><td>${esc(b.why)}</td><td>${p ? `<button class="acc ${p.access === true ? 'ok' : p.access === false ? 'bad' : ''} ${p.manual ? 'man' : ''}" data-pid="${p.id}" title="${esc(p.accSrc)} · 누르면 충족 → 미충족 → 자동">${p.access == null ? '미확인' : p.access ? '충족' : '미충족'}${p.manual ? ' · 지정' : ''}</button>` : '–'}</td><td>${b.lic}</td></tr>`;
+    return `<tr><td>${esc(p ? p.jibun : '(필지 연결 안 됨)')}</td><td>${esc(b.use)}${b.src ? ` <span class="u">${esc(b.src)}</span>` : ''}</td><td>${esc(b.struct)}</td><td class="r">${b.year || '–'}</td><td class="r">${fmt(b.floor)}</td><td>${b.unknown ? '<span class="pill warn">확인</span>' : b.old ? '<span class="pill bad">노후</span>' : '<span class="pill ok">비노후</span>'}</td><td>${esc(b.why)}</td><td>${p ? `<button class="acc ${p.access === true ? 'ok' : p.access === false ? 'bad' : ''} ${p.manual ? 'man' : ''}" data-pid="${p.id}" title="${esc(p.accSrc)} · 누르면 충족 → 미충족 → 자동">${p.access == null ? '미확인' : p.access ? '충족' : '미충족'}${p.manual ? ' · 지정' : ''}</button>` : '–'}</td><td>${b.lic}</td></tr>`;
   }).join('');
-  side.innerHTML = `<h2>${regName()} 현황분석 ${D.real ? '<span class="badge v">토지·건축물 조서</span>' : '<span class="badge a">예시 데이터</span>'}</h2>
+  side.innerHTML = `<h2>${regName()} 현황분석 ${D.map ? `<span class="badge v">공부 조회 ${esc(D.regions[S.region].at)}</span>` : '<span class="badge a">예시 데이터</span>'}</h2>
   <div class="kpis">
-    ${kpi('구역 면적', fmt(a.area) + '㎡', D.real ? '구역계 도형 면적' : '구역계 폴리곤 면적(도로 포함)')}
-    ${kpi('편입 필지', a.ps.length + '필지', `조서 면적 합 ${fmt(a.landArea)}㎡`)}
+    ${kpi('구역 면적', fmt(a.area) + '㎡', D.map ? '그린 구역계 면적(도로 포함)' : '구역계 폴리곤 면적(도로 포함)')}
+    ${kpi('편입 필지', a.ps.length + '필지', `${D.map ? '대장 면적×편입비율' : '조서 면적'} 합 ${fmt(a.landArea)}㎡`)}
     ${kpi('건축물', a.N + '동', `연면적 ${fmt(a.fa)}㎡`)}
     ${kpi('노후도(동수)', pct(a.oldRatio), `${a.oldN} / ${a.N}동${a.unknownN ? ` · 연도 없음 ${a.unknownN}` : ''}`)}
     ${kpi('노후도(연면적)', pct(a.oldFaRatio), `${fmt(a.oldFa)} / ${fmt(a.fa)}㎡`)}
     ${kpi('과소필지', pct(a.smallRatio), `분할제한면적 미만 ${a.smallN} / ${a.ps.length}필지`)}
     ${kpi('주택접도율', accText(a), `폭4m·4m 이상 접도 ${a.accN} / ${a.N}동${a.accU ? ` · 미확인 ${a.accU}동` : ''}`)}
     ${kpi('호수밀도', a.density.toFixed(1) + '동/ha', `${a.du}동 ÷ ${(a.area / 10000).toFixed(2)}ha`)}
-    ${kpi('토지등소유자(추정)', fmt(a.owners) + '명', D.real ? '소유자명 기준, 공동주택은 세대별, 국공유지 제외' : '1필지 1인, 다세대는 호수별')}
+    ${kpi('토지등소유자(추정)', fmt(a.owners) + '명', D.map ? '소유자 정보 없음: 사유지 1필지 1인, 공동주택은 세대별' + (a.needUnits ? ` · 세대수 미확인 ${a.needUnits}동` : '') : '1필지 1인, 다세대는 호수별')}
   </div>
   <h3>건축물 현황 (준공 오래된 순)</h3>
   <div class="tscroll"><table><thead><tr><th>지번</th><th>용도</th><th>구조</th><th class="r">사용승인</th><th class="r">연면적㎡</th><th>판정</th><th>근거</th><th>접도</th><th>허가</th></tr></thead><tbody>${rows || '<tr><td colspan="9">건축물이 없습니다.</td></tr>'}</tbody></table></div>
   <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" id="copyTbl">표 복사(엑셀 붙여넣기용)</button></div>
   <p class="note">접도는 ${D.real ? "토지특성 <b>도로접면</b>으로 추정합니다. 광대로·중로·소로·세로(가)는 폭 4m 이상 도로에 접한 것으로, 세로(불)·맹지는 미충족으로 봅니다. 세로(가)는 '폭 8m 미만·자동차 통행 가능' 도로라 4m가 안 될 수 있으니, 현장과 다르면 접도 칸이나 도면(색 구분 '접도')의 필지를 눌러 직접 지정하세요." : '예시 구역의 도로 폭으로 판정합니다. 접도 칸을 눌러 직접 지정해 볼 수 있습니다.'}</p>
+  ${D.map ? '<p class="note">자료: 필지는 브이월드 연속지적도와 토지특성(대장 면적·지목·공시지가·용도지역·도로접면), 건축물은 GIS건물통합정보이고, 공동주택은 건축물대장 표제부로 바꿔 세대수를 넣습니다(용도 옆 \'대장\' 표시).</p>' : ''}
   <p class="note">노후·불량 판정은 인천 정비조례 제3조②를 사용승인 연도에 적용한 값입니다.${D.real ? ' 공동주택의 지하층이 주거용인지는 대장만으로 알 수 없어 RC 30년으로 보고, 지하층이 있으면 근거에 표시합니다. 호수밀도의 "세대수가 가장 많은 층"은 세대수 ÷ 지상층수로 어림합니다.' : ''}</p>`;
   side.querySelectorAll('button.acc').forEach(bt => bt.onclick = () => cycleAccess(+bt.dataset.pid));
   document.getElementById('copyTbl').onclick = async () => {
@@ -596,7 +1000,7 @@ function renderReq(a) {
   const j = judge(a, P.type);
   const item = o => `<div class="chk ${o.req ? 'req' : ''}"><span class="pill ${PILL[o.st][0]}">${PILL[o.st][1]}</span><div><div class="t">${o.t}</div><div class="s">${o.basis || ''}${o.s ? ' · ' + o.s : ''}</div></div><div class="num">${o.v}</div></div>`;
   const list = j.items.map(o => o.group ? `<div class="chk"><span class="pill ${PILL[o.st][0]}">${PILL[o.st][1]}</span><div style="grid-column:2/4"><div class="t">${o.t}</div><div class="checks" style="margin-top:6px">${o.items.map(item).join('')}</div></div></div>` : item(o)).join('');
-  const keys = ['A', 'B', 'C'].filter(k => D.regions[k].pts);
+  const keys = D.keys.filter(k => analyze(k));
   const cmp = keys.map(k => { const x = analyze(k), jj = judge(x, P.type); return `<tr class="${k === S.region ? 'hl' : ''}"><td>${esc(D.regions[k].name)}</td><td class="r">${fmt(x.area)}</td><td class="r">${pct(x.oldRatio)}</td><td class="r">${pct(x.oldFaRatio)}</td><td class="r">${pct(x.smallRatio)}</td><td class="r">${accText(x)}</td><td class="r">${x.density.toFixed(1)}</td><td>${jj.pass === true ? '<span class="pill ok">입안 가능</span>' : jj.pass === false ? '<span class="pill bad">요건 미달</span>' : '<span class="pill warn">확인 필요</span>'}</td></tr>`; }).join('');
   const vtxt = j.pass === true ? '인천 정비조례 제5조 요건을 충족합니다' : j.pass === false ? '요건을 충족하지 못합니다 — 아래 미충족 항목을 보세요' : '확인이 필요한 항목이 있어 판정을 끝내지 못했습니다';
   side.innerHTML = `<h2>${regName()} 입안대상지역 요건판정</h2>
@@ -735,19 +1139,62 @@ document.querySelectorAll('nav.steps button').forEach(b => b.onclick = () => {
   if (S.tab === 'arch' && S.mode !== 'arch') { S.mode = 'arch'; syncMode(); }
   render();
 });
-document.querySelectorAll('[data-region]').forEach(b => b.onclick = () => { S.region = b.dataset.region; syncRegionChips(); render(); });
 document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { S.mode = b.dataset.mode; syncMode(); render(); });
-const drawBtn = document.getElementById('drawBtn'), finBtn = document.getElementById('finishBtn'), canBtn = document.getElementById('cancelBtn');
+const drawBtn = $id('drawBtn'), finBtn = $id('finishBtn'), canBtn = $id('cancelBtn');
 function endDraw() { S.drawing = false; S.draft = []; drawBtn.hidden = false; finBtn.hidden = true; canBtn.hidden = true; }
-drawBtn.onclick = () => { S.drawing = true; S.draft = []; drawBtn.hidden = true; finBtn.hidden = false; finBtn.disabled = true; canBtn.hidden = false; drawMap(); toast('도면을 눌러 꼭짓점을 찍으세요'); };
-canBtn.onclick = () => { endDraw(); drawMap(); };
+drawBtn.onclick = () => {
+  if (D.map) { startMapDraw(); return; }
+  S.drawing = true; S.draft = []; drawBtn.hidden = true; finBtn.hidden = false; finBtn.disabled = true; canBtn.hidden = false; drawSvg(); toast('도면을 눌러 꼭짓점을 찍으세요');
+};
+canBtn.onclick = () => { endDraw(); drawSvg(); };
 finBtn.onclick = () => {
   if (S.draft.length < 3) return;
   D.regions.C.pts = S.draft.slice();
-  try { localStorage.setItem(cKey(), JSON.stringify(D.regions.C.pts)); } catch (e) { /* 무시 */ }
+  try { localStorage.setItem('jbs-urban-C-sample', JSON.stringify(D.regions.C.pts)); } catch (e) { /* 무시 */ }
   endDraw(); S.region = 'C'; syncRegionChips(); render(); toast('직접 그린 안으로 판정했습니다');
 };
-// 다른 탭(사업성 검토)에서 프로젝트가 바뀌면 다시 읽음
-window.addEventListener('storage', e => { if (e.key === PROJECT_KEY && S.source !== 'sample') { loadData(); render(); } });
+$id('editBtn').onclick = toggleEdit;
+$id('fetchBtn').onclick = () => {
+  const R = D.regions[S.region];
+  if (!R.geojson) { toast('먼저 구역계를 그려 주세요'); return; }
+  if (busy) { toast('불러오는 중입니다'); return; }
+  fetchZone(S.region);
+};
+$id('geoInBtn').onclick = () => {
+  const R = D.regions[S.region];
+  if (R.geojson && !confirm(`${R.name} 구역계를 파일 내용으로 바꿀까요?`)) return;
+  $id('geoFile').value = ''; $id('geoFile').click();
+};
+$id('geoFile').onchange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => importGeoJSONText(String(r.result)); r.readAsText(f); };
+$id('geoOutBtn').onclick = () => {
+  const R = D.regions[S.region];
+  if (!R.geojson) { toast('내보낼 구역계가 없습니다'); return; }
+  const blob = new Blob([JSON.stringify({ type: 'FeatureCollection', features: [{ ...R.geojson, properties: { name: R.name } }] }, null, 1)], { type: 'application/geo+json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `구역계_${R.name}.geojson`; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+$id('clearBtn').onclick = () => {
+  const R = D.regions[S.region];
+  if (!R.geojson) { toast('지울 구역계가 없습니다'); return; }
+  if (!confirm(`${R.name} 구역계와 판정 결과를 지울까요?`)) return;
+  delete Z.zones[S.region]; saveZ();
+  D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); statusMsg(''); render();
+};
+$id('searchForm').onsubmit = async e => {
+  e.preventDefault();
+  const q = $id('searchQ').value.trim(); if (!q || !LM) return;
+  if (!VW.ok) { toast('브이월드 인증키가 없어 검색할 수 없습니다'); return; }
+  try {
+    const r = await VW.search(/인천|미추홀|서울|경기|부산|대구|광주|대전|울산|세종|강원|충|전|경|제주/.test(q) ? q : '인천광역시 미추홀구 ' + q);
+    if (!r) { toast('주소를 찾지 못했습니다'); return; }
+    LM.setView([r.lat, r.lon], 18); toast(r.label);
+  } catch (err) { toast('검색에 실패했습니다: ' + err.message); }
+};
 
-fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) applyJson(j); }).catch(() => {}).finally(() => { loadData(); render(); });
+fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) applyJson(j); }).catch(() => {}).finally(() => {
+  loadData();
+  const first = D.map && D.keys.find(k => D.regions[k].geojson);
+  if (first) { S.region = first; syncRegionChips(); renderSourceBar(); fitZone(first); }
+  render();
+});
+
