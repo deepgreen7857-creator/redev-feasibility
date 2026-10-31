@@ -329,8 +329,14 @@ async function main() {
     // 검토 범위(config.focus.scope): 용도·최저가 상한에 맞는 물건은 집중 지역 밖이어도 상세(원본 PDF·사진)를 연다 — 제이옥션 차단 대체(2026-10-30)
     const scopeRules = (focus?.scope || []).map((r) => ({ re: new RegExp(r.usage), max: r.maxMinBid }));
     const inScope = (row) => scopeRules.some((r) => r.re.test(String(row.usage || '')) && Number(row.minBid || 0) > 0 && Number(row.minBid) <= r.max);
+    // 매각(종료)되면 대법원 서류가 내려가므로, 매각기일이 가까운 검토 범위 물건부터 상세를 연다(2026-10-31)
+    //  1단계 '급한 것': 집중 지역 + 검토 범위 중 매각기일 urgentDays(기본 6일) 안 → 2단계 '검토 범위': 나머지 검토 범위 → 3단계: 그 밖(목록만)
+    const urgentDays = cfg.focus?.urgentDays || 6;
+    const daysLeft = (row) => { const m = String(row.bidEnd || '').match(/(\d{4})\.(\d{2})\.(\d{2})/); if (!m) return 99; return Math.floor((Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(...kstDay().split('-').map((x, i) => (i === 1 ? +x - 1 : +x)))) / 86400e3); };
+    const urgentRe = { test: (s, row) => (focusRe && focusRe.test(s)) || (inScope(row) && daysLeft(row) <= urgentDays) };
     const phases = focus
-      ? [{ name: '집중', list: focus.courts, key: 'court', re: focus.detailOnly ? focusRe : null },
+      ? [{ name: '급한 것', list: focus.courts, key: 'court', re: urgentRe },
+        ...(scopeRules.length ? [{ name: '검토 범위', list: focus.courts, key: 'scopeCourt', re: { test: (s, row) => (focusRe && focusRe.test(s)) || inScope(row) } }] : []),
         { name: '나머지', list: cfg.courts.filter((c) => !focus.courts.includes(c)), key: 'restCourt', re: null }]
       : [{ name: '전체', list: cfg.courts, key: 'court', re: null }];
     let phaseAt = 0; // 화면 오류로 다시 열어도 끝난 단계는 다시 돌지 않음
@@ -362,7 +368,7 @@ async function main() {
           let stale = !prev || prev.v !== DETAIL_V || prev.minBid !== row.minBid || prev.status !== row.status || Date.now() - (prev.at || 0) > cfg.refreshDetailAfterDays * 86400e3;
           let detail = null;
           // 같은 물건에서 화면 오류가 두 번 나면 오늘은 건너뛴다(한 물건 때문에 회차가 계속 같은 자리에서 멈추던 문제 대비)
-          if (stale && ph.re && !ph.re.test(`${row.address || ''} ${row.title || ''}`) && !inScope(row)) stale = false; // 집중 단계에서 집중 지역·검토 범위 밖: 목록 정보만
+          if (stale && ph.re && !ph.re.test(`${row.address || ''} ${row.title || ''}`, row)) stale = false; // 이 단계 대상이 아니면 목록 정보만(다음 단계에서 엶)
           if (stale && (badRows[key]?.n || 0) >= 2 && Date.now() - badRows[key].at < 86400e3) { stale = false; log(`건너뜀(화면 오류 반복): ${row.caseNo}`); }
           if (stale) {
             if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
