@@ -809,9 +809,26 @@ const INFRA = {
       if (!add.length) return g;
       try { return safeUnion([g, ...add]); } catch (er) { return g; }
     };
+    // 경계까지 채우느라 면적이 늘면, 경계에 붙은 변은 그대로 두고 블록을 얇게 해서 정한 면적(A)에 맞춤
+    //  n: 블록이 붙은 경계 쪽 방향(없으면 가운데를 기준으로 얇게)
+    const keepArea = (x, y, n) => {
+      const g0 = extend(x, y);
+      if (!(turf.area(g0) > A * 1.02)) return g0;
+      const hh0 = hh;
+      let lo = hh0 * 0.2, hi = hh0, best = g0;
+      for (let k = 0; k < 14; k++) {
+        const mid = (lo + hi) / 2; hh = mid;
+        const sx = n ? x + n[0] * (hh0 - mid) : x, sy = n ? y + n[1] * (hh0 - mid) : y;
+        const g = extend(sx, sy), a = turf.area(g);
+        if (a >= A) { hi = mid; best = g; } else lo = mid;
+        if (Math.abs(a - A) < A * 0.005) break;
+      }
+      hh = hh0;
+      return best;
+    };
     // 찾은 자리에서 가장 가까운 선(구역 경계·다른 시설) 쪽으로 붙임 — 사이가 8m 안쪽이라 못 쓰는 띠가 남을 때만
     const flush = (cx, cy) => {
-      if (!edge) return extend(cx, cy);
+      if (!edge) return keepArea(cx, cy, null);
       const [a, b] = edge, dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
       let nx = -dy / L, ny = dx / L;   // 경계선의 법선
       if ((cx - a[0]) * nx + (cy - a[1]) * ny > 0) { nx = -nx; ny = -ny; }   // 블록 → 경계선 방향
@@ -819,8 +836,8 @@ const INFRA = {
       // 8m보다 멀면 붙이지 않음(그 사이는 쓸 수 있는 땅이라 놓은 자리를 그대로 둠). 8m 안이면 끝까지 붙임
       let moved = 0;
       for (let s = 0; s < 18; s++) { if (!fitsAt(x + nx * 0.5, y + ny * 0.5)) break; x += nx * 0.5; y += ny * 0.5; moved += 0.5; }
-      if (moved >= 8.5) return extend(cx, cy);
-      return extend(x, y);
+      if (moved >= 8.5) return keepArea(cx, cy, null);
+      return keepArea(x, y, [nx, ny]);
     };
     // 정사각형 → 1:1.5 → 1:2(경계선 방향으로 길게) 순으로, 가까운 자리부터 최대 120m까지 찾음
     // 놓은 자리 둘레 120m 안에 없으면(구역 밖에 놓았거나 모퉁이라 막힌 경우) 구역 가운데에서 구역 전체를 다시 찾음
