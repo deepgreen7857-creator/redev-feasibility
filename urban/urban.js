@@ -929,11 +929,15 @@ const INFRA = {
     // 공원과 종교 대체부지가 맞닿거나 12m 안으로 가까우면 한 띠로 묶음: 가까운 구역 경계와 나란한 곧은 안쪽 선 하나로,
     //  두 시설 면적의 합만큼 깊이를 정하고 경계에 수직인 선 하나로 나눔(각자 정한 면적)
     let paired = false;
-    if (relC && parkGeom && relGeom) {
+    if (relC && parkGeom && relGeom && !infO.noPair) {
       try {
         if (turf.booleanIntersects(turf.buffer(parkGeom, 12, { units: 'meters' }), relGeom)) {
-          const pr = this.pairBand(zone, roadGeom, [['park', parkGeom, parkNeed], ['rel', relGeom, relArea]], infO.pairSplit);
-          if (pr) { parkGeom = pr.park; relGeom = pr.rel; paired = pr.pair; }
+          // 처음 묶일 때 고른 기준 경계 변을 기억해 두고 계속 씀(만질 때마다 다른 변으로 바뀌지 않게)
+          const pr = this.pairBand(zone, roadGeom, [['park', parkGeom, parkNeed], ['rel', relGeom, relArea]], infO.pairSplit, infO.pairEdge);
+          if (pr) {
+            parkGeom = pr.park; relGeom = pr.rel; paired = pr.pair;
+            if (JSON.stringify(infO.pairEdge) !== JSON.stringify(pr.pair.edgeLL)) { infO.pairEdge = pr.pair.edgeLL; z.infra = infO; saveZ(); }
+          }
         }
       } catch (er) { paired = false; }
     }
@@ -1042,7 +1046,7 @@ const INFRA = {
   // 지도에 그리기 (정비계획 탭·'기반시설 제안' 색 구분)
   draw(layer, a) {
     const pl = plan(a), inf = pl.infra; if (!inf) return;
-    this.curPair = inf.paired || null; if (!inf.paired) { this.divNear = null; this.divStart = null; }
+    this.curPair = inf.paired || null; this.curInf = inf; if (!inf.paired) { this.divNear = null; this.divStart = null; }
     const c = n => cssVar(n);
     // 공동주택 획지(남는 땅) — 맨 아래에 옅게 칠하고 번호·면적 표시
     (inf.lots || []).forEach(l => {
@@ -1101,7 +1105,7 @@ const INFRA = {
   },
   // 맞닿은 두 블록을 경계 따라 한 띠로 다시 그림. items: [[kind, geom, 목표면적], …] → { kind: geom } 또는 null
   // split: 나눔선을 끌어 정한 { kind, area } — 띠(위치·깊이)는 그대로 두고 나누는 자리만 바꿈
-  pairBand(zone, minus, items, split) {
+  pairBand(zone, minus, items, split, edgeLL) {
     const U = safeUnion(items.map(x => x[1]));
     const c0 = turf.centroid(U).geometry.coordinates, lon0 = c0[0], lat0 = c0[1];
     const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
@@ -1122,6 +1126,11 @@ const INFRA = {
       }
     } });
     if (edL && bestLen >= 8) ed = edL;
+    // 기억해 둔 기준 변이 있고 묶음에서 60m 안이면 그 변을 그대로 씀
+    if (edgeLL && edgeLL.length === 2) {
+      const ea = toM(edgeLL[0]), eb = toM(edgeLL[1]), dx = eb[0] - ea[0], dy = eb[1] - ea[1], L2 = dx * dx + dy * dy;
+      if (L2 > 4) { const t = Math.max(0, Math.min(1, -(ea[0] * dx + ea[1] * dy) / L2)); if (Math.hypot(ea[0] + t * dx, ea[1] + t * dy) < 60) ed = [ea, eb]; }
+    }
     if (!ed) return null;
     const [a, b] = ed, L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
     let nx = -uy, ny = ux; if ((0 - a[0]) * nx + (0 - a[1]) * ny < 0) { nx = -nx; ny = -ny; }   // 경계 → 안쪽
@@ -1163,7 +1172,8 @@ const INFRA = {
     const toU = ll => { const m = toM([ll.lng, ll.lat]); return (m[0] - a[0]) * ux + (m[1] - a[1]) * uy; };
     const areaAt = u => { const g = cut(u0, u, v); return g ? turf.area(g) : 0; };
     const lineAt = u => { const p1 = P(u, 0), p2 = P(u, v); return [[p1[1], p1[0]], [p2[1], p2[0]]]; };
-    return { [order[0][0]]: sp, [order[1][0]]: rest, pair: { kinds: [order[0][0], order[1][0]], total, u0, u1, s: sh, toU, areaAt, lineAt, custom, a1: turf.area(sp), a2: turf.area(rest) } };
+    const usedEdge = [toLL(a), toLL(b)].map(q => [+q[0].toFixed(7), +q[1].toFixed(7)]);
+    return { [order[0][0]]: sp, [order[1][0]]: rest, pair: { edgeLL: usedEdge, kinds: [order[0][0], order[1][0]], total, u0, u1, s: sh, toU, areaAt, lineAt, custom, a1: turf.area(sp), a2: turf.area(rest) } };
   },
   // mins: { park: 최소 면적 } — 끌다가 그 아래로 줄어들면 더 못 가게 막음
   divider(layer, pr, mins = {}) {
@@ -1243,6 +1253,16 @@ const INFRA = {
         LM.off('mousemove', mv); LM.off('mouseup', up); document.removeEventListener('mouseup', up); LM.dragging.enable();
         const px = LM.latLngToContainerPoint(start).distanceTo(LM.latLngToContainerPoint(L.latLng(start.lat + d[0], start.lng + d[1])));
         if (px < 4) { orig.forEach(([l, ll]) => l.setLatLngs(ll)); return; }
+        const pk2 = { religion: 'rel', park: 'park', school: 'school' }[kind];
+        if (this.curPair && this.curPair.kinds.includes(pk2) && this.curInf) {
+          // 한 띠로 묶인 시설은 둘이 같이 움직임(띠 모양 유지)
+          const z = Z.zones[S.region]; z.infra = z.infra || {};
+          const geo = { park: this.curInf.parkGeom, rel: this.curInf.relGeom };
+          this.curPair.kinds.forEach(k => { const c = this.centerOf(geo[k]); if (c) z.infra[k === 'park' ? 'parkC' : 'relC'] = [c[0] + d[0], c[1] + d[1]]; });
+          delete z.infra.pairEdge;   // 새 자리에서 기준 변을 다시 고름
+          saveZ(); this.memo = {}; render(); toast('붙어 있는 두 시설을 같이 옮겼습니다');
+          return;
+        }
         this.place(kind, L.latLng(center[0] + d[0], center[1] + d[1]));
       };
       LM.on('mousemove', mv); LM.on('mouseup', up); document.addEventListener('mouseup', up);
@@ -1722,6 +1742,8 @@ function infraSection(a, pl) {
   const szTxt = sz => sz.bad ? `넣은 값이 너무 커서(${sz.mode === 'pct' ? `구역의 ${num(sz.val)}%` : `${fmt(num(sz.val))}㎡`}) 자동값 ${fmt(sz.A)}㎡로 계산` : sz.mode === 'area' ? `직접 지정 ${fmt(num(sz.val))}㎡` : sz.mode === 'pct' ? `구역의 ${num(sz.val)}%로 지정(${fmt(sz.A)}㎡)` : '';
   if (inf.szPark.mode !== 'auto') rows.push(['공원·녹지', inf.parkArea, `${szTxt(inf.szPark)}. 법정·제안 기준은 ${fmt(inf.parkLegal)}㎡` + (inf.parkLegal > inf.szPark.A ? ' — <b class="warn">기준보다 작음</b>' : '')]);
   else rows.push(['공원·녹지', inf.parkArea, inf.legal ? `도시공원 및 녹지 등에 관한 법률 시행규칙 별표2 제4호 — 정비계획 5만㎡ 이상: 세대당 2㎡(${fmt(pl.units * 2)}㎡)와 부지 5%(${fmt(a.area * 0.05)}㎡) 중 큰 면적 ${fmt(inf.parkNeed)}㎡` + (inf.parkArea < inf.parkNeed * 0.95 ? ' · <b class="warn">구역 경계에 걸려 모자람 — 위치를 옮기세요</b>' : '') : (P.parkMode === 'always' ? `5만㎡ 미만이라 법정 의무는 없으나 부지 5%로 제안(${fmt(inf.parkNeed)}㎡)` : `구역 ${fmt(a.area)}㎡ < 5만㎡ — 별표2 의무 없음. 2030 인천 정비기본계획 공원·녹지 기준은 고시문 대조 필요`)]);
+  if (inf.paired) rows.push(['한 띠로 묶음', 0, `공원·녹지와 종교용지가 맞닿아 구역 경계를 따라 한 띠로 묶였습니다. 둘 중 하나를 끌면 같이 움직이고, 가운데 ⇆로 면적을 나눕니다. <button type="button" class="btn ghost sm" id="unpair">따로 놓기</button>`]);
+  else if (((Z.zones[a.key] || {}).infra || {}).noPair) rows.push(['따로 놓음', 0, `공원·녹지와 종교용지를 각자 따로 놓았습니다. <button type="button" class="btn ghost sm" id="repair">맞닿으면 한 띠로 묶기</button>`]);
   if (inf.paired && inf.paired.custom) rows.push(['나눔선 조정', 0, `맞닿은 ${{ park: '공원·녹지', rel: '종교용지', school: '학교용지' }[inf.paired.kinds[0]]} ${fmt(inf.paired.a1)}㎡ · ${{ park: '공원·녹지', rel: '종교용지', school: '학교용지' }[inf.paired.kinds[1]]} ${fmt(inf.paired.a2)}㎡ (합 ${fmt(inf.paired.total)}㎡ 그대로, 위 면적에 반영) <button type="button" class="btn ghost sm" id="resetSplit">처음 나눔으로</button>`]);
   if (inf.absorbed >= 1) rows.push(['자투리 편입', 0, `큰 공동주택 획지와 떨어져 갇힌 1,000㎡ 미만 조각 ${fmt(inf.absorbed)}㎡를 가장 많이 맞닿은 공원·학교·대체부지에 붙였습니다(위 면적에 포함).`]);
   if (inf.szSchool.A > 0) rows.push(['학교용지', inf.schoolArea, `${szTxt(inf.szSchool) || '입력값'} — 교육청 협의로 정함`]);
@@ -1782,6 +1804,8 @@ function bindInfra() {
   const pm = document.getElementById('parkMode'); if (pm) { pm.value = P.parkMode; pm.onchange = () => { P.parkMode = pm.value; saveP(); INFRA.memo = {}; render(); }; }
   const zi = () => { const z = Z.zones[S.region]; if (!z) return null; z.infra = z.infra || {}; return z.infra; };
   side.querySelectorAll('[data-unmerge]').forEach(b => b.onclick = () => { const z = Z.zones[S.region]; if (!z || !z.infra || !z.infra.addTo) return; z.infra.addTo.splice(+b.dataset.unmerge, 1); saveZ(); INFRA.memo = {}; render(); toast('붙인 땅 하나를 되돌렸습니다'); });
+  on('unpair', () => { const z = Z.zones[S.region]; if (z) { z.infra = z.infra || {}; z.infra.noPair = true; delete z.infra.pairEdge; saveZ(); INFRA.memo = {}; render(); toast('두 시설을 따로 놓았습니다'); } });
+  on('repair', () => { const z = Z.zones[S.region]; if (z && z.infra) { delete z.infra.noPair; saveZ(); INFRA.memo = {}; render(); } });
   on('resetSplit', () => { const z = Z.zones[S.region]; if (z && z.infra) { delete z.infra.pairSplit; saveZ(); INFRA.memo = {}; render(); toast('나눔선을 처음 자리로 되돌렸습니다'); } });
   on('undoMerge', () => { const z = Z.zones[S.region]; if (z && z.infra) { delete z.infra.addTo; saveZ(); INFRA.memo = {}; render(); toast('붙인 획지를 되돌렸습니다'); } });
   side.querySelectorAll('[data-relmode]').forEach(b => b.onclick = () => {
