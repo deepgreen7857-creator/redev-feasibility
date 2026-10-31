@@ -136,6 +136,10 @@ tr.hl td{background:var(--accent-soft)}
 .empty-guide{color:var(--ink-2)}
 .empty-guide ol{padding-left:18px;margin:8px 0}
 [hidden]{display:none!important}
+.lmap path.leaflet-interactive:focus,.lmap .leaflet-interactive:focus{outline:none}
+.ghost-note{border:1px dashed var(--line);border-radius:6px;padding:8px 10px;margin-top:12px;font-size:13px}
+.ghost-note .u{font-size:12px;color:var(--ink-2);margin-top:4px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
 .pick-pop{font-family:var(--f-body);font-size:13px;display:flex;flex-direction:column;gap:4px}
 .pick-pop .u{color:#555;font-size:12px}
 .pick-btns{display:flex;gap:6px;margin-top:4px}
@@ -208,6 +212,8 @@ a.back:hover{text-decoration:underline}
         <form id="searchForm" class="search"><input id="searchQ" type="search" placeholder="주소·지번 검색 (예: 용현동 340)" aria-label="주소 검색"><button class="btn ghost sm" type="submit">이동</button></form>
         <button class="btn sm" id="pickBtn" type="button" title="지도에서 필지를 누르면 구역에 넣을지 뺄지 고릅니다">구역계 고치기 (필지 넣고 빼기)</button>
         <button class="btn ghost sm" id="editBtn" type="button" title="구역계 꼭짓점을 끌어서 고칩니다">꼭짓점 끌어 고치기</button>
+        <button class="btn ghost sm" id="undoBtn" type="button" disabled title="되돌릴 작업이 없습니다">↶ 실행 취소</button>
+        <button class="btn ghost sm" id="redoBtn" type="button" disabled title="다시 할 작업이 없습니다">↷ 다시 실행</button>
         <button class="btn ghost sm" id="fetchBtn" type="button">필지·건축물 다시 불러오기</button>
         <button class="btn ghost sm" id="geoInBtn" type="button">GeoJSON 불러오기</button>
         <button class="btn ghost sm" id="geoOutBtn" type="button">GeoJSON 내보내기</button>
@@ -264,6 +270,6 @@ a.back:hover{text-decoration:underline}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../js/config.js?v=68"></script>
 <script src="../js/zonekit.js?v=68"></script>
-<script src="urban.js?v=8"></script>
+<script src="urban.js?v=9"></script>
 </body>
 </html>

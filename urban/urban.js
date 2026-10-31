@@ -210,10 +210,12 @@ function rowFromLedger(t) {
   const s = String(t.strctCd || '').charAt(0);
   const structure = s === '1' ? '조적' : s === '2' || s === '4' ? '철근콘크리트' : s === '3' ? '철골' : s === '5' ? '목조' : '기타';
   const d = String(t.useAprDay || '').trim();
+  // 사용승인일이 빈 오래된 건물은 허가일 → 착공일 순으로 연도를 추정(실제 준공은 그 뒤)
+  const alt = [['허가일', t.pmsDay], ['착공일', t.stcnsDay]].map(([n, v]) => [n, String(v || '').trim()]).find(([, v]) => /^\d{8}$/.test(v));
   const isApt = ['아파트', '연립주택', '다세대주택'].includes(use);
   const units = isApt ? num(t.hhldCnt) || num(t.hoCnt) : (use === '단독주택' || use === '다가구주택' ? 1 : 0);
   return {
-    use, structure, structureName: t.strctCdNm || '', year: /^\d{8}$/.test(d) ? +d.slice(0, 4) : 0,
+    use, structure, structureName: t.strctCdNm || '', year: /^\d{8}$/.test(d) ? +d.slice(0, 4) : alt ? +alt[1].slice(0, 4) : 0, yearSrc: /^\d{8}$/.test(d) ? '' : alt ? alt[0] : '',
     floorArea: Math.round(num(t.totArea) * 10) / 10, archArea: Math.round(num(t.archArea) * 10) / 10, floors: num(t.grndFlrCnt), basement: num(t.ugrndFlrCnt),
     units, needUnits: isApt && !units, ledger: true, name: [String(t.bldNm || '').trim(), String(t.dongNm || '').trim()].filter(Boolean).join(' '), src: '대장',
   };
@@ -279,7 +281,13 @@ async function fillLandChar(pnus, say, force) {
 }
 // 건축물대장 표제부로 보충: 공동주택 세대수, GIS건물통합정보에 사용승인 연도가 빈 건물
 //  대장 동수가 GIS보다 적으면 남는 GIS 건물(연도 없는 것 우선)은 '대장 없음'으로 남김(무허가·부속건물 등)
-const ledgerNeeded = k => !(CACHE.parcels[k] && CACHE.parcels[k].lgTried) && (CACHE.blds[k] || []).some(r => !r.ledger && (r.needUnits || !r.year));
+const ledgerNeeded = k => {
+  const p = CACHE.parcels[k], rows = CACHE.blds[k] || [];
+  if (!rows.length || (p && p.lgV === 2)) return false;
+  return rows.some(r => (r.needUnits && !r.ledger) || (!r.year && !isGhost(r)) || (!r.year && !(p && p.lgTried)));
+};
+// 공부 정보가 하나도 없는 GIS 건물(용도·면적·연도 모두 빈 것): 부속·가설·무허가 건물이거나 GIS 오류일 수 있음
+const isGhost = r => !r.ledger && r.src !== '조서' && !num(r.year) && !num(r.floorArea) && (!r.use || r.use === '기타');
 async function fillLedger(pnus, say) {
   if (!LG.ok) return 0;
   const list = pnus.filter(ledgerNeeded);
@@ -295,7 +303,7 @@ async function fillLedger(pnus, say) {
         const extra = gis.filter(r => !r.ledger).sort((a, b) => (a.year ? 1 : 0) - (b.year ? 1 : 0)).slice(0, Math.max(0, gis.length - led.length)).map(r => ({ ...r, src: r.year ? 'GIS' : '대장 없음' }));
         CACHE.blds[k] = led.concat(extra);
       } else CACHE.blds[k] = gis.map(r => ({ ...r, src: r.year ? r.src : '대장 없음' }));
-      if (CACHE.parcels[k]) CACHE.parcels[k].lgTried = true;
+      if (CACHE.parcels[k]) { CACHE.parcels[k].lgTried = true; CACHE.parcels[k].lgV = 2; }
     } catch (e) { fail++; }
   }
   return fail;
@@ -368,6 +376,7 @@ async function importProject(id) {
   if (!p || !p.area || !p.area.geojson) { toast('사업성 검토 화면에 그린 구역계가 없습니다'); return; }
   const z = zoneOf(id);
   const g = p.area.geojson;
+  histOf(id).undo.push({ gj: z.geojson ? JSON.parse(JSON.stringify(z.geojson)) : null, label: '사업성 검토 구역 가져오기' }); histOf(id).redo = [];
   z.geojson = g.type === 'Feature' ? { type: 'Feature', properties: {}, geometry: g.geometry } : { type: 'Feature', properties: {}, geometry: g };
   z.inArea = {}; z.fetchedAt = '';
   const lands = (p.lands || []).filter(l => l.pnu && l.geom && !l.sample);
@@ -401,9 +410,32 @@ async function importProject(id) {
 }
 // delay(ms): 필지 선택처럼 연달아 바꿀 때는 마지막으로 바꾸고 잠시 뒤에 한 번만 불러옴
 let fetchTimer = null;
-function setZoneGeom(id, gj, delay = 0) {
+const HIST = {};   // 안별 { undo: [구역계…], redo: [] } — 이 창에서만 기억
+function histOf(id) { return HIST[id] || (HIST[id] = { undo: [], redo: [] }); }
+function syncUndo() {
+  const h = histOf(S.region), u = $id('undoBtn'), r = $id('redoBtn');
+  if (u) { u.disabled = !h.undo.length; u.title = h.undo.length ? `되돌리기: ${h.undo[h.undo.length - 1].label}` : '되돌릴 작업이 없습니다'; }
+  if (r) { r.disabled = !h.redo.length; r.title = h.redo.length ? `다시 하기: ${h.redo[h.redo.length - 1].label}` : '다시 할 작업이 없습니다'; }
+}
+function undoZone(redo = false) {
+  const id = S.region, h = histOf(id), from = redo ? h.redo : h.undo, to = redo ? h.undo : h.redo;
+  if (!from.length) { toast(redo ? '다시 할 작업이 없습니다' : '되돌릴 작업이 없습니다'); return; }
+  const it = from.pop();
+  to.push({ gj: Z.zones[id] && Z.zones[id].geojson ? JSON.parse(JSON.stringify(Z.zones[id].geojson)) : null, label: it.label });
+  setZoneGeom(id, it.gj, 1500, null);
+  toast(`${redo ? '다시 했습니다' : '되돌렸습니다'}: ${it.label}`);
+  statusMsg(`${id}안: ${redo ? '다시 했습니다' : '되돌렸습니다'} — ${it.label}`);
+}
+// label: 실행 취소에 남길 작업 이름(null이면 이력에 안 남김 — 되돌리기 자체)
+function setZoneGeom(id, gj, delay = 0, label = '구역계 변경') {
   const z = zoneOf(id);
-  if (!gj) { delete Z.zones[id]; saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); render(); return; }
+  if (label !== null) {
+    const h = histOf(id);
+    h.undo.push({ gj: z.geojson ? JSON.parse(JSON.stringify(z.geojson)) : null, label });
+    if (h.undo.length > 50) h.undo.shift();
+    h.redo = [];
+  }
+  if (!gj) { delete Z.zones[id]; saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); render(); syncUndo(); return; }
   const geom = gj.type === 'Feature' ? gj.geometry : gj;
   z.geojson = { type: 'Feature', properties: {}, geometry: geom };
   z.inArea = {}; z.fetchedAt = ''; z.from = 'map';
@@ -411,6 +443,7 @@ function setZoneGeom(id, gj, delay = 0) {
   D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); render();
   clearTimeout(fetchTimer);
   if (delay) { jobSet(id, 0); fetchTimer = setTimeout(() => fetchZone(id), delay); } else fetchZone(id);
+  syncUndo();
 }
 
 /* ===== 지도 모드 데이터 ===== */
@@ -420,7 +453,7 @@ function toB(r, p, j) {
     id: p.pnu + ':' + j, pid: p.id, use: r.use, kind, struct: r.structureName || r.structure || '', rc: ['철근콘크리트', '철골'].includes(r.structure),
     year: num(r.year), semi: false, basement: num(r.basement), unitsMax: kind === '공동' ? Math.max(1, Math.ceil(units / floors)) : 0, units, floors,
     converted: false, foot: num(r.archArea) || num(r.floorArea) / floors, floor: num(r.floorArea), lic: '허가', name: r.name || '', pt: r.pt || null,
-    needUnits: !!r.needUnits && !units, src: r.src || '',
+    needUnits: !!r.needUnits && !units, src: r.src || '', ghost: isGhost(r), yearSrc: r.yearSrc || '',
   };
   Object.assign(b, obsoleteRule(b));
   return b;
@@ -460,6 +493,7 @@ function kindOf(use) {
 }
 function obsoleteRule(b) {
   if (b.lic === '기존무허가') return { old: true, why: '기존무허가(1989.1.24. 이전)' };
+  if (b.ghost) return { old: false, why: '공부 정보 없는 GIS 건물 — 무허가·부속건물 여부 확인 필요', unknown: true };
   if (!b.year) return { old: false, why: '사용승인 연도 없음 — 대장 확인 필요', unknown: true };
   let yrs, why;
   if (b.kind === '공동') {
@@ -469,7 +503,7 @@ function obsoleteRule(b) {
   } else if (b.rc && b.kind !== '단독') { yrs = RULES.obsolete.rcNonApt; why = 'RC 건축물 ' + yrs + '년'; }
   else { yrs = RULES.obsolete.other; why = b.kind === '단독' && b.rc ? 'RC 단독주택 ' + yrs + '년(30년 제외)' : '비RC ' + yrs + '년'; }
   const age = YEAR - b.year;
-  return { old: age >= yrs, why: why + ' · 경과 ' + age + '년' };
+  return { old: age >= yrs, why: why + ' · 경과 ' + age + '년' + (b.yearSrc ? ` (${b.yearSrc} 기준 추정)` : '') };
 }
 function densityUnits(b) {
   if (b.lic === '신발생무허가') return 0;
@@ -563,7 +597,8 @@ function analyze(key) {
   const zp = zoneParts(key); if (!zp) return null;
   const { area, ps } = zp;
   const landA = p => (p.base ?? p.area) * zp.inR(p);
-  let bs = zp.bs.filter(b => b.lic !== '신발생무허가');
+  const ghosts = zp.bs.filter(b => b.ghost);
+  let bs = zp.bs.filter(b => b.lic !== '신발생무허가' && (P.ghostIn || !b.ghost));
   bs.forEach(b => { if (b.old === undefined) Object.assign(b, obsoleteRule(b)); });
   const N = bs.length, oldN = bs.filter(b => b.old).length, unknownN = bs.filter(b => b.unknown).length;
   const fa = bs.reduce((s, b) => s + b.floor, 0), oldFa = bs.filter(b => b.old).reduce((s, b) => s + b.floor, 0);
@@ -583,7 +618,7 @@ function analyze(key) {
   const priorLand = ps.reduce((s, p) => s + landA(p) * p.price, 0);
   const needUnits = bs.filter(b => b.needUnits).length;
   return {
-    key, area, ps, bs, N, oldN, unknownN, fa, oldFa, smallN, accN, accU, du, landArea, zoneArea, owners: Math.max(owners, 1), priorLand, needUnits, bsOf,
+    key, area, ps, bs, N, oldN, unknownN, ghostN: ghosts.length, fa, oldFa, smallN, accN, accU, du, landArea, zoneArea, owners: Math.max(owners, 1), priorLand, needUnits, bsOf,
     oldRatio: N ? oldN / N : 0, oldFaRatio: fa ? oldFa / fa : 0, smallRatio: ps.length ? smallN / ps.length : 0,
     // 미확인 건축물이 있으면 접도율은 범위(accRatio ~ accMax)
     accRatio: N ? accN / N : 0, accMax: N ? (accN + accU) / N : 0, density: du / (area / 10000),
@@ -641,7 +676,7 @@ const P = {
   type: 'redev', infraRatio: 25, zone: '제3종일반주거지역', farMode: 'max', farCustom: 265,
   bcr: 18, mix59: 40, mix84: 50, mix114: 10, supplyFactor: 1.33, rentalRatio: 15, coreUnits: 4,
   landPrice: 300, bldValue: 60, memberPrice: 1800, salePrice: 2300, rentalPrice: 18000,
-  constCost: 700, basementRatio: 55, etcRatio: 20, priorMode: 'jiga', priorMult: 1.4,
+  constCost: 700, basementRatio: 55, etcRatio: 20, priorMode: 'jiga', priorMult: 1.4, ghostIn: false,
 };
 try { const s = localStorage.getItem('jbs-urban-plan'); if (s) Object.assign(P, JSON.parse(s)); } catch (e) { /* 무시 */ }
 const saveP = () => { try { localStorage.setItem('jbs-urban-plan', JSON.stringify(P)); } catch (e) { /* 무시 */ } };
@@ -775,7 +810,7 @@ function syncRegionChips() {
   }).join('') + (D.map && D.keys.length < ZONE_IDS.length ? '<button class="chip empty" id="addZone">+ 안 추가</button>' : '');
   box.querySelectorAll('[data-region]').forEach(b => b.onclick = () => {
     if (editH) { toast('구역계 고치기를 먼저 마쳐 주세요'); return; }
-    S.region = b.dataset.region; syncRegionChips(); renderSourceBar(); if (D.map) fitZone(S.region); render();
+    S.region = b.dataset.region; syncRegionChips(); renderSourceBar(); syncUndo(); if (D.map) fitZone(S.region); render();
   });
   const add = $id('addZone');
   if (add) add.onclick = () => { Z.count = D.keys.length + 1; saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); S.region = D.keys[D.keys.length - 1]; syncRegionChips(); render(); toast(`${S.region}안을 추가했습니다. 구역계 그리기를 누르세요`); };
@@ -821,9 +856,9 @@ function initLeaflet() {
   LM.createPane('parcelPane').style.zIndex = 390;
   layP = L.featureGroup().addTo(LM); layZ = L.featureGroup().addTo(LM); layT = L.featureGroup().addTo(LM);
   editGroup = new L.FeatureGroup().addTo(LM);
-  LM.on(L.Draw.Event.CREATED, e => { drawH = null; $id('drawBtn').textContent = '구역계 그리기'; const gj = e.layer.toGeoJSON(); delete ZK.rough[S.region]; setZoneGeom(S.region, gj); fitZone(S.region); ZK.checkFit(gj, '손으로 그린 구역계'); });
+  LM.on(L.Draw.Event.CREATED, e => { drawH = null; $id('drawBtn').textContent = '구역계 그리기'; const gj = e.layer.toGeoJSON(); delete ZK.rough[S.region]; setZoneGeom(S.region, gj, 0, '구역계 그리기'); fitZone(S.region); ZK.checkFit(gj, '손으로 그린 구역계'); });
   LM.on(L.Draw.Event.DRAWSTOP, () => { drawH = null; $id('drawBtn').textContent = '구역계 그리기'; });
-  LM.on(L.Draw.Event.EDITED, () => { const l = editGroup.getLayers()[0]; if (l) setZoneGeom(S.region, l.toGeoJSON()); });
+  LM.on(L.Draw.Event.EDITED, () => { const l = editGroup.getLayers()[0]; if (l) setZoneGeom(S.region, l.toGeoJSON(), 0, '꼭짓점 고치기'); });
   LM.on('moveend', () => { const c = LM.getCenter(); Z.center = [c.lat, c.lng]; Z.zoom = LM.getZoom(); saveZ(); });
   LM.on('click', e => { if (ZK.picking && !drawH && !editH) ZK.pick(e.latlng); });
   const FullBtn = L.Control.extend({ options: { position: 'topleft' }, onAdd: () => {
@@ -929,7 +964,7 @@ function importGeoJSONText(text) {
   if (Math.abs(c0[0]) > 180 || Math.abs(c0[1]) > 90) { statusMsg('경위도(WGS84, EPSG:4326) 좌표의 GeoJSON만 읽을 수 있습니다. 파일 좌표계를 확인해 주세요.', true); return; }
   const merged = safeUnion(polys.map(c => ({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: c } })));
   delete ZK.rough[S.region];
-  setZoneGeom(S.region, merged);
+  setZoneGeom(S.region, merged, 0, 'GeoJSON 불러오기');
   fitZone(S.region);
   ZK.checkFit(merged, '불러온 구역계');
 }
@@ -1040,7 +1075,7 @@ function renderZone(a) {
   <div class="kpis">
     ${kpi('구역 면적', fmt(a.area) + '㎡', D.map ? '그린 구역계 면적(도로 포함)' : '구역계 폴리곤 면적(도로 포함)')}
     ${kpi('편입 필지', a.ps.length + '필지', `${D.map ? '대장 면적×편입비율' : '조서 면적'} 합 ${fmt(a.landArea)}㎡`)}
-    ${kpi('건축물', a.N + '동', `연면적 ${fmt(a.fa)}㎡`)}
+    ${kpi('건축물', a.N + '동', `연면적 ${fmt(a.fa)}㎡` + (a.ghostN ? `<br>공부 정보 없는 GIS 건물 ${a.ghostN}동 ${P.ghostIn ? '포함(미확인으로 셈)' : '제외'}` : ''))}
     ${kpi('노후도(동수)', oldText(a), `${a.oldN} / ${a.N}동${a.unknownN ? ` · 사용승인 연도 미확인 ${a.unknownN}동` : ''}`)}
     ${kpi('노후도(연면적)', pct(a.oldFaRatio), `${fmt(a.oldFa)} / ${fmt(a.fa)}㎡`)}
     ${kpi('과소필지', pct(a.smallRatio), `분할제한면적 미만 ${a.smallN} / ${a.ps.length}필지`)}
@@ -1048,6 +1083,7 @@ function renderZone(a) {
     ${kpi('호수밀도', a.density.toFixed(1) + '동/ha', `${a.du}동 ÷ ${(a.area / 10000).toFixed(2)}ha`)}
     ${kpi('토지등소유자(추정)', fmt(a.owners) + '명', D.map ? '소유자 정보 없음: 사유지 1필지 1인, 공동주택은 세대별' + (a.needUnits ? ` · 세대수 미확인 ${a.needUnits}동` : '') : '1필지 1인, 다세대는 호수별')}
   </div>
+  ${a.ghostN ? `<div class="ghost-note"><label><input type="checkbox" id="ghostIn" ${P.ghostIn ? 'checked' : ''}> 공부 정보 없는 GIS 건물 ${a.ghostN}동도 건축물 수에 넣기</label><div class="u">GIS건물통합정보에 용도·면적·사용승인일이 모두 비어 있고 건축물대장에도 없는 건물입니다. 부속건물·가설건축물·무허가건물이거나 GIS 오류일 수 있습니다. 기존무허가건축물(1989.1.24. 당시)이면 노후도 산정에 들어가므로(영 별표1 제2호) 현장·항공사진·재산세 자료로 확인한 뒤 넣으세요. 넣으면 '연도 미확인'으로 셉니다.</div></div>` : ''}
   <h3>건축물 현황 (준공 오래된 순)</h3>
   <div class="tscroll"><table><thead><tr><th>지번</th><th>용도</th><th>구조</th><th class="r">사용승인</th><th class="r">연면적㎡</th><th>판정</th><th>근거</th><th>접도</th><th>허가</th></tr></thead><tbody>${rows || '<tr><td colspan="9">건축물이 없습니다.</td></tr>'}</tbody></table></div>
   <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" id="copyTbl">표 복사(엑셀 붙여넣기용)</button></div>
@@ -1055,6 +1091,7 @@ function renderZone(a) {
   ${D.map ? '<p class="note">자료: 필지는 브이월드 연속지적도와 토지특성(대장 면적·지목·공시지가·용도지역·도로접면), 건축물은 GIS건물통합정보이고, 공동주택은 건축물대장 표제부로 바꿔 세대수를 넣습니다(용도 옆 \'대장\' 표시).</p>' : ''}
   <p class="note">노후·불량 판정은 인천 정비조례 제3조②를 사용승인 연도에 적용한 값입니다.${D.real ? ' 공동주택의 지하층이 주거용인지는 대장만으로 알 수 없어 RC 30년으로 보고, 지하층이 있으면 근거에 표시합니다. 호수밀도의 "세대수가 가장 많은 층"은 세대수 ÷ 지상층수로 어림합니다.' : ''}</p>`;
   side.querySelectorAll('button.acc').forEach(bt => bt.onclick = () => cycleAccess(+bt.dataset.pid));
+  const gi = document.getElementById('ghostIn'); if (gi) gi.onchange = () => { P.ghostIn = gi.checked; saveP(); render(); };
   document.getElementById('copyTbl').onclick = async () => {
     const head = '지번\t용도\t구조\t사용승인\t연면적\t판정\t근거\t접도\t허가';
     const body = a.bs.map(b => { const p = b.pid != null ? D.parcels[b.pid] : null; return [p ? p.jibun : '', b.use, b.struct, b.year || '', b.floor, b.unknown ? '확인' : b.old ? '노후' : '비노후', b.why, !p || p.access == null ? '미확인' : p.access ? '충족' : '미충족', b.lic].join('\t'); }).join('\n');
@@ -1206,7 +1243,7 @@ const ZK = {
   base() { return $id('zkBase').value.trim(); },
   list() { return $id('zkList').value.split(/[\n,;\t]+/); },
   msg(h) { $id('zkMsg').innerHTML = h; },
-  say(t) { $id('zkMsg').textContent = t; },
+  say(t) { $id('zkMsg').textContent = t; if (!$id('zkTools').open) statusMsg(t); },
   ready() {
     if (!LM) return false;
     if (!VWorld.enabled) { this.say('브이월드 인증키가 있어야 합니다.'); return false; }
@@ -1253,7 +1290,7 @@ const ZK = {
         const add = btn.dataset.act === 'in';
         LM.closePopup(pop);
         const next = ZoneKit.toggle(D.regions[id].geojson, f, add);
-        setZoneGeom(id, next, 2500);
+        setZoneGeom(id, next, 2500, `${no} 필지 ${add ? '넣기' : '빼기'}`);
         this.say(`${no} 필지를 ${id}안 구역계${add ? '에 넣었습니다' : '에서 뺐습니다'}. 고치기를 멈추면 판정을 새로 고칩니다.`);
       });
       this.say(`${no} 필지를 골랐습니다. 넣을지 뺄지 선택해 주세요.`);
@@ -1265,7 +1302,7 @@ const ZK = {
     if (!found.size) { this.say('구역에 넣을 필지가 없습니다.'); this.showReport(report); return; }
     const res = await ZoneKit.assemble(found, report, this.opts(), t => this.say(t));
     this.showReport(report);
-    setZoneGeom(id, res.merged);
+    setZoneGeom(id, res.merged, 0, intro.replace(/ → $/, '') + '로 구역 만들기');
     fitZone(id);
     this.msg(ZoneKit.summary(report, res.merged, intro) + ' 이어서 필지·건축물을 불러옵니다.');
   },
@@ -1377,6 +1414,14 @@ finBtn.onclick = () => {
   endDraw(); S.region = 'C'; syncRegionChips(); render(); toast('직접 그린 안으로 판정했습니다');
 };
 $id('editBtn').onclick = toggleEdit;
+$id('undoBtn').onclick = () => undoZone(false);
+$id('redoBtn').onclick = () => undoZone(true);
+document.addEventListener('keydown', e => {
+  if (!D || !D.map || drawH || editH) return;
+  const t = e.target; if (t && /INPUT|TEXTAREA|SELECT/.test(t.tagName)) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoZone(e.shiftKey); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); undoZone(true); }
+});
 $id('pickBtn').onclick = () => { if (!LM) return; if (drawH) { toast('그리기를 먼저 마쳐 주세요'); return; } ZK.setPicking(!ZK.picking); };
 $id('zkJibunBtn').onclick = () => ZK.fromJibuns();
 $id('zkSnapBtn').onclick = () => ZK.snap();
@@ -1406,8 +1451,7 @@ $id('clearBtn').onclick = () => {
   const R = D.regions[S.region];
   if (!R.geojson) { toast('지울 구역계가 없습니다'); return; }
   if (!confirm(`${R.name} 구역계와 판정 결과를 지울까요?`)) return;
-  delete Z.zones[S.region]; saveZ();
-  D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); statusMsg(''); render();
+  setZoneGeom(S.region, null, 0, '안 지우기'); statusMsg(`${S.region}안 구역계를 지웠습니다. 실행 취소로 되돌릴 수 있습니다.`);
 };
 $id('searchForm').onsubmit = async e => {
   e.preventDefault();
