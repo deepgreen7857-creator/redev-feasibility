@@ -113,7 +113,7 @@ tr.hl td{background:var(--accent-soft)}
 .bar span{display:block;height:100%;background:var(--accent)}
 .rules dt{font-weight:600;margin-top:10px}
 .rules dd{margin:2px 0 0;color:var(--ink-2);font-size:13px}
-.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:6px;font-size:13px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:6px;font-size:13px;z-index:5000;box-shadow:0 2px 8px rgba(0,0,0,.25);max-width:calc(100vw - 32px)}
 @media (prefers-reduced-motion: no-preference){ .kpi .v,.big{transition:color .2s} }
 
 .verdict.warn{background:var(--warn-soft);color:var(--warn)}
@@ -328,6 +328,6 @@ a.back:hover{text-decoration:underline}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../js/config.js?v=68"></script>
 <script src="../js/zonekit.js?v=72"></script>
-<script src="urban.js?v=25"></script>
+<script src="urban.js?v=26"></script>
 </body>
 </html>

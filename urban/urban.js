@@ -755,9 +755,10 @@ const INFRA = {
     if (!(A > 0)) return null;
     const [lat0, lon0] = center, kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540, side = Math.sqrt(A);
     const toM = ([lon, lat]) => [(lon - lon0) * kx, (lat - lat0) * ky], toLL = ([x, y]) => [lon0 + x / kx, lat0 + y / ky];
-    // 가장 가까운 경계선 방향(도로·구역선과 나란하게)
+    // 가장 가까운 선 방향(구역 경계·도로, 그리고 이미 놓인 종교용지·공원 같은 다른 시설의 변)과 나란하게, 그 선 쪽으로 붙임
     let th = 0, best = Infinity, edge = null;
-    const rings = zone.geometry.type === 'Polygon' ? [zone.geometry.coordinates[0]] : zone.geometry.coordinates.map(p => p[0]);
+    const outer = g => { const gg = g && (g.geometry || g); return !gg ? [] : gg.type === 'Polygon' ? [gg.coordinates[0]] : gg.type === 'MultiPolygon' ? gg.coordinates.map(p => p[0]) : []; };
+    const rings = outer(zone).concat(outer(minus));
     rings.forEach(r => { for (let i = 0; i + 1 < r.length; i++) {
       const a = toM(r[i]), b = toM(r[i + 1]), dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy; if (L2 < 4) continue;
       const t = Math.max(0, Math.min(1, -(a[0] * dx + a[1] * dy) / L2)), d = Math.hypot(a[0] + t * dx, a[1] + t * dy);
@@ -783,14 +784,17 @@ const INFRA = {
       for (const r of zR.concat(mR)) for (const [x, y] of r) { const dx = x - cx, dy = y - cy, u = dx * ca + dy * sa, v = -dx * sa + dy * ca; if (Math.abs(u) < hw - 0.2 && Math.abs(v) < hh - 0.2) return false; }
       return true;
     };
-    // 찾은 자리에서 가장 가까운 경계선 쪽으로 붙임(사이에 쓸 수 없는 띠가 남지 않게) — 0.5m씩, 최대 40m
+    // 찾은 자리에서 가장 가까운 선(구역 경계·다른 시설) 쪽으로 붙임 — 사이가 8m 안쪽이라 못 쓰는 띠가 남을 때만
     const flush = (cx, cy) => {
       if (!edge) return sq(cx, cy);
       const [a, b] = edge, dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
       let nx = -dy / L, ny = dx / L;   // 경계선의 법선
       if ((cx - a[0]) * nx + (cy - a[1]) * ny > 0) { nx = -nx; ny = -ny; }   // 블록 → 경계선 방향
       let x = cx, y = cy;
-      for (let s = 0; s < 80; s++) { if (!fitsAt(x + nx * 0.5, y + ny * 0.5)) break; x += nx * 0.5; y += ny * 0.5; }
+      // 8m보다 멀면 붙이지 않음(그 사이는 쓸 수 있는 땅이라 놓은 자리를 그대로 둠). 8m 안이면 끝까지 붙임
+      let moved = 0;
+      for (let s = 0; s < 18; s++) { if (!fitsAt(x + nx * 0.5, y + ny * 0.5)) break; x += nx * 0.5; y += ny * 0.5; moved += 0.5; }
+      if (moved >= 8.5) return sq(cx, cy);
       return sq(x, y);
     };
     // 정사각형 → 1:1.5 → 1:2(경계선 방향으로 길게) 순으로, 가까운 자리부터 최대 120m까지 찾음
@@ -1044,7 +1048,14 @@ const INFRA = {
       const start = ev.latlng, orig = []; lyr.eachLayer(l => orig.push([l, l.getLatLngs()]));
       let d = [0, 0];
       LM.dragging.disable(); lyr.closeTooltip && lyr.closeTooltip();
-      const mv = e => { d = [e.latlng.lat - start.lat, e.latlng.lng - start.lng]; orig.forEach(([l, ll]) => l.setLatLngs(shift(ll, d))); };
+      const mv = e => {
+        d = [e.latlng.lat - start.lat, e.latlng.lng - start.lng]; orig.forEach(([l, ll]) => l.setLatLngs(shift(ll, d)));
+        // 지도 가장자리나 화면 아래 끝에 가까우면 지도를 그쪽으로 조금씩 밀어 계속 끌 수 있게
+        const sz = LM.getSize(), p = e.containerPoint, ce = e.originalEvent || {}, E = 40;
+        const vb = window.innerHeight - (ce.clientY || 0) < E;
+        const px = p.x < E ? -15 : p.x > sz.x - E ? 15 : 0, py = p.y < E ? -15 : (p.y > sz.y - E || vb) ? 15 : 0;
+        if (px || py) LM.panBy([px, py], { animate: false });
+      };
       const up = () => {
         LM.off('mousemove', mv); LM.off('mouseup', up); document.removeEventListener('mouseup', up); LM.dragging.enable();
         const px = LM.latLngToContainerPoint(start).distanceTo(LM.latLngToContainerPoint(L.latLng(start.lat + d[0], start.lng + d[1])));
