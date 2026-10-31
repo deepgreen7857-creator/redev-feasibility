@@ -929,7 +929,7 @@ const INFRA = {
       try {
         if (turf.booleanIntersects(turf.buffer(parkGeom, 12, { units: 'meters' }), relGeom)) {
           const pr = this.pairBand(zone, roadGeom, [['park', parkGeom, parkNeed], ['rel', relGeom, relArea]]);
-          if (pr) { parkGeom = pr.park; relGeom = pr.rel; paired = true; }
+          if (pr) { parkGeom = pr.park; relGeom = pr.rel; paired = pr.pair; }
         }
       } catch (er) { paired = false; }
     }
@@ -1027,7 +1027,7 @@ const INFRA = {
     const other = num(P.otherInfra);
     const total = roadArea + (P.keepInnerRoads ? innerArea : 0) + parkArea + schoolArea + other + relArea;
     const res = {
-      lots, merged, mergeList, skipped, absorbed, parkC, schoolC, relC, relCenter: relGeom ? (() => { const c = turf.centroid(relGeom).geometry.coordinates; return [c[1], c[0]]; })() : null,
+      paired, lots, merged, mergeList, skipped, absorbed, parkC, schoolC, relC, relCenter: relGeom ? (() => { const c = turf.centroid(relGeom).geometry.coordinates; return [c[1], c[0]]; })() : null,
       relAll, rel, relLand, relArea, relGeom, relManual: szRel.mode !== 'auto', szPark, szSchool, szRel, parkLegal,
       W, sideW, units, items, roadGeom, roadArea, inner, innerArea, legal, parkNeed, parkGeom, parkArea, schoolGeom, schoolArea, other, total,
       ratio: a.area ? total / a.area : 0, roadsReady: !!z.roads, edge: z.roads ? z.roads.edge : [],
@@ -1091,6 +1091,8 @@ const INFRA = {
       .bindTooltip(`공원·녹지(제안) ${fmt(inf.parkArea)}㎡ · 끌어서 옮기기${inf.parkArea < inf.parkNeed * 0.95 ? ` — 구역 경계·도로에 걸려 필요 ${fmt(inf.parkNeed)}㎡보다 작음, 위치를 옮기세요` : ''}`, { sticky: true }).addTo(layer), 'park', this.centerOf(inf.parkGeom));
     if (inf.schoolGeom) this.movable(L.geoJSON(inf.schoolGeom, { style: { color: c('--accent'), weight: 2, fillColor: c('--accent'), fillOpacity: 0.3 } })
       .bindTooltip(`학교용지(제안) ${fmt(inf.schoolArea)}㎡ · 끌어서 옮기기`, { sticky: true }).addTo(layer), 'school', this.centerOf(inf.schoolGeom));
+    // 맞닿은 시설 사이 나눔선(맨 위에): 끌면 두 시설이 면적을 주고받음(합은 그대로)
+    if (inf.paired) this.divider(layer, inf.paired);
   },
   // 맞닿은 두 블록을 경계 따라 한 띠로 다시 그림. items: [[kind, geom, 목표면적], …] → { kind: geom } 또는 null
   pairBand(zone, minus, items) {
@@ -1130,7 +1132,36 @@ const INFRA = {
     if (!sp) return null;
     const rest = cut(sh, u1, v);
     if (!rest) return null;
-    return { [order[0][0]]: sp, [order[1][0]]: rest };
+    // 두 시설 사이 나눔선(끌어서 면적을 주고받는 손잡이)과, 선 위치 → 앞 시설 면적 계산 함수
+    const toU = ll => { const m = toM([ll.lng, ll.lat]); return (m[0] - a[0]) * ux + (m[1] - a[1]) * uy; };
+    const areaAt = u => { const g = cut(u0, u, v); return g ? turf.area(g) : 0; };
+    const lineAt = u => { const p1 = P(u, -2), p2 = P(u, v); return [[p1[1], p1[0]], [p2[1], p2[0]]]; };
+    return { [order[0][0]]: sp, [order[1][0]]: rest, pair: { kinds: [order[0][0], order[1][0]], total, u0, u1, s: sh, toU, areaAt, lineAt } };
+  },
+  divider(layer, pr) {
+    const name = k => ({ park: '공원·녹지', rel: '종교용지', school: '학교용지' }[k]);
+    const line = L.polyline(pr.lineAt(pr.s), { color: '#111', weight: 7, opacity: 0.55, dashArray: '2 8', lineCap: 'round' }).addTo(layer);
+    const hit = L.polyline(pr.lineAt(pr.s), { color: '#000', weight: 18, opacity: 0.01 }).addTo(layer)
+      .bindTooltip(`${name(pr.kinds[0])} ↔ ${name(pr.kinds[1])} 나눔선 · 끌어서 면적 주고받기`, { sticky: true });
+    hit.on('add', () => { const el = hit.getElement(); if (el) el.style.cursor = 'ew-resize'; });
+    const el0 = hit.getElement && hit.getElement(); if (el0) el0.style.cursor = 'ew-resize';
+    hit.on('mousedown', ev => {
+      if (CUT.active || ZK.picking || drawH || editH || S.placing) return;
+      L.DomEvent.stop(ev); LM.dragging.disable(); hit.closeTooltip();
+      const lo = pr.u0 + 3, hi = pr.u1 - 3;
+      let u = pr.s;
+      const mv = e => { u = Math.max(lo, Math.min(hi, pr.toU(e.latlng))); const ll = pr.lineAt(u); line.setLatLngs(ll); hit.setLatLngs(ll); };
+      const up = () => {
+        LM.off('mousemove', mv); LM.off('mouseup', up); document.removeEventListener('mouseup', up); LM.dragging.enable();
+        if (Math.abs(u - pr.s) < 0.5) return;
+        const a1 = Math.round(pr.areaAt(u)), a2 = Math.round(pr.total - a1);
+        const z = Z.zones[S.region]; z.infra = z.infra || {}; z.infra.sz = z.infra.sz || {};
+        [[pr.kinds[0], a1], [pr.kinds[1], a2]].forEach(([k, A]) => { z.infra.sz[k] = { ...(z.infra.sz[k] || {}), mode: 'area', val: Math.max(1, A) }; });
+        saveZ(); this.memo = {}; render();
+        toast(`${name(pr.kinds[0])} ${fmt(a1)}㎡ · ${name(pr.kinds[1])} ${fmt(a2)}㎡로 나눴습니다(면적 정하기 표에 '면적 직접'으로 들어감)`);
+      };
+      LM.on('mousemove', mv); LM.on('mouseup', up); document.addEventListener('mouseup', up);
+    });
   },
   // 지금 그려진 블록의 가운데 [lat, lng] — 끌어 옮길 때 기준(저장된 위치가 구역 밖이어도 보이는 자리에서 옮겨지게)
   centerOf(g) { if (!g) return null; try { const c = turf.centroid(g).geometry.coordinates; return [c[1], c[0]]; } catch (er) { return null; } },
