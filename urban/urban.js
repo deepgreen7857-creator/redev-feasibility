@@ -1038,6 +1038,7 @@ const INFRA = {
   // 지도에 그리기 (정비계획 탭·'기반시설 제안' 색 구분)
   draw(layer, a) {
     const pl = plan(a), inf = pl.infra; if (!inf) return;
+    this.curPair = inf.paired || null; if (!inf.paired) { this.divNear = null; this.divStart = null; }
     const c = n => cssVar(n);
     // 공동주택 획지(남는 땅) — 맨 아래에 옅게 칠하고 번호·면적 표시
     (inf.lots || []).forEach(l => {
@@ -1163,16 +1164,24 @@ const INFRA = {
   divider(layer, pr) {
     const name = k => ({ park: '공원·녹지', rel: '종교용지', school: '학교용지' }[k]);
     const line = L.polyline(pr.lineAt(pr.s), { color: '#111', weight: 7, opacity: 0.55, dashArray: '2 8', lineCap: 'round' }).addTo(layer);
-    const hit = L.polyline(pr.lineAt(pr.s), { color: '#000', weight: 18, opacity: 0.01 }).addTo(layer)
+    const hit = L.polyline(pr.lineAt(pr.s), { color: '#000', weight: 30, opacity: 0.01 }).addTo(layer)
       .bindTooltip(`${name(pr.kinds[0])} ↔ ${name(pr.kinds[1])} 나눔선 · 끌어서 면적 주고받기`, { sticky: true });
     hit.on('add', () => { const el = hit.getElement(); if (el) el.style.cursor = 'ew-resize'; });
     const el0 = hit.getElement && hit.getElement(); if (el0) el0.style.cursor = 'ew-resize';
-    hit.on('mousedown', ev => {
+    // 나눔선 가까이(화면 28px 안)에서 시설을 잡으면 시설을 옮기지 않고 나눔선을 끌게 함(옆 시설이 딴 데로 가지 않게)
+    this.divNear = ev => {
+      const ll = hit.getLatLngs(), p = LM.latLngToContainerPoint(ev.latlng), A = LM.latLngToContainerPoint(ll[0]), B = LM.latLngToContainerPoint(ll[1]);
+      const dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((p.x - A.x) * dx + (p.y - A.y) * dy) / L2));
+      return Math.hypot(p.x - (A.x + t * dx), p.y - (A.y + t * dy)) < 28;
+    };
+    this.divStart = ev => start(ev);
+    const start = ev => {
       if (CUT.active || ZK.picking || drawH || editH || S.placing) return;
       L.DomEvent.stop(ev); LM.dragging.disable(); hit.closeTooltip();
       const lo = pr.u0 + 3, hi = pr.u1 - 3;
       let u = pr.s;
-      const mv = e => { u = Math.max(lo, Math.min(hi, pr.toU(e.latlng))); const ll = pr.lineAt(u); line.setLatLngs(ll); hit.setLatLngs(ll); };
+      const u00 = pr.toU(ev.latlng);   // 잡은 자리에서 끈 만큼만 옮김(처음에 튀지 않게)
+      const mv = e => { u = Math.max(lo, Math.min(hi, pr.s + pr.toU(e.latlng) - u00)); const ll = pr.lineAt(u); line.setLatLngs(ll); hit.setLatLngs(ll); };
       const up = () => {
         LM.off('mousemove', mv); LM.off('mouseup', up); document.removeEventListener('mouseup', up); LM.dragging.enable();
         if (Math.abs(u - pr.s) < 0.5) return;
@@ -1183,7 +1192,8 @@ const INFRA = {
         toast(`${name(pr.kinds[0])} ${fmt(a1)}㎡ · ${name(pr.kinds[1])} ${fmt(a2)}㎡로 나눴습니다(두 시설 합 ${fmt(pr.total)}㎡ 그대로)`);
       };
       LM.on('mousemove', mv); LM.on('mouseup', up); document.addEventListener('mouseup', up);
-    });
+    };
+    hit.on('mousedown', start);
   },
   // 지금 그려진 블록의 가운데 [lat, lng] — 끌어 옮길 때 기준(저장된 위치가 구역 밖이어도 보이는 자리에서 옮겨지게)
   centerOf(g) { if (!g) return null; try { const c = turf.centroid(g).geometry.coordinates; return [c[1], c[0]]; } catch (er) { return null; } },
@@ -1194,6 +1204,8 @@ const INFRA = {
     lyr.eachLayer(l => { const el = l.getElement && l.getElement(); if (el) el.style.cursor = 'move'; });
     lyr.on('mousedown', ev => {
       if (CUT.active || ZK.picking || drawH || editH || S.placing) return;
+      const pk = { religion: 'rel', park: 'park', school: 'school' }[kind];
+      if (this.divNear && this.curPair && this.curPair.kinds.includes(pk) && this.divNear(ev)) { this.divStart(ev); return; }
       L.DomEvent.stop(ev);
       const start = ev.latlng, orig = []; lyr.eachLayer(l => orig.push([l, l.getLatLngs()]));
       let d = [0, 0];
