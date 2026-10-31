@@ -2158,15 +2158,17 @@ function sideWOf() { return num(P.sideRoadW) || 8; }
 // 기존 정비기반시설(국공유) 판단표 — 담당자·정비업체가 근거를 보고 넣기/빼기로 확정
 // 진입도로(가정) — 경계 도로별 역할·일방통행·건너편 녹지, 제25조 ①(진입도로 1개)과 ③(2개 폭 합) 비교
 // 확보 목표 부족분을 경계 도로로 채우는 추천: 구역에 많이 닿은 도로부터 한 등급씩(표준 폭) 올려 부족분을 넘을 때까지
+//  첫 바퀴는 도로마다 다음 표준 폭 한 단계, 그다음부터는 처음 대분류(소로·중로·대로) 안에서만 올림 — 무작정 크게 넓히지 않음
 //  자동으로 넓히지 않고 '추천'으로만 보여 주고, [추천대로 적용]을 누르면 도로별 계획 폭(edgeOpt.pw)에 넣음
 function fillSuggest(inf, need) {
   const z = Z.zones[S.region], e = inf.entry; if (!z || !z.roads || !e || !(need > 1)) return null;
-  const rs = z.roads.edge.map(r => ({ r, w: Math.max(r.w, num((e.per[r.pnu] || {}).pw) || r.w), front: INFRA.widenArea(r, z, r.w + 1) })).filter(x => x.front >= 10).sort((a, b) => b.front - a.front);
+  const rs = z.roads.edge.map(r => { const w = Math.max(r.w, num((e.per[r.pnu] || {}).pw) || r.w); return { r, w, big: ROADCLS.big(ROADCLS.of(w)), front: INFRA.widenArea(r, z, r.w + 1) }; }).filter(x => x.front >= 10).sort((a, b) => b.front - a.front);
   const steps = []; let got = 0;
   for (let round = 0; round < 4 && got < need; round++) {
     for (const x of rs) {
       if (got >= need) break;
       const nx = ROADCLS.std.find(w => w > x.w + 0.2); if (!nx || nx > 25) continue;
+      if (round > 0 && ROADCLS.big(ROADCLS.of(nx)) !== x.big) continue;
       const d = INFRA.widenArea(x.r, z, nx) - INFRA.widenArea(x.r, z, x.w);
       if (d < 1) continue;
       const prev = steps.find(st => st.pnu === x.r.pnu);
@@ -2286,7 +2288,7 @@ function infraSection(a, pl) {
     return `<div class="target-box ${ok ? 'ok' : 'ng'}"><div><b>확보 목표</b> ${fmt(tgt)}㎡ = ${inf.keepFac ? `구역 안 기존 도로·구거 등 ${inf.inner.length}필지 ${fmt(inf.innerArea)}㎡ + 도시계획시설 ${fmt(inf.facArea)}㎡ (겹치는 땅은 한 번만)` : `용도폐지되는 국공유 기반시설 ${inf.inner.length}필지 중 사용 중인 면적(무상양도 균형 기준)`}${inf.innerOcc >= 1 ? ` — <b>건물 점유 ${fmt(inf.innerOcc)}㎡ 뺌</b>(국공유 공공시설 필지 안쪽을 건물이 덮은 부분, 보수적으로 제외)` : ''}</div>
       ${!inf.keepFac && inf.facArea >= 1 ? `<div class="u">참고: 구역 안 도시계획시설 ${fmt(inf.facArea)}㎡(미집행 포함)까지 합치면 ${fmt(inf.keepAll)}㎡. 미집행 시설을 존치·대체할 계획이면 아래 '도시계획시설까지 확보 목표에 넣기'를 켜세요.</div>` : ''}
       <div><b>신설 정비기반시설</b> ${fmt(nw)}㎡ → ${ok ? '<b class="good">충족</b>' : `<b class="warn">${fmt(inf.short)}㎡ 부족</b> — 경계 도로 넓히기·공원 늘리기·✂로 구역 안 도로 지정으로 채우세요`}${inf.firstShort ? ` (모든 경계 도로를 똑같이 +${fmt(inf.widenExtra, 1)}m 넓혀 ${fmt(inf.firstShort)}㎡ 채움 — 도로마다 등급을 보고 고르려면 아래 '똑같이 넓혀 채우기'를 끄세요)` : ''}</div>
-      ${(() => { const sg = !ok && !inf.firstShort ? fillSuggest(inf, inf.short) : null; return sg ? `<div><b>경계 도로로 채우는 추천</b> — 구역에 많이 닿은 도로부터 한 등급씩: ${sg.steps.map(st => `${esc(st.jibun)} ${st.from}→${st.to}m(+${fmt(st.area)}㎡)`).join(' · ')} → 합 ${fmt(sg.got)}㎡${sg.enough ? '' : ' <b class="warn">(25m까지 올려도 모자람 — 공원·구역 안 도로로 채워야 함)</b>'} <button type="button" class="btn ghost sm" id="fillApply" data-fill='${esc(JSON.stringify(sg.steps.map(st => [st.pnu, st.to])))}'>추천대로 적용</button></div>` : ''; })()}
+      ${(() => { const sg = !ok && !inf.firstShort ? fillSuggest(inf, inf.short) : null; return sg ? `<div><b>경계 도로로 채우는 추천</b> — 구역에 많이 닿은 도로부터 한 등급씩: ${sg.steps.map(st => `${esc(st.jibun)} ${st.from}→${st.to}m(+${fmt(st.area)}㎡)`).join(' · ')} → 합 ${fmt(sg.got)}㎡${sg.enough ? '' : ` <b class="warn">(지금 등급 안에서 올릴 수 있는 만큼 올려도 ${fmt(inf.short - sg.got)}㎡ 모자람 — 공원·구역 안 도로(✂)로 채우거나 도로별로 더 넓은 폭을 고르세요)</b>`} <button type="button" class="btn ghost sm" id="fillApply" data-fill='${esc(JSON.stringify(sg.steps.map(st => [st.pnu, st.to])))}'>추천대로 적용</button></div>` : ''; })()}
       <div class="u">도시계획시설: ${facTxt}. 용도폐지되는 기존 시설만큼 새 시설을 확보하는 것이 기본(도정법 제97조 무상양도·무상귀속 균형). 실제 양도 범위는 평가금액·설치비용 비교로 정함</div></div>`;
   })()}
   ${entrySection(inf, pl)}
