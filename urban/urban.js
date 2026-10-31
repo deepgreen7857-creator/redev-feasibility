@@ -1093,7 +1093,7 @@ const INFRA = {
     if (inf.schoolGeom) this.movable(L.geoJSON(inf.schoolGeom, { style: { color: c('--accent'), weight: 2, fillColor: c('--accent'), fillOpacity: 0.3 } })
       .bindTooltip(`학교용지(제안) ${fmt(inf.schoolArea)}㎡ · 끌어서 옮기기`, { sticky: true }).addTo(layer), 'school', this.centerOf(inf.schoolGeom));
     // 맞닿은 시설 사이 나눔선(맨 위에): 끌면 두 시설이 면적을 주고받음(합은 그대로)
-    if (inf.paired) this.divider(layer, inf.paired, { park: inf.parkLegal || 0 });
+    if (inf.paired) { const sz = (Z.zones[a.key].infra || {}).sz || {}, mn = k => num((sz[k] || {}).min); this.divider(layer, inf.paired, { park: mn('park') || inf.parkLegal || 0, rel: mn('rel'), school: mn('school') }); }
   },
   // 맞닿은 두 블록을 경계 따라 한 띠로 다시 그림. items: [[kind, geom, 목표면적], …] → { kind: geom } 또는 null
   // split: 나눔선을 끌어 정한 { kind, area } — 띠(위치·깊이)는 그대로 두고 나누는 자리만 바꿈
@@ -1188,7 +1188,7 @@ const INFRA = {
       pr.kinds.forEach((k, idx) => {
         const m = num(mins[k]); if (!(m > 0)) return;
         const ok = u => (idx === 0 ? pr.areaAt(u) : pr.total - pr.areaAt(u)) >= m - 0.5;
-        if (!ok(pr.s)) return;   // 지금도 이미 작으면 막지 않음
+        if (!ok(pr.s)) { if (idx === 0) lo = Math.max(lo, pr.s); else hi = Math.min(hi, pr.s); return; }   // 이미 작으면 더 줄어드는 쪽만 막음
         let a0 = idx === 0 ? lo : pr.s, b0 = idx === 0 ? pr.s : hi;   // 앞 시설이면 왼쪽 끝, 뒤 시설이면 오른쪽 끝을 찾음
         for (let it = 0; it < 22; it++) { const mm = (a0 + b0) / 2; if (idx === 0 ? ok(mm) : !ok(mm)) { if (idx === 0) b0 = mm; else b0 = mm; } else { if (idx === 0) a0 = mm; else a0 = mm; } }
         if (idx === 0) lo = Math.max(lo, b0); else hi = Math.min(hi, a0);
@@ -1196,7 +1196,7 @@ const INFRA = {
       let blocked = false; const loMin = lo > pr.u0 + 3 + 0.01, hiMin = hi < pr.u1 - 3 - 0.01;
       let u = pr.s;
       const u00 = pr.toU(ev.latlng);   // 잡은 자리에서 끈 만큼만 옮김(처음에 튀지 않게)
-      const mv = e => { const want = pr.s + pr.toU(e.latlng) - u00; u = Math.max(lo, Math.min(hi, want)); if ((loMin && want < lo - 0.5) || (hiMin && want > hi + 0.5)) { if (!blocked) { blocked = true; toast('공원 최소 면적(법정·제안 기준)보다 작아지지 않게 여기서 멈춥니다'); } } else blocked = false; const ll = pr.lineAt(u); line.setLatLngs(ll); edge.setLatLngs(ll); hit.setLatLngs(ll); grip.setLatLng(mid(ll)); };
+      const mv = e => { const want = pr.s + pr.toU(e.latlng) - u00; u = Math.max(lo, Math.min(hi, want)); if ((loMin && want < lo - 0.5) || (hiMin && want > hi + 0.5)) { if (!blocked) { blocked = true; toast(`${name(want < lo ? pr.kinds[0] : pr.kinds[1])} 최소 면적보다 작아지지 않게 여기서 멈춥니다`); } } else blocked = false; const ll = pr.lineAt(u); line.setLatLngs(ll); edge.setLatLngs(ll); hit.setLatLngs(ll); grip.setLatLng(mid(ll)); };
       const up = () => {
         LM.off('mousemove', mv); LM.off('mouseup', up); document.removeEventListener('mouseup', up); LM.dragging.enable();
         if (Math.abs(u - pr.s) < 0.5) return;
@@ -1748,7 +1748,7 @@ function infraSection(a, pl) {
     <button type="button" class="btn ghost sm" id="refetchRoads">경계 도로 다시 조회</button>
   </div>
   <h4 style="margin:12px 0 4px">공원·학교·종교용지 면적 정하기</h4>
-  <div class="tscroll"><table class="sz-tbl"><thead><tr><th>시설</th><th>정하는 방식</th><th>값</th><th>가로:세로</th><th class="r">적용 면적㎡</th></tr></thead><tbody>
+  <div class="tscroll"><table class="sz-tbl"><thead><tr><th>시설</th><th>정하는 방식</th><th>값</th><th>가로:세로</th><th title="나눔선을 끌 때 이 면적 아래로는 줄지 않음">최소㎡</th><th class="r">적용 면적㎡</th></tr></thead><tbody>
   ${[['park', '공원·녹지', inf.szPark, `자동: ${inf.legal ? '법정' : P.parkMode === 'always' ? '부지 5%' : '법정 의무만'} ${fmt(inf.parkLegal)}㎡`, inf.parkArea],
      ['school', '학교용지', inf.szSchool, num(P.schoolArea) ? `자동: 입력값 ${fmt(num(P.schoolArea))}㎡` : '자동: 없음(0)', inf.schoolArea],
      ['rel', '종교용지', inf.szRel, `자동: 교회 필지 대지 ${fmt(inf.relLand)}㎡`, inf.relArea]].map(([k, n, sz, autoTxt, cur]) => `<tr>
@@ -1756,9 +1756,10 @@ function infraSection(a, pl) {
      <td><select data-szmode="${k}" aria-label="${n} 면적 정하는 방식"><option value="auto" ${sz.mode === 'auto' ? 'selected' : ''}>자동</option><option value="area" ${sz.mode === 'area' ? 'selected' : ''}>면적 직접(㎡)</option><option value="pct" ${sz.mode === 'pct' ? 'selected' : ''}>구역 대비 %</option></select></td>
      <td>${sz.mode === 'auto' ? `<span class="u">${autoTxt}</span>` : `<input data-szval="${k}" inputmode="decimal" value="${esc(String(sz.val))}" placeholder="${sz.mode === 'pct' ? '예: 5' : '예: 2000'}" aria-label="${n} ${sz.mode === 'pct' ? '구역 대비 %' : '면적 ㎡'}" style="width:90px"> ${sz.mode === 'pct' ? '%' : '㎡'}`}</td>
      <td><select data-szasp="${k}" aria-label="${n} 가로세로 비율">${[1, 1.5, 2, 3].map(r => `<option value="${r}" ${sz.asp === r ? 'selected' : ''}>1:${r}</option>`).join('')}</select></td>
+     <td><input data-szmin="${k}" inputmode="decimal" value="${esc(String(((Z.zones[a.key].infra || {}).sz || {})[k] && Z.zones[a.key].infra.sz[k].min || ''))}" placeholder="${k === 'park' ? '법정 ' + fmt(inf.parkLegal) : '없음'}" aria-label="${n} 최소 면적" style="width:80px"></td>
      <td class="r">${fmt(cur)}</td></tr>`).join('')}
   </tbody></table></div>
-  <p class="hint" style="margin-top:4px">구역 대비 %는 구역 면적 ${fmt(a.area)}㎡ 기준입니다. 가로:세로는 경계선 방향으로 긴 쪽입니다. 들어갈 자리가 없으면 다른 비율로 바꿔 봅니다.${inf.relC ? '' : ' 종교용지는 \'대체부지로 옮기기\'일 때만 비율이 모양에 반영됩니다(존치는 필지 그대로).'}</p>
+  <p class="hint" style="margin-top:4px">최소㎡: 맞닿은 시설 사이 나눔선을 끌 때 이 면적 아래로는 줄지 않습니다(공원은 비우면 법정·제안 기준). 구역 대비 %는 구역 면적 ${fmt(a.area)}㎡ 기준입니다. 가로:세로는 경계선 방향으로 긴 쪽입니다. 들어갈 자리가 없으면 다른 비율로 바꿔 봅니다.${inf.relC ? '' : ' 종교용지는 \'대체부지로 옮기기\'일 때만 비율이 모양에 반영됩니다(존치는 필지 그대로).'}</p>
   <div class="form" style="margin-top:8px">
     ${field('sideRoadW', '주변 도로 최소 폭(제안)', P.sideRoadW, 'm · 진입도로는 세대수 기준으로 자동', 'step=0.5')}
     ${field('otherInfra', '기타 기반시설 면적', P.otherInfra, '㎡ · 공공청사·주차장·공공공지 등', 'step=100')}
@@ -1789,6 +1790,7 @@ function bindInfra() {
   const szSet = (k, f) => { const inf = zi(); if (!inf) return; inf.sz = inf.sz || {}; inf.sz[k] = inf.sz[k] || {}; f(inf.sz[k]); saveZ(); INFRA.memo = {}; render(); };
   side.querySelectorAll('[data-szmode]').forEach(el => el.onchange = () => szSet(el.dataset.szmode, o => { o.mode = el.value; if (el.value === 'auto') o.val = ''; }));
   side.querySelectorAll('[data-szval]').forEach(el => el.onchange = () => szSet(el.dataset.szval, o => { o.val = num(el.value); }));
+  side.querySelectorAll('[data-szmin]').forEach(el => el.onchange = () => szSet(el.dataset.szmin, o => { const v = num(el.value); if (v > 0) o.min = v; else delete o.min; }));
   side.querySelectorAll('[data-szasp]').forEach(el => el.onchange = () => szSet(el.dataset.szasp, o => { o.asp = num(el.value); }));
   const aa = document.getElementById('autoAbsorb'); if (aa) aa.onchange = () => { P.autoAbsorb = aa.checked; saveP(); INFRA.memo = {}; render(); };
   const ki = document.getElementById('keepInner'); if (ki) ki.onchange = () => { P.keepInnerRoads = ki.checked; saveP(); INFRA.memo = {}; render(); };
