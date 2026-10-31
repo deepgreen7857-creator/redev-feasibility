@@ -999,10 +999,13 @@ const INFRA = {
       //  진입도로는 직접 고른 도로(z.infra.entryPnu) → 없으면 일방통행이 아닌 가장 넓은 도로. 교통 검토 전까지는 '가정'
       const eo = (z.infra && z.infra.edgeOpt) || {}, pick = z.infra && z.infra.entryPnu;
       const all = z.roads.edge.slice().sort((x, y) => y.w - x.w);
-      const cand = all.filter(r => !(eo[r.pnu] || {}).oneway);
+      // 진입도로 후보: 일방통행이 아니고 구역에 10m 이상 닿은 도로(모퉁이만 스치는 넓은 도로는 진입도로로 보지 않음)
+      //  닿은 길이 ≈ 1m 넓힐 때 구역 안에서 새로 도로가 되는 면적
+      const front = r => this.widenArea(r, z, r.w + 1);
+      const cand = all.filter(r => !(eo[r.pnu] || {}).oneway && front(r) >= 10);
       const e1 = all.find(r => r.pnu === pick) || cand[0] || all[0];
       // ③ 두 번째 진입도로: 일방통행이 아니고 폭 6m 이상(4~6m는 기간도로까지 200m 이내인지 몰라 자동으로는 고르지 않음)
-      const e2 = cand.filter(r => r !== e1 && r.w >= 6)[0] || null;
+      const e2 = cand.filter(r => r !== e1 && r.w >= 6 && r.pnu !== pick)[0] || null;
       const W2 = this.entryWidth2(units);
       const baseOf = r => Math.max((eo[r.pnu] || {}).oneway ? Math.max(sideW, 10) : sideW, ROADCLS.lower(r.dec));
       const pwOf = (r, base) => { const o = eo[r.pnu] || {}; return num(o.pw) > 0 ? num(o.pw) : o.keep ? r.w : Math.max(base, r.w); };
@@ -2188,7 +2191,7 @@ function entrySection(inf, pl) {
     <p class="hint">구역 경계 도로는 구역 쪽으로 넓혀 기부채납합니다. 도로마다 <b>추천 폭</b>은 지금 등급 안에서 모자라는 폭만 채운 값입니다(진입도로 기준·도시계획도로 결정 등급·일방통행·최소 폭 중 큰 값). 다른 폭을 고르면 늘어나는 도로 면적이 함께 보이니, 확보 목표 부족분을 보고 정하세요.</p>
     <p class="hint">${fmt(pl.units)}세대 기준 — ① 진입도로 1개: 폭 ${e.W}m 이상 · ③ 진입도로 2개: 각 4m 이상, 폭 합 ${e.W2}m 이상(4~6m 도로는 기간도로와 통행거리 200m 이내일 때만 — 자동으로는 6m 이상만 고름). 확폭 면적: ① ${fmt(e.A1)}㎡${e.A3 != null ? ` · ③ ${fmt(e.A3)}㎡` : ' · ③ 고를 두 번째 도로 없음'}.</p>
     <div class="seg" role="group" aria-label="진입도로 기준" style="margin:4px 0"><button type="button" data-entrymode="auto" aria-pressed="${e.em === 'auto'}">자동(확폭 적은 쪽)</button><button type="button" data-entrymode="1" aria-pressed="${e.em === '1'}">① 진입도로 1개</button><button type="button" data-entrymode="3" aria-pressed="${e.em === '3'}" ${e.e2 ? '' : 'disabled'}>③ 진입도로 2개</button></div>
-    <div class="tscroll"><table class="gi-tbl"><thead><tr><th>지번</th><th class="r">현황 폭(m)</th><th>등급(현황)</th><th>역할</th><th>계획 폭</th><th>추천 근거</th><th class="r">확폭㎡</th><th class="r" title="계획 폭을 1m 더 넓힐 때 새로 도로가 되는 면적">+1m당㎡</th><th>진입도로로</th><th>일방통행</th><th>건너편 녹지</th></tr></thead><tbody>
+    <div class="tscroll"><table class="gi-tbl"><thead><tr><th>지번</th><th class="r">현황 폭(m)</th><th>등급(현황)</th><th>역할</th><th>계획 폭</th><th>추천 근거</th><th class="r">확폭㎡</th><th class="r" title="계획 폭을 1m 더 넓힐 때 새로 도로가 되는 면적 ≈ 구역에 닿은 길이(m)">+1m당㎡<br><span class="u">≈닿은 길이</span></th><th>진입도로로</th><th>일방통행</th><th>건너편 녹지</th></tr></thead><tbody>
     ${edge.map(r => `<tr><td><button type="button" class="linkbtn" data-edgefocus="${esc(r.pnu)}">${esc(r.jibun)}</button></td><td class="r">${r.w}</td><td>${ROADCLS.of(r.w)}${(e.per[r.pnu] || {}).dec ? `<br><span class="u">결정 ${esc(e.per[r.pnu].dec)}</span>` : ''}</td><td>${role(r)}</td>
       <td>${opts(r)}</td><td class="wrap u">${why(r)}</td>
       <td class="r">${fmt((e.per[r.pnu] || {}).area || 0)}</td><td class="r">${fmt((e.per[r.pnu] || {}).perM || 0)}</td>
@@ -2197,7 +2200,7 @@ function entrySection(inf, pl) {
       <td><input type="checkbox" data-edgeopt="green" data-pnu="${esc(r.pnu)}" ${(eo[r.pnu] || {}).green ? 'checked' : ''} aria-label="${esc(r.jibun)} 건너편 녹지"></td></tr>`).join('')}
     </tbody></table></div>
     ${e.picked ? '<button type="button" class="btn ghost sm" id="entryAuto">진입도로 자동으로 되돌리기</button>' : ''}
-    <p class="u" style="margin:4px 0 0">현황 폭은 필지 모양으로 추정한 값입니다. 진입도로는 제25조 폭 아래로 고를 수 없습니다(골라도 제25조 폭으로 계산). 일방통행 도로는 진입도로 후보에서 뺍니다. 건너편 녹지가 있는 쪽은 구역 안에 완충녹지를 따로 두지 않아도 되는 것으로 봅니다.${z.roads && !z.roads.edgeDecOk ? ' 도시계획도로 결정 여부를 확인하는 중…' : ''}${wide.length ? ` <b class="warn">폭 20m 이상 경계 도로(${wide.map(r => esc(r.jibun)).join(', ')})에 닿아 있음 — 소음·완충녹지 필요 여부를 검토하세요(건너편 녹지가 있으면 체크).</b>` : ''}</p>
+    <p class="u" style="margin:4px 0 0">현황 폭은 필지 모양으로 추정한 값입니다. 진입도로 자동 선택은 구역에 10m 이상 닿은 도로만 봅니다(모퉁이만 스치는 도로 제외). 진입도로는 제25조 폭 아래로 고를 수 없습니다(골라도 제25조 폭으로 계산). 일방통행 도로는 진입도로 후보에서 뺍니다. 건너편 녹지가 있는 쪽은 구역 안에 완충녹지를 따로 두지 않아도 되는 것으로 봅니다.${z.roads && !z.roads.edgeDecOk ? ' 도시계획도로 결정 여부를 확인하는 중…' : ''}${wide.length ? ` <b class="warn">폭 20m 이상 경계 도로(${wide.map(r => esc(r.jibun)).join(', ')})에 닿아 있음 — 소음·완충녹지 필요 여부를 검토하세요(건너편 녹지가 있으면 체크).</b>` : ''}</p>
   </details>`;
 }
 function giSection(inf) {
