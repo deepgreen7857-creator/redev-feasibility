@@ -749,12 +749,32 @@ const INFRA = {
     return [c.geometry.coordinates[1], c.geometry.coordinates[0]];
   },
   // 면적 A인 정사각형을 중심점에 놓고 구역(도로 확폭 부분 제외)으로 자름
+  // 계획 블록(공원·학교·종교 대체부지): 면적 A인 반듯한 정사각형을 가장 가까운 구역 경계선 방향에 맞춰 돌려 놓고,
+  //  구역 밖·도로(minus)에 걸리면 자르지 않고 가까운 빈자리로 밀어 넣음(3m 간격, 최대 60m). 끝내 안 들어가면 걸린 만큼 잘라 냄
   block(center, A, zone, minus) {
     if (!(A > 0)) return null;
-    const [lat, lon] = center, side = Math.sqrt(A), kx = Math.cos(lat * Math.PI / 180) * 111320, ky = 110540;
-    const sq = turf.bboxPolygon([lon - side / 2 / kx, lat - side / 2 / ky, lon + side / 2 / kx, lat + side / 2 / ky]);
-    let g = null; try { g = turf.intersect(sq, zone); } catch (er) { g = null; }
-    if (g && minus) { try { g = turf.difference(g, minus) || g; } catch (er) { /* 그대로 */ } }
+    const [lat0, lon0] = center, kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540, side = Math.sqrt(A);
+    const toM = ([lon, lat]) => [(lon - lon0) * kx, (lat - lat0) * ky], toLL = ([x, y]) => [lon0 + x / kx, lat0 + y / ky];
+    // 가장 가까운 경계선 방향(도로·구역선과 나란하게)
+    let th = 0, best = Infinity;
+    const rings = zone.geometry.type === 'Polygon' ? [zone.geometry.coordinates[0]] : zone.geometry.coordinates.map(p => p[0]);
+    rings.forEach(r => { for (let i = 0; i + 1 < r.length; i++) {
+      const a = toM(r[i]), b = toM(r[i + 1]), dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy; if (L2 < 4) continue;
+      const t = Math.max(0, Math.min(1, -(a[0] * dx + a[1] * dy) / L2)), d = Math.hypot(a[0] + t * dx, a[1] + t * dy);
+      if (d < best) { best = d; th = Math.atan2(dy, dx); }
+    } });
+    const ca = Math.cos(th), sa = Math.sin(th), h = side / 2;
+    const sq = (cx, cy) => turf.polygon([[[-h, -h], [h, -h], [h, h], [-h, h], [-h, -h]].map(([u, v]) => toLL([cx + u * ca - v * sa, cy + u * sa + v * ca]))]);
+    let free = zone; if (minus) { try { free = turf.difference(zone, minus) || zone; } catch (er) { free = zone; } }
+    const fits = g => { try { const x = turf.intersect(g, free); return x && turf.area(x) >= turf.area(g) * 0.995; } catch (er) { return false; } };
+    for (let r = 0; r <= 60; r += 3) {
+      const n = r ? Math.max(8, Math.round(r / 2)) : 1;
+      for (let k = 0; k < n; k++) {
+        const g = sq(r * Math.cos(2 * Math.PI * k / n), r * Math.sin(2 * Math.PI * k / n));
+        if (fits(g)) return g;
+      }
+    }
+    let g = null; try { g = turf.intersect(sq(0, 0), free); } catch (er) { g = null; }
     return g;
   },
   memo: {},
