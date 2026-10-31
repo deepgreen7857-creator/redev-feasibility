@@ -1033,10 +1033,12 @@ const INFRA = {
       });
     });
     if (inf.parkGeom) this.movable(L.geoJSON(inf.parkGeom, { style: { color: c('--ok'), weight: 2, fillColor: c('--ok'), fillOpacity: 0.35 } })
-      .bindTooltip(`공원·녹지(제안) ${fmt(inf.parkArea)}㎡ · 끌어서 옮기기${inf.parkArea < inf.parkNeed * 0.95 ? ` — 구역 경계·도로에 걸려 필요 ${fmt(inf.parkNeed)}㎡보다 작음, 위치를 옮기세요` : ''}`, { sticky: true }).addTo(layer), 'park', inf.parkC);
+      .bindTooltip(`공원·녹지(제안) ${fmt(inf.parkArea)}㎡ · 끌어서 옮기기${inf.parkArea < inf.parkNeed * 0.95 ? ` — 구역 경계·도로에 걸려 필요 ${fmt(inf.parkNeed)}㎡보다 작음, 위치를 옮기세요` : ''}`, { sticky: true }).addTo(layer), 'park', this.centerOf(inf.parkGeom));
     if (inf.schoolGeom) this.movable(L.geoJSON(inf.schoolGeom, { style: { color: c('--accent'), weight: 2, fillColor: c('--accent'), fillOpacity: 0.3 } })
-      .bindTooltip(`학교용지(제안) ${fmt(inf.schoolArea)}㎡ · 끌어서 옮기기`, { sticky: true }).addTo(layer), 'school', inf.schoolC);
+      .bindTooltip(`학교용지(제안) ${fmt(inf.schoolArea)}㎡ · 끌어서 옮기기`, { sticky: true }).addTo(layer), 'school', this.centerOf(inf.schoolGeom));
   },
+  // 지금 그려진 블록의 가운데 [lat, lng] — 끌어 옮길 때 기준(저장된 위치가 구역 밖이어도 보이는 자리에서 옮겨지게)
+  centerOf(g) { if (!g) return null; try { const c = turf.centroid(g).geometry.coordinates; return [c[1], c[0]]; } catch (er) { return null; } },
   // 공원·학교·종교용지 도형을 마우스로 끌어 옮기기. center: 지금 블록 중심 [lat, lng]
   movable(lyr, kind, center) {
     if (!center) return lyr;
