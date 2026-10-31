@@ -184,11 +184,10 @@ async function collectScope() {
     }
   }
   // review 후보: 전부 받음(가볍게 받아 둔 것도 채움)
-  const file = path.join(ROOT, '..', 'review', 'items.json');
-  if (fs.existsSync(file)) {
+  {
     // 같은 사건번호가 다른 법원에도 있으므로(제주 2025타경1517 등) 후보의 법원까지 맞는 줄만 받는다
     const courtOf = new Map();
-    for (const it of JSON.parse(fs.readFileSync(file, 'utf8'))) { const m = String(it.id).match(/^(\d{4})타경(\d+)/); if (m) { const cb = courtBase(it.court || '').replace(/\s/g, ''); courtOf.set(`${m[1]}|${m[2]}`, (cb.match(/([가-힣]+지원)$/) || [])[1] || cb); } }
+    for (const it of reviewCands()) { const m = String(it.id).match(/^(\d{4})타경(\d+)/); if (m) { const cb = courtBase(it.court || '').replace(/\s/g, ''); const key = `${m[1]}|${m[2]}`; const v = (cb.match(/([가-힣]+지원)$/) || [])[1] || cb; if (!courtOf.get(key)) courtOf.set(key, v); } }
     const cases = [...courtOf.keys()];
     let k = 0;
     for (const c of cases) {
@@ -207,6 +206,15 @@ async function collectScope() {
   return out;
 }
 
+
+// review 후보 = review/items.json + review/land.json + 판단기록장(judge/picks.json 최근 3일 picks·reserve) — 2026.10.31: 땅·보류 물건도 미니PC가 받도록
+function reviewCands() {
+  const out = []; const rd = (f) => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, '..', f), 'utf8')); } catch { return null; } };
+  for (const f of ['review/items.json', 'review/land.json']) { const a = rd(f); if (Array.isArray(a)) for (const it of a) out.push({ id: String(it.id || ''), court: it.court || '' }); }
+  const pk = rd('judge/picks.json');
+  if (Array.isArray(pk)) for (const d of pk.slice(0, 3)) for (const it of [...(d.picks || []), ...(d.reserve || [])]) out.push({ id: String(it.id || '').replace(/^L:/, ''), court: it.court || '' });
+  return out.filter((x) => /^\d{4}타경\d+/.test(x.id));
+}
 const courtBase = (c) => String(c).replace(/\s*경매[\d-]+계\s*$/, '').trim();
 const view = (type, idx) => get(`${BASE}/search/auction_detail_view.php?type=${encodeURIComponent(type)}&idx=${idx}`, { referer: `${BASE}/search/detail_view.php?idx=${idx}` });
 
@@ -240,9 +248,8 @@ async function collectIdx() {
   }
   fs.writeFileSync(listFile, JSON.stringify([...out]));
   }
-  const file = path.join(ROOT, '..', 'review', 'items.json');
-  if (fs.existsSync(file)) {
-    const cases = [...new Set(JSON.parse(fs.readFileSync(file, 'utf8')).map((it) => (String(it.id).match(/^(\d{4})타경(\d+)/) || []).slice(1, 3).join('|')).filter((x) => x.includes('|')))];
+  {
+    const cases = [...new Set(reviewCands().map((it) => (String(it.id).match(/^(\d{4})타경(\d+)/) || []).slice(1, 3).join('|')).filter((x) => x.includes('|')))];
     for (const c of cases) {
       const [y, n] = c.split('|');
       const known = Object.values(db).some((r) => r.사건번호 === `${y}타경${n}` && Date.now() - (r._at || 0) < cfg.refreshDays * 86400e3);

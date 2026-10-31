@@ -239,3 +239,8 @@
 - 크롬이 아예 안 되면: 노트북 내장 브라우저(mcp__remote-devices__Claude_Browser__*)로 대법원·/data를 연다 → 그것도 안 되면 대법원 원문 대신 우리 사이트 Firestore listings(공개, 서울·인천)와 내 데이터(rtms-data)로 할 수 있는 관문까지 돌리고 원문 확인만 다음으로 미룬다.
 - /data 로그인이 풀리면 '로그인' 버튼(비밀번호 없이 기존 구글 계정)을 다시 누른다. /data PDF가 막히면 summary.specText(명세서 글자) → 그래도 없으면 대법원 물건상세 '매각물건명세서 보기' 뷰어 스크린샷.
 - 자동 푸시가 멈추면(autopush.log에 새 기록 없음) 보고에 적고, 바뀐 파일은 다음 자동 실행 때 같이 올라가므로 작업은 계속한다.
+
+## 판단기록장의 성격 (정민님, 2026.10.31 — 계속 적용)
+- 판단기록장(jbslab.co.kr/judge)은 '우리가 확보한 데이터'(jbslab.co.kr/data에 미니PC가 모은 명세서·현황조사서·감정평가서·사진 + 내 실거래 데이터 + 브이월드)를 검토해 판단하는 곳이다. 대법원 사이트 원문을 그때그때 열어 보는 곳이 아니다.
+- 그래서 판단기록장 picks는 /data에 자료가 있는 물건만 올린다. /data에 없는 물건은 '자료 미확보'로 reserve에 두고, review/items.json·land.json 또는 판단기록장 reserve에 사건번호를 넣어 미니PC가 받게 한다(2026.10.31 jauction.js 수정: items.json + land.json + picks.json 최근 3일 picks·reserve를 모두 review 후보로 받음 — 자동 푸시로 올라가 미니PC 다음 실행부터 적용).
+- 대법원 사이트는 목록 찾기(새 물건 발견)와 기일 결과 확인에만 쓴다.
