@@ -923,7 +923,7 @@ const INFRA = {
     // 구역 안 기존 도로(지목 '도' 등 공공 지목) — 경계 도로 확폭량을 정할 때도 씀
     // 기존 정비기반시설 판단: 국가·지자체 소유 + 실제 기반시설로 쓰이는지 근거를 모아 판정, 화면에서 넣기/빼기로 확정
     const giAll = this.judgeExisting(a, z), giDec = ((z.infra || {}).giDec) || {};
-    giAll.forEach(g => { g.dec = giDec[g.p.pnu] || ''; g.include = g.dec ? g.dec === 'in' : (g.grade === '확실' || g.grade === '가능성 높음'); });
+    giAll.forEach(g => { g.dec = giDec[g.p.pnu] || ''; g.include = g.dec ? g.dec === 'in' : (g.grade === '확실' || g.grade === '확인 필요' || g.grade === '가능성 높음'); });
     const inner = giAll.filter(g => g.include).map(g => g.p);
     const innerArea = inner.reduce((s, p) => s + (p.base ?? p.area) * (z.inArea[p.pnu] ?? 1), 0);
     // 1) 도로: 진입도로(가장 넓은 경계 도로)를 세대수 기준 폭으로, 나머지 경계 도로는 최소 폭으로 — 부족한 폭만큼 구역 안쪽으로 확폭
@@ -1319,10 +1319,12 @@ const INFRA = {
         try { const A = turf.area(f), P = turf.length(turf.polygonToLine(f), { units: 'kilometers' }) * 1000; w = 2 * A / (P || 1); } catch (er) { w = 99; }
       }
       const thin = w < 8, noBld = !((Rg.blds || {})[p.pnu] || []).length, fc = facR >= 0.5;
-      const grade = !pub ? '사유(참고)' : (jm || lu) ? '확실' : (fc || (thin && noBld)) ? '가능성 높음' : '아닐 가능성';
+      // 지목은 공공(도로·공원 등)인데 토지이용상황이 주거·상업 등이면 실제 쓰임이 달라 '확인 필요'
+      const conflict = jm && !!p.landUse && !lu;
+      const grade = !pub ? '사유(참고)' : conflict ? '확인 필요' : (jm || lu) ? '확실' : (fc || (thin && noBld)) ? '가능성 높음' : '아닐 가능성';
       out.push({ p, pub, jm, lu, fc, thin, noBld, w: Math.round(w * 10) / 10, grade, area: (p.base ?? p.area) * (z.inArea[p.pnu] ?? 1) });
     });
-    const ord = { '확실': 0, '가능성 높음': 1, '아닐 가능성': 2, '사유(참고)': 3 };
+    const ord = { '확실': 0, '확인 필요': 1, '가능성 높음': 2, '아닐 가능성': 3, '사유(참고)': 4 };
     return out.sort((x, y) => ord[x.grade] - ord[y.grade] || y.area - x.area);
   },
   // 지금 그려진 블록의 가운데 [lat, lng] — 끌어 옮길 때 기준(저장된 위치가 구역 밖이어도 보이는 자리에서 옮겨지게)
@@ -1835,10 +1837,10 @@ function giSection(inf) {
   if (!INFRA.ready(S.region)) return '<p class="hint">국공유 필지 소유구분·도시계획시설을 확인하는 중…</p>';
   const pubs = g.filter(x => x.pub), priv = g.filter(x => !x.pub);
   const chk = (b, t) => `<span class="ev ${b ? 'on' : ''}" title="${t}">${b ? '✓' : '·'} ${t}</span>`;
-  const gradeCls = { '확실': 'ok', '가능성 높음': 'info', '아닐 가능성': '', '사유(참고)': '' };
+  const gradeCls = { '확실': 'ok', '확인 필요': 'bad', '가능성 높음': 'info', '아닐 가능성': '', '사유(참고)': '' };
   const inA = pubs.filter(x => x.include).reduce((t, x) => t + x.area, 0);
-  return `<details class="gi" ${pubs.some(x => x.grade === '가능성 높음' || x.grade === '아닐 가능성') ? 'open' : ''}>
-    <summary><b>기존 정비기반시설 판단</b> — 국공유 ${pubs.length}필지 중 ${pubs.filter(x => x.include).length}필지 ${fmt(inA)}㎡ 넣음${priv.length ? ` · 사유 도로 등 ${priv.length}필지(목표 제외, 참고)` : ''}</summary>
+  return `<details class="gi" ${pubs.some(x => x.grade !== '확실' && !x.dec) ? 'open' : ''}>
+    <summary><b>기존 정비기반시설 판단</b> — 국공유 ${pubs.length}필지 중 ${pubs.filter(x => x.include).length}필지 ${fmt(inA)}㎡ 넣음${pubs.filter(x => x.grade === '확인 필요' && !x.dec).length ? ` · <b class="warn">확인 필요 ${pubs.filter(x => x.grade === '확인 필요' && !x.dec).length}필지</b>(지목과 실제 쓰임이 다름)` : ''}${priv.length ? ` · 사유 도로 등 ${priv.length}필지(목표 제외, 참고)` : ''}</summary>
     <p class="hint">국가·지자체 소유이면서 실제 도로·구거·공원 등으로 쓰이는 땅만 확보 목표(무상양도 대상)에 넣습니다. 근거를 보고 '판단'을 바꾸면 확보 목표가 바로 다시 계산됩니다. 지번을 누르면 지도에서 보여 줍니다(위성사진은 지도 오른쪽 위 층 단추).</p>
     <div class="tscroll"><table class="gi-tbl"><thead><tr><th>지번</th><th>지목</th><th>소유</th><th>토지이용상황</th><th>근거</th><th>자동 판정</th><th>판단</th><th class="r">편입㎡</th></tr></thead><tbody>
     ${g.map(x => `<tr class="${x.include ? 'inc' : ''}">
@@ -1846,7 +1848,7 @@ function giSection(inf) {
       <td>${esc(x.p.jimok)}</td><td>${esc(x.p.own || '확인 중')}${x.p.ownInst && x.p.ownInst !== '구분없음' ? `<br><span class="u">${esc(x.p.ownInst)}</span>` : ''}</td><td>${esc(x.p.landUse || '–')}</td>
       <td class="evs">${chk(x.jm, '공공 지목')}${chk(x.lu, '이용상황 도로등')}${chk(x.fc, '도시계획시설 안')}${chk(x.thin, `길쭉함(폭 약 ${x.w}m)`)}${chk(x.noBld, '건물 없음')}</td>
       <td><span class="pill ${gradeCls[x.grade]}">${x.grade}</span></td>
-      <td>${x.pub ? `<select data-gidec="${esc(x.p.pnu)}" aria-label="${esc(x.p.jibun)} 판단"><option value="" ${!x.dec ? 'selected' : ''}>자동(${x.grade === '확실' || x.grade === '가능성 높음' ? '넣음' : '뺌'})</option><option value="in" ${x.dec === 'in' ? 'selected' : ''}>넣기(무상양도 대상)</option><option value="out" ${x.dec === 'out' ? 'selected' : ''}>빼기</option></select>` : '<span class="u">사유 — 제외</span>'}</td>
+      <td>${x.pub ? `<select data-gidec="${esc(x.p.pnu)}" aria-label="${esc(x.p.jibun)} 판단"><option value="" ${!x.dec ? 'selected' : ''}>자동(${x.grade === '아닐 가능성' ? '뺌' : '넣음'})</option><option value="in" ${x.dec === 'in' ? 'selected' : ''}>넣기(무상양도 대상)</option><option value="out" ${x.dec === 'out' ? 'selected' : ''}>빼기</option></select>` : '<span class="u">사유 — 제외</span>'}</td>
       <td class="r">${fmt(x.area)}</td></tr>`).join('') || '<tr><td colspan="8" class="u">구역 안 국공유·공공 지목 필지 없음</td></tr>'}
     </tbody></table></div>
     <button type="button" class="btn ghost sm" id="giCopy">표 복사(엑셀 붙여넣기용)</button>
