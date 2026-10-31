@@ -189,7 +189,7 @@ const rowFromLedger = t => ({ ...BldgRows.fromLedger(t), src: '대장' });
 // Z: 안(A~E)별 구역계(GeoJSON)와 편입 필지·편입비율. CACHE: 필지(pnu)별 공부, 건축물 행
 const ZONE_KEY = 'jbs-urban-zones-v1', CACHE_KEY = 'jbs-urban-cache-v1', UI_KEY = 'jbs-urban-ui';
 const ZONE_IDS = ['A', 'B', 'C', 'D', 'E'];
-const Z = (() => { const z = lsGet(ZONE_KEY); return { center: z.center || [37.4553, 126.6577], zoom: z.zoom || 16, count: z.count || 3, zones: z.zones || {} }; })();
+const Z = (() => { const z = lsGet(ZONE_KEY); return { title: z.title || '', center: z.center || [37.4553, 126.6577], zoom: z.zoom || 16, count: z.count || 3, zones: z.zones || {} }; })();
 const CACHE = (() => { const c = lsGet(CACHE_KEY); return { parcels: c.parcels || {}, blds: c.blds || {} }; })();
 const saveZ = () => lsSet(ZONE_KEY, Z);
 function saveCache() { if (!lsSet(CACHE_KEY, CACHE)) console.warn('/urban 공부 캐시가 커서 브라우저에 저장하지 못했습니다(이번 창에서는 그대로 씀)'); }
@@ -1435,13 +1435,14 @@ function renderSourceBar() {
     tag.textContent = '실제 지도 · 브이월드 공부 조회'; tag.className = 'demo real';
     const used = D.keys.filter(k => D.regions[k].geojson).length, rt = roadTargets().length;
     const proj = loadProject(), hasProj = !!(proj && proj.area && proj.area.geojson);
-    bar.innerHTML = `<b>지도에서 구역계를 그려 판정합니다</b> · 그린 안 ${used}개`
+    bar.innerHTML = `<label class="zname">구역명 <input id="zoneTitle" value="${esc(Z.title || '')}" placeholder="예: 용현1구역 주택재개발정비구역" aria-label="구역명"></label> · 그린 안 ${used}개`
       + (rt ? ` <button class="btn sm" id="roadBtn">도로접면 조회 (${rt}필지)</button>` : '')
       + (ledgerTargets().length ? ` <button class="btn sm" id="ledBtn" title="사용승인 연도가 빈 건물과 공동주택 세대수를 건축물대장 표제부로 채웁니다">건축물대장으로 연도·세대수 채우기 (${ledgerTargets().length}필지)</button>` : '')
       + (hasProj ? ` <button class="btn ghost sm" id="fromProj" title="사업성 검토 화면에 그린 구역계와 토지·건축물 조서를 지금 고른 안으로 가져옵니다">사업성 검토 구역 가져오기 → ${esc(S.region)}안</button>` : '')
       + ` <button class="btn ghost sm" id="toSample">예시 구역 보기</button>`;
   }
   const on = (id, fn) => { const b = $id(id); if (b) b.onclick = fn; };
+  const zt = $id('zoneTitle'); if (zt) zt.onchange = () => { Z.title = zt.value.trim(); saveZ(); syncTitle(); render(); };
   on('toMap', () => setSource('map'));
   on('toSample', () => setSource('sample'));
   on('fromProj', () => {
@@ -1736,7 +1737,9 @@ function render() {
   if (JOB.active && JOB.zone === S.region) side.insertAdjacentHTML('afterbegin', jobHtml());
 }
 const kpi = (l, v, f) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="f">${f || ''}</div></div>`;
-const regName = () => esc(D.regions[S.region].name);
+// 화면 제목·내보내기에 구역명(있으면)을 붙임: "용현1구역 · A안"
+const regName = () => esc((Z.title ? Z.title + ' · ' : '') + D.regions[S.region].name);
+function syncTitle() { document.title = (Z.title ? Z.title + ' — ' : '') + 'jbslab 정비계획 검토'; }
 function renderZone(a) {
   const rows = a.bs.slice().sort((x, y) => (x.year || 9999) - (y.year || 9999)).map(b => {
     const p = b.pid != null ? D.parcels[b.pid] : null;
@@ -2375,8 +2378,8 @@ $id('geoFile').onchange = e => { const f = e.target.files[0]; if (!f) return; co
 $id('geoOutBtn').onclick = () => {
   const R = D.regions[S.region];
   if (!R.geojson) { toast('내보낼 구역계가 없습니다'); return; }
-  const blob = new Blob([JSON.stringify({ type: 'FeatureCollection', features: [{ ...R.geojson, properties: { name: R.name } }] }, null, 1)], { type: 'application/geo+json' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `구역계_${R.name}.geojson`; document.body.append(a); a.click(); a.remove();
+  const blob = new Blob([JSON.stringify({ type: 'FeatureCollection', features: [{ ...R.geojson, properties: { name: (Z.title ? Z.title + ' ' : '') + R.name } }] }, null, 1)], { type: 'application/geo+json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `구역계_${Z.title ? Z.title.replace(/[\\/:*?"<>|\s]+/g, '_') + '_' : ''}${R.name}.geojson`; document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 };
 $id('clearBtn').onclick = () => {
@@ -2469,3 +2472,5 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
   new MutationObserver(syncHidden).observe(bar, { attributes: true, attributeFilter: ['hidden'] });
   syncHidden();
 })();
+
+syncTitle();
