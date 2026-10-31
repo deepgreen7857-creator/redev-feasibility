@@ -884,34 +884,24 @@ const INFRA = {
     const szSchool = this.sizeOf(z, 'school', num(P.schoolArea), a.area), schoolA = szSchool.A;
     const schoolC = inf.schoolC || (() => { const [la, lo] = parkC; return [la, lo + (Math.sqrt(parkNeed || 1) + Math.sqrt(schoolA || 1)) / 2 / (Math.cos(la * Math.PI / 180) * 111320)]; })();
     let schoolGeom = this.block(schoolC, schoolA, zone, avoid0 ? (parkGeom ? safeUnion([avoid0, parkGeom]) : avoid0) : parkGeom, szSchool.asp);
-    // 블록 옆에 쓸 수 없는 자투리(폭 8m 미만이거나 300㎡ 미만)가 남으면 그 블록에 붙여 빈 땅이 생기지 않게 함
+    // 시설 블록 때문에 큰 획지와 떨어져 갇힌 작은 조각이 남으면 맞닿은 시설에 붙여 빈 땅이 생기지 않게 함
     let absorbed = 0;
     { const blocks = [['park', parkGeom], ['school', schoolGeom]].concat(relC ? [['rel', relGeom]] : []).filter(b => b[1]);
       if (blocks.length && P.autoAbsorb !== false) {
         let rest = null;
         try { rest = turf.difference(zone, safeUnion([...(roadGeom ? [roadGeom] : []), ...(!relC && relGeom ? [relGeom] : []), ...blocks.map(b => b[1])])); } catch (er) { rest = null; }
-        // 폭 8m 미만으로 가늘게 남는 부분(블록과 경계 사이 띠·뾰족한 모서리)을 열림 연산(-4m → +4m)으로 골라냄
-        let thin = null;
-        if (rest) {
-          try {
-            const core = turf.buffer(rest, -4, { units: 'meters' });
-            const opened = core ? turf.buffer(core, 4.05, { units: 'meters' }) : null;
-            thin = opened ? turf.difference(rest, opened) : rest;
-            // 열림 뒤 남은 덩어리 중 300㎡ 미만도 자투리로
-            if (opened) {
-              const ops = opened.geometry.type === 'Polygon' ? [opened.geometry.coordinates] : opened.geometry.coordinates;
-              const small = ops.map(c => turf.polygon(c)).filter(pc => turf.area(pc) < 300).map(pc => { try { return turf.intersect(pc, rest); } catch (er) { return null; } }).filter(Boolean);
-              if (small.length) thin = thin ? safeUnion([thin, ...small]) : safeUnion(small);
-            }
-          } catch (er) { thin = null; }
-        }
-        const polys = thin ? (thin.geometry.type === 'Polygon' ? [thin.geometry.coordinates] : thin.geometry.coordinates) : [];
+        // 큰 공동주택 획지와 떨어져 갇힌 1,000㎡ 미만 조각(시설과 구역 경계 사이 모퉁이 등)만 가장 많이 맞닿은 시설에 붙임
+        //  (가는 띠는 블록을 8m 안에서 경계에 붙여 생기지 않게 함 — 큰 획지와 이어진 땅은 건드리지 않음)
+        const cs = rest ? (rest.geometry.type === 'Polygon' ? [rest.geometry.coordinates] : rest.geometry.coordinates) : [];
+        const pieces = cs.map(c => turf.polygon(c)).map(g => ({ g, A: turf.area(g) })).filter(x => x.A >= 1).sort((x, y) => y.A - x.A);
         const add = {};
-        polys.forEach(c => {
-          const pc = turf.polygon(c), A = turf.area(pc);
-          if (A < 1) return;
-          let near = null;
-          try { const pb = turf.buffer(pc, 0.5, { units: 'meters' }); near = blocks.filter(b => turf.booleanIntersects(pb, b[1])).sort((x, y) => turf.area(y[1]) - turf.area(x[1]))[0]; } catch (er) { near = null; }
+        pieces.slice(1).forEach(({ g: pc, A }) => {
+          if (A >= 1000) return;
+          let near = null, bestC = 0;
+          try {
+            const pb = turf.buffer(pc, 1, { units: 'meters' });
+            blocks.forEach(b => { let c = 0; try { const x = turf.intersect(pb, b[1]); c = x ? turf.area(x) : 0; } catch (er) { c = 0; } if (c > bestC) { bestC = c; near = b; } });
+          } catch (er) { near = null; }
           if (!near) return;
           (add[near[0]] = add[near[0]] || []).push(pc); absorbed += A;
         });
@@ -1541,7 +1531,7 @@ function infraSection(a, pl) {
   const szTxt = sz => sz.mode === 'area' ? `직접 지정 ${fmt(num(sz.val))}㎡` : sz.mode === 'pct' ? `구역의 ${num(sz.val)}%로 지정(${fmt(sz.A)}㎡)` : '';
   if (inf.szPark.mode !== 'auto') rows.push(['공원·녹지', inf.parkArea, `${szTxt(inf.szPark)}. 법정·제안 기준은 ${fmt(inf.parkLegal)}㎡` + (inf.parkLegal > inf.szPark.A ? ' — <b class="warn">기준보다 작음</b>' : '')]);
   else rows.push(['공원·녹지', inf.parkArea, inf.legal ? `도시공원 및 녹지 등에 관한 법률 시행규칙 별표2 제4호 — 정비계획 5만㎡ 이상: 세대당 2㎡(${fmt(pl.units * 2)}㎡)와 부지 5%(${fmt(a.area * 0.05)}㎡) 중 큰 면적 ${fmt(inf.parkNeed)}㎡` + (inf.parkArea < inf.parkNeed * 0.95 ? ' · <b class="warn">구역 경계에 걸려 모자람 — 위치를 옮기세요</b>' : '') : (P.parkMode === 'always' ? `5만㎡ 미만이라 법정 의무는 없으나 부지 5%로 제안(${fmt(inf.parkNeed)}㎡)` : `구역 ${fmt(a.area)}㎡ < 5만㎡ — 별표2 의무 없음. 2030 인천 정비기본계획 공원·녹지 기준은 고시문 대조 필요`)]);
-  if (inf.absorbed >= 1) rows.push(['자투리 편입', 0, `블록 옆에 남는 쓸 수 없는 자투리(폭 8m 미만·300㎡ 미만) ${fmt(inf.absorbed)}㎡를 옆 공원·학교·대체부지에 붙였습니다(위 면적에 포함).`]);
+  if (inf.absorbed >= 1) rows.push(['자투리 편입', 0, `큰 공동주택 획지와 떨어져 갇힌 1,000㎡ 미만 조각 ${fmt(inf.absorbed)}㎡를 가장 많이 맞닿은 공원·학교·대체부지에 붙였습니다(위 면적에 포함).`]);
   if (inf.szSchool.A > 0) rows.push(['학교용지', inf.schoolArea, `${szTxt(inf.szSchool) || '입력값'} — 교육청 협의로 정함`]);
   if (inf.other) rows.push(['기타 시설', inf.other, '공공청사·주차장·공공공지 등(입력값)']);
   if (inf.relAll.length || inf.relManual) {
@@ -1586,7 +1576,7 @@ function infraSection(a, pl) {
     ${field('otherInfra', '기타 기반시설 면적', P.otherInfra, '㎡ · 공공청사·주차장·공공공지 등', 'step=100')}
     <div class="field"><label for="parkMode">5만㎡ 미만일 때 공원·녹지</label><select id="parkMode"><option value="legal">법정 의무만(없으면 0)</option><option value="always">부지 5% 제안</option></select></div>
   </div>
- <label class="zk-opts"><input type="checkbox" id="autoAbsorb" ${P.autoAbsorb !== false ? 'checked' : ''}> 블록 옆 가는 자투리(폭 8m·300㎡ 미만)를 자동으로 붙이기 — 끄면 블록은 반듯한 사각형 그대로 두고, 남는 땅은 획지로 보여 줌(눌러서 면적을 정해 붙일 수 있음)</label>
+ <label class="zk-opts"><input type="checkbox" id="autoAbsorb" ${P.autoAbsorb !== false ? 'checked' : ''}> 큰 획지와 떨어져 갇힌 1,000㎡ 미만 조각을 맞닿은 시설에 자동으로 붙이기 — 끄면 그 조각은 주황 획지로 남음(눌러서 면적을 정해 붙일 수 있음)</label>
   <label class="zk-opts"><input type="checkbox" id="keepInner" ${P.keepInnerRoads ? 'checked' : ''}> 구역 안 기존 도로를 존치(기반시설로 셈)</label>
   <p class="note">도로 폭은 연속지적도 필지 모양으로 어림한 값이라 실제 측량 폭과 다를 수 있습니다. 확폭 부분은 구역 안쪽으로만 잡았습니다. 위치·형태는 정비계획 입안 때 교통·공원 담당 부서 협의와 도시계획위원회 심의로 정합니다.</p>`;
 }
