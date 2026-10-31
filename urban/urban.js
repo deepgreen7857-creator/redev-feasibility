@@ -753,6 +753,7 @@ const INFRA = {
   //  구역 밖·도로(minus)에 걸리면 자르지 않고 가까운 빈자리로 밀어 넣음(3m 간격, 최대 60m). 끝내 안 들어가면 걸린 만큼 잘라 냄
   block(center, A, zone, minus, asp0 = 1) {
     if (!(A > 0)) return null;
+    try { if (A > turf.area(zone) * 0.8) return null; } catch (er) { return null; }
     const [lat0, lon0] = center, kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540, side = Math.sqrt(A);
     const toM = ([lon, lat]) => [(lon - lon0) * kx, (lat - lat0) * ky], toLL = ([x, y]) => [lon0 + x / kx, lat0 + y / ky];
     // 가장 가까운 선 방향(구역 경계·도로, 그리고 이미 놓인 종교용지·공원 같은 다른 시설의 변)과 나란하게, 그 선 쪽으로 붙임
@@ -864,8 +865,11 @@ const INFRA = {
   sizeOf(z, kind, auto, zoneA) {
     const st = ((z.infra || {}).sz || {})[kind] || {};
     const v = num(st.val);
-    const A = st.mode === 'area' && v > 0 ? v : st.mode === 'pct' && v > 0 ? zoneA * v / 100 : auto;
-    return { A, mode: st.mode || 'auto', val: st.val ?? '', asp: num(st.asp) || 1 };
+    // 잘못 넣은 값(구역 대비 100% 넘음, 구역의 80% 넘는 면적)은 쓰지 않고 자동값으로 — 계산이 멈추지 않게
+    let A = st.mode === 'area' && v > 0 ? v : st.mode === 'pct' && v > 0 && v <= 100 ? zoneA * v / 100 : auto;
+    const bad = (st.mode === 'pct' && v > 100) || A > zoneA * 0.8;
+    if (bad) A = Math.min(auto, zoneA * 0.8);
+    return { A, mode: st.mode || 'auto', val: st.val ?? '', asp: num(st.asp) || 1, bad };
   },
   memo: {},
   // a: analyze 결과, units: 계획 세대수 → { items, total, ratio, roadsReady }
@@ -1754,7 +1758,7 @@ function infraSection(a, pl) {
      ['rel', '종교용지', inf.szRel, `자동: 교회 필지 대지 ${fmt(inf.relLand)}㎡`, inf.relArea]].map(([k, n, sz, autoTxt, cur]) => `<tr>
      <td>${n}</td>
      <td><select data-szmode="${k}" aria-label="${n} 면적 정하는 방식"><option value="auto" ${sz.mode === 'auto' ? 'selected' : ''}>자동</option><option value="area" ${sz.mode === 'area' ? 'selected' : ''}>면적 직접(㎡)</option><option value="pct" ${sz.mode === 'pct' ? 'selected' : ''}>구역 대비 %</option></select></td>
-     <td>${sz.mode === 'auto' ? `<span class="u">${autoTxt}</span>` : `<input data-szval="${k}" inputmode="decimal" value="${esc(String(sz.val))}" placeholder="${sz.mode === 'pct' ? '예: 5' : '예: 2000'}" aria-label="${n} ${sz.mode === 'pct' ? '구역 대비 %' : '면적 ㎡'}" style="width:90px"> ${sz.mode === 'pct' ? '%' : '㎡'}`}</td>
+     <td>${sz.mode === 'auto' ? `<span class="u">${autoTxt}</span>` : `<input data-szval="${k}" inputmode="decimal" value="${esc(String(sz.val))}" placeholder="${sz.mode === 'pct' ? '예: 5' : '예: 2000'}" aria-label="${n} ${sz.mode === 'pct' ? '구역 대비 %' : '면적 ㎡'}" style="width:90px"> ${sz.mode === 'pct' ? '%' : '㎡'}${sz.bad ? ' <b class="warn">값이 너무 큼(구역 대비 100% 또는 구역의 80% 넘음) — 자동값 사용</b>' : ''}`}</td>
      <td><select data-szasp="${k}" aria-label="${n} 가로세로 비율">${[1, 1.5, 2, 3].map(r => `<option value="${r}" ${sz.asp === r ? 'selected' : ''}>1:${r}</option>`).join('')}</select></td>
      <td><input data-szmin="${k}" inputmode="decimal" value="${esc(String(((Z.zones[a.key].infra || {}).sz || {})[k] && Z.zones[a.key].infra.sz[k].min || ''))}" placeholder="${k === 'park' ? '법정 ' + fmt(inf.parkLegal) : '없음'}" aria-label="${n} 최소 면적" style="width:80px"></td>
      <td class="r">${fmt(cur)}</td></tr>`).join('')}
@@ -1788,7 +1792,7 @@ function bindInfra() {
   });
   side.querySelectorAll('[data-rel]').forEach(cb => cb.onchange = () => { const inf = zi(); if (!inf) return; inf.relOff = inf.relOff || {}; if (cb.checked) delete inf.relOff[cb.dataset.rel]; else inf.relOff[cb.dataset.rel] = true; saveZ(); INFRA.memo = {}; render(); });
   const szSet = (k, f) => { const inf = zi(); if (!inf) return; inf.sz = inf.sz || {}; inf.sz[k] = inf.sz[k] || {}; f(inf.sz[k]); saveZ(); INFRA.memo = {}; render(); };
-  side.querySelectorAll('[data-szmode]').forEach(el => el.onchange = () => szSet(el.dataset.szmode, o => { o.mode = el.value; if (el.value === 'auto') o.val = ''; }));
+  side.querySelectorAll('[data-szmode]').forEach(el => el.onchange = () => szSet(el.dataset.szmode, o => { o.mode = el.value; o.val = ''; }));
   side.querySelectorAll('[data-szval]').forEach(el => el.onchange = () => szSet(el.dataset.szval, o => { o.val = num(el.value); }));
   side.querySelectorAll('[data-szmin]').forEach(el => el.onchange = () => szSet(el.dataset.szmin, o => { const v = num(el.value); if (v > 0) o.min = v; else delete o.min; }));
   side.querySelectorAll('[data-szasp]').forEach(el => el.onchange = () => szSet(el.dataset.szasp, o => { o.asp = num(el.value); }));
