@@ -373,8 +373,8 @@ const HIST = {};   // 안별 { undo: [구역계…], redo: [] } — 이 창에�
 function histOf(id) { return HIST[id] || (HIST[id] = { undo: [], redo: [] }); }
 function syncUndo() {
   const h = histOf(S.region), u = $id('undoBtn'), r = $id('redoBtn');
-  if (u) { u.disabled = !h.undo.length; u.title = h.undo.length ? `되돌리기: ${h.undo[h.undo.length - 1].label}` : '되돌릴 작업이 없습니다'; }
-  if (r) { r.disabled = !h.redo.length; r.title = h.redo.length ? `다시 하기: ${h.redo[h.redo.length - 1].label}` : '다시 할 작업이 없습니다'; }
+  if (u) { u.disabled = !h.undo.length; u.title = u.dataset.tip = h.undo.length ? `실행 취소: ${h.undo[h.undo.length - 1].label} (Ctrl+Z)` : '되돌릴 작업이 없습니다'; }
+  if (r) { r.disabled = !h.redo.length; r.title = r.dataset.tip = h.redo.length ? `다시 실행: ${h.redo[h.redo.length - 1].label} (Ctrl+Y)` : '다시 할 작업이 없습니다'; }
 }
 function undoZone(redo = false) {
   const id = S.region, h = histOf(id), from = redo ? h.redo : h.undo, to = redo ? h.undo : h.redo;
@@ -884,7 +884,7 @@ function loadData() {
   D.parcels.forEach(applyAccess);
   if (!D.keys.includes(S.region)) S.region = D.keys[0];
   const isMap = S.source === 'map';
-  $id('lmap').hidden = !isMap; $id('svgbox').hidden = isMap; $id('mapTools').hidden = !isMap; $id('mapSearch').hidden = !isMap;
+  $id('lmap').hidden = !isMap; $id('svgbox').hidden = isMap; $id('mapTools').hidden = !isMap; $id('mapSearch').hidden = !isMap; $id('vSplit').hidden = !isMap;
   $id('finishBtn').hidden = true; $id('cancelBtn').hidden = true; $id('drawBtn').hidden = false;
   $id('drawHint').innerHTML = isMap
     ? '<b>구역계 그리기</b>를 누르고 지도에서 꼭짓점을 찍은 뒤 첫 점을 다시 누르면 완성됩니다. 완성하면 그 안의 필지(연속지적)·건축물(GIS건물통합정보)·토지특성·공동주택 건축물대장을 자동으로 불러옵니다. 구역계와 10% 이상 겹치는 필지를 편입 필지로 봅니다.'
@@ -1088,7 +1088,7 @@ function startMapDraw() {
   toast('지도에서 꼭짓점을 찍고, 첫 점을 다시 누르면 완성됩니다');
 }
 // 왼쪽 도구 막대 버튼 글자(아이콘은 그대로)
-function mtLabel(b, t) { if (!b) return; const x = b.querySelector('.mt-t'); if (x) x.textContent = t; else b.textContent = t; }
+function mtLabel(b, t) { if (!b) return; b.setAttribute('aria-label', t); b.dataset.tip = b.dataset.tip ? t + (b.dataset.tip.includes(' — ') ? ' — ' + b.dataset.tip.split(' — ').slice(1).join(' — ') : '') : t; }
 function toggleEdit() {
   if (!LM) return;
   const b = $id('editBtn');
@@ -1778,3 +1778,35 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
   render();
 });
 
+
+/* ===== 화면 크기 조절: 지도 ↔ 설명 너비, 지도 높이 (끌기·화살표 키, 두 번 누르면 처음대로) ===== */
+(() => {
+  const KEY = 'jbs-urban-split', root = document.documentElement;
+  const st = (() => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } })();
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* 무시 */ } };
+  let t = 0; const fit = () => { clearTimeout(t); t = setTimeout(() => { if (typeof LM !== 'undefined' && LM) LM.invalidateSize(); }, 60); };
+  const apply = () => {
+    if (st.lw) root.style.setProperty('--lw', st.lw + '%'); else root.style.removeProperty('--lw');
+    if (st.mh) root.style.setProperty('--mh', st.mh + 'px'); else root.style.removeProperty('--mh');
+    fit();
+  };
+  apply();
+  const lay = document.querySelector('.layout');
+  const drag = (el, onMove) => {
+    if (!el) return;
+    el.addEventListener('pointerdown', e => {
+      e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('drag'); document.body.classList.add('resizing');
+      const mv = ev => { onMove(ev); apply(); };
+      const up = () => { el.classList.remove('drag'); document.body.classList.remove('resizing'); el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); save(); };
+      el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    });
+  };
+  const h = document.getElementById('hSplit'), v = document.getElementById('vSplit');
+  drag(h, ev => { const r = lay.getBoundingClientRect(); st.lw = Math.round(Math.min(80, Math.max(25, (ev.clientX - r.left) / r.width * 100)) * 10) / 10; });
+  drag(v, ev => { const m = document.getElementById('lmap').getBoundingClientRect(); st.mh = Math.round(Math.min(window.innerHeight * 1.5, Math.max(260, ev.clientY - m.top))); });
+  const key = (el, k1, k2, f) => el && el.addEventListener('keydown', e => { const d = e.key === k1 ? -1 : e.key === k2 ? 1 : 0; if (!d) return; e.preventDefault(); f(d * (e.shiftKey ? 5 : 1)); apply(); save(); });
+  key(h, 'ArrowLeft', 'ArrowRight', d => { st.lw = Math.min(80, Math.max(25, (st.lw || 53) + d * 2)); });
+  key(v, 'ArrowUp', 'ArrowDown', d => { st.mh = Math.max(260, (st.mh || 560) + d * 20); });
+  if (h) h.addEventListener('dblclick', () => { delete st.lw; apply(); save(); });
+  if (v) v.addEventListener('dblclick', () => { delete st.mh; apply(); save(); });
+})();

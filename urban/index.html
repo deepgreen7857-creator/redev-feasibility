@@ -49,8 +49,8 @@ nav.steps button[aria-selected="true"]{background:var(--ink);color:var(--paper);
 nav.steps button[aria-selected="true"] .n{color:var(--paper)}
 nav.steps button:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 nav.steps .arrow{color:var(--line);align-self:center;flex:none}
-.layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
-@media (max-width:900px){.layout{grid-template-columns:1fr}}
+.layout{display:grid;grid-template-columns:minmax(0,var(--lw,53%)) 12px minmax(0,1fr);gap:4px;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:1fr}.hsplit{display:none}}
 .panel{background:var(--sheet);border:1px solid var(--line);border-radius:8px;padding:14px;min-width:0}
 .panel h2{font-size:15px;margin:0 0 10px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .panel h3{font-size:13px;margin:16px 0 6px;color:var(--ink-2);font-weight:600;letter-spacing:.02em}
@@ -126,7 +126,7 @@ tr.hl td{background:var(--accent-soft)}
 .acc.bad{border-color:var(--bad);color:var(--bad)}
 .acc.man{font-weight:600}
 .acc:hover{background:var(--grid)}
-.lmap{height:560px;border:1px solid var(--line);border-radius:6px;background:var(--grid)}
+.lmap{height:var(--mh,560px);border:1px solid var(--line);border-radius:6px;background:var(--grid)}
 @media (max-width:900px){.lmap{height:420px}}
 .lmap .leaflet-tooltip{font-family:var(--f-body);font-size:12px;line-height:1.45;white-space:pre}
 .search{display:flex;gap:6px;flex:1 1 240px;min-width:0}
@@ -178,20 +178,25 @@ td .u{font-size:11px;font-weight:400;color:var(--ink-2)}
 .lmap.picking .leaflet-interactive{cursor:pointer}
 .mapwrap{display:flex;gap:8px;align-items:stretch}
 .mapwrap .lmap{flex:1;min-width:0}
-.maptools{flex:none;width:136px;display:flex;flex-direction:column;gap:4px}
-.maptools .mt-h{font-size:11px;color:var(--ink-2);margin:6px 2px 0}
-.maptools .mt-h:first-child{margin-top:0}
-.maptools .mt{display:flex;align-items:center;gap:6px;width:100%;text-align:left;font:inherit;font-size:12.5px;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink);cursor:pointer;line-height:1.2;white-space:nowrap}
+.maptools{flex:none;width:34px;display:flex;flex-direction:column;gap:3px}
+.maptools .mt{position:relative;width:34px;height:32px;display:flex;align-items:center;justify-content:center;font:15px/1 var(--f-body);padding:0;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink);cursor:pointer}
 .maptools .mt:hover{background:var(--grid)}
 .maptools .mt.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.maptools .mt:disabled{opacity:.45;cursor:not-allowed}
+.maptools .mt:disabled{opacity:.4;cursor:not-allowed}
 .maptools .mt.danger{color:var(--bad)}
-.maptools .mt-i{width:16px;text-align:center;font-size:14px;flex:none}
-.maptools .mt-row{display:flex;gap:4px}
-.maptools .mt.sq{flex:1;justify-content:center;padding:7px 4px;gap:3px}
+.maptools .mt-sep{height:1px;background:var(--line);margin:3px 4px}
+.maptools .mt[data-tip]:hover::after,.maptools .mt[data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;left:calc(100% + 8px);top:50%;transform:translateY(-50%);z-index:3000;width:max-content;max-width:260px;white-space:normal;text-align:left;font-size:12px;line-height:1.4;padding:5px 8px;border-radius:5px;background:var(--ink);color:var(--paper);box-shadow:0 2px 6px rgba(0,0,0,.2);pointer-events:none}
 .mapwrap.full{position:fixed;inset:0;z-index:2000;background:var(--paper);padding:8px}
 .mapwrap.full .lmap{height:auto;border-radius:0}
-@media (max-width:700px){.mapwrap{flex-direction:column}.maptools{width:auto;flex-direction:row;flex-wrap:wrap}.maptools .mt{width:auto}.maptools .mt-h{display:none}}
+@media (max-width:700px){.mapwrap{flex-direction:column}.maptools{width:auto;flex-direction:row;flex-wrap:wrap}.maptools .mt-sep{width:1px;height:auto;margin:4px 2px}.maptools .mt[data-tip]:hover::after{left:0;top:calc(100% + 6px);transform:none}}
+.hsplit{cursor:col-resize;align-self:stretch;position:relative;border-radius:4px;touch-action:none}
+.hsplit::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;transform:translateX(-50%);background:var(--line);border-radius:2px}
+.hsplit:hover::before,.hsplit:focus-visible::before,.hsplit.drag::before{background:var(--accent);width:4px}
+.vsplit{cursor:row-resize;height:10px;margin:2px 0 4px;position:relative;touch-action:none}
+.vsplit::before{content:"";position:absolute;left:42px;right:0;top:50%;height:2px;transform:translateY(-50%);background:var(--line);border-radius:2px}
+.vsplit:hover::before,.vsplit:focus-visible::before,.vsplit.drag::before{background:var(--accent);height:4px}
+body.resizing{user-select:none}
+body.resizing .lmap{pointer-events:none}
 .lmap-btn{display:block;width:30px;height:30px;line-height:30px;text-align:center;font-size:16px;background:#fff;color:#222;text-decoration:none}
 td .u{font-size:11px;color:var(--ink-2);font-family:var(--f-mono)}
 a.back{color:var(--accent);font-size:13px;text-decoration:none}
@@ -270,28 +275,28 @@ a.back:hover{text-decoration:underline}
       <div class="status" id="status" hidden></div>
       <div class="mapwrap" id="mapWrap">
         <div class="maptools" id="mapTools" role="toolbar" aria-label="구역계 도구" aria-orientation="vertical">
-          <span class="mt-h">구역계 고치기</span>
-          <button class="mt" id="pickBtn" type="button" title="지도에서 필지를 누르면 구역에 넣을지 뺄지 고릅니다"><span class="mt-i" aria-hidden="true">±</span><span class="mt-t">필지 넣고 빼기</span></button>
-          <button class="mt" id="editBtn" type="button" title="구역계 꼭짓점을 끌어서 고칩니다"><span class="mt-i" aria-hidden="true">◇</span><span class="mt-t">꼭짓점 끌기</span></button>
-          <button class="mt" id="cutBtn" type="button" title="선을 그어 구역계를 자르고, 조각을 빼거나 도로로 지정합니다. 필지 끝점·중간점·수직점·근처점에 붙습니다"><span class="mt-i" aria-hidden="true">✂</span><span class="mt-t">구역계 자르기</span></button>
-          <div class="mt-row">
-            <button class="mt sq" id="undoBtn" type="button" disabled title="되돌릴 작업이 없습니다" aria-label="실행 취소"><span class="mt-i" aria-hidden="true">↶</span><span class="mt-t">취소</span></button>
-            <button class="mt sq" id="redoBtn" type="button" disabled title="다시 할 작업이 없습니다" aria-label="다시 실행"><span class="mt-i" aria-hidden="true">↷</span><span class="mt-t">다시</span></button>
-          </div>
-          <span class="mt-h">공부·파일</span>
-          <button class="mt" id="fetchBtn" type="button" title="이 안의 필지·건축물·토지특성·건축물대장을 다시 불러옵니다"><span class="mt-i" aria-hidden="true">⟳</span><span class="mt-t">다시 불러오기</span></button>
-          <button class="mt" id="geoInBtn" type="button"><span class="mt-i" aria-hidden="true">⇩</span><span class="mt-t">GeoJSON 열기</span></button>
-          <button class="mt" id="geoOutBtn" type="button"><span class="mt-i" aria-hidden="true">⇧</span><span class="mt-t">GeoJSON 저장</span></button>
-          <button class="mt danger" id="clearBtn" type="button"><span class="mt-i" aria-hidden="true">✕</span><span class="mt-t">이 안 지우기</span></button>
+          <button class="mt" id="pickBtn" type="button" data-tip="필지 넣고 빼기 — 지도에서 필지를 누르면 넣을지 뺄지 고릅니다" aria-label="필지 넣고 빼기">±</button>
+          <button class="mt" id="editBtn" type="button" data-tip="꼭짓점 끌기 — 구역계 꼭짓점을 끌어서 고칩니다" aria-label="꼭짓점 끌기">◇</button>
+          <button class="mt" id="cutBtn" type="button" data-tip="구역계 자르기 — 선을 그어 자르고 조각을 빼거나 도로로 지정. 필지 끝점·중간점·수직점·근처점에 붙음" aria-label="구역계 자르기">✂</button>
+          <span class="mt-sep" aria-hidden="true"></span>
+          <button class="mt" id="undoBtn" type="button" disabled data-tip="실행 취소 (Ctrl+Z)" aria-label="실행 취소">↶</button>
+          <button class="mt" id="redoBtn" type="button" disabled data-tip="다시 실행 (Ctrl+Y)" aria-label="다시 실행">↷</button>
+          <span class="mt-sep" aria-hidden="true"></span>
+          <button class="mt" id="fetchBtn" type="button" data-tip="필지·건축물·토지특성·건축물대장 다시 불러오기" aria-label="다시 불러오기">⟳</button>
+          <button class="mt" id="geoInBtn" type="button" data-tip="GeoJSON 파일로 구역계 열기" aria-label="GeoJSON 열기">⇩</button>
+          <button class="mt" id="geoOutBtn" type="button" data-tip="구역계를 GeoJSON 파일로 저장" aria-label="GeoJSON 저장">⇧</button>
+          <button class="mt danger" id="clearBtn" type="button" data-tip="이 안의 구역계 지우기" aria-label="이 안 지우기">✕</button>
           <input id="geoFile" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
         </div>
         <div id="lmap" class="lmap"></div>
       </div>
+      <div class="vsplit" id="vSplit" role="separator" aria-orientation="horizontal" aria-label="지도 높이 조절 (끌거나 위·아래 화살표)" tabindex="0"></div>
       <div class="svgbox" id="svgbox" hidden><svg id="map" viewBox="-6 -6 416 328" role="img" aria-label="예시 구역 지적도"></svg></div>
       <div class="legend" id="legend"></div>
       <p class="hint" id="drawHint"></p>
     </section>
 
+    <div class="hsplit" id="hSplit" role="separator" aria-orientation="vertical" aria-label="지도·설명 화면 너비 조절 (끌거나 좌·우 화살표, 두 번 누르면 처음대로)" tabindex="0"></div>
     <section class="panel" id="side" aria-live="polite"></section>
   </div>
 </div>
@@ -302,6 +307,6 @@ a.back:hover{text-decoration:underline}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../js/config.js?v=68"></script>
 <script src="../js/zonekit.js?v=70"></script>
-<script src="urban.js?v=14"></script>
+<script src="urban.js?v=15"></script>
 </body>
 </html>
