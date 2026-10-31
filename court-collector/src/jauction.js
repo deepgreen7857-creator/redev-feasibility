@@ -176,7 +176,8 @@ async function collectScope() {
         for (const r of rows) {
           if (out.has(r.idx)) continue;
           if (addrRe && !addrRe.test(r.text)) continue;
-          out.set(r.idx, { src: `범위:${sc.name}`, sale: r.sale, light: true });
+          // 매각기일 7일 안이면 감정평가서·사진까지 전부(매각되면 서류가 내려가므로 먼저 확보, 10/31), 그 밖은 가볍게
+          out.set(r.idx, { src: `범위:${sc.name}`, sale: r.sale, light: !(r.sale && r.sale <= kstDay(7)) });
         }
         const seen = rows.length ? rows.map((r) => r.idx).join(',') : '';
         if (!rows.length || seen === before) break; before = seen;
@@ -409,7 +410,13 @@ async function loggedIn() {
 async function main() {
   if (LOGIN) return loginMode();
   if (!cfg.enabled) return log('config.json jauction.enabled=false — 쉼');
-  if (fs.existsSync(blockedFile)) return log(`멈춤 상태(${blockedFile}) — 제이옥션 화면을 직접 확인한 뒤 이 파일을 지우면 다시 받음`);
+  if (fs.existsSync(blockedFile)) {
+    // 막힌 뒤로는 계속 두드리지 않는다: 24시간에 한 번만 첫 화면 하나로 풀렸는지 본다(10/30 IP 차단 → 10/31 풀림)
+    const age = Date.now() - fs.statSync(blockedFile).mtimeMs;
+    if (age < 24 * 3600e3) return log(`멈춤 상태(${blockedFile}) — ${Math.ceil((24 * 3600e3 - age) / 3600e3)}시간 뒤 한 번 풀렸는지 확인`);
+    try { const t = await get(`${BASE}/main/main.php`); if (!/제이옥션/.test(t || '')) throw new Error('첫 화면 이상'); fs.renameSync(blockedFile, blockedFile.replace(/\.txt$/, `-풀림${kstDay()}.txt`)); log('차단이 풀린 것 확인 — 다시 받음'); }
+    catch (e) { fs.utimesSync(blockedFile, new Date(), new Date()); return log(`아직 막힘(${e.cause?.code || e.message}) — 24시간 뒤 다시 한 번 확인`); }
+  }
   if (!lock()) return log('이미 다른 제이옥션 수집기가 돌고 있음');
   log(`시작 — 보관 폴더 ${ARCHIVE}${DRY ? ' (시험)' : ''}, 오늘 ${today}/${cfg.dailyMax}사건`);
   let n = 0;
@@ -456,8 +463,8 @@ async function main() {
         const listed = idsIn(await get(`${BASE}/search/search_list.php?stc=1&sno=${it.year}&tno=${it.caseNo.split('타경')[1]}`)).filter((i) => i !== idx);
         for (const o of listed.slice(0, 11)) { await pause('pageSeconds'); const s = await readItem(o); if (s && s.court === it.court && s.caseNo === it.caseNo) sib.push(s); }
         n++; bump(); failRun = 0;
-        // 30사건마다 사이트(/data) 올리기를 따로 돌림(이미 돌고 있으면 그쪽이 알아서 건너뜀)
-        if (!DRY && n % 30 === 0) { try { const { spawn } = await import('node:child_process'); spawn(process.execPath, [path.join(ROOT, 'src', 'datasync.js')], { cwd: ROOT, detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch { /* */ } }
+        // 5사건마다 사이트(/data) 올리기를 따로 돌림(이미 돌고 있으면 그쪽이 알아서 건너뜀)
+        if (!DRY && n % 5 === 0) { try { const { spawn } = await import('node:child_process'); spawn(process.execPath, [path.join(ROOT, 'src', 'datasync.js')], { cwd: ROOT, detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch { /* */ } }
         await grabCase(sib, !!idxs.get(idx)?.light && !sib.some((s) => idxs.get(s.idx) && !idxs.get(s.idx).light));
       } catch (e) {
         if (e instanceof Blocked || e instanceof NeedLogin) throw e;
