@@ -146,14 +146,14 @@
   function renderLegend() {
     if (!leg) return;
     const used = new Set(tags || []);
-    leg.querySelector('ul').innerHTML = legendItems().map(([k, d]) => `<li style="opacity:${used.has(k) ? 1 : .45}"><i style="background:${D.TAG[k].color}"></i><div>${D.TAG[k].name}<small>${d}</small></div></li>`).join('') +
+    leg.querySelector('ul').innerHTML = legendItems().map(([k, d]) => `<li class="${used.has(k) ? '' : 'off'}" title="${d}"><i style="background:${D.TAG[k].color}"></i><div>${D.TAG[k].name}<small>${d}</small></div></li>`).join('') +
       `<li><i style="background:repeating-linear-gradient(90deg,#c8322b 0 7px,transparent 7px 9px,#c8322b 9px 10px,transparent 10px 12px)"></i><div>구역계</div></li>` +
       `<li><span class="ent"></span><div>차량 출입구</div></li>`;
   }
   function initLegend() {
     const box = document.getElementById('map');
     leg = document.createElement('div'); leg.className = 'mlegend'; leg.setAttribute('aria-label', '경계 범례');
-    leg.innerHTML = '<div class="hd" title="끌어서 옮기기"><span>⠿ 범례</span><button data-lg="corner" title="다음 모서리로">⤢</button><button data-lg="min" title="접기·펴기">–</button></div><ul></ul>';
+    leg.innerHTML = '<div class="hd" title="끌어서 옮기기"><span>⠿ 범례</span><button data-lg="full" title="자세히(적용 값·안 쓰는 성격까지)">ⓘ</button><button data-lg="corner" title="다음 모서리로">⤢</button><button data-lg="min" title="접기·펴기">–</button></div><ul></ul>';
     box.appendChild(leg);
     L.DomEvent.disableClickPropagation(leg); L.DomEvent.disableScrollPropagation(leg);
     let st = {}; try { st = JSON.parse(localStorage.getItem(LEG_KEY)) || {}; } catch (e) { st = {}; }
@@ -162,7 +162,7 @@
       const bw = box.clientWidth, bh = box.clientHeight, w = leg.offsetWidth, h = leg.offsetHeight;
       const fx = st.fx ?? 1, fy = st.fy ?? 0; // 0~1: 남는 공간 안에서의 위치(기본 오른쪽 위)
       leg.style.left = Math.max(4, (bw - w - 8) * fx + 4) + 'px'; leg.style.top = Math.max(4, (bh - h - 8) * fy + 4) + 'px';
-      leg.classList.toggle('min', !!st.min);
+      leg.classList.toggle('min', !!st.min); leg.classList.toggle('full', !!st.full);
     };
     const hd = leg.querySelector('.hd'); let drag = null;
     hd.addEventListener('pointerdown', e => {
@@ -174,18 +174,31 @@
       const bw = box.clientWidth, bh = box.clientHeight, w = leg.offsetWidth, h = leg.offsetHeight;
       const l = Math.min(Math.max(4, drag.l + e.clientX - drag.x), bw - w - 4), t = Math.min(Math.max(4, drag.t + e.clientY - drag.y), bh - h - 4);
       leg.style.left = l + 'px'; leg.style.top = t + 'px';
-      st.fx = (l - 4) / Math.max(1, bw - w - 8); st.fy = (t - 4) / Math.max(1, bh - h - 8);
+      st.fx = (l - 4) / Math.max(1, bw - w - 8); st.fy = (t - 4) / Math.max(1, bh - h - 8); st.moved = true;
     });
     const end = () => { if (drag) { drag = null; map.dragging.enable(); save(); } };
     hd.addEventListener('pointerup', end); hd.addEventListener('pointercancel', end);
     leg.addEventListener('click', e => {
       const b = e.target.closest('[data-lg]'); if (!b) return;
       if (b.dataset.lg === 'min') st.min = !st.min;
-      else { const C4 = [[1, 0], [1, 1], [0, 1], [0, 0]], i = C4.findIndex(c => Math.abs((st.fx ?? 1) - c[0]) < .05 && Math.abs((st.fy ?? 0) - c[1]) < .05); [st.fx, st.fy] = C4[(i + 1) % 4]; }
+      else if (b.dataset.lg === 'full') { st.full = !st.full; }
+      else { const C4 = [[1, 0], [1, 1], [0, 1], [0, 0]], i = C4.findIndex(c => Math.abs((st.fx ?? 1) - c[0]) < .05 && Math.abs((st.fy ?? 0) - c[1]) < .05); [st.fx, st.fy] = C4[(i + 1) % 4]; st.moved = true; }
       b.textContent = b.dataset.lg === 'min' ? (st.min ? '+' : '–') : b.textContent; place(); save();
     });
     if (st.min) leg.querySelector('[data-lg="min"]').textContent = '+';
     renderLegend(); place();
+    leg.autoCorner = () => {
+      if (st.moved || !pts) return;
+      const r = box.getBoundingClientRect(), w = leg.offsetWidth, h = leg.offsetHeight;
+      const C4 = [[1, 0], [0, 1], [1, 1], [0, 0]];
+      const sc = C4.map(([fx, fy]) => {
+        const l = (r.width - w - 8) * fx + 4, t = (r.height - h - 8) * fy + 4; let hit = 0;
+        pts.forEach(p => { const q = map.latLngToContainerPoint(pr.back(p).slice().reverse()); if (q.x > l && q.x < l + w && q.y > t && q.y < t + h) hit++; });
+        for (let gx = 0; gx < 6; gx++) for (let gy = 0; gy < 6; gy++) { const x = l + w * (gx + .5) / 6, y = t + h * (gy + .5) / 6, ll = map.containerPointToLatLng([x, y]), q = pr.to([ll.lng, ll.lat]); if (G.inside(q[0], q[1], pts)) hit++; }
+        return hit;
+      });
+      const best = sc.indexOf(Math.min(...sc)); [st.fx, st.fy] = C4[best]; place();
+    };
     if (window.ResizeObserver) new ResizeObserver(place).observe(box); else window.addEventListener('resize', place);
   }
 
@@ -216,6 +229,7 @@
     if (!num($('#p_siteArea').value)) $('#p_siteArea').value = Math.round(turf.area(site.geojson) * 10) / 10;
     drawSite(); fillSel();
     try { map.fitBounds(L.polygon(pts.map(p => pr.back(p).slice().reverse())).getBounds(), { padding: [20, 20] }); } catch (e) { /* 무시 */ }
+    setTimeout(() => { try { if (leg && leg.autoCorner) leg.autoCorner(); } catch (e) { /* 자동 위치 실패 시 그대로 */ } }, 300);
     try { localStorage.setItem('jbs.sites.current', site.id || ''); } catch (e) { /* 무시 */ }
     carry();
   }

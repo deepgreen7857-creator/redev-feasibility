@@ -36,14 +36,18 @@
 .modehint{font-size:13px;margin:6px 0 0;padding:6px 10px;border-radius:6px;background:var(--accent-soft)}
 details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px}
 #map{position:relative}
-.mlegend{position:absolute;z-index:800;background:var(--sheet);color:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.18);font-size:12px;min-width:210px;max-width:270px;user-select:none}
+.mlegend{position:absolute;z-index:800;background:color-mix(in srgb,var(--sheet) 92%,transparent);color:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.18);font-size:11.5px;width:200px;user-select:none}
 .mlegend .hd{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line);cursor:move;font-weight:600;touch-action:none}
 .mlegend .hd span{flex:1}
 .mlegend .hd button{border:0;background:none;padding:0 4px;font-size:13px;line-height:1;cursor:pointer;color:var(--ink-2)}
-.mlegend ul{list-style:none;margin:0;padding:6px 8px 8px}
-.mlegend li{display:flex;gap:7px;align-items:flex-start;padding:2px 0}
+.mlegend ul{list-style:none;margin:0;padding:4px 8px 6px}
+.mlegend li{display:flex;gap:7px;align-items:flex-start;padding:1px 0}
 .mlegend li i{flex:none;width:18px;height:5px;border-radius:2px;margin-top:6px}
-.mlegend li small{display:block;color:var(--ink-2);font-size:11px;line-height:1.35}
+.mlegend li small{display:none;color:var(--ink-2);font-size:10.5px;line-height:1.35}
+.mlegend.full{width:250px}
+.mlegend.full li small{display:block}
+.mlegend li.off{display:none}
+.mlegend.full li.off{display:flex;opacity:.45}
 .mlegend.min ul{display:none}
 .mlegend .ent{width:11px;height:11px;border:2px solid #1d2a33;border-radius:50%;background:#fff;margin:2px 4px 0 3px;flex:none}
 </style>
@@ -73,7 +77,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       </div>
       <div class="modehint" id="modeHint">지금: 경계 성격 바꾸기 — 경계선을 누를 때마다 성격이 바뀝니다(곡선처럼 이어진 짧은 변은 한꺼번에).</div>
       <div id="map" aria-label="구역 지도"></div>
-      <div class="tags" id="tagLegend" hidden></div>
+      <div class="tags" id="tagLegend" style="display:none"></div>
       <p class="note">경계선을 누를 때마다 성격이 바뀝니다(대지경계 → 도로 → 간선도로 → 정북 인접대지 → 공원·녹지 접함 → 저층 주거 인접). 지도 위 범례는 제목 줄을 끌어 옮길 수 있습니다. 공원·도로 등 기반시설 자리는 지도 왼쪽 위 다각형 도구로 그리면 건축 불가 영역이 됩니다.</p>
     </section>
 
@@ -152,6 +156,6 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../shared/mass3d.js?v=1"></script>
 <script src="../traffic/traffic-calc.js?v=1"></script>
 <script src="arch-draw.js?v=2"></script>
-<script src="arch.js?v=6"></script>
+<script src="arch.js?v=7"></script>
 </body>
 </html>
