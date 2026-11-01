@@ -193,42 +193,25 @@
   <div class="area-layout">
     <div id="map" class="map"></div>
     <aside class="card area-side">
-      <h3>적용할 구역 면적</h3>
+      <div class="side-top">
+        <div class="big-stat"><span>적용 면적</span><strong id="siteArea"></strong></div>
+        <details class="amode-box">
+          <summary>면적 기준</summary>
       <label class="radio"><input type="radio" name="amode" value="ledger" data-bind="area.mode"> 토지대장 면적 합계(편입면적 기준) <b id="ledgerArea"></b></label>
       <label class="radio"><input type="radio" name="amode" value="drawn" data-bind="area.mode"> 연속지적 도형 면적(참고) <b id="drawnArea"></b></label>
       <label class="radio"><input type="radio" name="amode" value="manual" data-bind="area.mode"> 직접 입력</label>
       <input data-bind="area.manualArea" data-type="number" inputmode="decimal" placeholder="면적 (㎡)">
       <p class="note" id="areaDiff" hidden></p>
-      <div class="big-stat"><span>적용 면적</span><strong id="siteArea"></strong></div>
-      <div id="pickBox" class="pick-box">
-        <h3>토지·건축물 자동 입력</h3>
-        <p class="note">구역계를 그린 뒤 <b>구역 안 필지·건축물 불러오기</b>를 누르면 토지조서(면적·공시지가)와 건축물조서(용도·구조·사용승인연도·연면적)가 한 번에 채워집니다. 필지를 하나씩 고르려면 필지 선택을 켜고 지도를 누르세요.</p>
-        <button class="btn small primary" id="btnImportArea">구역 안 필지·건축물 불러오기</button>
-        <p class="note warn" id="zoneSyncNote" hidden>다음 단계로 가면 이 구역 기준으로 조서를 불러옵니다.</p>
-        <label class="radio"><input type="checkbox" id="pickZone"> 필지를 누르면 구역계에도 넣고 빼기</label>
-        <label class="radio"><input type="checkbox" id="showParcels"> 필지 경계 보기 (구역에 합쳐진 필지를 희미한 점선으로)</label>
-        <button class="btn small" id="btnPick">필지 선택 켜기</button>
-        <button class="btn small" id="btnParcelsToArea">선택 필지 → 구역계로 합치기</button>
-        <button class="btn small ghost danger" id="btnClearParcels">불러온 필지·건축물 지우기</button>
-        <p class="pick-count" id="pickCount"></p>
-        <p class="note" id="pickMsg" aria-live="polite"></p>
+        </details>
       </div>
-      <div class="docs-box">
-        <h3><span class="zone-docs-title">구역지정 서류</span> <small class="muted zone-docs-law"></small></h3>
-        <p class="note">이 구역의 조서·명부 등을 사업 유형(근거법)과 사업지 지역에 맞는 서식(한글)이나 엑셀로 받습니다. 누르면 토지대장·건축물대장을 조회해 공부 기준으로 만듭니다.</p>
-        <div class="doc-grid" data-docs="short"></div>
-        <p class="note zone-docs-msg" aria-live="polite"></p>
-      </div>
-      <div class="ref-box">
-        <h3>참고 도면 겹쳐 보기</h3>
-        <p class="note">구역도 그림(JPG·PNG)이나 PDF를 지도 위에 반투명으로 겹치고, <b>두 점</b>으로 위치·크기·방향을 맞춘 뒤 그 선을 따라 그리세요.</p>
-        <button class="btn small primary" id="btnRefLoad">도면 불러오기</button>
-        <button class="btn small" id="btnRefAlign" disabled>두 점으로 맞추기</button>
-        <button class="btn small" id="btnRefToggle" disabled>도면 숨기기</button>
-        <button class="btn small ghost danger" id="btnRefRemove" disabled>지우기</button>
-        <label class="inline-field">투명도 <input type="range" id="refOpacity" min="0.1" max="0.95" step="0.05" value="0.55" disabled></label>
-        <p class="note" id="refMsg" aria-live="polite"></p>
-      </div>
+      <nav class="side-tabs" role="tablist" aria-label="구역계 메뉴">
+        <button type="button" role="tab" data-stab="zone">구역 만들기</button>
+        <button type="button" role="tab" data-stab="pick">필지·조서</button>
+        <button type="button" role="tab" data-stab="docs">서류</button>
+        <button type="button" role="tab" data-stab="draw">도면</button>
+      </nav>
+      <div class="side-panes">
+        <div class="side-pane" data-spane="zone">
       <div class="jibun-box">
         <h3>필지 경계로 구역 만들기</h3>
         <p class="note"><b>방법 1. 대략 그리기</b> – 지도 왼쪽 다각형 도구로 도로를 따라 구역을 대충 그린 뒤 누르세요. 필지 면적의 기준 % 이상이 들어간 필지로 구역계를 다시 그립니다.</p>
@@ -261,6 +244,41 @@
         <div id="jibunReport" class="jibun-report"></div>
       </div>
       <p class="note" id="vworldOff">브이월드 인증키를 설정하면 지적도, 지번 검색, 필지 선택을 쓸 수 있습니다.</p>
+        </div>
+        <div class="side-pane" data-spane="pick" hidden>
+      <div id="pickBox" class="pick-box">
+        <h3>토지·건축물 자동 입력</h3>
+        <p class="note">구역계를 그린 뒤 <b>구역 안 필지·건축물 불러오기</b>를 누르면 토지조서(면적·공시지가)와 건축물조서(용도·구조·사용승인연도·연면적)가 한 번에 채워집니다. 필지를 하나씩 고르려면 필지 선택을 켜고 지도를 누르세요.</p>
+        <button class="btn small primary" id="btnImportArea">구역 안 필지·건축물 불러오기</button>
+        <p class="note warn" id="zoneSyncNote" hidden>다음 단계로 가면 이 구역 기준으로 조서를 불러옵니다.</p>
+        <label class="radio"><input type="checkbox" id="pickZone"> 필지를 누르면 구역계에도 넣고 빼기</label>
+        <label class="radio"><input type="checkbox" id="showParcels"> 필지 경계 보기 (구역에 합쳐진 필지를 희미한 점선으로)</label>
+        <button class="btn small" id="btnPick">필지 선택 켜기</button>
+        <button class="btn small" id="btnParcelsToArea">선택 필지 → 구역계로 합치기</button>
+        <button class="btn small ghost danger" id="btnClearParcels">불러온 필지·건축물 지우기</button>
+        <p class="pick-count" id="pickCount"></p>
+        <p class="note" id="pickMsg" aria-live="polite"></p>
+      </div>
+        </div>
+        <div class="side-pane" data-spane="docs" hidden>
+      <div class="docs-box">
+        <h3><span class="zone-docs-title">구역지정 서류</span> <small class="muted zone-docs-law"></small></h3>
+        <p class="note">이 구역의 조서·명부 등을 사업 유형(근거법)과 사업지 지역에 맞는 서식(한글)이나 엑셀로 받습니다. 누르면 토지대장·건축물대장을 조회해 공부 기준으로 만듭니다.</p>
+        <div class="doc-grid" data-docs="short"></div>
+        <p class="note zone-docs-msg" aria-live="polite"></p>
+      </div>
+        </div>
+        <div class="side-pane" data-spane="draw" hidden>
+      <div class="ref-box">
+        <h3>참고 도면 겹쳐 보기</h3>
+        <p class="note">구역도 그림(JPG·PNG)이나 PDF를 지도 위에 반투명으로 겹치고, <b>두 점</b>으로 위치·크기·방향을 맞춘 뒤 그 선을 따라 그리세요.</p>
+        <button class="btn small primary" id="btnRefLoad">도면 불러오기</button>
+        <button class="btn small" id="btnRefAlign" disabled>두 점으로 맞추기</button>
+        <button class="btn small" id="btnRefToggle" disabled>도면 숨기기</button>
+        <button class="btn small ghost danger" id="btnRefRemove" disabled>지우기</button>
+        <label class="inline-field">투명도 <input type="range" id="refOpacity" min="0.1" max="0.95" step="0.05" value="0.55" disabled></label>
+        <p class="note" id="refMsg" aria-live="polite"></p>
+      </div>
       <div class="export-box">
         <h3>도면 내보내기</h3>
         <p class="note">필지·지번·건물·구역계를 모두 선으로 그려 크게 출력해도 깨지지 않습니다. 노후 건물은 색으로 구분됩니다.</p>
@@ -275,7 +293,9 @@
         <button class="btn small" id="btnZoneFromTool">가져와 필지·조서 불러오기</button>
         <p class="note" id="exportMsg" aria-live="polite"></p>
       </div>
-      <p class="note">지도에서 그린 면적은 측량 면적이 아닙니다. 정확한 면적은 지적도·토지조서로 확인하세요.</p>
+        </div>
+        <p class="note side-foot">지도에서 그린 면적은 측량 면적이 아닙니다. 정확한 면적은 지적도·토지조서로 확인하세요.</p>
+      </div>
     </aside>
   </div>
 

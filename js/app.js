@@ -1029,6 +1029,23 @@ function boot() {
   $('#btnSortJibun').onclick = sortByJibun;
   $('#btnLedger').onclick = async () => { await Ledger.fill(); App.update(true); };
 
+  // 2단계 오른쪽 메뉴 탭 (구역 만들기·필지·조서·서류·도면). 마지막에 연 탭을 기억, 구역이 없으면 '구역 만들기'부터
+  window.SideTabs = {
+    show(k) {
+      $$('#tab-area [data-stab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.stab === k)));
+      $$('#tab-area [data-spane]').forEach(p => { p.hidden = p.dataset.spane !== k; });
+      try { localStorage.setItem('jbs-area-side-tab', k); } catch (e) { /* 저장 못 해도 됨 */ }
+    },
+  };
+  $$('#tab-area [data-stab]').forEach(b => { b.onclick = () => SideTabs.show(b.dataset.stab); });
+  { let k = ''; try { k = localStorage.getItem('jbs-area-side-tab') || ''; } catch (e) { /* 없음 */ }
+    SideTabs.show(S.area && S.area.geojson ? (k || 'pick') : 'zone'); }
+  // 메시지가 다른 탭 안에서 바뀌면 그 탭으로 넘어가 보이게 (예: 지번 파일 읽기·필지 선택 결과)
+  [['#jibunMsg', 'zone'], ['#pickMsg', 'pick'], ['#refMsg', 'draw'], ['#exportMsg', 'draw']].forEach(([sel, k]) => {
+    const el = $(sel); if (!el) return;
+    new MutationObserver(() => { if (el.textContent.trim() && el.closest('[data-spane]').hidden) SideTabs.show(k); }).observe(el, { childList: true, characterData: true, subtree: true });
+  });
+
   // 지번 목록으로 구역 만들기
   const guessBase = () => {
     const m = String(S.meta.location || '').match(/^(.*?[가-힣]+(동|리|가))(\s|\d|$)/);
@@ -1062,7 +1079,7 @@ function boot() {
       i.remove();
       if (!f) return;
       const msg = $('#jibunMsg');
-      const det = msg.closest('details'); if (det) det.open = true;
+      SideTabs.show('zone');
       msg.textContent = `${f.name} 읽는 중…`;
       msg.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       let r;

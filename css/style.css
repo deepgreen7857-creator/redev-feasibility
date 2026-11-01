@@ -460,3 +460,23 @@ tr.qk-cur td:first-child { outline: 2px solid var(--ink); outline-offset: -2px; 
 @media (max-width: 640px) { .qk-levels { grid-template-columns: 1fr; } }
 .qk-levels.qk4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 640px) { .qk-levels.qk4 { grid-template-columns: 1fr 1fr; } }
+
+/* 2단계 구역계 오른쪽 메뉴: 지도 높이에 맞춘 고정 칸 + 탭 4개(구역 만들기·필지·조서·서류·도면), 칸 안에서만 스크롤 */
+.area-layout { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; }
+.area-side { position: sticky; top: 108px; display: flex; flex-direction: column; height: max(560px, calc(100vh - 230px)); max-height: calc(100vh - 120px); padding: 12px 14px; overflow: hidden; }
+.area-side .side-top { flex: none; }
+.area-side .side-top .big-stat { margin: 0 0 4px; }
+.area-side .amode-box { font-size: .85rem; margin-bottom: 6px; }
+.area-side .amode-box summary { cursor: pointer; color: var(--muted); }
+.area-side .amode-box input[data-bind="area.manualArea"] { margin-top: 4px; }
+.side-tabs { flex: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 4px 0 8px; padding: 3px; background: var(--surface-2); border-radius: 8px; }
+.side-tabs button { border: 0; background: transparent; padding: 7px 2px; border-radius: 6px; font: inherit; font-size: .82rem; font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.side-tabs button[aria-selected="true"] { background: var(--surface, #fff); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.side-panes { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+.side-pane > div:first-child { border-top: 0; margin-top: 0; }
+.side-foot { margin-top: 14px; }
+@media (max-width: 900px) {
+  .area-layout { grid-template-columns: 1fr; }
+  .area-side { position: static; height: auto; max-height: none; }
+  .side-panes { overflow: visible; }
+}
