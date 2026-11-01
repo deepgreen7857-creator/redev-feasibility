@@ -20,19 +20,20 @@ function lean(v) {
 
 async function write(db, name, rows) {
   const gz = zlib.gzipSync(Buffer.from(JSON.stringify(rows)), { level: 9 });
-  const version = `${Date.now().toString(36)}-${rows.length}`;
+  const count = Array.isArray(rows) ? rows.length : (rows.cards || []).length;
+  const version = `${Date.now().toString(36)}-${count}`;
   const parts = [];
   for (let i = 0; i < gz.length; i += CHUNK) parts.push(gz.subarray(i, i + CHUNK));
   const base = db.collection('snapshots').doc(name);
   // 조각을 먼저 다 쓰고 마지막에 안내 문서를 바꾼다(받는 도중 섞이지 않게 버전마다 조각 이름이 다름)
   for (let i = 0; i < parts.length; i++) await base.collection('chunks').doc(`${version}_${i}`).set({ b: parts[i], version, i });
   const prev = (await base.get()).data();
-  await base.set({ version, chunks: parts.length, count: rows.length, bytes: gz.length, builtAt: new Date().toISOString() });
+  await base.set({ version, chunks: parts.length, count, bytes: gz.length, builtAt: new Date().toISOString() });
   if (prev?.version) {
     const old = await base.collection('chunks').where('version', '==', prev.version).get();
     await Promise.all(old.docs.map((d) => d.ref.delete()));
   }
-  return { name, count: rows.length, kb: Math.round(gz.length / 1024), chunks: parts.length };
+  return { name, count, kb: Math.round(gz.length / 1024), chunks: parts.length };
 }
 
 const kst = (d) => new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
@@ -60,38 +61,78 @@ async function past(db) {
   return snap.docs.map((d) => ({ id: d.id, ...lean(d.data()) }));
 }
 
-// 시세: 물건이 있는 (종류·시군구)의 최근 12개월 실거래를 한 묶음으로. 화면의 키 '종류|법정동코드5' 그대로
-async function deals(db, keys) {
+// ---------- 목록용 요약(cards) ----------
+//  온비드처럼 '서버가 판정하고 화면은 보이는 것만': 화면이 하던 일(다음 기일 추정 → 회차 묶기 → 시세 붙이기 → 판정)을
+//  서버가 화면과 같은 코드(shared/*.mjs)로 미리 해 두고, 목록에 필요한 칸만 남긴 요약을 묶는다.
+//  화면은 이 요약만 받아 필터·정렬을 바로 하고, 물건을 누르면 그 한 건만 원본을 받는다.
+const A_FIELDS = ['verdict', 'cap', 'money', 'special', 'opportunity', 'opportunities', 'renoMoney', 'upMoney', 'score', 'certainty', 'calcAnomaly',
+  'anomalies', 'value', 'full', 'reasons', 'member', 'farm', 'excluded', 'estimateBasis', 'cashType', 'rightsReview', 'redev', 'ratio',
+  'liquidity', 'landValue', 'gaps', 'exit', 'entry', 'market', 'shareUnknown'];
+// 시세(market)는 비교 거래 목록이 커서(건당 10KB 넘음) 목록에 쓰는 값·등급만 남긴다. 비교 거래는 상세 화면에서 다시 계산
+function pickA(a) {
+  if (!a) return null; const o = {};
+  A_FIELDS.forEach((k) => { if (a[k] !== undefined) o[k] = a[k]; });
+  if (o.market) o.market = { value: o.market.value ?? null, grade: o.market.grade ?? null };
+  return lean(o);
+}
+// 목록·회차표·세금 판정에 쓰는 물건 칸만(상세 원문·건축물대장·등기 표시 등은 상세 화면이 따로 받음)
+function slimItem(it) {
+  const o = lean(it);
+  ['ledger', 'registryFlags', 'courtPhotoMap', 'forecastRevised', 'neighbors', 'bidInfo'].forEach((k) => { delete o[k]; });
+  if (o.detail) o.detail = { addressFull: o.detail.addressFull, appraisalFile: o.detail.appraisalFile, photos: (o.detail.photos || []).slice(0, 1) };
+  if (o.land) o.land = { landUse: { redevelopment: o.land.landUse?.redevelopment || [] } };
+  if (o.forecastFirst) o.forecastFirst = { rounds: o.forecastFirst.rounds || null };
+  if (o.forecast) { const f = o.forecast; o.forecast = { cap: f.cap ?? null, bid: f.bid ?? null, verdict: f.verdict ?? null, value: f.value ?? null, at: f.at ?? null, rounds: f.rounds || null }; }
+  if (o.courtDocs) o.courtDocs = Object.fromEntries(Object.keys(o.courtDocs).map((k) => [k, 1]));
+  return o;
+}
+
+async function loadDealsMap(db, keys) {
   const now = new Date(Date.now() + 9 * 3600e3);
   const yms = [];
   for (let i = 0; i < 12; i++) { const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)); yms.push(`${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}`); }
-  const out = {};
-  const list = [...keys];
+  const out = new Map(); const list = [...keys];
   for (let i = 0; i < list.length; i += 20) {
     await Promise.all(list.slice(i, i + 20).map(async (k) => {
       const [t, l] = k.split('|');
-      const refs = yms.map((ym) => db.collection('tradeMonths').doc(`${t}_${l}_${ym}`));
-      const snaps = await db.getAll(...refs);
-      out[k] = snaps.flatMap((s, j) => { if (!s.exists) return []; try { return JSON.parse(s.data().d || '[]').map((r) => [...r, yms[j]]); } catch { return []; } });
+      const snaps = await db.getAll(...yms.map((ym) => db.collection('tradeMonths').doc(`${t}_${l}_${ym}`)));
+      out.set(k, snaps.flatMap((s, j) => { if (!s.exists) return []; try { return JSON.parse(s.data().d || '[]').map((r) => [...r, yms[j]]); } catch { return []; } }));
     }));
   }
   return out;
 }
 
-// keysOf(rows) → Set('종류|법정동코드5') : 화면과 같은 규칙(shared 모듈)으로 만든다
-async function run({ db, log, keysOf }) {
+async function run({ db, log }) {
+  const { analyze, tradeTypeOf, ANALYZER_VERSION } = await import('../shared/analyze.mjs');
+  const { DEFAULT_SETTINGS, lawdOf } = await import('../shared/defaults.mjs');
+  const { premiumTable, predictPrice } = await import('../shared/bidForecast.mjs');
+  const { dedupeRounds, withNextCourtRound } = await import('../shared/rounds.mjs');
   const res = {};
-  const rows = await listings(db, 'open');
-  res.open = await write(db, 'open', rows);
-  try { res.recent = await write(db, 'recent', await listings(db, 'recent')); } catch (e) { res.recent = { error: e.message }; }
-  try { res.past = await write(db, 'past', await past(db)); } catch (e) { res.past = { error: e.message }; }
-  try {
-    const keys = keysOf ? keysOf(rows) : new Set();
-    const map = await deals(db, keys);
-    res.deals = await write(db, 'deals', [map]);
-  } catch (e) { res.deals = { error: e.message }; }
+  const s = await db.collection('settings').doc('main').get();
+  const settings = { ...DEFAULT_SETTINGS, ...(s.exists ? s.data() : {}) };
+  const items = await listings(db, 'open');
+  const pastRows = await past(db).catch(() => []);
+  const table = premiumTable([...items, ...pastRows]); // 화면과 같게: 불러온 물건 + 완료 결과
+  const list = dedupeRounds(withNextCourtRound(items));
+  const lawd = (it) => lawdOf(it.sido, it.sgg, `${it.emd || ''} ${it.address || ''}`);
+  const keys = new Set();
+  list.forEach((it) => { const l = lawd(it); if (!l) return; const t = tradeTypeOf(it); keys.add(`${t}|${l}`); if (t === 'rh') keys.add(`${t}Rent|${l}`); });
+  const deals = await loadDealsMap(db, keys);
+  const cards = []; let errors = 0;
+  for (const it of list) {
+    try {
+      const l = lawd(it); const t = tradeTypeOf(it);
+      const prem = predictPrice(it, table)?.premium;
+      const a = analyze(it, { settings, deals: deals.get(`${t}|${l}`), bidPremium: prem });
+      const av = t === 'rh' ? analyze(it, { settings, deals: deals.get(`${t}|${l}`), rentDeals: deals.get(`${t}Rent|${l}`), bidPremium: prem }) : null;
+      cards.push({ it: slimItem(it), a: pickA(a), ...(av ? { av: pickA(av) } : {}) });
+    } catch (e) { errors++; if (errors <= 3 && log) log(`요약 오류 ${it.id}: ${e.message}`); }
+  }
+  res.cards = await write(db, 'cards', { analyzerVersion: ANALYZER_VERSION, settingsAt: settings.updatedAt || null, builtFor: new Date().toISOString(), cards });
+  res.cards.errors = errors;
+  try { res.past = await write(db, 'past', pastRows); } catch (e) { res.past = { error: e.message }; }
   if (log) log('snapshot', res);
   return res;
 }
 
-module.exports = { run, write, lean };
+module.exports = { run, write, lean, slimItem, pickA };

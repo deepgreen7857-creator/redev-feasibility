@@ -454,21 +454,14 @@ exports.geoTick = onSchedule(
 );
 
 // 매일 아침 7시 10분(밤 수집·위치 붙이기가 끝난 뒤) + 낮 1시 10분: 화면용 묶음 자료를 만든다.
-//  화면은 접속 때마다 물건 수천 건을 받지 않고 이 묶음(조각 몇 개)만 받는다. 버전이 같으면 브라우저 보관본을 그대로 쓴다.
+//  서버가 화면과 같은 코드로 판정까지 끝낸 '목록용 요약'(cards)을 만든다. 화면은 이것만 받고, 버전이 같으면 브라우저 보관본을 그대로 쓴다.
 async function buildSnapshot() {
-  const { tradeTypeOf } = await import('./shared/analyze.mjs');
-  const { lawdOf } = await import('./shared/defaults.mjs');
-  const keysOf = (rows) => {
-    const keys = new Set();
-    rows.forEach((it) => { const l = lawdOf(it.sido, it.sgg, `${it.emd || ''} ${it.address || ''}`); if (!l) return; const t = tradeTypeOf(it); keys.add(`${t}|${l}`); if (t === 'rh') keys.add(`${t}Rent|${l}`); });
-    return keys;
-  };
-  const out = await snapshot.run({ db, log: logger.info, keysOf });
+  const out = await snapshot.run({ db, log: logger.info });
   await logRun('snapshot', out);
   return out;
 }
 exports.snapshotTick = onSchedule(
-  { schedule: '10 7,13 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '2GiB' },
+  { schedule: '10 7,13 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '4GiB' },
   async () => { await buildSnapshot(); },
 );
 
@@ -494,7 +487,7 @@ exports.forecastNow = onCall({ timeoutSeconds: 540, memory: '2GiB' }, async (req
 
 // 관리자: API 연결 시험 — 각 API를 한 번씩 불러 결과코드와 첫 줄의 항목 이름을 돌려준다
 // 관리자: 묶음 자료를 지금 다시 만들기(화면 '자료 새로 받기')
-exports.snapshotNow = onCall({ timeoutSeconds: 540, memory: '2GiB' }, async (request) => {
+exports.snapshotNow = onCall({ timeoutSeconds: 540, memory: '4GiB' }, async (request) => {
   requireAdmin(request);
   return buildSnapshot();
 });

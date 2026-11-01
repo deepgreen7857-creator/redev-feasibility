@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listListings, listPastResults, getSettings, getDeals } from '../lib/store.js';
+import { listListings, listPastResults, getSettings, getDeals, listCards } from '../lib/store.js';
 import { analyze, tradeTypeOf, courtRate, eok, pct, SOURCE_LABEL, typeLabel, areaText, ANALYZER_VERSION } from '../lib/analyze.js';
 import { lawdOf, SIDO, inFocus, FOCUS_DEFAULT } from '../data/defaults.js';
 import { corpFit, propertyKind } from '../lib/tax.js';
@@ -24,6 +24,8 @@ export default function ListPage({ mode }) {
   const [dealsMap, setDealsMap] = useState({});
   const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: mode ? 'verdict' : 'end', corpOnly: false, under1: true, showExcluded: false, onlyOpen: true, focus: true });
   const [error, setError] = useState('');
+  // 서버가 판정까지 끝낸 목록용 요약 { byId: Map(id → {a, av}), builtAt } — 있으면 시세 받기·판정 계산을 건너뛴다(완료 화면은 예전 방식)
+  const [cardInfo, setCardInfo] = useState(null);
   const [origin, setOrigin] = useState(null); // 거리 기준 위치
   useEffect(() => { setF((x) => ({ ...x, sort: mode ? 'verdict' : 'end' })); }, [mode]);
   useEffect(() => {
@@ -38,10 +40,18 @@ export default function ListPage({ mode }) {
   }, [f.sort]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    setItems(null);
-    Promise.all([listListings({ sido: f.sido || undefined, scope: mode === 'done' ? 'recent' : 'open' }), getSettings(), listPastResults({ sido: f.sido || undefined }).catch(() => [])])
-      .then(([list, s, past]) => { const ids = new Set(list.map((x) => x.id)); setItems(mode === 'done' ? [...list, ...past.filter((x) => !ids.has(x.id))] : list); setPast(past); setSettings(s); })
-      .catch((e) => setError(e.message));
+    setItems(null); setCardInfo(null);
+    (async () => {
+      const [s, pastRows, cards] = await Promise.all([getSettings(), listPastResults({ sido: f.sido || undefined }).catch(() => []), mode === 'done' ? null : listCards().catch(() => null)]);
+      if (cards) {
+        const list = cards.cards.filter((c) => !f.sido || c.it.sido === f.sido);
+        setCardInfo({ byId: new Map(list.map((c) => [c.it.id, c])), builtAt: cards.builtAt });
+        setItems(list.map((c) => c.it)); setPast(pastRows); setSettings(s);
+        return;
+      }
+      const list = await listListings({ sido: f.sido || undefined, scope: mode === 'done' ? 'recent' : 'open' });
+      const ids = new Set(list.map((x) => x.id)); setItems(mode === 'done' ? [...list, ...pastRows.filter((x) => !ids.has(x.id))] : list); setPast(pastRows); setSettings(s);
+    })().catch((e) => setError(e.message));
   }, [f.sido, mode]);
 
   // 물건이 있는 (종류·시군구)만 시세를 불러온다.
@@ -49,13 +59,13 @@ export default function ListPage({ mode }) {
   //  이제 40개씩 나눠 받되(서버 부담) 모두 받은 뒤 한 번만 바꾼다. 브라우저에 보관된 시세는 거의 바로 나온다.
   const [dealsProg, setDealsProg] = useState(null); // { done, total } — 받는 중일 때만
   const focusCfg = settings?.focus || FOCUS_DEFAULT;
-  const scoped = useMemo(() => { if (!items) return items; const base = done ? items : withNextCourtRound(items); return f.focus ? base.filter((it) => inFocus(it, focusCfg)) : base; }, [items, f.focus, focusCfg, done]);
+  const scoped = useMemo(() => { if (!items) return items; const base = done || cardInfo ? items : withNextCourtRound(items); return f.focus ? base.filter((it) => inFocus(it, focusCfg)) : base; }, [items, f.focus, focusCfg, done, cardInfo]);
   const needKeys = useMemo(() => {
-    if (!scoped) return [];
+    if (!scoped || cardInfo) return []; // 요약이 있으면 시세는 서버가 이미 붙였음
     const keys = new Set();
     scoped.forEach((it) => { const l = lawdOf(it.sido, it.sgg, `${it.emd || ""} ${it.address || ""}`); if (!l) return; const t = tradeTypeOf(it); if (villa && t !== 'rh') return; keys.add(`${t}|${l}`); if (villa) keys.add(`${t}Rent|${l}`); });
     return [...keys];
-  }, [scoped, villa]);
+  }, [scoped, villa, cardInfo]);
   const dealsReady = Boolean(scoped) && needKeys.every((k) => k in dealsMap);
   useEffect(() => {
     const need = needKeys.filter((k) => !(k in dealsMap));
@@ -81,6 +91,10 @@ export default function ListPage({ mode }) {
   useEffect(() => {
     setAnalyzed(null);
     if (!scoped || !settings || !dealsReady) return;
+    if (cardInfo) { // 서버 판정 그대로(회차 묶기·다음 기일 추정도 서버가 이미 함)
+      setAnalyzed(scoped.map((it) => { const c = cardInfo.byId.get(it.id); return { it, a: (villa && c?.av) || c?.a || { verdict: 'pending', reasons: ['서버 판정 없음'] } }; }));
+      return;
+    }
     const list = done ? scoped : dedupeRounds(scoped); // 완료 물건은 회차마다 따로 채점
     const out = []; let i = 0; let stop = false;
     const step = () => {
@@ -94,7 +108,7 @@ export default function ListPage({ mode }) {
     };
     step();
     return () => { stop = true; };
-  }, [scoped, settings, dealsMap, dealsReady, done, villa, premTable]);
+  }, [scoped, settings, dealsMap, dealsReady, done, villa, premTable, cardInfo]);
 
   // 카드는 처음 60개만 그린다(전에는 수천 개를 한 번에 그려 브라우저가 1분 넘게 멈췄다) — '더 보기'로 이어서
   const [shown, setShown] = useState(PAGE);
@@ -197,6 +211,7 @@ export default function ListPage({ mode }) {
       {items && !dealsReady && <div className="card text-sm text-ink/50">물건 {(scoped || items).length.toLocaleString('ko-KR')}건 · 시세 받는 중 {dealsProg ? `${dealsProg.done}/${dealsProg.total}` : ''}… (한 번 받으면 이 브라우저에 보관돼 다음부터 빠릅니다)</div>}
       {items && dealsReady && !analyzed && <div className="card text-sm text-ink/50">판정 계산 중 {anaProg ? `${anaProg.done.toLocaleString('ko-KR')}/${anaProg.total.toLocaleString('ko-KR')}` : ''}…</div>}
       {analyzed && !rows.length && <Empty>조건에 맞는 물건이 없습니다.</Empty>}
+      {cardInfo?.builtAt && <div className="text-right text-[11px] text-ink/40">서버 판정 {String(new Date(new Date(cardInfo.builtAt).getTime() + 9 * 3600e3).toISOString()).slice(5, 16).replace('T', ' ')} 기준 · 판정 기준을 바꾸면 서버가 몇 분 안에 다시 판정합니다</div>}
 
       {!schedule && <div className="grid gap-3 md:grid-cols-2">
         {rows.slice(0, shown).map(({ it, a }) => (

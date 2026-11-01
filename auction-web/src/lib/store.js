@@ -40,6 +40,8 @@ export async function saveSettings(s) {
   const f = await firebase();
   if (!f) { mem.settings = s; setLocal('settings', s); return; }
   await f.fs.setDoc(f.fs.doc(f.db, 'settings', 'main'), { ...s, updatedAt: new Date().toISOString() }, { merge: true });
+  // 판정 기준이 바뀌었으니 서버가 목록용 요약을 다시 판정해 둔다(몇 분). 기다리지 않음
+  callFn('snapshotNow', {}).then(() => forget('snap:')).catch(() => {});
 }
 
 
@@ -82,14 +84,14 @@ async function loadSnapshot(f, name) {
 export async function rebuildSnapshot() {
   try { await callFn('snapshotNow', {}); } catch { /* 관리자가 아니거나 서버 배포 전 — 보관본만 버림 */ }
 }
-const kstDate = (d) => new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
-function inScope(x, scope, days) {
-  const e = String(x.bidEnd || ''); if (!e) return false;
-  const dot = e.includes('.'); const d = e.replace(/\./g, '-').slice(0, 10);
-  if (scope === 'recent') return d >= kstDate(new Date(Date.now() - days * 86400e3));
-  return d >= (dot ? kstDate(new Date(Date.now() - 50 * 86400e3)) : kstDate(new Date()));
+// 목록용 요약 — 서버가 화면과 같은 코드로 판정까지 끝낸 것. { cards:[{it, a, av?}], analyzerVersion, builtAt } 또는 null(아직 없음 → 예전 방식)
+export async function listCards() {
+  const f = await firebase();
+  if (!f) return null;
+  const v = await loadSnapshot(f, 'cards');
+  if (!v || !Array.isArray(v.cards)) return null;
+  return { ...v, builtAt: snapStamp.cards || null };
 }
-
 function demoListings() {
   if (!mem.listings) mem.listings = [...SAMPLE_LISTINGS, ...local('manualListings', [])];
   return mem.listings;
@@ -101,8 +103,6 @@ function demoListings() {
 export async function listListings({ sido, scope = 'open', days = 120 } = {}) {
   const f = await firebase();
   if (!f) return demoListings().filter((x) => !sido || x.sido === sido);
-  const rows = await loadSnapshot(f, scope === 'recent' ? 'recent' : 'open');
-  if (rows) return rows.filter((x) => inScope(x, scope, days) && (!sido || x.sido === sido));
   return cached(`listings:${scope}:${days}`, 6 * HOUR, () => fetchListings(f, { scope, days })).then((all) => all.filter((x) => !sido || x.sido === sido));
 }
 async function fetchListings(f, { scope, days }) {
@@ -182,11 +182,6 @@ export async function getDeals(type, lawd, months = 12) {
   for (let i = 0; i < months; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); yms.push(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`); }
   const f = await firebase();
   if (!f) return yms.flatMap((ym) => (SAMPLE_TRADES[`${type}_${lawd}_${ym}`] || []).map((d) => [...d, ym]));
-  if (months === 12) {
-    const pack = await loadSnapshot(f, 'deals');
-    const hit = pack?.[0]?.[`${type}|${lawd}`];
-    if (hit) return hit;
-  }
   return cached(`deals:${type}:${lawd}:${months}`, 18 * HOUR, () => fetchDeals(f, yms, type, lawd));
 }
 async function fetchDeals(f, yms, type, lawd) {
