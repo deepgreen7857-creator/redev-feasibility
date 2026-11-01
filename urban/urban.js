@@ -2000,7 +2000,7 @@ function drawLeaflet() {
     L.geoJSON(r.geojson, { style }).eachLayer(l => { l.bindTooltip(r.name + ' 구역계', { sticky: true }); (act ? editGroup : layZ).addLayer(l); });
   });
   if (ZK.rough[S.region]) L.geoJSON(ZK.rough[S.region], { style: { color: cssVar('--ink-2'), weight: 2, dashArray: '6 6', fill: false }, interactive: false }).addTo(layZ);
-  S.placed = null;
+  S.placed = null; S.placedIn = null; S.placedNeed = null;
   if (S.mode === 'arch' && R && R.geojson) { const a = analyze(S.region); if (a) { drawTowersMap(R.geojson, plan(a)); GATE.draw(layT, a); } if (R.fetched && !INFRA.ready(S.region)) INFRA.fetchRoads(S.region); }
   if (S.mode === 'infra' && R && R.geojson && R.fetched) {
     if (!INFRA.ready(S.region)) INFRA.fetchRoads(S.region);
@@ -2018,20 +2018,29 @@ function drawTowersMap(gj, pl) {
   const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
   const pts = ring.map(c => [(c[0] - lon0) * kx, -(c[1] - lat0) * ky]);
   const back = ([x, y]) => [lat0 - y / ky, lon0 + x / kx];
-  const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
   const fw = Math.sqrt(pl.towerFoot * 2.2), fh = pl.towerFoot / fw;
   const gap = Math.max(fw + 14, 0.8 * pl.floorsTower * 2.9 + fh);
   const col = cssVar('--accent');
+  // 기반시설 제안이 있으면 공동주택 획지(구역 − 도로·공원·학교·종교용지 등) 안에만 놓음. 1,000㎡ 미만 작은 획지는 뺌
+  const toLocal = r => r.map(c => [(c[0] - lon0) * kx, -(c[1] - lat0) * ky]);
+  const outer = gm => { const t = gm && (gm.geometry || gm); return !t ? [] : t.type === 'Polygon' ? [t.coordinates[0]] : t.type === 'MultiPolygon' ? t.coordinates.map(c => c[0]) : []; };
+  const lots = pl.infra && Array.isArray(pl.infra.lots) && pl.infra.lots.length ? pl.infra.lots.filter(l => l.geom && !l.small).sort((a, b) => b.area - a.area) : null;
+  const areas = lots ? lots.flatMap(l => outer(l.geom)).map(toLocal) : [pts];
   let placed = 0;
-  for (let y = Math.min(...ys) + 12; y < Math.max(...ys) - fh && placed < pl.towers; y += gap) {
-    for (let x = Math.min(...xs) + 10; x < Math.max(...xs) - fw && placed < pl.towers; x += fw + 16) {
-      const c = [[x, y], [x + fw, y], [x + fw, y + fh], [x, y + fh]];
-      if (!c.every(([px, py]) => inside(px, py, pts))) continue;
-      L.polygon(c.map(back), { color: col, weight: 1, fillColor: col, fillOpacity: 0.85 }).bindTooltip(`${pl.floorsTower}층 · ${P.coreUnits}세대/층`, { sticky: true }).addTo(layT);
-      placed++;
+  for (const poly of areas) {
+    const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]);
+    // 모서리와 변 가운데가 모두 그 땅 안이어야 놓음
+    const fits = (x, y) => [[x, y], [x + fw, y], [x + fw, y + fh], [x, y + fh], [x + fw / 2, y], [x + fw / 2, y + fh], [x, y + fh / 2], [x + fw, y + fh / 2]].every(([px, py]) => inside(px, py, poly));
+    for (let y = Math.min(...ys) + (lots ? 3 : 12); y < Math.max(...ys) - fh && placed < pl.towers; y += gap) {
+      for (let x = Math.min(...xs) + (lots ? 3 : 10); x < Math.max(...xs) - fw && placed < pl.towers; x += fw + 16) {
+        if (!fits(x, y)) continue;
+        const c = [[x, y], [x + fw, y], [x + fw, y + fh], [x, y + fh]];
+        L.polygon(c.map(back), { color: col, weight: 1, fillColor: col, fillOpacity: 0.85 }).bindTooltip(`${pl.floorsTower}층 · ${P.coreUnits}세대/층${lots ? ' · 공동주택 획지 안' : ''}`, { sticky: true }).addTo(layT);
+        placed++;
+      }
     }
   }
-  S.placed = placed;
+  S.placed = placed; S.placedIn = lots ? 'lots' : 'zone'; S.placedNeed = pl.towers;
 }
 function startMapDraw() {
   if (!LM) return;
@@ -2109,7 +2118,7 @@ function drawSvg() {
     const minY = Math.min(...reg.pts.map(q => q[1])), atX = reg.pts.find(q => q[1] === minY)[0];
     const lab = el('text', { x: atX + 3 * u, y: minY + 9 * u, fill: 'var(--redline)', 'font-size': 7.5 * u, 'font-weight': 700, 'font-family': 'IBM Plex Sans KR, sans-serif' }); lab.textContent = reg.name + ' 구역계';
   }
-  S.placed = null;
+  S.placed = null; S.placedIn = null; S.placedNeed = null;
   if (S.mode === 'arch' && reg && reg.pts) { const a = analyze(S.region); if (a) drawTowers(reg.pts, plan(a), u); }
   if (S.drawing) {
     if (S.draft.length) el('polyline', { points: ringStr(S.draft), fill: 'none', stroke: 'var(--redline)', 'stroke-width': 1.4 * u });
@@ -2638,7 +2647,7 @@ function renderArch(a) {
     <tr><td>임대주택</td><td class="r">${fmt(pl.rental)}</td></tr>
   </tbody></table></div>
   ${D.map ? gateSection(a, pl) : ''}
-  <p class="note">도면의 <b>개략 배치</b>는 주동을 구역계 안에 격자로 놓아 봅니다(인동간격 높이×0.8 개략, 배치된 주동 ${S.placed ?? '–'}개동). 일조·높이·학교예정부지·문화재 위치는 /arch 단계에서 다룹니다.</p>`;
+  <p class="note">도면의 <b>개략 배치</b>는 주동을 ${S.placedIn === 'lots' ? '정비기반시설(도로·공원·학교·종교용지 등)을 뺀 <b>공동주택 획지</b>' : '구역계'} 안에 격자로 놓아 봅니다(인동간격 높이×0.8 개략, 배치된 주동 ${S.placed ?? '–'}개동${S.placed != null && S.placedNeed && S.placed < S.placedNeed ? ` — 필요한 ${S.placedNeed}개동 중 ${S.placedNeed - S.placed}개동은 격자로 못 놓음, 층수를 올리거나 /arch에서 다시 배치` : ''}). 일조·높이·학교예정부지·문화재 위치는 /arch 단계에서 다룹니다.</p>`;
   bindNum(['bcr', 'coreUnits', 'supplyFactor', 'rentalRatio', 'mix59', 'mix84', 'mix114', 'parkCount']);
   side.querySelectorAll('[data-gate]').forEach(b => b.onclick = () => { S.placing = 'gate:' + b.dataset.gate; $id('lmap').classList.add('picking'); toast(`지도에서 ${GATE.KIND[b.dataset.gate]}를 둘 구역 경계를 누르세요`); });
   const gc = document.getElementById('gateClear'); if (gc) gc.onclick = () => { const z = Z.zones[S.region]; if (z && z.infra) { delete z.infra.gates; saveZ(); render(); } };
