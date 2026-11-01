@@ -7,7 +7,8 @@
   const KEY = 'jbs.sites.v1';
   const URBAN_ZONES = 'jbs-urban-zones-v1', URBAN_PLAN = 'jbs-urban-plan';
   const read = () => { try { return JSON.parse(localStorage.getItem(KEY)) || { sites: {} }; } catch (e) { return { sites: {} }; } };
-  const write = s => { try { localStorage.setItem(KEY, JSON.stringify(s)); return true; } catch (e) { return false; } };
+  // 저장 공간(약 5MB)이 차서 실패하면 화면에 알림(shared/workfile.js가 받아 '작업 보관' 안내)
+  const write = s => { try { localStorage.setItem(KEY, JSON.stringify(s)); return true; } catch (e) { try { window.dispatchEvent(new CustomEvent('jbs-storage-full', { detail: { key: KEY } })); } catch (e2) { /* 무시 */ } return false; } };
   const now = () => new Date().toLocaleString('sv-SE').slice(0, 16);
 
   const JbsSite = {
@@ -17,7 +18,8 @@
       const s = read();
       if (!site.id) site.id = 's' + Date.now().toString(36);
       site.updated = now();
-      s.sites[site.id] = site;
+      const keep = Object.assign({}, site); delete keep.context; // 주변 건물(브이월드, 다시 받을 수 있음)은 저장하지 않음
+      s.sites[site.id] = keep;
       write(s);
       return site;
     },

@@ -69,3 +69,9 @@
   - 사업성 화면 연동(js/assume.js): `/?arch=<site id>`로 열면 가정값 창이 그 확정안을 세대수 기준으로 골라 엶. 단계 stages[1](1차 개략·초기 사업성)·stages[2](2차·교통·환경 반영) 중 고름(기본 2차), 둘 다 있으면 비례율·총수입·총사업비 비교표. 공사비 연면적은 chosen.ex.totalGfa('개략 건축계획 기준')도 고를 수 있음. stage·ex 없는 예전 안은 1차로 봄
   - 사업성 화면에 구역이 없거나 /arch 구역과 90% 미만 겹치면 물어보고 /arch 구역을 가져와 필지·조서까지 불러옴(Assume.loadSiteZone → MapView.zoneFromTool). 2단계 '다른 도구의 구역'(MapView.toolZones: 공통 구역 + /urban 안)으로도 직접 가져올 수 있음. 구역계 교체는 MapView.setZoneGeo 한 곳(파일 불러오기와 같이 씀)
 - /landscape 높이·경관계획: 정비구역 지정 단계 수준(높이·스카이라인·통경축·조망). /arch 확정안으로 입면·통경축 개방률·조망점 3D 그림 자동. 경관심의 수준 확장은 이 도구에서
+
+## 작업 저장·불러오기 (shared/workfile.js) — 2026-11-02
+- 모든 화면(본 화면·/urban·/traffic·/env·/arch·/landscape) 오른쪽 아래 [작업 저장·불러오기]. 새 페이지에도 `<script src="…/shared/workfile.js">`를 넣을 것
+- 작업 = 이 브라우저의 검토 데이터 전체(localStorage 'jbs-*'·'jbs.*'·'jbsc.project.v1', 캐시·화면 설정·경매·로그인 키 제외). 이 컴퓨터에 이름 붙여 저장(IndexedDB 'jbs-work') / 파일(.jbs.json) 내려받기·불러오기 / 새 작업 시작(사업성 가정값 'jbs-feas-assume-v1'은 남김). 불러오기·새 작업 전 자동 백업(최근 3개)
+- 새 저장 키를 만들 때 이름을 'jbs-' 또는 'jbs.'로 시작하면 자동으로 작업에 포함됨. 다시 받을 수 있는 큰 자료는 키 이름에 'cache'를 넣거나 저장하지 말 것
+- 저장 공간: JbsSite.save는 주변 건물(site.context)을 저장하지 않음(/arch는 창 안에서만 기억). 저장 실패 시 'jbs-storage-full' 이벤트 → 작업 버튼이 빨갛게 바뀜

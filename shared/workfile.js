@@ -1,0 +1,152 @@
+'use strict';
+// 작업 저장·불러오기 — jbslab 모든 화면(사업성·/urban·/traffic·/env·/arch·/landscape) 오른쪽 아래 [작업] 버튼
+//  작업 = 이 브라우저에 쌓인 검토 데이터 전체(정비계획 안 A~E·기반시설·공통 구역·1차/2차 배치·검토서 입력·사업성 프로젝트·가정값)
+//  · 이 컴퓨터에 이름 붙여 저장(IndexedDB, 용량 제한 거의 없음) / 파일(.jbs.json)로 내려받기
+//  · 불러오기 전·새 작업 시작 전에는 지금 상태를 '자동 백업'으로 먼저 저장(최근 3개)
+//  · 다시 받을 수 있는 자료(브이월드 조회 캐시·주변 건물)는 넣지 않음
+//  · 서버로 보내지 않음. 파일에 토지조서가 들어 있을 수 있으니 외부로 보내지 말 것
+(function (g) {
+  if (g.JbsWork) return;
+  const FORMAT = 'jbs-work', VERSION = 1, DB = 'jbs-work', STORE = 'slots';
+  const EXCLUDE = /cache|-ui$|split|legend|auction|auth|gate|token|firebase|C-sample/i;
+  const isWorkKey = k => (/^jbs[-.]/.test(k) || k === 'jbsc.project.v1') && !EXCLUDE.test(k);
+  const KEEP_ON_NEW = ['jbs-feas-assume-v1']; // 새 작업에도 그대로 둘 것(사업성 가정값은 사람마다의 기본값)
+  const now = () => new Date().toLocaleString('sv-SE').slice(0, 16);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const kb = n => n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.round(n / 1024) + 'KB';
+
+  /* ---------- 지금 작업 모으기 ---------- */
+  function snapshot(name) {
+    const keys = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i); if (!isWorkKey(k)) continue;
+      let v = localStorage.getItem(k);
+      if (k === 'jbs.sites.v1') { // 주변 건물(다시 불러올 수 있음)은 빼고
+        try { const o = JSON.parse(v); Object.values(o.sites || {}).forEach(s => { delete s.context; }); v = JSON.stringify(o); } catch (e) { /* 그대로 */ }
+      }
+      keys[k] = v;
+    }
+    return { format: FORMAT, version: VERSION, name: name || guessName(), savedAt: now(), keys };
+  }
+  function guessName() {
+    const j = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
+    const z = j('jbs-urban-zones-v1'), p = j('jbsc.project.v1'), s = j('jbs.sites.v1'), cur = localStorage.getItem('jbs.sites.current');
+    const site = s && s.sites && cur && s.sites[cur];
+    return (z && z.title) || (p && p.meta && p.meta.name !== '새 정비사업' && p.meta.name) || (site && site.name) || '이름 없는 작업';
+  }
+  function summary(snap) {
+    const k = snap.keys || {}, j = x => { try { return JSON.parse(k[x] || 'null'); } catch (e) { return null; } };
+    const z = j('jbs-urban-zones-v1'), s = j('jbs.sites.v1'), out = [];
+    const zs = z && z.zones ? Object.keys(z.zones).filter(id => z.zones[id] && z.zones[id].geojson) : [];
+    if (zs.length) out.push(`정비계획 ${zs.join('·')}안`);
+    const sites = s && s.sites ? Object.values(s.sites) : [];
+    const st = sites.filter(x => x.arch && x.arch.stages);
+    if (sites.length) out.push(`구역 ${sites.length}개`);
+    if (st.length) out.push(`확정 배치 ${st.map(x => Object.keys(x.arch.stages).map(n => n + '차').join('·')).join(', ')}`);
+    if (k['jbsc.project.v1']) out.push('사업성 프로젝트');
+    return out.join(' · ') || '빈 작업';
+  }
+
+  /* ---------- 이 컴퓨터 저장소(IndexedDB) ---------- */
+  function db() {
+    return new Promise((res, rej) => { const r = indexedDB.open(DB, 1); r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: 'id' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  }
+  async function tx(mode, fn) { const d = await db(); return new Promise((res, rej) => { const t = d.transaction(STORE, mode), st = t.objectStore(STORE), out = fn(st); t.oncomplete = () => res(out && out.result !== undefined ? out.result : out); t.onerror = () => rej(t.error); }); }
+  const listSlots = async () => (await tx('readonly', st => st.getAll())).sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+  const putSlot = slot => tx('readwrite', st => st.put(slot));
+  const delSlot = id => tx('readwrite', st => st.delete(id));
+  async function saveSlot(name, auto) {
+    const snap = snapshot(name), id = auto ? 'auto:' + Date.now() : 'name:' + snap.name;
+    await putSlot(Object.assign({ id, auto: !!auto }, snap));
+    if (auto) { const a = (await listSlots()).filter(x => x.auto); for (const x of a.slice(3)) await delSlot(x.id); }
+    return snap;
+  }
+
+  /* ---------- 되돌려 놓기 ---------- */
+  function check(snap) { if (!snap || snap.format !== FORMAT || !snap.keys) throw new Error('jbslab 작업 파일이 아닙니다'); return snap; }
+  function apply(snap) {
+    check(snap);
+    const old = []; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (isWorkKey(k) && !KEEP_ON_NEW.includes(k)) old.push(k); }
+    old.forEach(k => localStorage.removeItem(k));
+    Object.entries(snap.keys).forEach(([k, v]) => { if (isWorkKey(k) && typeof v === 'string') localStorage.setItem(k, v); });
+  }
+  function clearWork() {
+    const old = []; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (isWorkKey(k) && !KEEP_ON_NEW.includes(k)) old.push(k); }
+    old.forEach(k => localStorage.removeItem(k));
+    try { localStorage.removeItem('jbs-urban-cache-v1'); } catch (e) { /* 무시 */ }
+  }
+  function download(snap) {
+    const blob = new Blob([JSON.stringify(snap)], { type: 'application/json' }), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `${snap.name.replace(/[\\/:*?"<>|]/g, '_')}_${snap.savedAt.replace(/[: ]/g, '')}.jbs.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  }
+  function used() { let n = 0; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); n += (k.length + (localStorage.getItem(k) || '').length) * 2; } return n; }
+
+  /* ---------- 화면: 오른쪽 아래 [작업] ---------- */
+  let box, btn, full = false;
+  function ui() {
+    if (btn || !document.body) return;
+    const css = document.createElement('style');
+    css.textContent = `#jbsWorkBtn{position:fixed;right:16px;bottom:16px;z-index:9000;font:600 13px/1 'IBM Plex Sans KR','Malgun Gothic',sans-serif;padding:10px 14px;border-radius:999px;border:1px solid #1d2a33;background:#1d2a33;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.18);cursor:pointer}
+#jbsWorkBtn.full{background:#c8322b;border-color:#c8322b}
+#jbsWork{position:fixed;right:16px;bottom:62px;z-index:9001;width:min(420px,calc(100vw - 32px));max-height:min(70vh,640px);overflow:auto;background:#fbfbf8;color:#1d2a33;border:1px solid #c9c9c0;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:14px 16px;font:14px/1.5 'IBM Plex Sans KR','Malgun Gothic',sans-serif}
+#jbsWork h3{margin:0 0 6px;font-size:15px}#jbsWork .n{color:#5d666c;font-size:12.5px}#jbsWork .row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+#jbsWork button{font:inherit;font-size:13px;padding:6px 10px;border-radius:7px;border:1px solid #9aa2a6;background:#fff;color:#1d2a33;cursor:pointer}#jbsWork button.p{background:#1d2a33;color:#fff;border-color:#1d2a33}
+#jbsWork ul{list-style:none;margin:6px 0 0;padding:0}#jbsWork li{border-top:1px solid #e3e3dc;padding:8px 0}#jbsWork li b{display:block}#jbsWork .warn{color:#c8322b;font-size:12.5px}
+@media (prefers-color-scheme:dark){#jbsWork{background:#1f2629;color:#e8ebe9;border-color:#3b4549}#jbsWork button{background:#2a3236;color:#e8ebe9;border-color:#4c575c}#jbsWork .n{color:#a9b2b6}#jbsWork li{border-color:#3b4549}}`;
+    document.head.appendChild(css);
+    btn = document.createElement('button'); btn.id = 'jbsWorkBtn'; btn.type = 'button'; btn.textContent = '작업 저장·불러오기';
+    btn.onclick = () => { if (box && !box.hidden) { box.hidden = true; return; } open(); };
+    document.body.appendChild(btn);
+    box = document.createElement('div'); box.id = 'jbsWork'; box.hidden = true; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', '작업 저장·불러오기');
+    document.body.appendChild(box);
+    box.addEventListener('click', onClick);
+  }
+  async function open(note) {
+    let slots = []; try { slots = await listSlots(); } catch (e) { slots = null; }
+    const cur = snapshot(), u = used();
+    box.innerHTML = `<h3>지금 작업: ${esc(cur.name)}</h3>
+      <div class="n">${esc(summary(cur))} · 브라우저 저장 공간 ${kb(u)} / 약 5MB${u > 4.2e6 ? ' <span class="warn">— 거의 찼습니다. 저장한 뒤 정리하세요</span>' : ''}</div>
+      ${full ? '<div class="warn">브라우저 저장 공간이 꽉 차서 방금 내용이 저장되지 못했습니다. 아래 [파일로 내려받기]로 먼저 보관하세요.</div>' : ''}
+      ${note ? `<div class="n" style="margin-top:6px;color:#0f6b3a">${esc(note)}</div>` : ''}
+      <div class="row"><button class="p" data-w="save">이 컴퓨터에 저장</button><button data-w="file">파일로 내려받기</button><button data-w="load">파일에서 불러오기</button><button data-w="new">새 작업 시작</button></div>
+      <div class="n">저장하면 이름별로 아래 목록에 남고, 불러오면 모든 화면(정비계획·검토서·개략 건축계획·사업성)이 그 상태로 돌아갑니다. 다른 컴퓨터에서는 파일로 옮기세요. 배치안 목록·일조 결과는 [배치안 만들기]·[일조 계산]을 다시 누르면 나옵니다.</div>
+      <h3 style="margin-top:12px">이 컴퓨터에 저장된 작업</h3>
+      ${slots === null ? '<div class="warn">이 브라우저에서는 저장 목록을 쓸 수 없습니다(사생활 보호 창 등). 파일로 내려받으세요.</div>'
+        : slots.length ? `<ul>${slots.map(s => `<li><b>${esc(s.name)}${s.auto ? ' <span class="n">(자동 백업)</span>' : ''}</b><span class="n">${esc(s.savedAt)} · ${esc(summary(s))}</span>
+          <div class="row"><button data-w="open" data-id="${esc(s.id)}">불러오기</button><button data-w="dl" data-id="${esc(s.id)}">파일</button><button data-w="del" data-id="${esc(s.id)}">지우기</button></div></li>`).join('')}</ul>` : '<div class="n">아직 없습니다.</div>'}
+      <input type="file" accept=".json,application/json" hidden id="jbsWorkFile">`;
+    box.hidden = false;
+    box.querySelector('#jbsWorkFile').onchange = async e => {
+      const f = e.target.files[0]; if (!f) return;
+      try { const snap = check(JSON.parse(await f.text())); await restore(snap, `파일 '${f.name}'`); } catch (er) { open('불러오지 못했습니다: ' + er.message); }
+    };
+  }
+  async function restore(snap, label) {
+    if (!confirm(`${label} — '${snap.name}'(${snap.savedAt}) 상태로 바꿉니다.\n지금 작업은 '자동 백업'으로 먼저 저장해 둡니다. 계속할까요?`)) return;
+    try { await saveSlot('불러오기 전 자동 백업', true); } catch (e) { /* 백업 실패해도 진행 전 확인 */ }
+    apply(snap);
+    location.reload();
+  }
+  async function onClick(e) {
+    const b = e.target.closest('button[data-w]'); if (!b) return;
+    const w = b.dataset.w, id = b.dataset.id;
+    try {
+      if (w === 'save') { const name = prompt('작업 이름', guessName()); if (name === null) return; const s = await saveSlot(name.trim() || guessName(), false); full = false; btn.classList.remove('full'); open(`'${s.name}'으로 저장했습니다(${s.savedAt}).`); }
+      else if (w === 'file') { const name = prompt('파일에 붙일 작업 이름', guessName()); if (name === null) return; download(snapshot(name.trim() || guessName())); open('파일을 내려받았습니다. 토지조서가 들어 있을 수 있으니 외부로 보내지 마세요.'); }
+      else if (w === 'load') box.querySelector('#jbsWorkFile').click();
+      else if (w === 'new') {
+        if (!confirm('새 작업을 시작합니다. 정비계획 안·구역·배치·검토서·사업성 프로젝트가 비워집니다(사업성 가정값은 남김).\n지금 작업은 자동 백업으로 먼저 저장합니다. 계속할까요?')) return;
+        await saveSlot(guessName() + ' (새 작업 전 자동 백업)', true); clearWork(); location.reload();
+      }
+      else if (w === 'open') { const s = (await listSlots()).find(x => x.id === id); if (s) await restore(s, '저장된 작업'); }
+      else if (w === 'dl') { const s = (await listSlots()).find(x => x.id === id); if (s) download(s); }
+      else if (w === 'del') { const s = (await listSlots()).find(x => x.id === id); if (s && confirm(`'${s.name}'(${s.savedAt})을 이 컴퓨터에서 지울까요?`)) { await delSlot(id); open('지웠습니다.'); } }
+    } catch (er) { open('처리하지 못했습니다: ' + er.message); }
+  }
+  // 저장 공간이 꽉 차서 저장 실패했다는 알림(site-store 등이 보냄)
+  g.addEventListener && g.addEventListener('jbs-storage-full', () => { full = true; if (btn) { btn.classList.add('full'); btn.textContent = '저장 공간 꽉 참 — 작업 보관'; } });
+
+  g.JbsWork = { snapshot, summary, apply, clearWork, listSlots, saveSlot, delSlot, download, used, isWorkKey, open: () => { ui(); open(); } };
+  if (typeof document !== 'undefined') { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ui); else ui(); }
+})(typeof window !== 'undefined' ? window : globalThis);

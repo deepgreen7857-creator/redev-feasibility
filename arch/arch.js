@@ -404,7 +404,9 @@
   }
   async function loadContext(force) {
     ctx = []; if (!site || !pts) return;
-    if (!force && site.context && site.context.items) { ctx = ctxFromItems(site.context.items); return; }
+    // 주변 건물은 이번 창에서만 기억(저장 공간 절약) — 구역마다 한 번 브이월드에서 받음
+    const memo = (window.__jbsCtx = window.__jbsCtx || {});
+    if (!force && memo[site.id]) { ctx = ctxFromItems(memo[site.id]); return; }
     if (typeof VWorld === 'undefined' || typeof BldgRows === 'undefined' || !(typeof VWORLD_KEY !== 'undefined' && VWORLD_KEY)) return;
     const [x0, y0, x1, y1] = turf.bbox(site.geojson), dLat = 150 / 110540, dLon = 150 / (Math.cos(pr.lat0 * Math.PI / 180) * 111320);
     try {
@@ -421,7 +423,7 @@
           items.push({ ring: G.openRing(r).map(q => [Math.round(q[0] * 1e7) / 1e7, Math.round(q[1] * 1e7) / 1e7]), floors: row.floors || 1, use: row.use, name: row.name });
         });
       });
-      site.context = { at: new Date().toLocaleString('sv-SE').slice(0, 16), items }; JbsSite.save(site);
+      memo[site.id] = items;
       ctx = ctxFromItems(items);
       if (force) msg(`주변 건물 ${items.length}동을 불러왔습니다(구역 밖 150m, 브이월드 GIS건물통합정보 지상 층수 × 3m).`);
     } catch (e) { if (force) msg('주변 건물을 불러오지 못했습니다: ' + e.message + ' — 일조는 주변을 빈 땅으로 보고 계산합니다.', true); }
