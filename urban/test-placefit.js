@@ -1,0 +1,45 @@
+// 기반시설 배치 방식(PlaceFit) 시험 — 사이트와 같은 turf 6.5 필요
+//   npm i @turf/turf@6.5.0 pngjs (저장소 밖 폴더에) 후  NODE_PATH=<그 폴더>/node_modules node urban/test-placefit.js
+// 모양: 북쪽이 뾰족한 구역 + 북동쪽 종교부지 + 다른 시설. 필요 면적 4,500㎡에 네 방식 모두
+//   면적 ±1%, 구역 밖 0, 종교부지와 겹침 0 이어야 함
+global.turf = require('@turf/turf');
+const PF = require('./placefit.js');
+const O = [126.665, 37.452], mx = 1 / (111320 * Math.cos(37.452 * Math.PI / 180)), my = 1 / 110540;
+const P = pts => turf.polygon([[...pts, pts[0]].map(([x, y]) => [O[0] + x * mx, O[1] + y * my])]);
+const zone = P([[0, 0], [300, 60], [260, 140], [230, 330], [60, 120]]);
+const church = P([[190, 190], [235, 200], [240, 250], [200, 240]]);
+const occ = [P([[100, 40], [160, 50], [150, 110], [90, 100]])];
+const T = 4500;
+let fail = 0;
+function chk(name, r, { tol = 0.01 } = {}) {
+  const g = r.geom;
+  const outA = g ? turf.area(turf.difference(g, turf.buffer(zone, 0.5, { units: 'meters' })) || turf.point([0, 0])) || 0 : 0;
+  const ovA = g ? turf.area(turf.intersect(g, church) || turf.point([0, 0])) || 0 : 0;
+  const ok = g && Math.abs(r.area - T) <= T * tol && outA < 1 && ovA < 1;
+  if (!ok) fail++;
+  console.log(`${ok ? '통과' : '실패'} ${name.padEnd(6)} ${Math.round(r.area)}㎡ 구역밖 ${Math.round(outA)} 겹침 ${Math.round(ovA)} | ${r.msg}`);
+}
+chk('감싸기', PF.run({ mode: 'wrap', dir: 'N' }, { zone, anchorGeom: church, occupied: occ, target: T }));
+chk('곧게', PF.run({ mode: 'clean', dir: 'N' }, { zone, anchorGeom: church, occupied: occ, target: T }));
+const L = pts => turf.lineString(pts.map(([x, y]) => [O[0] + x * mx, O[1] + y * my]));
+chk('스케치', PF.run({ mode: 'sketch', sketch: L([[170, 255], [215, 250], [260, 262], [245, 320], [215, 325], [180, 280]]) }, { zone, anchorGeom: church, occupied: occ, target: T }));
+// 손그림: 용지를 래스터로 만들고 빨간 펜으로 끝이 덜 닫힌 타원을 그린 뒤 읽기
+const { meta } = PF.makeSheet({ zone, features: [{ geom: church, name: '종교' }], widthPx: 700 });
+const W = meta.width, H = meta.height, data = new Uint8ClampedArray(W * H * 4).fill(255);
+const toPx = ([x, y]) => { const lo = O[0] + x * mx, la = O[1] + y * my; return [(lo - meta.bbox[0]) / (meta.bbox[2] - meta.bbox[0]) * W, (meta.bbox[3] - la) / (meta.bbox[3] - meta.bbox[1]) * H]; };
+const [cx, cy] = toPx([120, 170]), [ex] = toPx([150, 170]), rx = ex - cx, ry = rx * 0.75;
+for (let t = 0; t < Math.PI * 2 * 0.95; t += 0.002) {
+  const x = Math.round(cx + rx * Math.cos(t)), y = Math.round(cy + ry * Math.sin(t));
+  for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) { const i = ((y + dy) * W + (x + dx)) * 4; data[i] = 220; data[i + 1] = 30; data[i + 2] = 30; }
+}
+const rd = PF.readSheet({ width: W, height: H, data }, meta);
+const drawnA = rd.shapes[0] ? turf.area(rd.shapes[0]) : 0, expect = Math.PI * 30 * 22.5;
+const readOk = Math.abs(drawnA - expect) < expect * 0.15;
+if (!readOk) fail++;
+console.log(`${readOk ? '통과' : '실패'} 손그림 읽기 ${Math.round(drawnA)}㎡(그린 타원 약 ${Math.round(expect)}㎡) | ${rd.msg}`);
+chk('손그림', PF.run({ mode: 'sketch', sketch: rd.shapes[0] }, { zone, anchorGeom: church, occupied: occ, target: T }));
+// 면적 부족은 실패로 알려야 함
+const big = PF.run({ mode: 'wrap', dir: 'N' }, { zone, anchorGeom: church, occupied: occ, target: 60000 });
+if (big.ok) fail++;
+console.log(`${big.ok ? '실패' : '통과'} 부족 알림 | ${big.msg}`);
+process.exit(fail ? 1 : 0);
