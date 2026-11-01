@@ -2246,7 +2246,28 @@ svg.addEventListener('click', e => { if (!S.drawing) return; S.draft.push(svgPoi
 
 /* ===== 우측 패널 ===== */
 const side = document.getElementById('side');
+// /arch·검토서 바로가기: 지금 보고 있는 안(S.region)을 ?urban= 으로 넘김(그린 구역계가 없으면 그냥 도구 첫 화면)
+const toolHref = t => { const z = Z.zones[S.region]; return `../${t}/` + (z && z.geojson ? `?urban=${encodeURIComponent(S.region)}` : ''); };
+function syncToolLinks() { document.querySelectorAll('a[data-tool]').forEach(a => { a.href = toolHref(a.dataset.tool); }); }
+let toolBusy = false;
+// 이동 전에 지금 안을 저장하고, 주변 도로(경계 도로 폭·소유구분)를 아직 안 불러왔으면 불러온 뒤 이동 — /arch가 도로 변을 정할 때 씀
+document.addEventListener('click', async e => {
+  const a = e.target.closest && e.target.closest('a[data-tool]'); if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
+  const id = S.region, z = Z.zones[id], url = toolHref(a.dataset.tool);
+  saveZ();
+  if (!z || !z.geojson || INFRA.ready(id) || !VWorld.enabled) { a.href = url; return; }
+  e.preventDefault();
+  if (toolBusy) return; toolBusy = true;
+  toast(`${id}안 주변 도로를 불러오는 중… 끝나면 이동합니다`, 60000);
+  try {
+    if (!INFRA.loading[id]) await INFRA.fetchRoads(id);
+    for (let k = 0; k < 120 && INFRA.loading[id]; k++) await new Promise(r => setTimeout(r, 500));
+  } finally { toolBusy = false; }
+  if (!INFRA.ready(id)) toast('주변 도로를 다 불러오지 못했습니다 — 도로 자료 없이 이동합니다', 2500);
+  saveZ(); location.href = url;
+});
 function render() {
+  syncToolLinks();
   drawMap();
   if (S.tab === 'rules') { renderRules(); return; }
   const a = analyze(S.region);
@@ -2710,6 +2731,8 @@ function bindInfra() {
 function renderArch(a) {
   const pl = plan(a);
   side.innerHTML = `<h2>${regName()} 개략 건축계획</h2>
+  <p style="margin:0 0 8px"><a class="btn" style="display:inline-block;text-decoration:none" data-tool="arch" href="${toolHref('arch')}">자세한 배치·일조·3D와 교통성 검토서로 → (/arch)</a></p>
+  <p class="hint">여기 개략 배치는 규모 확인용입니다. 배치 확정과 교통성·환경성·경관 검토서는 /arch에서 이 안(${esc(S.region)}안)을 불러와 이어 합니다.</p>
   <div class="form">
     ${field('bcr', '건폐율(계획)', P.bcr, '% · 예시 가정')}
     ${field('coreUnits', '주동 1개 층 세대수', P.coreUnits, '세대/층')}
