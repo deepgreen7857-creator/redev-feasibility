@@ -1,7 +1,7 @@
 // 데이터 창구 — Firebase 설정이 있으면 Firestore, 없으면 샘플(데모 모드)
 import { SAMPLE_LISTINGS, SAMPLE_BANKRUPT, SAMPLE_TRADES } from '../data/sample.js';
 import { DEFAULT_SETTINGS } from '../data/defaults.js';
-import { cached, forget, HOUR } from './cache.js';
+import { cached, forget, HOUR, idbGet, idbPut } from './cache.js';
 export { clearCache, cacheStamp } from './cache.js';
 
 const env = import.meta.env || {};
@@ -42,6 +42,54 @@ export async function saveSettings(s) {
   await f.fs.setDoc(f.fs.doc(f.db, 'settings', 'main'), { ...s, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
+
+// ---------- 묶음 자료(스냅숏) ----------
+//  서버가 하루 두 번(7:10·13:10) 물건·완료 결과·시세를 묶어 snapshots/{name} 에 둔다.
+//  화면은 안내 문서 한 건만 읽고, 버전이 이 브라우저 보관본과 같으면 그대로 쓴다(접속 때마다 수천 건을 받지 않음).
+//  묶음이 아직 없으면(서버 배포 전) 예전처럼 하나하나 받는다.
+const snapMem = new Map();
+async function gunzip(u8) {
+  const ds = new DecompressionStream('gzip');
+  const text = await new Response(new Blob([u8]).stream().pipeThrough(ds)).text();
+  return JSON.parse(text);
+}
+export const snapStamp = {}; // name → builtAt (화면에 '자료 기준 시각' 표시용)
+async function loadSnapshot(f, name) {
+  if (snapMem.has(name)) return snapMem.get(name);
+  const p = (async () => {
+    const { doc, getDoc, collection, query, where, getDocs } = f.fs;
+    const key = `snap:${name}`;
+    const kept = await idbGet(key);
+    let meta = null;
+    try { const m = await getDoc(doc(f.db, 'snapshots', name)); meta = m.exists() ? m.data() : null; } catch { meta = null; }
+    if (!meta) return null; // 묶음 없음(서버 배포 전) → 예전 방식
+    if (kept?.value?.version === meta.version) { snapStamp[name] = meta.builtAt; return kept.value.rows; }
+    const snap = await getDocs(query(collection(f.db, 'snapshots', name, 'chunks'), where('version', '==', meta.version)));
+    const parts = snap.docs.map((d) => d.data()).sort((a, b) => a.i - b.i);
+    if (parts.length !== meta.chunks) return kept?.value?.rows || null; // 서버가 바꾸는 중 → 보관본(없으면 예전 방식)
+    const bufs = parts.map((x) => x.b.toUint8Array());
+    const all = new Uint8Array(bufs.reduce((n, b) => n + b.length, 0));
+    let o = 0; bufs.forEach((b) => { all.set(b, o); o += b.length; });
+    const rows = await gunzip(all);
+    idbPut(key, { version: meta.version, builtAt: meta.builtAt, rows });
+    snapStamp[name] = meta.builtAt;
+    return rows;
+  })().catch(() => null);
+  snapMem.set(name, p);
+  return p;
+}
+// 서버에 묶음을 지금 다시 만들게 하고(관리자) 이 브라우저 보관본을 버린다
+export async function rebuildSnapshot() {
+  try { await callFn('snapshotNow', {}); } catch { /* 관리자가 아니거나 서버 배포 전 — 보관본만 버림 */ }
+}
+const kstDate = (d) => new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
+function inScope(x, scope, days) {
+  const e = String(x.bidEnd || ''); if (!e) return false;
+  const dot = e.includes('.'); const d = e.replace(/\./g, '-').slice(0, 10);
+  if (scope === 'recent') return d >= kstDate(new Date(Date.now() - days * 86400e3));
+  return d >= (dot ? kstDate(new Date(Date.now() - 50 * 86400e3)) : kstDate(new Date()));
+}
+
 function demoListings() {
   if (!mem.listings) mem.listings = [...SAMPLE_LISTINGS, ...local('manualListings', [])];
   return mem.listings;
@@ -53,6 +101,8 @@ function demoListings() {
 export async function listListings({ sido, scope = 'open', days = 120 } = {}) {
   const f = await firebase();
   if (!f) return demoListings().filter((x) => !sido || x.sido === sido);
+  const rows = await loadSnapshot(f, 'listings');
+  if (rows) return rows.filter((x) => inScope(x, scope, days) && (!sido || x.sido === sido));
   return cached(`listings:${scope}:${days}`, 6 * HOUR, () => fetchListings(f, { scope, days })).then((all) => all.filter((x) => !sido || x.sido === sido));
 }
 async function fetchListings(f, { scope, days }) {
@@ -78,6 +128,8 @@ async function fetchListings(f, { scope, days }) {
 export async function listPastResults({ sido } = {}) {
   const f = await firebase();
   if (!f) return [];
+  const rows = await loadSnapshot(f, 'past');
+  if (rows) return rows.filter((x) => !sido || x.sido === sido);
   const { collection, query, orderBy, limit, getDocs } = f.fs;
   const all = await cached('past:all', 12 * HOUR, async () => (await getDocs(query(collection(f.db, 'pastResults'), orderBy('bidEnd', 'desc'), limit(5000)))).docs.map((d) => ({ id: d.id, ...d.data() })));
   return all.filter((x) => !sido || x.sido === sido);
@@ -130,6 +182,11 @@ export async function getDeals(type, lawd, months = 12) {
   for (let i = 0; i < months; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); yms.push(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`); }
   const f = await firebase();
   if (!f) return yms.flatMap((ym) => (SAMPLE_TRADES[`${type}_${lawd}_${ym}`] || []).map((d) => [...d, ym]));
+  if (months === 12) {
+    const pack = await loadSnapshot(f, 'deals');
+    const hit = pack?.[0]?.[`${type}|${lawd}`];
+    if (hit) return hit;
+  }
   return cached(`deals:${type}:${lawd}:${months}`, 18 * HOUR, () => fetchDeals(f, yms, type, lawd));
 }
 async function fetchDeals(f, yms, type, lawd) {

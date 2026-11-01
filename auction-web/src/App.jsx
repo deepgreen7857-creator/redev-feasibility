@@ -9,7 +9,7 @@ import BankruptPage from './pages/BankruptPage.jsx';
 import MarketPage from './pages/MarketPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import { JbsMark } from './components/ui.jsx';
-import { DEMO, onUser, isAdmin, signOut, clearCache } from './lib/store.js';
+import { DEMO, onUser, isAdmin, signOut, clearCache, rebuildSnapshot } from './lib/store.js';
 
 // 메뉴는 하는 일 기준 네 묶음 — 위는 묶음, 아래 줄은 그 묶음 안의 화면
 //  물건(고르기) · 일정(언제 볼지·오늘 할 일) · 성적(맞았나) · 기준·관리
@@ -43,6 +43,8 @@ export default function App() {
   const [user, setUser] = useState(null);
   useEffect(() => { let off = () => {}; onUser(setUser).then((f) => { off = f; }); return () => off(); }, []);
   const admin = isAdmin(user);
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => { setRefreshing(true); if (admin) await rebuildSnapshot(); await clearCache(); window.location.reload(); };
   return (
     <HashRouter>
       <header className="border-b border-line bg-white">
@@ -56,7 +58,7 @@ export default function App() {
             </span>
           </div>
           <Nav />
-          <button className="whitespace-nowrap text-xs text-ink/50 hover:text-ink" title="이 브라우저에 보관해 둔 자료를 버리고 서버에서 새로 받습니다(평소엔 아침 7시 이후 한 번만 받음)" onClick={() => clearCache().then(() => window.location.reload())}>자료 새로 받기</button>
+          <button className="whitespace-nowrap text-xs text-ink/50 hover:text-ink" disabled={refreshing} title="서버가 사이트용 묶음 자료를 지금 다시 만들고(관리자), 이 브라우저 보관본을 새 묶음으로 바꿉니다. 평소엔 묶음이 바뀔 때(아침 7시·낮 1시)만 새로 받습니다" onClick={refresh}>{refreshing ? '자료 묶는 중…(1~3분)' : '자료 새로 받기'}</button>
           {user && <button className="hidden text-xs text-ink/50 sm:block" onClick={() => signOut().then(() => setUser(null))}>로그아웃</button>}
         </div>
         {DEMO && <div className="bg-wait/10 px-4 py-1 text-center text-xs text-ink/80">데모 모드 — 샘플(가상) 물건과 시세로 동작합니다. Firebase를 연결하면 실제 수집 자료로 바뀝니다.</div>}

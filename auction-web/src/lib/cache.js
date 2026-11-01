@@ -14,6 +14,8 @@ function open() {
   });
   return dbp;
 }
+export async function idbGet(key) { return get(key); }
+export async function idbPut(key, value) { return put(key, value); }
 async function get(key) {
   const db = await open(); if (!db) return null;
   return new Promise((res) => { try { const q = db.transaction(STORE).objectStore(STORE).get(key); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch { res(null); } });
