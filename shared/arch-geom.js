@@ -216,7 +216,10 @@
         for (let k = 0; k < 14 && hi - lo > 0.3; k++) { const mid = (lo + hi) / 2; if (ok(mid)) lo = mid; else hi = mid; }
         if (lo > 0) blds.forEach(b => { b.ry += lo * (b.row + 1) / nRows; });
       }
-      // 회전 되돌린 꼭짓점
+      return toWorld(blds);
+    }
+    // 회전 되돌린 꼭짓점·형태 도형
+    function toWorld(blds) {
       blds.forEach((b, i) => {
         b.id = 101 + i;
         const W = p => rot([b.rx + p[0], b.ry + p[1]], th), m = b.mod;
@@ -225,6 +228,68 @@
         b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); b.local = { L: m.L, D: m.D, parts: m.parts, cores: m.cores, divs: m.divs }; delete b.mod;
       });
       return blds;
+    }
+
+    /* ---------- 자유 배치: 1m 격자로 건축 가능 여부를 미리 계산(누적합), 남쪽부터 동마다 들어갈 자리를 찾음 ----------
+       들쭉날쭉하거나 비스듬한 구역에서 줄 배치보다 훨씬 많이 들어감. 인동간격: 남북으로 겹치는 동끼리 남쪽 동 높이 × 배수,
+       옆으로 나란한 동끼리 측면 간격 */
+    const GX0 = Math.floor(xmin), GY0 = Math.floor(ymin), GW = Math.ceil(xmax) - GX0 + 1, GH = Math.ceil(ymax) - GY0 + 1;
+    let SUM = null;
+    function grid() {
+      if (SUM) return SUM;
+      SUM = new Int32Array((GW + 1) * (GH + 1));
+      for (let j = 0; j < GH; j++) { let row = 0; for (let i = 0; i < GW; i++) { if (!test(GX0 + i + 0.5, GY0 + j + 0.5)) row++; SUM[(j + 1) * (GW + 1) + i + 1] = SUM[j * (GW + 1) + i + 1] + row; } }
+      return SUM;
+    }
+    // 회전 좌표계 사각형 [x0,x1]×[y0,y1]에 건축 불가 칸이 하나도 없으면 true
+    function free(x0, y0, x1, y1) {
+      const S = grid(), i0 = Math.floor(x0 - GX0), j0 = Math.floor(y0 - GY0), i1 = Math.ceil(x1 - GX0), j1 = Math.ceil(y1 - GY0);
+      if (i0 < 0 || j0 < 0 || i1 > GW || j1 > GH) return false;
+      return S[j1 * (GW + 1) + i1] - S[j0 * (GW + 1) + i1] - S[j1 * (GW + 1) + i0] + S[j0 * (GW + 1) + i0] === 0;
+    }
+    function fits(m, x, y) {
+      if (!m._bb) m._bb = m.parts.map(q => { const xs = q.map(p => p[0]), ys = q.map(p => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; });
+      for (const b of m._bb) if (!free(x + b[0], y + b[1], x + b[2], y + b[3])) return false;
+      return true;
+    }
+    // 인동간격·측면 간격 검사. 통과하면 null, 막히면 다음에 시도할 x(막은 동의 오른쪽 끝 너머)
+    function blocker(m, x, y, placed, F) {
+      const gN = opt.spacing * H(F), gS = A.sideGap_m;
+      for (const o of placed) {
+        if (o.ry + o.D + gN <= y) continue; // 충분히 남쪽(이미 지나간 줄)
+        const xo = Math.min(x + m.L, o.rx + o.L) - Math.max(x, o.rx), yo = Math.min(y + m.D, o.ry + o.D) - Math.max(y, o.ry);
+        if (xo > 0) { // 남북으로 겹침: 사이 거리 ≥ 남쪽 동 높이 × 배수
+          if (y >= o.ry ? y - (o.ry + o.D) < gN : o.ry - (y + m.D) < gN) return o.rx + o.L;
+        } else if (yo > -gN * 0.3) { // 옆으로 나란함: 측면 간격
+          if (Math.max(o.rx - (x + m.L), x - (o.rx + o.L)) < gS) return o.rx + o.L + gS;
+        }
+      }
+      return null;
+    }
+    function pack(F) {
+      const blds = [], cols = {}; types.forEach(t => { cols[t] = 0; });
+      const st = GW * GH > 25000 ? 2 : 1; // 큰 구역은 2m 간격으로 자리 찾기(개략 배치 정밀도로 충분)
+      const ordOf = () => { const tot = Object.values(cols).reduce((a, b) => a + b, 0) || 1; return types.slice().sort((a, b) => (cols[a] / tot - want[a]) - (cols[b] / tot - want[b])); };
+      let order = ordOf();
+      for (let y = GY0; y <= ymax; y += st) {
+        for (let x = GX0; x <= xmax; x += st) {
+          let pick = null, jump = Infinity;
+          for (const t of order) { for (const m of MODS[t]) { if (!fits(m, x, y)) continue; const bx = blocker(m, x, y, blds, F); if (bx === null) { pick = m; break; } jump = Math.min(jump, bx); } if (pick) break; }
+          if (!pick) { if (isFinite(jump) && jump - st > x) x = Math.ceil(jump) - st; continue; }
+          let m = pick; if (m.form === 'L' && x + m.L / 2 < (xmin + xmax) / 2) m = lForm(U, A.coreW_m, m.t, m.n - 2, 2, true);
+          blds.push({ row: 0, t: m.t, n: m.n, form: m.form, mod: m, floors: F, L: m.L, D: m.D, rx: x, ry: y });
+          cols[m.t] += m.n; order = ordOf(); x = Math.ceil(x + m.L + A.sideGap_m) - st;
+        }
+      }
+      // 줄 번호: 남쪽부터 y가 비슷한 것끼리(동 깊이 안쪽 차이)
+      blds.sort((a, b) => a.ry - b.ry); let r = 0, y0 = blds.length ? blds[0].ry : 0;
+      blds.forEach(b => { if (b.ry - y0 > b.D) { r++; y0 = b.ry; } b.row = r; });
+      return toWorld(blds);
+    }
+    // 줄 배치와 자유 배치 중 연면적이 큰 쪽
+    function placeBest(F) {
+      const a = finish(place(() => F)), b = finish(pack(F));
+      return gfaOf(b) > gfaOf(a) * 1.001 ? b : a;
     }
 
     // 정북 일조·경계부 저층 상한 → 동별 최고 층수
@@ -256,44 +321,37 @@
     let best = null;
     if (opt.fixedF) {
       // 기준 층수 고정: 넘치면 남쪽 줄·가장자리 동부터 빼서(남측 개방) 목표에 맞춤
-      let b0 = finish(place(() => opt.fixedF));
+      let b0 = placeBest(opt.fixedF);
       if (gfaOf(b0) > target) {
         const cx = b0.reduce((s, b) => s + b.rx, 0) / b0.length;
-        const order = b0.slice().sort((a, b) => a.row - b.row || Math.abs(b.rx - cx) - Math.abs(a.rx - cx));
+        const order = b0.slice().sort((a, b) => a.ry - b.ry || Math.abs(b.rx - cx) - Math.abs(a.rx - cx));
         for (const b of order) { if (gfaOf(b0) <= target) break; b0 = b0.filter(x => x !== b); }
       }
       best = { F: opt.fixedF, bl: b0, gfa: gfaOf(b0) };
     } else {
       // 기준 층수를 올리면 인동간격이 커져 줄 수가 줄어듦 → 목표 이하에서 연면적이 가장 큰 층수(같으면 낮은 층수)
       for (let F = A.minFloors; F <= A.maxFloors; F++) {
-        const bl = finish(place(() => F)), gfa = gfaOf(bl);
+        const bl = placeBest(F), gfa = gfaOf(bl);
         if (gfa > target * 1.0001) break;
         if (!best || gfa > best.gfa * 1.005) best = { F, bl, gfa };
       }
-      if (!best) { const bl = finish(place(() => A.minFloors)); best = { F: A.minFloors, bl, gfa: gfaOf(bl) }; }
+      if (!best) { const bl = placeBest(A.minFloors); best = { F: A.minFloors, bl, gfa: gfaOf(bl) }; }
     }
     let bl = best.bl;
     // 북쪽 줄을 올리되 기준 층수보다 너무 튀지 않게(기준 + 40%, 최소 3개층까지)
     const maxRise = best.F + Math.max(3, Math.round(best.F * 0.4));
     if (bl.length) {
-      const rows = [...new Set(bl.map(b => b.row))].sort((a, b) => b - a); // 북쪽 줄부터
+      const byN = bl.slice().sort((a, b) => b.ry - a.ry); // 북쪽 동부터
       let changed = true;
       while (changed) {
         changed = false;
-        for (const r of rows) {
-          // 마지막 줄은 뒤에 동이 없어 인동간격에 영향 없음. 그 앞줄은 뒷줄과 간격이 충분할 때만 올림
-          const rowB = bl.filter(b => b.row === r);
-          const next = bl.filter(b => b.row === r + 1);
-          for (const b of rowB) {
-            if (b.floors + 1 > b.cap || b.floors + 1 > maxRise) continue;
-            const add = b.n * supOf(b.t);
-            if (gfaOf(bl) + add > target) continue;
-            if (next.length) {
-              const gap = Math.min(...next.map(nb => nb.ry)) - (b.ry + b.D);
-              if (gap < opt.spacing * H(b.floors + 1)) continue;
-            }
-            b.floors++; changed = true;
-          }
+        for (const b of byN) {
+          if (b.floors + 1 > b.cap || b.floors + 1 > maxRise) continue;
+          if (gfaOf(bl) + b.n * supOf(b.t) > target) continue;
+          // 이 동 북쪽에 남북으로 겹치는 동이 있으면 그 사이가 높아진 높이 × 배수 이상일 때만
+          const north = bl.filter(o => o !== b && o.ry > b.ry && Math.min(b.rx + b.L, o.rx + o.L) - Math.max(b.rx, o.rx) > 0);
+          if (north.length && Math.min(...north.map(o => o.ry)) - (b.ry + b.D) < opt.spacing * H(b.floors + 1)) continue;
+          b.floors++; changed = true;
         }
       }
     }
@@ -313,13 +371,13 @@
   // 대안: 저층 다동형 / 중층형 / 고층 소동형. 목표 연면적의 97% 이상 채우는 기준 층수 중에서 고름
   function alternatives(site, opt) {
     const A = opt.assume, cands = [];
-    for (let F = A.minFloors; F <= A.maxFloors; F++) {
-      try { const r = layout(site, Object.assign({}, opt, { fixedF: F })); if (r.units && r.gfa >= r.target * 0.97) cands.push(r); } catch (e) { /* 건너뜀 */ }
+    // 기준 층수: 범위가 넓으면 2층 간격(계산 시간 절반, 결과 차이 작음)
+    const stepF = A.maxFloors - A.minFloors > 16 ? 2 : 1, all = [];
+    for (let F = A.minFloors; F <= A.maxFloors; F += stepF) {
+      try { const r = layout(site, Object.assign({}, opt, { fixedF: F })); if (r.units) all.push(r); if (r.units && r.gfa >= r.target * 0.97) cands.push(r); } catch (e) { /* 건너뜀 */ }
     }
     if (!cands.length) {
       // 목표를 못 채우는 구역: 기준 층수별 결과 중 연면적이 큰 안(층수가 서로 다른 것) 최대 3개
-      const all = [];
-      for (let F = A.minFloors; F <= A.maxFloors; F++) { try { const r = layout(site, Object.assign({}, opt, { fixedF: F })); if (r.units) all.push(r); } catch (e) { /* 건너뜀 */ } }
       if (!all.length) { const r = layout(site, opt); return [Object.assign(r, { label: '최대 배치(목표 미달)' })]; }
       all.sort((x, y) => y.gfa - x.gfa);
       const out = []; all.forEach(r => { if (out.length < 3 && out.every(o => Math.abs(o.maxFloors - r.maxFloors) >= 4)) out.push(r); });

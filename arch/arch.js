@@ -308,16 +308,21 @@
       }
       // 방향별로 대안을 만들어 가장 좋은 방향 고르기. 점수: 목표 연면적 충족도 우선, 그다음 남향(각도 작을수록), 건폐율 낮을수록
       async function searchAngle(form, label) {
+        // 방향 고르기는 빠른 추정(기준 층수 2개로만 배치)으로, 대안 3개는 고른 방향에서만 자세히 계산
+        const As = I.opt.assume, Fs = [Math.round((As.minFloors + As.maxFloors) / 2), Math.round(As.minFloors + (As.maxFloors - As.minFloors) * 0.8)];
         let b = null, k = 0;
         for (const a of angles) {
           msg(`배치안 계산 중… ${label ? label + ' · ' : ''}방향 ${++k}/${angles.length}`); await tick();
-          let r; try { r = G.alternatives(I.site, Object.assign({}, I.opt, { angle: a, form })); } catch (e) { continue; }
-          if (!r.length) continue;
-          const top = r.reduce((m, x) => Math.max(m, x.gfa), 0) / (I.lot * I.opt.far / 100);
-          const score = Math.min(top, 1) * 100 - Math.abs(a) * 0.08 - Math.min(...r.map(x => x.bcr)) * 0.02;
-          if (!b || score > b.score) b = { score, a, r };
+          let top = 0, bcr = 100;
+          for (const F of Fs) { try { const r = G.layout(I.site, Object.assign({}, I.opt, { angle: a, form, fixedF: F })); if (r.units) { top = Math.max(top, r.gfa); bcr = Math.min(bcr, r.bcr); } } catch (e) { /* 건너뜀 */ } }
+          if (!top) continue;
+          const score = Math.min(top / (I.lot * I.opt.far / 100), 1) * 100 - Math.abs(a) * 0.08 - bcr * 0.02;
+          if (!b || score > b.score) b = { score, a };
         }
-        return b;
+        if (!b) return null;
+        msg(`배치안 계산 중… ${label ? label + ' · ' : ''}대안 만들기(방향 ${b.a}°)`); await tick();
+        try { b.r = G.alternatives(I.site, Object.assign({}, I.opt, { angle: b.a, form })); } catch (e) { return null; }
+        return b.r.length ? b : null;
       }
       const best = await searchAngle(I.opt.form, I.p.form === 'compare' ? '판상형' : '');
       if (!best) throw new Error('어느 방향으로도 동이 들어가지 않습니다');

@@ -13,17 +13,17 @@ t('정오 그림자는 북쪽으로', () => { const sh = G.shadow([[0,0],[10,0],
 const R = run(rect(240, 200), ['road', 'boundary', 'north', 'boundary'], 250);
 t('목표 용적률 250% 이하, 근접', () => { assert.ok(R.far <= 250.01, R.far); assert.ok(R.far > 200, R.far); });
 t('동이 구역 안·이격 안에 있음', () => R.buildings.forEach(b => b.poly.forEach(p => { assert.ok(p[0] >= 4.9 && p[0] <= 235.1 && p[1] >= 2.9); })));
-t('줄 사이 인동간격 ≥ 0.8H(앞줄)', () => {
-  const rows = [...new Set(R.buildings.map(b => b.row))].sort((a, b) => a - b);
-  for (let i = 1; i < rows.length; i++) {
-    const front = R.buildings.filter(b => b.row === rows[i - 1]), back = R.buildings.filter(b => b.row === rows[i]);
-    const gap = Math.min(...back.map(b => b.ry)) - Math.max(...front.map(b => b.ry + b.D));
-    const h = Math.max(...front.map(b => R.H(b.floors)));
-    assert.ok(gap >= 0.8 * h - 0.6, `줄${i}: ${gap.toFixed(1)} < ${(0.8 * h).toFixed(1)}`);
-  }
+t('남북으로 겹치는 동 사이 인동간격 ≥ 0.8H(남쪽 동)', () => {
+  const B = R.buildings;
+  B.forEach(a => B.forEach(b => {
+    if (a === b || b.ry <= a.ry) return;
+    if (Math.min(a.rx + a.L, b.rx + b.L) - Math.max(a.rx, b.rx) <= 0) return;
+    const gap = b.ry - (a.ry + a.D), h = R.H(a.floors);
+    assert.ok(gap >= 0.8 * h - 0.6, `${a.id}→${b.id}: ${gap.toFixed(1)} < ${(0.8 * h).toFixed(1)}`);
+  }));
 });
 t('정북 일조: 북측 경계 거리 d → 높이 ≤ 2d', () => R.buildings.forEach(b => { const d = 200 - (b.ry + b.D); assert.ok(R.H(b.floors) <= Math.max(10, 2 * d) + 1e-6, `${b.id} H=${R.H(b.floors)} d=${d}`); }));
-t('남저북고(뒷줄이 같거나 높음)', () => { const m = r => Math.max(...R.buildings.filter(b => b.row === r).map(b => b.floors)); assert.ok(m(R.rows - 1) >= m(0)); });
+t('남저북고(가장 남쪽 줄이 최고층을 독차지하지 않음)', () => { const m = r => Math.max(...R.buildings.filter(b => b.row === r).map(b => b.floors)); assert.ok(R.rows < 2 || Math.max(...[...Array(R.rows).keys()].slice(1).map(m)) >= m(0)); });
 t('평형 비율 대략 유지(84형이 가장 많음)', () => assert.ok(R.byType[84] >= R.byType[59] && R.byType[59] > R.byType[114]));
 t('간선도로변 20m 이격', () => { const R2 = run(rect(240, 200), ['arterial', 'boundary', 'boundary', 'boundary'], 250); R2.buildings.forEach(b => b.poly.forEach(p => assert.ok(p[1] >= 19.9))); });
 t('일조시간 계산(남쪽 빈 땅은 충분)', () => { const r = G.sunHours(R.buildings, R.H, 37.46, [[120, -30]], C.items.find(i => i.id === 'sun_tolerance')); assert.ok(r[0].ok && r[0].total > 7); });
@@ -41,7 +41,7 @@ const base = { units: U, assume: A, mix: { 59: 40, 84: 50, 114: 10 }, spacing: 0
 const rn = G.layout(Object.assign({}, sp, { tags: ['road', 'boundary', 'north', 'boundary'] }), base), rp = G.layout(sp, Object.assign({}, base, { parkWidth: 30 }));
 const north = r => Math.max(...r.buildings.map(b => b.ry + b.D));
 console.log(`정북 변: 북쪽 끝 동 ${north(rn).toFixed(0)}m · ${rn.units}세대 / 공원 30m: 북쪽 끝 동 ${north(rp).toFixed(0)}m · ${rp.units}세대`);
-assert.ok(north(rp) > north(rn) && rp.units >= rn.units);
+assert.ok(north(rp) >= north(rn) && rp.units > rn.units);
 console.log('공원·녹지 통과');
 
 // 소형만(39·49) 구성 — 가로주택·역세권형
