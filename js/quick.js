@@ -202,7 +202,7 @@ const Quick = {
     const costRows = r.cost.items.filter(it => it.amount > 0).map(it => `<tr><td>${esc(it.name.replace(/\s*\(가정값\)/, ''))}</td><td class="n">${eok(it.amount)}</td></tr>`).join('');
     const revName = { 조합원: '조합원 분양', 일반: '일반 분양', 임대: '임대주택 인수', 상가: '근린생활시설 분양' };
     const revRows = Object.entries(r.rev.byCat).filter(([, v]) => v > 0).map(([k, v]) => `<tr><td>${esc(revName[k] || k)}</td><td class="n">${eok(v)}</td></tr>`).join('');
-    const grp = [['시장 값', [['generalPrice', '만원/평(공급)'], ['memberRatio', '%'], ['rentPrice', '만원/평(공급)'], ['shopPrice', '만원/평'], ['conPrice', '만원/평(계획연면적)'], ['etcPct', '% (공사비 대비)'], ['priorMul', '배 (공시지가 대비)']]],
+    const grp = [['시장 값', [['generalPrice', '만원/평(공급)'], ['memberRatio', '%'], ['buildCost', '만원/㎡(기본형건축비, 2026.9.15. 고시)'], ['rentBuildPct', '% (임대 건축물 인수 비율, 부속토지는 감정가)'], ['shopPrice', '만원/평'], ['conPrice', '만원/평(계획연면적)'], ['etcPct', '% (공사비 대비)'], ['priorMul', '배 (공시지가 대비)']]],
       ['계획 값', [['gfaFactor', '배 (지하·공용 포함)'], ['resRatio', '%'], ['rentRatio', '% (49㎡형)'], ['mix59', '%'], ['mix84', '%'], ['mix114', '%']]],
       ['정비기반시설 비율', [['infraAvg', '% (실무 경험치)'], ['infraCons', '% (실무 경험치)']]]];
     const assume = grp.map(([g, ks]) => `<tr class="h"><th colspan="2">${g}</th></tr>` + ks.map(([k, u]) => `<tr><td>${esc((JbsFeas.LABEL[k] || k).replace(/\(.*\)$/, ''))}</td><td class="n">${fmt(A[k], k === 'gfaFactor' || k === 'priorMul' ? 2 : 0)} ${u}</td></tr>`).join('')).join('');

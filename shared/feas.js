@@ -8,7 +8,12 @@
   const DEF = {
     generalPrice: 2300,   // 일반분양가(공급면적 평당)
     memberRatio: 80,      // 조합원분양가 = 일반분양가 × %
-    rentPrice: 600,       // 임대주택 인수가(공급면적 평당)
+    // 재개발 임대주택 인수가격: 건축물 = 기본형건축비 × 80%(2024년 시행령 개정, 종전 표준건축비), 부속토지 = 감정가(의무 임대).
+    //  용적률 완화분 임대는 건축비만(토지 기부채납) — 1회차는 정비계획 상한 이내라 의무 임대만 셈
+    buildCost: 232.8,     // 기본형건축비(만원/㎡, 공급면적) — 2026. 9. 15. 정기고시, 16~25층·전용 60~85㎡ 지상층 기준
+    rentBuildPct: 80,     // 임대 건축물 인수 비율(기본형건축비 대비 %)
+    rentLand: 1,          // 1이면 임대 부속토지 감정가 포함(의무 임대), 0이면 제외(완화분처럼 기부채납)
+    rentPrice: 616,       // 임대 건축물 인수가(만원/평, 공급) — get()에서 기본형건축비 × 비율로 자동 계산
     shopPrice: 2500,      // 상가 분양가(평당)
     conPrice: 750,        // 공사비(계획연면적 평당)
     gfaFactor: 1.45,      // 계획연면적 = 용적률 연면적 × 배율(지하주차장·공용 포함)
@@ -24,7 +29,7 @@
     parkPerUnit: 2,       // 법정 공원 세대당 ㎡(도시공원법 시행규칙 별표2 — 정비계획 5만㎡ 이상)
   };
   const LABEL = {
-    generalPrice: '일반분양가(만원/평)', memberRatio: '조합원분양가 비율(%)', rentPrice: '임대 인수가(만원/평)', shopPrice: '상가 분양가(만원/평)',
+    generalPrice: '일반분양가(만원/평)', memberRatio: '조합원분양가 비율(%)', rentPrice: '임대 건축물 인수가(만원/평)', buildCost: '기본형건축비(만원/㎡, 공급면적)', rentBuildPct: '임대 건축물 인수 비율(%)', rentLand: '임대 부속토지 감정가 포함(1/0)', shopPrice: '상가 분양가(만원/평)',
     conPrice: '공사비(만원/평, 계획연면적)', gfaFactor: '계획연면적 배율', etcPct: '기타 사업비(공사비 대비 %)', priorMul: '종전자산 보정배율(공시지가 ×)',
     avgLand: '평균 공시지가(만원/㎡)', rentRatio: '임대주택 비율(%)', mix59: '59㎡형 비율(%)', mix84: '84㎡형 비율(%)', mix114: '114㎡형 비율(%)', resRatio: '주거 비율(%)', infraAvg: '기반시설 비율 평균(%)', infraCons: '기반시설 비율 보수적(%)',
   };
@@ -38,6 +43,7 @@
       let v = {}; try { v = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { v = {}; }
       const out = Object.assign({}, DEF);
       Object.keys(DEF).forEach(k => { if (v[k] !== undefined && v[k] !== '' && isFinite(+v[k])) out[k] = +v[k]; });
+      out.rentPrice = Math.round(out.buildCost * PY * out.rentBuildPct / 100);   // 임대 건축물 인수가는 항상 기본형건축비에서 계산
       return out;
     },
     set(patch) {
@@ -101,8 +107,15 @@
       const rows = [];
       types.forEach(t => { if (mem[t]) rows.push({ cat: '조합원', t, units: mem[t], area: sup(t), price: memberPrice, amount: amt(mem[t], t, memberPrice) }); });
       types.forEach(t => { const n = sale[t] - mem[t]; if (n) rows.push({ cat: '일반', t, units: n, area: sup(t), price: A.generalPrice, amount: amt(n, t, A.generalPrice) }); });
-      types.forEach(t => { if (rent[t]) rows.push({ cat: '임대', t, units: rent[t], area: sup(t), price: A.rentPrice, amount: amt(rent[t], t, A.rentPrice) }); });
-      if (rentSep) { const ra = num(inp.rentSupply) || this.supply(49); rows.push({ cat: '임대', t: '49', units: rentSep, area: ra, price: A.rentPrice, amount: rentSep * ra / PY * A.rentPrice }); }
+      // 임대 부속토지(의무 임대): 세대당 대지지분 ≈ 공동주택 획지 × (그 세대 공급면적 ÷ 전체 공급면적), × 토지 감정단가(만원/㎡)
+      const rSup = num(inp.rentSupply) || this.supply(49);
+      const allSup = types.reduce((s0, t) => s0 + (sale[t] + rent[t]) * sup(t), 0) + rentSep * rSup;
+      const landOn = A.rentLand && num(inp.lotArea) > 0 && num(inp.landUnit) > 0 && allSup > 0;
+      const landPer = area => landOn ? num(inp.lotArea) * area / allSup * num(inp.landUnit) : 0;   // 세대당 토지 인수가(만원)
+      const rentRow = (t, n, area) => { const lp = landPer(area), bp = A.rentPrice, per = bp + (area > 0 ? lp / (area / PY) : 0);
+        rows.push({ cat: '임대', t, units: n, area, price: per, buildPrice: bp, landPerUnit: lp, amount: n * area / PY * bp + n * lp, landAmount: n * lp }); };
+      types.forEach(t => { if (rent[t]) rentRow(t, rent[t], sup(t)); });
+      if (rentSep) rentRow('49', rentSep, rSup);
       const shopArea = Math.max(0, num(inp.farArea) - num(inp.resArea || inp.farArea));
       if (shopArea > 1) rows.push({ cat: '상가', t: '', units: 1, area: shopArea, price: A.shopPrice, amount: shopArea / PY * A.shopPrice });
       const rev = rows.reduce((s, r) => s + r.amount, 0);

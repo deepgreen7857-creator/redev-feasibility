@@ -793,7 +793,8 @@ function biz(a, pl) {
   const landUnit = A.avgLand || P.landPrice;   // 만원/㎡ — 공시지가가 없을 때
   const priorLand = useJiga ? a.priorLand * A.priorMul : a.landArea * landUnit * A.priorMul * 1e4;
   const U = pl.U || JbsFeas.units(pl.gfa, A);
-  const m = JbsFeas.money({ sale: U.sale, rental: U.rental, rentSupply: U.rentSupply, supply: U.supply, members: pl.members, owners: a.owners, farArea: pl.gfa, resArea: U.resArea, prior: priorLand / 1e4 }, A);
+  const rentLandUnit = a.landArea > 0 ? priorLand / 1e4 / a.landArea : 0;   // 임대 부속토지 감정단가(만원/㎡)
+  const m = JbsFeas.money({ sale: U.sale, rental: U.rental, rentSupply: U.rentSupply, supply: U.supply, members: pl.members, owners: a.owners, farArea: pl.gfa, resArea: U.resArea, prior: priorLand / 1e4, lotArea: pl.site, landUnit: rentLandUnit }, A);
   const W = v => v * 1e4, saleU = m.types.reduce((n, t) => n + m.sale[t], 0);
   const avgPy = saleU ? m.types.reduce((s, t) => s + m.sale[t] * m.sup(t), 0) / saleU / PY : pl.perUnit / PY;
   const price84 = W(m.memberPrice * m.sup(84) / PY);
@@ -2793,7 +2794,8 @@ function renderBiz(a) {
     ${priorFields}
     ${ff('generalPrice', '만원/평(공급)')}
     ${ff('memberRatio', `% → 조합원분양가 ${fmt(b.m.memberPrice)}만원/평`)}
-    ${ff('rentPrice', '만원/평(공급)')}
+    ${ff('buildCost', '만원/㎡ — 2026.9.15. 고시 232.8', 'step="0.1"')}
+    ${ff('rentBuildPct', `% → 임대 건축물 ${fmt(b.A.rentPrice)}만원/평 + 부속토지 감정가`)}
     ${ff('conPrice', '만원/평(계획연면적)')}
     ${ff('gfaFactor', '배 — 지하주차장·공용 포함', 'step="0.01"')}
     ${ff('etcPct', '% of 공사비 (설계·감리·이주·금융·보상 등)')}
@@ -2802,7 +2804,7 @@ function renderBiz(a) {
   <div class="tscroll"><table class="ledger"><tbody>
     <tr><td>조합원 분양 ${fmt(b.m.memTotal)}세대 (평형별 공급면적 × 조합원분양가)</td><td class="r">${won(b.incMember)}</td></tr>
     <tr><td>일반 분양 ${fmt(b.m.types.reduce((n, t) => n + b.m.sale[t] - b.m.mem[t], 0))}세대</td><td class="r">${won(b.incGeneral)}</td></tr>
-    <tr><td>임대주택 인수 ${fmt(pl.rental)}세대</td><td class="r">${won(b.incRental)}</td></tr>
+    <tr><td>임대주택 인수 ${fmt(pl.rental)}세대 (건축물 기본형건축비 ${b.A.rentBuildPct}% + 부속토지 감정가)</td><td class="r">${won(b.incRental)}</td></tr>
     <tr class="sum"><td>총수입</td><td class="r">${won(b.income)}</td></tr>
     <tr><td>공사비 (계획연면적 ${fmt(b.planGfa)}㎡ = 지상 ${fmt(pl.gfa)}㎡ × ${b.A.gfaFactor})</td><td class="r">${won(b.cost)}</td></tr>
     <tr><td>기타 사업비</td><td class="r">${won(b.etc)}</td></tr>

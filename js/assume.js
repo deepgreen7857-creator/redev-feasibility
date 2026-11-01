@@ -99,7 +99,11 @@ const Assume = {
     const k84 = v.sup84 / JbsFeas.supply(84) || 1;
     const supOv = { 59: v.sup59, 84: v.sup84, 114: JbsFeas.supply(114) * k84, 49: v.supRent };
     const U = JbsFeas.units(farArea, A, mix, supOv);
-    const M = JbsFeas.money({ sale: U.sale, rental: U.rental, rentSupply: U.rentSupply, supply: U.supply, members: v.members, farArea, resArea: U.resArea, prior: 0 }, A);
+    // 임대 부속토지 감정단가(만원/㎡) = 공시지가 합 × 보정배율 ÷ 사유지 면적(토지조서 없으면 평균 공시지가 × 배율)
+    const privA = s.lands.filter(l => !Calc.isInfra(l.jimok)).reduce((a, l) => a + num(l.area), 0);
+    const off = Calc.officialLandValue(s);
+    const landUnit = off > 0 && privA > 0 ? off * v.priorMul / privA : num(A0.avgLand) * v.priorMul;
+    const M = JbsFeas.money({ sale: U.sale, rental: U.rental, rentSupply: U.rentSupply, supply: U.supply, members: v.members, farArea, resArea: U.resArea, prior: 0, lotArea: Calc.netSite(s), landUnit }, A);
     const memberPrice = M.memberPrice;
     const sales = M.rows.map(r => sale(r.cat, r.cat === '상가' ? '근린생활시설' : r.cat === '임대' ? '임대' : r.t + '㎡', r.units, r.cat === '상가' ? Math.round(r.area) : r.area, r.price));
     const u = t => U.sale[t] || 0, mm = t => M.mem[t] || 0;
