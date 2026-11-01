@@ -2209,18 +2209,22 @@ function fillSuggest(inf, need) {
   const eo = (z.infra && z.infra.edgeOpt) || {};
   const rs = z.roads.edge.map(r => { const w = Math.max(r.w, num((e.per[r.pnu] || {}).pw) || r.w); return { r, w, big: ROADCLS.big(ROADCLS.of(w)), front: INFRA.widenArea(r, z, r.w + 1) }; })
     .filter(x => x.front >= 10 && !(eo[x.r.pnu] || {}).keep && x.w < 20).sort((a, b) => b.front - a.front);
+  // 매번 각 도로의 '다음 한 단계'를 후보로 놓고, 남은 면적을 넘는 후보가 있으면 그중 가장 작은 것(넘치지 않게), 없으면 가장 큰 것을 고름
+  //  한 도로의 첫 단계는 다음 등급으로, 그 뒤 단계는 같은 대분류 안에서만
   const steps = []; let got = 0;
-  for (let round = 0; round < 4 && got < need; round++) {
-    for (const x of rs) {
-      if (got >= need) break;
-      const nx = ROADCLS.std.find(w => w > x.w + 0.2); if (!nx || nx > 25) continue;
-      if (round > 0 && ROADCLS.big(ROADCLS.of(nx)) !== x.big) continue;
+  for (let k = 0; k < 20 && got < need - 1; k++) {
+    const cands = rs.map(x => {
+      const nx = ROADCLS.std.find(w => w > x.w + 0.2); if (!nx || nx > 25) return null;
+      if (steps.some(st => st.pnu === x.r.pnu) && ROADCLS.big(ROADCLS.of(nx)) !== x.big) return null;
       const d = INFRA.widenArea(x.r, z, nx) - INFRA.widenArea(x.r, z, x.w);
-      if (d < 1) continue;
-      const prev = steps.find(st => st.pnu === x.r.pnu);
-      if (prev) { prev.to = nx; prev.area += d; } else steps.push({ pnu: x.r.pnu, jibun: x.r.jibun, from: x.w, to: nx, area: d, cls0: ROADCLS.of(x.w) });
-      x.w = nx; got += d;
-    }
+      return d >= 1 ? { x, nx, d } : null;
+    }).filter(Boolean);
+    if (!cands.length) break;
+    const rem = need - got, over = cands.filter(c => c.d >= rem).sort((a, b) => a.d - b.d);
+    const c = over[0] || cands.sort((a, b) => b.d - a.d)[0];
+    const prev = steps.find(st => st.pnu === c.x.r.pnu);
+    if (prev) { prev.to = c.nx; prev.area += c.d; } else steps.push({ pnu: c.x.r.pnu, jibun: c.x.r.jibun, from: c.x.w, to: c.nx, area: c.d, cls0: ROADCLS.of(c.x.w) });
+    c.x.w = c.nx; got += c.d;
   }
   return steps.length ? { steps, got, enough: got >= need } : null;
 }
@@ -2233,7 +2237,7 @@ function widenByChar(inf, pl) {
   if (!goals.length) return '';
   const rows = goals.map(([t, need]) => { const sg = fillSuggest(inf, need); return `<li><b>${t}</b> ${fmt(need)}㎡ → ${sg ? `${sg.steps.map(st => `${esc(st.jibun)} ${st.from}→${st.to}m(${st.cls0}→${ROADCLS.of(st.to)}, +${fmt(st.area)}㎡)`).join(' · ')} = ${fmt(sg.got)}㎡${sg.enough ? '' : ` <b class="warn">(경계 도로만으로 ${fmt(need - sg.got)}㎡ 모자람 — 공원·구역 안 도로로 채워야 함)</b>`} <button type="button" class="btn ghost sm" data-fill='${esc(JSON.stringify(sg.steps.map(st => [st.pnu, st.to])))}'>이 안 적용</button>` : '넓힐 수 있는 경계 도로 없음'}</li>`; }).join('');
   return `<div style="margin-top:8px"><b>도로 성격을 고려해 넓히기(추천)</b><ul style="margin:4px 0 0 18px">${rows}</ul>
-    <p class="u" style="margin:4px 0 0">구역에 10m 이상 닿은 도로를 많이 닿은 순서로, 도로 등급 표준 폭(8·10·12·15·20m) 한 단계씩 올립니다. 이미 20m 이상인 간선도로·'현황 유지'로 고른 도로·모퉁이만 닿은 도로는 넓히지 않고, 첫 단계 뒤에는 같은 대분류(소로·중로) 안에서만 올립니다. '이 안 적용'을 누르면 위 표의 계획 폭에 들어가고, 표에서 도로별로 다시 고칠 수 있습니다. 획지가 줄어드는 만큼 산식이 조금 달라지니 적용 뒤 다시 확인하세요.</p></div>`;
+    <p class="u" style="margin:4px 0 0">구역에 10m 이상 닿은 도로를 도로 등급 표준 폭(8·10·12·15·20m) 한 단계씩 올리되, 남은 면적을 넘지 않게 가장 알맞은 도로부터 고릅니다. 이미 20m 이상인 간선도로·'현황 유지'로 고른 도로·모퉁이만 닿은 도로는 넓히지 않고, 첫 단계 뒤에는 같은 대분류(소로·중로) 안에서만 올립니다. '이 안 적용'을 누르면 위 표의 계획 폭에 들어가고, 표에서 도로별로 다시 고칠 수 있습니다. 획지가 줄어드는 만큼 산식이 조금 달라지니 적용 뒤 다시 확인하세요.</p></div>`;
 }
 function entrySection(inf, pl) {
   const e = inf.entry; if (!e || !inf.roadsReady) return '';
