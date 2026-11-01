@@ -150,7 +150,22 @@ const ZoneKit = {
   f1: n => (Math.round(n * 10) / 10).toLocaleString('ko-KR'),
   items(list) { return [...new Set((list || []).map(s => String(s).trim()).filter(s => /\d/.test(s)))]; },
   // 동·리 이름이 들어 있으면 그대로, 숫자만 있으면 기준 동을 앞에 붙임
-  query(it, base) { return /[가-힣]+(동|리|가)\s*(산\s*)?\d/.test(it) || /[가-힣]+(시|군|구)\s/.test(it) ? it : `${base} ${it}`.trim(); },
+  //  '용현동 141-1'처럼 동 이름만 붙은 지번은 기준 동 주소(시·구 포함)가 그 동으로 끝나면 앞에 붙임 — 다른 시의 같은 동 이름으로 잘못 찾지 않게
+  query(it, base) {
+    const hasCity = /[가-힣]+(시|군|구)\s/.test(it);
+    const m = !hasCity && String(it).match(/^([가-힣]+(?:동|리|가)\d*)\s+(.+)$/);
+    if (m && base && /[가-힣]+(시|군|구)\s/.test(base) && base.trim().endsWith(m[1])) return `${base.trim()} ${m[2]}`;
+    return /[가-힣]+(동|리|가)\s*(산\s*)?\d/.test(it) || hasCity ? it : `${base} ${it}`.trim();
+  },
+  // 파일에서 읽은 기준 동(동 이름만일 수 있음) + 화면 기준 동 + 위치 추정 → 시·구까지 있는 기준 동 주소. 못 만들면 ''
+  fullBase(fileBase, cur, guess) {
+    const full = b => /[가-힣]+(시|군|구)\s/.test(b || '');
+    if (full(cur)) return cur.trim();
+    if (full(fileBase)) return fileBase.trim();
+    const dong = (fileBase || cur || '').trim();
+    if (guess && full(guess) && (!dong || guess.trim().endsWith(dong))) return guess.trim();
+    return '';
+  },
 
   // 지번 목록 → 필지 찾기. 반환 { found: Map(pnu → 필지), report: 대조표 행 }
   async findByJibuns(items, base, say = () => {}) {
@@ -521,12 +536,15 @@ const ZoneKit = {
       const h = rows[hi];
       const jc = h.findIndex(isJ), ac = h.findIndex((c, k) => k !== jc && isA(c));
       const bc = h.findIndex(c => nz(c) === '본번'), sc = h.findIndex(c => nz(c) === '부번'), mc = h.findIndex(c => nz(c) === '산');
+      const jSpan = [];
+      if (jc >= 0) for (let k = jc + 1; k < h.length && !h[k] && k !== ac; k++) jSpan.push(k);
       how = jc >= 0 ? `'${h[jc]}' 열` : `'본번·부번' 열`;
       let lastA = '';
       rows.slice(hi + 1).forEach(r => {
         if (ac >= 0 && r[ac] && !/^\d/.test(r[ac])) lastA = r[ac];
         const a = ac >= 0 ? lastA : '';
-        let v = jc >= 0 ? r[jc] : '';
+        // '소재지번'처럼 제목 칸이 병합되어 동·지번이 옆 칸으로 나뉜 조서: 제목이 빈 오른쪽 칸까지 이어 읽음
+        let v = jc >= 0 ? [jc, ...jSpan].map(k => r[k] || '').filter(Boolean).join(' ') : '';
         if (jc < 0 && bc >= 0 && /^\d+$/.test(r[bc] || '')) v = `${mc >= 0 && /산|^[2Yy1]$/.test(r[mc] || '') ? '산' : ''}${r[bc]}${sc >= 0 && /^\d+$/.test(r[sc] || '') && +r[sc] ? '-' + r[sc] : ''}`;
         if (!v) return;
         const j = jibunOf(v, a);

@@ -3045,9 +3045,14 @@ const ZK = {
     catch (e) { this.say(`${f.name}을(를) 읽지 못했습니다: ${e.message}`); return; }
     if (!r.list.length) { this.say(`${f.name}${r.sheet ? ` (${r.sheet} 시트)` : ''}에서 지번을 찾지 못했습니다. '지번' 제목이 있는 열이나 지번만 있는 열을 넣어 주세요.`); return; }
     $id('zkList').value = r.list.join('\n');
-    if (!this.base() && r.base) $id('zkBase').value = r.base;
+    const full = ZoneKit.fullBase(r.base, this.base(), '');
     const head = `${f.name}${r.sheet ? ` · ${r.sheet} 시트` : ''} ${r.how}에서 지번 ${r.list.length}개를 읽었습니다${r.skipped ? ` (지번 꼴이 아닌 칸 ${r.skipped}개 제외)` : ''}.`;
-    if (!this.base()) { this.say(head + ' 기준 동 주소를 넣고 지번으로 구역 만들기를 누르세요.'); $id('zkBase').focus(); return; }
+    if (!full) {
+      if (!this.base() && r.base) $id('zkBase').value = r.base;
+      this.say(head + ` 기준 동 주소를 시·구까지 넣고(예: 인천광역시 미추홀구 ${r.base || '용현동'}) 지번으로 구역 만들기를 누르세요. 같은 동 이름이 다른 시에도 있을 수 있어서입니다.`);
+      $id('zkBase').focus(); return;
+    }
+    $id('zkBase').value = full;
     this.say(head + ' 구역계를 만드는 중…');
     await this.fromJibuns();
   },

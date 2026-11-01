@@ -1087,14 +1087,15 @@ function boot() {
       catch (e) { msg.textContent = `${f.name}을(를) 읽지 못했습니다: ${e.message}`; return; }
       if (!r.list.length) { msg.textContent = `${f.name}${r.sheet ? ` (${r.sheet} 시트)` : ''}에서 지번을 찾지 못했습니다. '지번' 제목이 있는 열이나 지번만 있는 열을 넣어 주세요.`; return; }
       $('#jibunList').value = r.list.join('\n');
-      if (!$('#jibunBase').value.trim() && r.base) $('#jibunBase').value = r.base;
-      const base = $('#jibunBase').value.trim() || guessBase();
+      const base = ZoneKit.fullBase(r.base, $('#jibunBase').value.trim(), guessBase());
       const head = `${f.name}${r.sheet ? ` · ${r.sheet} 시트` : ''} ${r.how}에서 지번 ${r.list.length}개를 읽었습니다${r.skipped ? ` (지번 꼴이 아닌 칸 ${r.skipped}개 제외)` : ''}.`;
-      if (!base && r.list.some(j => !/[가-힣](동|리|가)\d*\s/.test(j))) {
-        msg.textContent = head + ' 기준 동 주소를 넣고 "지번으로 구역 만들기"를 누르세요.';
+      if (!base) {
+        if (!$('#jibunBase').value.trim() && r.base) $('#jibunBase').value = r.base;
+        msg.textContent = head + ` 기준 동 주소를 시·구까지 넣고(예: 인천광역시 미추홀구 ${r.base || '용현동'}) "지번으로 구역 만들기"를 누르세요. 같은 동 이름이 다른 시에도 있을 수 있어서입니다.`;
         $('#jibunBase').focus();
         return;
       }
+      $('#jibunBase').value = base;
       msg.textContent = head + ' 구역계를 만드는 중…';
       await MapView.zoneFromJibuns(r.list, base, { fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked, edgeRoad: ($('#optEdgeRoad') || {}).value || 'none' });
     };
