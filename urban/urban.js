@@ -39,6 +39,8 @@ function applyJson(j) {
     RULES.far = { '제2종일반주거지역': bz['제2종일반주거지역'], '제3종일반주거지역': bz['제3종일반주거지역'] };
     RULES.natHousing = { redevelopment: j.national_housing_ratio.redevelopment };
     RULES.status = { far: j.far.status };
+    RULES.farFormula = j.far.max_incentive_formula || null;
+    RULES.zoneUp = j.zone_upgrade_location || null;
   } catch (e) { console.warn('incheon.json 해석 실패, 기본값 사용', e); }
 }
 function smallLimit(zoning) {
@@ -656,21 +658,33 @@ const saveP = () => { try { localStorage.setItem('jbs-urban-plan', JSON.stringif
 
 // 정비기반시설 비율: 지도 모드에서 '제안값 사용'이면 INFRA 제안 면적으로, 아니면 직접 입력값
 //  제안은 세대수(공원 세대당 2㎡, 진입도로 폭)에 따라 바뀌고 세대수는 기반시설에 따라 바뀌므로 두 번 맞춰 계산
+// 상한용적률 산식(2030 기본계획 변경 고시 제2026-96호): 허용 + [1.5 × (공공시설등 부지제공 면적 / 제공·확보 후 면적) × 기준]
+//  부지제공 면적 = 새로 설치하는 공공시설등(도로·공원·녹지·그 밖의 정비기반시설) − 기정 도시계획시설 면적, 학교·공공청사 부지는 1.0(군·구 요청 시)
+//  제공·확보 후 면적 = 공동주택 획지. 상한용적률을 넘지 않음. 허용용적률(인센티브)을 다 받는다고 가정
+function farCalcOf(inf, site) {
+  const far = RULES.far[P.zone], F = RULES.farFormula || { public_facility_build: 1.5, public_facility_land_only: 1.0 };
+  const newPub = inf.roadArea + inf.parkArea + (inf.green || 0) + inf.other;
+  const pa = Math.max(0, newPub - (inf.facArea || 0)), pb = inf.schoolArea + (inf.pubB || 0);
+  const raw = far.allowed + (F.public_facility_build * pa + F.public_facility_land_only * pb) / (site || 1) * far.base;
+  return { v: Math.round(Math.min(far.max, raw) * 10) / 10, raw, pa, pb, newPub, fac: inf.facArea || 0, site, capped: raw > far.max };
+}
 function plan(a) {
   if (!(D.map && P.infraMode !== 'manual')) return planCore(a, P.infraRatio);
   let pl = planCore(a, P.infraRatio), inf = null;
+  let fc = null;
   for (let k = 0; k < 3; k++) {
     inf = INFRA.compute(a, pl.units);
     if (!inf) return planCore(a, P.infraRatio);
-    pl = planCore(a, inf.ratio * 100);
+    fc = farCalcOf(inf, a.area * (1 - inf.ratio));
+    pl = planCore(a, inf.ratio * 100, fc);
   }
-  pl.infra = inf;
+  pl.infra = inf; pl.farCalc = fc;
   return pl;
 }
-function planCore(a, infraPct) {
+function planCore(a, infraPct, farCalc) {
   const site = a.area * (1 - infraPct / 100);
   const far = RULES.far[P.zone];
-  const farUse = P.farMode === 'base' ? far.base : P.farMode === 'allowed' ? far.allowed : P.farMode === 'max' ? far.max : Math.min(P.farCustom, far.max);
+  const farUse = P.farMode === 'base' ? far.base : P.farMode === 'allowed' ? far.allowed : P.farMode === 'max' ? far.max : P.farMode === 'calc' ? (farCalc ? farCalc.v : far.max) : Math.min(P.farCustom, far.max);
   const gfa = site * farUse / 100;
   const mixSum = P.mix59 + P.mix84 + P.mix114 || 1;
   const avgEx = (59 * P.mix59 + 84 * P.mix84 + 114 * P.mix114) / mixSum;
@@ -1077,7 +1091,9 @@ const INFRA = {
     else if (rel.length) { try { relGeom = turf.intersect(safeUnion(rel.filter(p => p.geom).map(p => ({ type: 'Feature', properties: {}, geometry: p.geom }))), zone); } catch (er) { relGeom = null; } }
     // 2) 공원·녹지
     const legal = a.area >= 50000;
-    const parkLegal = legal ? Math.max(units * 2, a.area * 0.05) : (P.parkMode === 'always' ? a.area * 0.05 : 0);
+    // 구역 안 기 조성 공원·녹지(지목 공원 또는 이용상황 공원): 기본계획(고시 제2026-96호) — 제척 원칙, 포함하면 기존 면적 이상 설치
+    const parkExist = a.ps.filter(p => /^공(원)?$/.test(p.jimok || '') || /공원/.test(p.landUse || '')).reduce((s2, p) => s2 + (p.base ?? p.area) * (z.inArea[p.pnu] ?? 1), 0);
+    const parkLegal = Math.max(legal ? Math.max(units * 2, a.area * 0.05) : (P.parkMode === 'always' ? a.area * 0.05 : 0), parkExist);
     const szPark = this.sizeOf(z, 'park', parkLegal, a.area), parkNeed = szPark.A;
     const inf = z.infra || {};
     const parkC = inf.parkC || this.defaultCenter(zone);
@@ -1216,7 +1232,7 @@ const INFRA = {
     const res = {
       giAll, keepArea, keepAll, keepFac, facArea, facList, newArea, short, roadAdd: opt.roadAdd || 0, entry,
       widenExtra, paired, lots, merged, mergeList, skipped, absorbed, parkC, schoolC, relC, relCenter: relGeom ? (() => { const c = turf.centroid(relGeom).geometry.coordinates; return [c[1], c[0]]; })() : null,
-      relAll, rel, relLand, relArea, relGeom, relManual: szRel.mode !== 'auto', szPark, szSchool, szRel, parkLegal,
+      relAll, rel, relLand, relArea, relGeom, relManual: szRel.mode !== 'auto', szPark, szSchool, szRel, parkLegal, parkExist,
       W, sideW, units, items, roadGeom, roadArea, inner, innerArea, innerFull, innerOcc, legal, parkNeed, parkGeom, parkArea, green, pubB, schoolGeom, schoolArea, other, total,
       ratio: a.area ? total / a.area : 0, roadsReady: !!z.roads, edge: z.roads ? z.roads.edge : [],
     };
@@ -2122,6 +2138,19 @@ function luRows(a, pl) {
   }
   return h;
 }
+// 용도지역 상향 입지요건(2030 기본계획 변경 고시 제2026-96호 [기준2]) — 계획 용도지역이 현황보다 높을 때 경계 도로 폭(개발 후)으로 1차 확인
+function zoneUpCheck(a, pl) {
+  const Zu = RULES.zoneUp; if (!Zu) return '';
+  const rank = z => /준주거/.test(z) ? 4 : /제3종/.test(z) ? 3 : /제2종/.test(z) ? 2 : /제1종/.test(z) ? 1 : 0;
+  const cur = Object.entries(a.zoneArea || {}).sort((x, y) => y[1] - x[1]).map(([z]) => z)[0] || '';
+  if (!(rank(P.zone) > rank(cur) && rank(cur) > 0)) return '';
+  const need = (Zu.min_road_m || {})[P.zone], inf = pl.infra, z = Z.zones[a.key] || {};
+  const ws = ((z.roads && z.roads.edge) || []).map(r => ({ j: r.jibun, w: Math.max(r.w, num(((inf && inf.entry && inf.entry.per) || {})[r.pnu] && inf.entry.per[r.pnu].pw)) }));
+  const best = ws.sort((x, y) => y.w - x.w)[0];
+  const ok = need && best && best.w >= need;
+  const pc = (Zu.public_contribution || {})[`${cur.replace('일반주거지역', '')}→${P.zone.replace('일반주거지역', '')}`];
+  return `<div class="field" style="grid-column:1/-1"><span class="u"><b>용도지역 상향 입지요건</b>(${esc(cur)} → ${esc(P.zone)}): ${esc(Zu[P.zone] || '')}. ${need ? `경계 도로 계획 폭 최대 ${best ? `${esc(best.j)} ${fmt(best.w, 1)}m` : '–'} → ${ok ? `<b class="good">${need}m 이상 충족</b>` : `<b class="warn">${need}m 이상 도로 없음</b>`}` : ''}. 연접 용도지역은 지도로 직접 확인하세요.${pc ? ` 공공기여 ${Math.round(pc * 100)}% 이상(법정의무시설·부가차로 포함).` : ''}</span></div>`;
+}
 function renderPlan(a) {
   const pl = plan(a), far = pl.far;
   saveUrbanOut(a, pl);
@@ -2133,8 +2162,9 @@ function renderPlan(a) {
   <div class="form">
     <div class="field"><label for="zone">용도지역(계획)</label><select id="zone"><option>제2종일반주거지역</option><option>제3종일반주거지역</option></select><span class="u">현황: ${Object.entries(a.zoneArea).map(([z, v]) => esc(z.replace('일반주거지역', '')) + ' ' + fmt(v) + '㎡').join(', ')}</span></div>
     ${prop ? '' : field('infraRatio', '정비기반시설 비율(도로·공원·학교 등)', P.infraRatio, D.map ? '구역 면적 대비 % · 직접 입력' : '구역 면적 대비 %, 예시 가정', 'min=0 max=60 step=1')}
-    <div class="field"><label for="farMode">적용 용적률</label><select id="farMode"><option value="base">기준용적률 ${far.base}%</option><option value="allowed">허용용적률 ${far.allowed}%</option><option value="max">상한용적률 ${far.max}%</option><option value="custom">직접 입력</option></select><span class="u">2030 기본계획 · ${pressBadge}</span></div>
+    <div class="field"><label for="farMode">적용 용적률</label><select id="farMode"><option value="base">기준용적률 ${far.base}%</option><option value="allowed">허용용적률 ${far.allowed}%</option><option value="max">상한용적률 ${far.max}%</option>${pl.farCalc ? `<option value="calc">산식(공공시설 제공) ${pl.farCalc.v}%</option>` : ''}<option value="custom">직접 입력</option></select><span class="u">2030 기본계획 · ${pressBadge}</span></div>
     ${P.farMode === 'custom' ? field('farCustom', '계획 용적률', P.farCustom, `% (상한 ${far.max}% 이내로 제한)`) : ''}
+    ${zoneUpCheck(a, pl)}
   </div>
   <h3>토지이용계획표 (개략)</h3>
   <div class="tscroll"><table class="ledger"><thead><tr><th>구분</th><th class="r">면적㎡</th><th class="r">비율</th></tr></thead><tbody>
@@ -2148,6 +2178,7 @@ function renderPlan(a) {
     ${kpi('지상 연면적(용적률 산정)', fmt(pl.gfa) + '㎡', `획지 ${fmt(pl.site)}㎡ × ${pl.farUse}%`)}
     ${kpi('국민주택규모 의무(참고)', '증가분의 ' + RULES.natHousing.redevelopment * 100 + '%', '법적상한까지 완화 시 · 정비조례 제27조')}
   </div>
+  ${pl.farCalc ? (() => { const c = pl.farCalc, f2 = RULES.far[P.zone]; return `<p class="note"><b>상한용적률 산식</b>(2030 기본계획 변경 고시 제2026-96호): 허용 ${f2.allowed}% + [1.5 × 공공시설 제공 ${fmt(c.pa)}㎡${c.pb ? ` + 1.0 × 학교·공공청사 부지 ${fmt(c.pb)}㎡` : ''} ÷ 획지 ${fmt(c.site)}㎡ × 기준 ${f2.base}%] = <b>${c.raw.toFixed(1)}%</b>${c.capped ? ` → 상한 ${f2.max}%로 제한` : ''}. 공공시설 제공 면적 = 새로 설치하는 공공시설 ${fmt(c.newPub)}㎡ − 기정 도시계획시설 ${fmt(c.fac)}㎡(미집행 포함). ${c.pa < 1 ? '<b class="warn">새 공공시설이 기정 도시계획시설보다 작아 산식 인센티브가 없음</b>' : ''}${!c.capped ? (() => { const needPa = Math.max(0, (f2.max - f2.allowed) / (1.5 * f2.base) * c.site - (c.pb / 1.5)); return ` 상한 ${f2.max}%까지 받으려면 공공시설 제공 약 ${fmt(needPa)}㎡(새 공공시설 약 ${fmt(needPa + c.fac)}㎡, 지금보다 ${fmt(Math.max(0, needPa + c.fac - c.newPub))}㎡ 더) 필요 — 획지가 줄어드는 만큼은 반영 안 한 개략값.`; })() : ''} 허용용적률 인센티브(9개 항목, 최대 20%·지역업체 참여 시 40%)를 다 받는다고 가정한 값입니다.</p>`; })() : ''}
   <p class="note">허용용적률은 인센티브 항목을, 상한용적률은 공공시설 부지 제공 등 공공기여를 전제로 합니다. 이 화면은 인센티브 배점과 공공기여 산식을 아직 계산하지 않고 단계만 고릅니다.</p>`;
   const z = document.getElementById('zone'); z.value = P.zone; z.onchange = () => { P.zone = z.value; saveP(); render(); };
   const f = document.getElementById('farMode'); f.value = P.farMode; f.onchange = () => { P.farMode = f.value; saveP(); render(); };
@@ -2263,7 +2294,8 @@ function infraSection(a, pl) {
   if (!inf.items.length) rows.push(['도로 확폭', 0, !inf.roadsReady ? (lo ? '경계 도로를 불러오는 중…' : '경계 도로 조회 전') : inf.edge.length ? `경계 도로가 이미 기준 폭 이상(진입도로 ${inf.W}m, 주변 ${inf.sideW}m)` : '구역 경계에 닿은 도로 필지를 찾지 못함 — 진입도로 위치 확인 필요']);
   const szTxt = sz => sz.bad ? `넣은 값이 너무 커서(${sz.mode === 'pct' ? `구역의 ${num(sz.val)}%` : `${fmt(num(sz.val))}㎡`}) 자동값 ${fmt(sz.A)}㎡로 계산` : sz.mode === 'area' ? `직접 지정 ${fmt(num(sz.val))}㎡` : sz.mode === 'pct' ? `구역의 ${num(sz.val)}%로 지정(${fmt(sz.A)}㎡)` : '';
   if (inf.szPark.mode !== 'auto') rows.push(['공원', inf.parkArea, `${szTxt(inf.szPark)}. 법정·제안 기준은 ${fmt(inf.parkLegal)}㎡` + (inf.parkLegal > inf.szPark.A ? ' — <b class="warn">기준보다 작음</b>' : '')]);
-  else rows.push(['공원', inf.parkArea, inf.legal ? `도시공원 및 녹지 등에 관한 법률 시행규칙 별표2 제4호 — 정비계획 5만㎡ 이상: 세대당 2㎡(${fmt(pl.units * 2)}㎡)와 부지 5%(${fmt(a.area * 0.05)}㎡) 중 큰 면적 ${fmt(inf.parkNeed)}㎡` + (inf.parkArea < inf.parkNeed * 0.95 ? ' · <b class="warn">구역 경계에 걸려 모자람 — 위치를 옮기세요</b>' : '') : (P.parkMode === 'always' ? `5만㎡ 미만이라 법정 의무는 없으나 부지 5%로 제안(${fmt(inf.parkNeed)}㎡)` : `구역 ${fmt(a.area)}㎡ < 5만㎡ — 별표2 의무 없음. 2030 인천 정비기본계획 공원·녹지 기준은 고시문 대조 필요`)]);
+  if (inf.parkExist >= 1) rows.push(['기존 공원·녹지', inf.parkExist, `구역 안 기 조성 공원·녹지(지목 공원 또는 이용상황 공원) ${fmt(inf.parkExist)}㎡ — 2030 기본계획(고시 제2026-96호): 제척이 원칙, 부득이 포함하면 법정면적 산정에 넣되 <b>기존 면적 이상</b> 설치. 공원 자동 면적이 이 값보다 작지 않게 잡았습니다${inf.parkArea + (inf.green || 0) < inf.parkExist - 1 ? ' — <b class="warn">지금 공원·녹지가 기존 면적보다 작음</b>' : ''}`]);
+  if (inf.szPark.mode === 'auto') rows.push(['공원', inf.parkArea, inf.legal ? `도시공원 및 녹지 등에 관한 법률 시행규칙 별표2 제4호 — 정비계획 5만㎡ 이상: 세대당 2㎡(${fmt(pl.units * 2)}㎡)와 부지 5%(${fmt(a.area * 0.05)}㎡) 중 큰 면적 ${fmt(inf.parkNeed)}㎡` + (inf.parkArea < inf.parkNeed * 0.95 ? ' · <b class="warn">구역 경계에 걸려 모자람 — 위치를 옮기세요</b>' : '') : (P.parkMode === 'always' ? `5만㎡ 미만이라 법정 의무는 없으나 부지 5%로 제안(${fmt(inf.parkNeed)}㎡)` : `구역 ${fmt(a.area)}㎡ < 5만㎡ — 별표2 의무 없음. 2030 인천 정비기본계획 공원·녹지 기준은 고시문 대조 필요`)]);
   if (inf.paired) rows.push(['한 띠로 묶음', 0, `공원·녹지와 종교용지가 맞닿아 구역 경계를 따라 한 띠로 묶였습니다. 둘 중 하나를 끌면 같이 움직이고, 가운데 ⇆로 면적을 나눕니다. <button type="button" class="btn ghost sm" id="unpair">따로 놓기</button>`]);
   else if (((Z.zones[a.key] || {}).infra || {}).noPair) rows.push(['따로 놓음', 0, `공원·녹지와 종교용지를 각자 따로 놓았습니다. <button type="button" class="btn ghost sm" id="repair">맞닿으면 한 띠로 묶기</button>`]);
   if (inf.paired && inf.paired.custom) rows.push(['나눔선 조정', 0, `맞닿은 ${{ park: '공원·녹지', rel: '종교용지', school: '학교용지' }[inf.paired.kinds[0]]} ${fmt(inf.paired.a1)}㎡ · ${{ park: '공원·녹지', rel: '종교용지', school: '학교용지' }[inf.paired.kinds[1]]} ${fmt(inf.paired.a2)}㎡ (합 ${fmt(inf.paired.total)}㎡ 그대로, 위 면적에 반영) <button type="button" class="btn ghost sm" id="resetSplit">처음 나눔으로</button>`]);
