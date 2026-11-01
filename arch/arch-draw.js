@@ -57,19 +57,17 @@
     // 주동
     const A = o.alt;
     (A ? A.buildings : []).forEach(b => {
-      s += poly(b.poly, `fill="${TYPE_FILL[b.t] || '#eee'}" stroke="#1d2a33" stroke-width="${0.9 * u}"`);
-      // 코어 표시
-      const p0 = b.poly[0], p1 = b.poly[1], p3 = b.poly[3], ux = [(p1[0] - p0[0]) / b.L, (p1[1] - p0[1]) / b.L], uy = [(p3[0] - p0[0]) / b.D, (p3[1] - p0[1]) / b.D];
-      const unitW = (b.L - (b.n / 2) * o.coreW) / b.n;
-      for (let k = 0; k < b.n / 2; k++) {
-        const at = k * (2 * unitW + o.coreW) + unitW, c = [p0[0] + ux[0] * at + uy[0] * b.D * 0.66, p0[1] + ux[1] * at + uy[1] * b.D * 0.66];
-        const q = [c, [c[0] + ux[0] * o.coreW, c[1] + ux[1] * o.coreW], [c[0] + ux[0] * o.coreW + uy[0] * b.D * 0.34, c[1] + ux[1] * o.coreW + uy[1] * b.D * 0.34], [c[0] + uy[0] * b.D * 0.34, c[1] + uy[1] * b.D * 0.34]];
-        s += poly(q, `fill="#ffffff" stroke="#1d2a33" stroke-width="${0.5 * u}" opacity=".9"`);
-      }
-      const cx = b.poly.reduce((a, p) => a + p[0], 0) / 4 - uy[0] * b.D * 0.14, cy = b.poly.reduce((a, p) => a + p[1], 0) / 4 - uy[1] * b.D * 0.14;
-      let ang = -Math.atan2(p1[1] - p0[1], p1[0] - p0[0]) * 180 / Math.PI; if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
-      const fs = Math.max(5 * u, Math.min(b.D * 0.26, 8.5 * u));
-      s += `<g transform="translate(${X(cx)},${Y(cy)}) rotate(${ang.toFixed(1)})"><text text-anchor="middle" y="${-fs * 0.15}" font-size="${fs}" font-weight="700" fill="#1d2a33">${b.id}동</text><text text-anchor="middle" y="${fs * 0.95}" font-size="${fs * 0.72}" fill="#33424b">${b.floors}F · ${b.t}㎡×${b.n}</text></g>`;
+      // 형태 공통: 바깥선만 보이게(굵은 선을 먼저 그리고 같은 도형을 선 없이 덮음) → 코어·세대 경계
+      const parts = b.parts || [b.poly], fill = TYPE_FILL[b.t] || '#eee';
+      parts.forEach(q => { s += poly(q, `fill="${fill}" stroke="#1d2a33" stroke-width="${1.8 * u}" stroke-linejoin="round"`); });
+      parts.forEach(q => { s += poly(q, `fill="${fill}" stroke="none"`); });
+      (b.divs || []).forEach(l => { s += `<line x1="${X(l[0][0])}" y1="${Y(l[0][1])}" x2="${X(l[1][0])}" y2="${Y(l[1][1])}" stroke="#1d2a33" stroke-width="${0.35 * u}" opacity=".7"/>`; });
+      (b.cores || []).forEach(q => { s += poly(q, `fill="#ffffff" stroke="#1d2a33" stroke-width="${0.5 * u}" opacity=".95"`); });
+      const cxy = b.center || [b.poly.reduce((a, p) => a + p[0], 0) / b.poly.length, b.poly.reduce((a, p) => a + p[1], 0) / b.poly.length];
+      const cx = cxy[0], cy = cxy[1];
+      let ang = -(b.angle || 0); if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
+      const fs = Math.max(5 * u, Math.min(Math.min(b.D, b.L) * 0.22, 8.5 * u));
+      s += `<g transform="translate(${X(cx)},${Y(cy)}) rotate(${ang.toFixed(1)})"><text text-anchor="middle" y="${-fs * 0.15}" font-size="${fs}" font-weight="700" fill="#1d2a33">${b.id}동</text><text text-anchor="middle" y="${fs * 0.95}" font-size="${fs * 0.72}" fill="#33424b">${b.floors}F · ${b.t}㎡×${b.n}</text></g>`.replace('<text', `<rect x="${-fs * 2.3}" y="${-fs * 1.05}" width="${fs * 4.6}" height="${fs * 2.35}" rx="${fs * 0.3}" fill="#fff" opacity=".72"/><text`);
     });
     // 출입구
     (o.entries || []).forEach(en => {
@@ -132,7 +130,19 @@
   }
 
   // 주동 기준층 구성: [세대][코어][세대] × (n/2)
+  const FN = { slab: '판상형', tower: '탑상형', Y: 'Y형', L: 'ㄱ형', court: 'ㅁ형(중정형)' };
   function floorPlan(b, U, coreW) {
+    if (b.local && b.form && b.form !== 'slab') {
+      const lc = b.local, S = Math.min(7, 420 / Math.max(lc.L, lc.D)), pad = 16, W = lc.L * S + pad * 2, H = lc.D * S + pad * 2 + 14;
+      const P = p => `${(p[0] * S).toFixed(1)},${((lc.D - p[1]) * S).toFixed(1)}`;
+      let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" font-family="'IBM Plex Sans KR','Malgun Gothic',sans-serif"><rect width="100%" height="100%" fill="#fbfbf8"/><g transform="translate(${pad},${pad + 8})" font-size="9" fill="#1d2a33">`;
+      lc.parts.forEach(q => { s += `<polygon points="${q.map(P).join(' ')}" fill="${TYPE_FILL[b.t] || '#eee'}" stroke="#1d2a33" stroke-width="2"/>`; });
+      lc.parts.forEach(q => { s += `<polygon points="${q.map(P).join(' ')}" fill="${TYPE_FILL[b.t] || '#eee'}"/>`; });
+      lc.divs.forEach(l => { s += `<line x1="${P(l[0]).split(',')[0]}" y1="${P(l[0]).split(',')[1]}" x2="${P(l[1]).split(',')[0]}" y2="${P(l[1]).split(',')[1]}" stroke="#1d2a33" stroke-width=".8"/>`; });
+      lc.cores.forEach(q => { const c = q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length], [0, 0]); s += `<polygon points="${q.map(P).join(' ')}" fill="#fff" stroke="#1d2a33"/><text x="${(c[0] * S).toFixed(1)}" y="${((lc.D - c[1]) * S + 3).toFixed(1)}" text-anchor="middle" font-size="7.5">코어</text>`; });
+      s += `<text x="0" y="-6" font-size="10" font-weight="700">${FN[b.form] || ''} ${b.t}㎡ ${b.n}호 조합 · ${lc.L.toFixed(1)}m × ${lc.D.toFixed(1)}m · 위 북 / 아래 남</text>`;
+      return s + '</g></svg>';
+    }
     const t = U[b.t], S = 7, unitW = t.폭 * S, cw = coreW * S, D = t.깊이 * S, n = b.n, pad = 16;
     const L = n * unitW + (n / 2) * cw, W = L + pad * 2, H = D + pad * 2 + 14;
     let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="'IBM Plex Sans KR','Malgun Gothic',sans-serif"><rect width="100%" height="100%" fill="#fbfbf8"/><g transform="translate(${pad},${pad + 8})" font-size="9" fill="#1d2a33">`;

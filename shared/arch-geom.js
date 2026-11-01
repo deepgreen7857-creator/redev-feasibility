@@ -68,7 +68,7 @@
   /* ---------- 주동 형태 모듈 ----------
      지역 좌표: x = 줄 방향(0~L), y = 북쪽(0~D). parts = 볼록 다각형 목록(그림자·3D·건축면적용),
      cores = 코어(계단·승강기) 사각형, divs = 세대 경계선. 형태: slab 판상 / tower 탑상 / Y Y형 / L ㄱ형 / court ㅁ형(중정형) */
-  const FORM_NAME = { slab: '판상형', tower: '탑상형', Y: 'Y형', L: 'ㄱ형', court: 'ㅁ형(중정형)' };
+  const FORM_NAME = { slab: '판상형', tower: '탑상형', Y: 'Y형', L: 'ㄱ형', court: 'ㅁ형(중정형)', mix: '판상+탑상 혼합' };
   const R4 = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
   const sq = (cx, cy, a) => R4(cx - a / 2, cy - a / 2, cx + a / 2, cy + a / 2);
   function slab(U, c, t, n) {
@@ -148,7 +148,7 @@
     const H = f => f * A.floorHeight_m + A.groundExtra_m;
     const want = {}; const sumMix = types.reduce((s, t) => s + mix[t], 0); types.forEach(t => { want[t] = mix[t] / sumMix; });
     // opt.form: slab 판상 / tower 탑상 / Y / L ㄱ형 / court ㅁ형 / mix 판상+탑상 혼합(긴 구간은 판상, 남는 짧은 구간은 탑상)
-    const form = FORM_NAME[opt.form] || opt.form === 'mix' ? opt.form : 'slab';
+    const form = FORM_NAME[opt.form] ? opt.form : 'slab';
     const MODS = {}; types.forEach(t => { MODS[t] = form === 'mix' ? modulesFor(U, A.coreW_m, t, 'slab').slice(0, 2).concat(modulesFor(U, A.coreW_m, t, 'tower')) : modulesFor(U, A.coreW_m, t, form); });
     const Dmax = Math.max(...types.flatMap(t => MODS[t].map(m => m.D)));
 
@@ -208,7 +208,7 @@
         const W = p => rot([b.rx + p[0], b.ry + p[1]], th), m = b.mod;
         b.parts = m.parts.map(q => q.map(W)); b.cores = m.cores.map(q => q.map(W)); b.divs = m.divs.map(q => q.map(W));
         b.poly = hull(b.parts.flat()); b.angle = opt.angle || 0; b.center = W([b.L / 2, b.D / 2]);
-        b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); delete b.mod;
+        b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); b.local = { L: m.L, D: m.D, parts: m.parts, cores: m.cores, divs: m.divs }; delete b.mod;
       });
       return blds;
     }

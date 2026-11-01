@@ -7,7 +7,7 @@
   const num = v => (v === '' || v === null || v === undefined || isNaN(+v)) ? null : +v;
   const fmt = (v, d = 0) => num(v) === null ? '○○' : (+v).toLocaleString('ko-KR', { maximumFractionDigits: d });
   const TAGS = ['boundary', 'road', 'arterial', 'north', 'park', 'lowrise'];
-  const TYPE_HEX = { 59: 0xf3e6c8, 84: 0xd9eadc, 114: 0xdde5f1 };
+  const TYPE_HEX = { 39: 0xf6e7e1, 49: 0xf3ead2, 59: 0xf3e6c8, 74: 0xe2ead0, 84: 0xd9eadc, 101: 0xd6e3e8, 114: 0xdde5f1 };
   let C = null, TC = null, site = null, pr = null, pts = null, tags = [], entries = [], exclude = [];
   let alts = [], cur = 0, map, lyrSite, lyrEdges, lyrEx, lyrBld, mode = 'edge', v3 = null, sunRes = null;
 
@@ -15,13 +15,13 @@
   const crit = id => C.items.find(i => i.id === id);
 
   /* ---------- 조건 입력 ---------- */
-  const FIELDS = { siteArea: 'p_siteArea', infra: 'p_infra', far: 'p_far', maxFloors: 'p_maxFloors', angleMode: 'p_angleMode', angle: 'p_angle', spacing: 'p_spacing', sideGap: 'p_sideGap', roadSb: 'p_roadSb', artSb: 'p_artSb', bndSb: 'p_bndSb', lowCap: 'p_lowCap', lowDist: 'p_lowDist', parkW: 'p_parkW', minFloors: 'p_minFloors', fh: 'p_fh', sf: 'p_sf' };
+  const FIELDS = { siteArea: 'p_siteArea', infra: 'p_infra', far: 'p_far', maxFloors: 'p_maxFloors', angleMode: 'p_angleMode', form: 'p_form', angle: 'p_angle', spacing: 'p_spacing', sideGap: 'p_sideGap', roadSb: 'p_roadSb', artSb: 'p_artSb', bndSb: 'p_bndSb', lowCap: 'p_lowCap', lowDist: 'p_lowDist', parkW: 'p_parkW', minFloors: 'p_minFloors', fh: 'p_fh', sf: 'p_sf' };
   function defaults() {
     const A = C.가정; let U = {}; try { U = JSON.parse(localStorage.getItem('jbs-urban-plan') || '{}'); } catch (e) { U = {}; }
     const v = site.v || {};
     return {
       siteArea: v.siteArea || '', infra: U.infraRatio ?? 25, far: v.far || U.farCustom || 250, maxFloors: A.maxFloors,
-      angleMode: 'auto', angle: 0,
+      angleMode: 'auto', angle: 0, form: 'slab',
       spacing: crit('spacing_ratio').값, sideGap: A.sideGap_m, roadSb: A.roadSetback_m, artSb: A.arterialSetback_m, bndSb: A.boundarySetback_m,
       lowCap: 15, lowDist: 30, parkW: A.parkWidth_m ?? 20, minFloors: A.minFloors, ...defaultMix(), fh: A.floorHeight_m, sf: U.supplyFactor ?? A.supplyFactor,
     };
@@ -129,7 +129,7 @@
   }
   function drawBuildingsOnMap() {
     lyrBld.clearLayers(); const A = alts[cur]; if (!A) return;
-    A.buildings.forEach(b => L.polygon(b.poly.map(p => pr.back(p).slice().reverse()), { color: '#1d2a33', weight: 1, fillColor: '#f2f0ea', fillOpacity: .9 }).bindTooltip(`${b.id}동 ${b.floors}층 · ${b.t}㎡ ${b.n}호`).addTo(lyrBld));
+    A.buildings.forEach(b => (b.parts || [b.poly]).forEach(q => L.polygon(q.map(p => pr.back(p).slice().reverse()), { color: '#1d2a33', weight: 1, fillColor: '#f2f0ea', fillOpacity: .9 }).bindTooltip(`${b.id}동 ${b.floors}층 · ${G.FORM_NAME[b.form] || ''} ${b.t}㎡ ${b.n}호`).addTo(lyrBld)));
   }
 
   // 경계 자동 지정: /urban 주변 도로 → 도로(폭 20m 이상 간선), 북쪽을 향한 변 → 정북 인접대지
@@ -270,7 +270,7 @@
     const lot = exclude.length ? siteA - exA : siteA * (1 - (+p.infra || 0) / 100);
     return {
       site: { pts, tags, setbacks: sb, exclude },
-      opt: { units: C.평면, assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, parkWidth: +p.parkW || 0 },
+      opt: { units: C.평면, assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'compare' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, parkWidth: +p.parkW || 0 },
       lot, exA, p,
     };
   }
@@ -285,7 +285,7 @@
       if (I.p.angleMode === 'auto') {
         // 후보: -30~30° 5° 간격 + 긴 변 방향(남향에 가까운 쪽으로 맞춘 각)
         const set = new Set(); for (let a = -30; a <= 30; a += 10) set.add(a);
-        G.edges(pts).sort((a, b) => b.len - a.len).slice(0, 3).forEach(e => { let a = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]) * 180 / Math.PI; while (a > 45) a -= 90; while (a < -45) a += 90; if (Math.abs(a) <= 30) set.add(Math.round(a)); });
+        G.edges(pts).sort((a, b) => b.len - a.len).slice(0, 3).forEach(e => { let a = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]) * 180 / Math.PI; while (a > 45) a -= 90; while (a < -45) a += 90; if (Math.abs(a) <= 45) set.add(Math.round(a)); });
         angles = [...set];
       }
       let best = null, k = 0;
@@ -297,9 +297,24 @@
         const score = Math.min(top, 1) * 100 - Math.abs(a) * 0.08 - Math.min(...r.map(x => x.bcr)) * 0.02;
         if (!best || score > best.score) best = { score, a, r };
       }
-      alts = best.r.map(x => Object.assign(x, { angle: best.a }));
+      alts = best.r.map(x => Object.assign(x, { angle: best.a, form: I.opt.form }));
+      if (I.p.form === 'compare') {
+        // 형태 비교: 같은 방향에서 형태마다 대안을 만들고, 형태별로 최고 층수 25층에 가장 가까운 안 하나씩
+        alts = [];
+        for (const fm of ['slab', 'tower', 'mix', 'Y', 'L', 'court']) {
+          msg(`형태 비교 중… ${G.FORM_NAME[fm]}`); await tick();
+          try {
+            const r = G.alternatives(I.site, Object.assign({}, I.opt, { angle: best.a, form: fm })).filter(x => x.units > 0);
+            if (!r.length) continue;
+            const pick = r.reduce((m, x) => Math.abs(x.maxFloors - 25) < Math.abs(m.maxFloors - 25) ? x : m, r[0]);
+            alts.push(Object.assign(pick, { angle: best.a, form: fm, label: `${G.FORM_NAME[fm]} · ${pick.label.replace(/\(.*\)/, '').trim()}` }));
+          } catch (e) { /* 이 형태는 안 들어감 */ }
+        }
+        if (!alts.length) throw new Error('어느 형태도 들어가지 않습니다');
+      } else alts.forEach(x => { x.label = `${G.FORM_NAME[I.opt.form] || '판상형'} · ${x.label}`; });
       // 기본 선택: 최고 층수가 25층에 가장 가까운 안(재개발 일반 규모)
       cur = alts.reduce((bi, x, i) => Math.abs(x.maxFloors - 25) < Math.abs(alts[bi].maxFloors - 25) ? i : bi, 0);
+      if (I.p.form === 'compare') cur = alts.reduce((bi, x, i) => (x.gfa > alts[bi].gfa * 1.01 || (x.gfa > alts[bi].gfa * 0.99 && x.units > alts[bi].units)) ? i : bi, 0);
       if (I.p.angleMode === 'auto') $('#p_angle').value = best.a;
       sunRes = null; v3 = null;
       $('#out').hidden = false; $('#confirm').disabled = false;
@@ -342,7 +357,7 @@
     const t = +$('#sunT').value, hh = Math.floor(t), mm = Math.round((t - hh) * 60);
     $('#sunTv').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     const A = alts[cur], s = G.sun(pr.lat0, t);
-    const sh = A.buildings.map(b => G.shadow(b.poly, A.H(b.floors), s)).filter(Boolean);
+    const sh = A.buildings.flatMap(b => (b.parts || [b.poly]).map(q => G.shadow(q, A.H(b.floors), s))).filter(Boolean);
     const tol = crit('sun_tolerance');
     $('#sunNote').innerHTML = sunRes && sunRes.alt === cur
       ? `구역 밖 주변 땅 기준, 동지 ${tol.연속_구간[0]}~${tol.연속_구간[1]}시 연속 ${tol.연속_h}시간과 ${tol.합계_구간[0]}~${tol.합계_구간[1]}시 합계 ${tol.합계_h}시간을 <b>모두</b> 못 채우는 곳: <b>${fmt(sunRes.failArea)}㎡</b>(격자 ${sunRes.step}m)${sunRes.fail ? `, 가장 나쁜 곳 연속 ${fmt(sunRes.worst, 1)}시간` : ''}. 평지·기존 건물 없음 가정이며 판례상 수인한도를 참고한 개략 판정입니다.`
@@ -350,7 +365,7 @@
     $('#sunSvg').innerHTML = D.sitePlan(planOpts({ shadowAt: sh, sunGrid: sunRes && sunRes.alt === cur ? sunRes : null }));
   }
   function render3d() {
-    const A = alts[cur], blds = A.buildings.map(b => ({ poly: b.poly, h: A.H(b.floors), color: TYPE_HEX[b.t] }));
+    const A = alts[cur], blds = A.buildings.flatMap(b => (b.parts || [b.poly]).map(q => ({ poly: q, h: A.H(b.floors), color: TYPE_HEX[b.t] })));
     if (!v3) v3 = Mass3D.create($('#v3d'), { site: pts, buildings: blds, sunHour: +$('#sun3').value, lat: pr.lat0 });
     else v3.setBuildings(blds);
   }
@@ -414,10 +429,10 @@
       chosen: { label: A.label, angle: A.angle, units: A.units, byType: A.byType, far: A.far,
         supply: Object.fromEntries(Object.keys(A.byType).map(t => [t, +U[t].공급 > 0 ? +U[t].공급 : Math.round(U[t].전용 * (+I.p.sf || C.가정.supplyFactor) * 10) / 10])),
         exclusive: Object.fromEntries(Object.keys(A.byType).map(t => [t, U[t].전용])), bcr: A.bcr, gfa: A.gfa, lot: I.lot, maxFloors: A.maxFloors, maxHeight: A.maxHeight,
-        buildings: A.buildings.map(b => ({ id: b.id, t: b.t, n: b.n, floors: b.floors, H: A.H(b.floors), poly: b.poly.map(pr.back) })) },
+        form: A.form, buildings: A.buildings.map(b => ({ id: b.id, t: b.t, n: b.n, form: b.form, floors: b.floors, H: A.H(b.floors), poly: b.poly.map(pr.back), parts: (b.parts || [b.poly]).map(q => q.map(pr.back)) })) },
     });
     site.constraints = site.constraints || {};
-    site.constraints.arch = { 배치안: A.label, 세대수: A.units, 동수: A.buildings.length, 최고층수: A.maxFloors, 최고높이_m: Math.round(A.maxHeight * 10) / 10, 용적률: Math.round(A.far * 10) / 10, 건폐율: Math.round(A.bcr * 10) / 10,
+    site.constraints.arch = { 배치안: A.label, 주동형태: G.FORM_NAME[A.form] || '판상형', 세대수: A.units, 동수: A.buildings.length, 최고층수: A.maxFloors, 최고높이_m: Math.round(A.maxHeight * 10) / 10, 용적률: Math.round(A.far * 10) / 10, 건폐율: Math.round(A.bcr * 10) / 10,
       일조_미달_면적_제곱미터: sunRes && sunRes.alt === cur ? Math.round(sunRes.failArea) : '일조 계산 전', at: site.arch.at };
     // 다른 검토서가 같은 값을 쓰도록 계획 규모 갱신
     Object.assign(site.v, { units: String(A.units), floors: String(A.maxFloors), far: String(Math.round(A.far * 10) / 10), bcr: String(Math.round(A.bcr * 10) / 10), aptGFA: String(Math.round(A.gfa)),

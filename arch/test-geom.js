@@ -56,3 +56,10 @@ console.log('공원·녹지 통과');
   assert(u60 === small.units);
   console.log('소형 평형 통과');
 }
+
+// 주동 형태: 판상·탑상·혼합·Y·ㄱ·ㅁ — 모든 동이 구역 안, 세대수 > 0
+['slab', 'tower', 'mix', 'Y', 'L', 'court'].forEach(form => t(`주동 형태 ${G.FORM_NAME[form]}`, () => {
+  const P = rect(240, 200), R5 = run(P, ['road', 'boundary', 'north', 'boundary'], 250, { form });
+  assert.ok(R5.units > 0, form + ' 세대수 0');
+  R5.buildings.forEach(b => { assert.strictEqual(b.form, form === 'mix' ? b.form : form); b.parts.flat().forEach(p => assert.ok(G.inside(p[0], p[1], P))); });
+}));

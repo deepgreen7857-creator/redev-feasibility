@@ -45,7 +45,7 @@
     let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H.toFixed(0)}" style="width:100%;max-width:520px;height:auto;background:#fbfbf8"><defs><clipPath id="cl"><polygon points="${pts.map(P).join(' ')}"/></clipPath></defs>`;
     s += `<polygon points="${pts.map(P).join(' ')}" fill="#eef2e9"/>`;
     s += `<g clip-path="url(#cl)">` + free.map(([a, e]) => { const m1 = a - cp, m2 = e - cp; const q = [[m1, -L], [m2, -L], [m2, L], [m1, L]].map(([u, w]) => [c[0] + perp[0] * u + ax[0] * w, c[1] + perp[1] * u + ax[1] * w]); return `<polygon points="${q.map(P).join(' ')}" fill="#7fbf8f" opacity=".45"/>`; }).join('') + '</g>';
-    blds.forEach(bd => { s += `<polygon points="${bd.poly.map(P).join(' ')}" fill="#e8e4d8" stroke="#1d2a33" stroke-width=".8"/>`; });
+    blds.forEach(bd => { (bd.parts || [bd.poly]).forEach(q => { s += `<polygon points="${q.map(P).join(' ')}" fill="#e8e4d8" stroke="#1d2a33" stroke-width=".8"/>`; }); });
     s += `<polygon points="${pts.map(P).join(' ')}" fill="none" stroke="#c8322b" stroke-width="1.4" stroke-dasharray="8 3 2 3"/>`;
     return s + '</svg>';
   }
@@ -55,7 +55,7 @@
     const div = document.createElement('div'); div.style.cssText = 'position:absolute;left:-10000px;top:0;width:900px;height:520px'; document.body.appendChild(div);
     const out = [];
     try {
-      const v = Mass3D.create(div, { site: pts, buildings: blds.map(b => ({ poly: b.poly, h: b.H, color: 0xf2efe6 })), sunHour: 12, lat: 37.46 });
+      const v = Mass3D.create(div, { site: pts, buildings: blds.flatMap(b => (b.parts || [b.poly]).map(q => ({ poly: q, h: b.H, color: 0xf2efe6 }))), sunHour: 12, lat: 37.46 });
       v.bird(-0.75, 0.5); out.push({ name: '조감(남서쪽)', src: v.png() });
       v.bird(2.3, 0.45); out.push({ name: '조감(북동쪽)', src: v.png() });
       (viewPts || []).slice(0, 4).forEach(p => { v.eyeAt(toLocal([p.lng, p.lat])); out.push({ name: `${p.name} 시점(눈높이 1.6m)`, src: v.png() }); });
@@ -94,7 +94,7 @@
         const g = site.geojson.geometry || site.geojson;
         const ring = ArchGeom.openRing(g.type === 'Polygon' ? g.coordinates[0] : g.coordinates.map(c => c[0]).sort((a, b) => b.length - a.length)[0]);
         const pr = ArchGeom.projector(ring); toLocal = pr.to; pts = ArchGeom.ccw(ring.map(pr.to));
-        A = site.arch.chosen; blds = A.buildings.map(b => ({ id: b.id, floors: b.floors, H: b.H, poly: b.poly.map(pr.to) }));
+        A = site.arch.chosen; blds = A.buildings.map(b => ({ id: b.id, floors: b.floors, H: b.H, form: b.form, poly: b.poly.map(pr.to), parts: b.parts ? b.parts.map(q => q.map(pr.to)) : null }));
       }
       if (A) p = Object.assign({}, p, { floors: A.maxFloors });
       const r = LandscapeCalc.run(C, T, p, Object.assign({}, cons, { arch: A ? cons.arch || {} : null }));

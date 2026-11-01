@@ -101,6 +101,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       <div class="bar" id="mixPresets"></div>
       <div class="grid">
         <div id="mixBox" style="grid-column:1/-1"></div>
+        <label>주동 형태<select id="p_form"><option value="slab">판상형(남향 일자형)</option><option value="tower">탑상형(타워, 코어 1개에 4~6세대)</option><option value="mix">판상+탑상 혼합</option><option value="Y">Y형(세 날개)</option><option value="L">ㄱ형(꺾인 판상)</option><option value="court">ㅁ형(중정형)</option><option value="compare">형태 비교(전부 만들어 보기)</option></select></label>
         <label>주동 방향(정남 기준, 동쪽으로 돌리면 +)<select id="p_angleMode"><option value="auto">자동(가장 유리한 각도)</option><option value="fixed">직접 입력</option></select></label>
         <label>회전각 °<input id="p_angle" inputmode="decimal"></label>
       </div>
@@ -158,10 +159,10 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="../js/config.js?v=1"></script>
 <script src="../shared/site-store.js?v=4"></script>
-<script src="../shared/arch-geom.js?v=2"></script>
+<script src="../shared/arch-geom.js?v=3"></script>
 <script src="../shared/mass3d.js?v=1"></script>
 <script src="../traffic/traffic-calc.js?v=2"></script>
-<script src="arch-draw.js?v=3"></script>
-<script src="arch.js?v=10"></script>
+<script src="arch-draw.js?v=4"></script>
+<script src="arch.js?v=11"></script>
 </body>
 </html>
