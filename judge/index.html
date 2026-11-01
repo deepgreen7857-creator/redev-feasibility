@@ -7,56 +7,54 @@
 <title>판단기록장</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
-:root{--bg:#f5f6f3;--panel:#fff;--fg:#1d2420;--muted:#66706a;--line:#dde2dc;--go:#1f6b4f;--go-bg:#e0f0e8;--wait:#9a6a12;--wait-bg:#fbf1dc;--no:#a33a2c;
+:root{--bg:#f5f6f3;--panel:#fff;--fg:#1d2420;--muted:#66706a;--line:#dde2dc;--hover:#f0f3ef;--go:#1f6b4f;--go-bg:#e0f0e8;--wait:#9a6a12;--wait-bg:#fbf1dc;--no:#a33a2c;--no-bg:#f8e3df;
 --sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;--mono:"IBM Plex Mono",Consolas,monospace}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141916;--panel:#1c231f;--fg:#e4ebe6;--muted:#98a39c;--line:#2d3631;--go:#6cc39b;--go-bg:#183326;--wait:#e2b45a;--wait-bg:#3a2f18;--no:#ee8b7c;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#141916;--panel:#1c231f;--fg:#e4ebe6;--muted:#98a39c;--line:#2d3631;--go:#6cc39b;--go-bg:#183326;--wait:#e2b45a;--wait-bg:#3a2f18;--no:#ee8b7c;color-scheme:dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141916;--panel:#1c231f;--fg:#e4ebe6;--muted:#98a39c;--line:#2d3631;--hover:#232b26;--go:#6cc39b;--go-bg:#183326;--wait:#e2b45a;--wait-bg:#3a2f18;--no:#ee8b7c;--no-bg:#3a201c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#141916;--panel:#1c231f;--fg:#e4ebe6;--muted:#98a39c;--line:#2d3631;--hover:#232b26;--go:#6cc39b;--go-bg:#183326;--wait:#e2b45a;--wait-bg:#3a2f18;--no:#ee8b7c;--no-bg:#3a201c;color-scheme:dark}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--sans)}
-.wrap{max-width:980px;margin:0 auto;padding:28px 16px 60px}
-h1{font-size:24px;margin:0 0 4px}
-.sub{color:var(--muted);font-size:13.5px;margin:0 0 22px}
-.sub a{color:var(--go)}
-.day{margin:0 0 30px}
-.day h2{font-size:18px;margin:0 0 4px}
-.day .note{color:var(--muted);font-size:13px;margin:0 0 12px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:0 0 12px}
-.top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
-.rk{font-family:var(--mono);font-weight:700;color:var(--go);font-size:18px}
-.addr{font-weight:700;font-size:16px}
-.tp{font-size:12px;font-weight:700;padding:1px 6px;border-radius:4px;background:var(--go-bg);color:var(--go)}
-.case{color:var(--muted);font-size:13px}
-.nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px;margin:10px 0;padding:10px 0;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}
-.nums div{font-size:13px;color:var(--muted)}.nums b{display:block;font-family:var(--mono);font-size:15px;color:var(--fg)}
-.st{display:inline-block;font-size:12.5px;font-weight:700;padding:1px 8px;border-radius:10px}
-.st.go{background:var(--go-bg);color:var(--go)}.st.wait{background:var(--wait-bg);color:var(--wait)}.st.no{color:var(--no)}
-h3{font-size:13.5px;margin:10px 0 2px;color:var(--muted)}
-ul{margin:0;padding-left:18px}li{margin:1px 0}
-.why{margin:6px 0 0}
-details{margin-top:8px}summary{cursor:pointer;color:var(--go);font-size:13.5px}
-.rep{border:1px solid var(--line);border-radius:8px;padding:6px 12px 10px;margin:10px 0}.rep .rec dd{margin-bottom:6px}.rec{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:14px;margin-top:6px}.rec dt{color:var(--muted)}.rec dd{margin:0}
-@media (max-width:600px){.addr{font-size:15px}}
-.mini-h{display:flex;align-items:center;gap:8px;font-size:19px;font-weight:800;margin:26px 0 10px;padding-top:14px;border-top:3px solid var(--fg)}
-.mini-h .cnt{font-family:var(--mono);font-size:13px;color:var(--muted)}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
-.mini{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--wait);border-radius:10px;padding:10px 12px}
-.mini.ok{border-left-color:var(--go)}.mini.hold{border-left-color:var(--wait);background:var(--wait-bg)}.mini.drop{border-left-color:var(--no)}
-.mini .m-top{display:flex;justify-content:space-between;gap:8px;align-items:center}
-.mini .m-addr{font-weight:700;font-size:15px;line-height:1.35}
-.mini .m-case{color:var(--muted);font-size:12px;font-family:var(--mono)}
-.dd{flex:none;font-family:var(--mono);font-weight:700;font-size:13px;padding:2px 8px;border-radius:12px;background:var(--fg);color:var(--panel)}
-.dd.soon{background:var(--no);color:#fff}
-.badge{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 7px;border-radius:9px;margin:4px 4px 0 0;background:var(--go-bg);color:var(--go)}
-.badge.w{background:var(--wait-bg);color:var(--wait)}.badge.r{background:transparent;color:var(--no);border:1px solid var(--no)}
-.mini .m-why{font-size:13.5px;margin-top:6px}
-.tag-budget{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:10px;background:var(--wait-bg);color:var(--wait);margin-left:4px}
-
+body{margin:0;background:var(--bg);color:var(--fg);font:14.5px/1.55 var(--sans)}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 60px}
+h1{font-size:22px;margin:0 0 2px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 18px}.sub a{color:var(--go)}
+h2{font-size:16px;margin:26px 0 8px;display:flex;gap:8px;align-items:baseline}
+h2 .cnt{font:500 13px var(--mono);color:var(--muted)}
+.tbl-wrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:860px}
+th{font-size:12.5px;font-weight:600;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--panel);position:sticky;top:0}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.row{cursor:pointer}tr.row:hover td{background:var(--hover)}
+tr.row.open td{background:var(--hover);border-bottom-color:transparent}
+td.n{font-family:var(--mono);text-align:right;white-space:nowrap}
+th.n{text-align:right}
+.dd{display:inline-block;font:700 12.5px var(--mono);padding:1px 7px;border-radius:10px;background:var(--fg);color:var(--panel)}
+.dd.soon{background:var(--no);color:#fff}.dd.past{background:transparent;color:var(--muted);border:1px solid var(--line)}
+.date{display:block;font:500 12px var(--mono);color:var(--muted);margin-top:2px}
+.st{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:10px;white-space:nowrap}
+.st.go{background:var(--go-bg);color:var(--go)}.st.wait{background:var(--wait-bg);color:var(--wait)}.st.no{background:var(--no-bg);color:var(--no)}.st.mute{color:var(--muted);border:1px solid var(--line)}
+.addr{font-weight:700}.case{font:500 12px var(--mono);color:var(--muted)}
+.why1{color:var(--muted);font-size:12.5px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;max-width:420px}
+tr.det td{background:var(--hover);padding:4px 14px 16px}
+.det-in{max-width:900px}
+.det-in h3{font-size:13px;color:var(--muted);margin:10px 0 2px}
+.det-in p{margin:0}
+.rec{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;margin:4px 0 0;font-size:14px}.rec dt{color:var(--muted);white-space:nowrap}.rec dd{margin:0}
+.det-in ul{margin:0;padding-left:18px}
+.det-in a{color:var(--go)}
+details.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-top:10px}
+details.box summary{cursor:pointer;font-weight:600}
+.drop{border-top:1px solid var(--line);padding:8px 0;font-size:13.5px}.drop:first-of-type{border-top:0}
+.drop .case{margin-right:6px}
+.empty{padding:14px;color:var(--muted)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+.filters button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:14px;padding:2px 10px;cursor:pointer}
+.filters button.on{background:var(--fg);color:var(--panel);border-color:var(--fg)}
+@media (max-width:700px){h1{font-size:19px}}
 </style>
 </head>
 <body>
 <div class="wrap">
 <h1>판단기록장</h1>
-<p class="sub">자료가 다 채워진 물건 중 시세가 확정되고 수익이 확실한 5건, 물건마다 Claude 검토서. 최저입찰가 = 그 회차 최저가 + 1만 원, 법인 취득세 1.1% 물건만. 회차·결과는 review 자료를 따라 자동으로 바뀝니다. · <a href="../review/">입찰 판단표(review) 전체 보기</a></p>
+<p class="sub">한 줄에 물건 하나. 줄을 누르면 검토서가 펼쳐집니다. 최저입찰가 = 그 회차 최저가 + 1만 원, 법인 취득세 1.1% 물건만. · <a href="../review/">입찰 판단표(review)</a></p>
 <div id="list">불러오는 중입니다.</div>
 </div>
 <script>
@@ -85,71 +83,92 @@ function calc(it){
   return {rows,curK,entry,hi};
 }
 
-const TODAY=new Date(new Date().toISOString().slice(0,10));
-function dday(d){if(!d)return '';const x=new Date(d);if(isNaN(x))return '';const n=Math.round((x-TODAY)/864e5);return n<0?'지남':n===0?'D-day':'D-'+n}
-function guessAddr(x,it){if(x.addr)return x.addr;if(it&&it.address)return it.address;const m=(x.why||'').match(/^\[[^\]]*\]\s*([^:—(]+)|^([^:—(]+)/);return (m&&(m[1]||m[2])||x.id).trim()}
-function itemDate(x,it){if(x.date)return x.date;if(it&&it.rounds){const r=it.rounds.find(r=>r.result!=='유찰');if(r&&r.date)return r.date}const m=(x.why||'').match(/\((\d{1,2})\.(\d{1,2})/);return m?'2026-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0'):''}
-window._BY={};function by_has(id){return !!window._BY[id]}
-function mini(x,it,kind){const d=itemDate(x,it),dd=dday(d);const why=(x.why||'').replace(/^\[[^\]]*\]\s*/,'');
- const tags=[];if(kind==='ok')tags.push('<span class="badge">'+(x.status||'예비')+'</span>');if(kind==='hold')tags.push('<span class="badge w">보류 — 확인 대기</span>');if(kind==='drop')tags.push('<span class="badge r">탈락</span>');
- if(/예산/.test(why))tags.push('<span class="badge w">예산 초과</span>');if(/HUG|확약/.test(why))tags.push('<span class="badge">HUG·보증 확약</span>');if(/70%/.test(why))tags.push('<span class="badge">70% 회차</span>');
- return `<div class="mini ${kind}"><div class="m-top"><div><div class="m-addr">${esc(guessAddr(x,it).replace(/^인천 /,''))}</div><div class="m-case">${esc(x.id)}${d?' · 기일 '+esc(d.slice(5).replace('-','.')):''}</div></div>${dd?`<span class="dd ${/^D-[0-3]$|D-day/.test(dd)?'soon':''}">${dd}</span>`:''}</div><div>${tags.join('')}</div><div class="m-why">${esc(why)}</div>${x.report?'<details><summary>검토서 보기</summary><dl class="rec">'+Object.entries(x.report).map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd>').join('')+'</dl></details>':''}${(!String(x.id).startsWith('L:')&&by_has(x.id))?'<a class="m-link" href="../review/#i-'+encodeURIComponent(x.id)+'">입찰 판단표에서 자세히 보기 →</a>':''}</div>`}
-function extra(d,by){const R=(d.reserve||[]).filter(x=>x.status!=='보류');const D=(d.dropped||[]).concat((d.reserve||[]).filter(x=>x.status==='보류'));const hold=D.filter(x=>x.status==='보류'||1)&&D.filter(x=>x.status==='보류'||(/보류|재검토|확인 전/.test(x.why)&&!/탈락/.test(x.why)));const drop=D.filter(x=>!hold.includes(x));
- const sortD=(a,b)=>(itemDate(a,by[a.id])||'9').localeCompare(itemDate(b,by[b.id])||'9');let h='';
- if(R.length)h+=`<div class="mini-h">예비 후보 <span class="cnt">${R.length}건 · 기일 순</span></div><div class="grid">${R.slice().sort(sortD).map(x=>mini(x,by[x.id],'ok')).join('')}</div>`;
- if(hold.length)h+=`<div class="mini-h">보류 — 확인되면 올라올 물건 <span class="cnt">${hold.length}건</span></div><div class="grid">${hold.slice().sort(sortD).map(x=>mini(x,by[x.id],'hold')).join('')}</div>`;
- if(drop.length)h+=`<details class="card"><summary>탈락 ${drop.length}건과 이유 (펼치기)</summary><div class="grid" style="margin-top:8px">${drop.map(x=>mini(x,by[x.id],'drop')).join('')}</div></details>`;
- return h}
-function extraSafe(d,by){try{return extra(d,by)}catch(e){return '<p class="note">예비·탈락 목록 표시 오류</p>'}}
-function cardSafe(p,it){try{return card(p,it)}catch(e){return '<div class="card"><span class="rk">'+(p.rank||'')+'</span> '+esc(p.id)+' — 화면 오류(자료 확인 필요): '+esc(p.why||'')+'</div>'}}
-function docOpen(it,r){const d=(r&&r.date)||it.date||'';if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return '';const base=new Date(d+'T00:00:00Z');const add=n=>{const x=new Date(base.getTime()-n*864e5);return (x.getUTCMonth()+1)+'.'+String(x.getUTCDate()).padStart(2,'0')};const today=new Date(Date.now()+9*36e5).toISOString().slice(0,10);const open=n=>new Date(base.getTime()-n*864e5).toISOString().slice(0,10)<=today;const cn=String(it.id).replace(/^L:/,'').replace(/\(\d+\)$/,'');const link='https://www.jbslab.co.kr/data/#'+encodeURIComponent(cn);const st=n=>open(n)?'<b style="color:var(--go)">조회 가능</b>':'공개 전';return `<div class="case">원문: 매각물건명세서는 매각기일 1주일 전(${add(7)})부터 조회 가능 — ${st(7)} · 감정평가서·현황조사서는 2주 전(${add(14)})부터 — ${st(14)} · <a href="${link}" target="_blank" rel="noopener">확보 자료 보기(data)</a></div>`}
-function card(p,it){
-  if(!it)return `<div class="card"><span class="rk">${p.rank}</span> ${esc(p.id)} — review에서 빠진 물건</div>`;
-  const c=calc(it),r=it.rounds[c.curK]||{},cr=c.rows[c.curK],e=c.entry;
-  let st;if(it.prediction&&it.prediction.actual)st=`<span class="st no">${esc(it.prediction.actual)}</span>`;
-  else if(e&&e.k===c.curK)st='<span class="st go">금회 진입</span>';
-  else if(e)st=`<span class="st wait">${e.k-c.curK}번 더 유찰 뒤 (${rname(e.k)})</span>`;else st='<span class="st no">진입 불가</span>';
-  const basis=(it.market.basis||[]).map(b=>`<li>${esc(b)}</li>`).join('');
-  const rights=(it.rights||[]).map(b=>`<li>${esc(b)}</li>`).join('');
-  const open=(p.open||[]).map(b=>`<li>${esc(b)}</li>`).join('');
-  return `<div class="card">
-<div class="top"><span class="rk">${p.rank}</span><span class="addr">${esc(it.address.replace(/^인천 /,''))}</span><span class="tp">${esc(it.type)}</span> ${st}${p.budgetOnly?'<span class="tag-budget">예산 후보 — 예산 하나만 걸림</span>':''}${p.strategy?'<span class="tag-budget" style="background:var(--go-bg);color:var(--go)">'+esc(p.strategy)+'</span>':''}</div>
-<div class="case">${esc(it.id)} · ${esc(it.court)} · ${esc(it.area)}</div>
-${docOpen(it,r)}
-<div class="nums">
-<div>금회<b>${rname(c.curK)} ${esc((r.date||'').slice(5).replace('-','.'))}</b></div>
-<div>금회 최저가<b>${cr?man(cr.min):'-'}</b></div>
-<div>입찰예정가<b>${e?man(e.bid)+' ~ '+man(c.hi):'-'}</b></div>
-<div>${it.land?'공시지가 합계(참고)':'시세'}<b>${it.land?man(it.market.low):man(it.market.low)+' ~ '+man(it.market.high)}</b></div>
-<div>${it.land?'필요 현금(최저가+1만·비용 포함)':'최저입찰가 낙찰·급매 매도 시 세후'}<b>${e?(it.land?man(e.bid+e.tax+it.costs):man(e.profit)):'-'}</b></div>
-<div>감정가<b>${man(it.appraisal)}</b></div>
-</div>
-<h3>왜 자신 있나</h3><p class="why">${esc(p.why)}</p>
-${p.report?'<div class="rep"><h3>Claude 검토서</h3><dl class="rec">'+Object.entries(p.report).map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd>').join('')+'</dl></div>':''}${open?'<h3>그래도 남은 확인</h3><ul>'+open+'</ul>':''}
-<details><summary>시세 근거·권리·기준선</summary>
-<h3>시세 근거</h3><ul>${basis}</ul>
-<h3>시세 판단·결론이 뒤집히는 기준선</h3><p class="why">${esc(it.marketReview||'')}</p>
-<h3>권리</h3><ul>${rights}</ul>
-<h3>공시가·취득세</h3><p class="why">${esc(it.tax11||'')}</p>
-</details>
-<dl class="rec">
-<dt>Claude</dt><dd>${esc(it.summary)}</dd>
-<dt>정민님</dt><dd>${esc(it.myJudgment||'미기록')}</dd>
-<dt>임장</dt><dd>${esc(it.visit||'전')}</dd>
-<dt>결과</dt><dd>${esc((it.prediction&&it.prediction.actual)||'기일 전')}</dd>
-</dl></div>`;
+
+const TODAY_K=new Date(Date.now()+9*36e5).toISOString().slice(0,10);
+const esc2=esc;
+function ddays(d){if(!/^\d{4}-\d{2}-\d{2}$/.test(d||''))return null;return Math.round((new Date(d)-new Date(TODAY_K))/864e5)}
+function normDate(x,it){
+  if(/^\d{4}-\d{2}-\d{2}$/.test(x.date||''))return x.date;
+  const m=String(x.date||x.why||'').match(/(\d{1,2})\.(\d{1,2})/);if(m&&!x.date&&it&&it.rounds){} 
+  if(it&&it.rounds){const r=it.rounds.find(r=>r.result!=='유찰');if(r&&/^\d{4}-\d{2}-\d{2}$/.test(r.date||''))return r.date}
+  return m?'2026-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0'):'';
+}
+function addrOf(x,it){let a=(it&&it.address)||x.addr||'';if(!a){const m=(x.why||'').match(/^(?:\[[^\]]*\]\s*)?([^:—(]+)/);a=m?m[1]:x.id}return a.replace(/^인천 /,'').replace(/\(.*$/,'').trim()}
+function kindOf(x,src){if(src==='picks')return '추천';const s=x.status||'예비';return s}
+function stCls(k,res){if(res)return 'mute';if(k==='추천')return 'go';if(k==='예비')return 'go';if(/보류|미확보|감시/.test(k))return 'wait';return 'mute'}
+function nums(it){
+  if(!it||!it.market||!it.rounds)return null;
+  try{const c=calc(it),cr=c.rows[c.curK],e=c.entry;
+    return {round:rname(c.curK),min:cr?man(cr.min):'-',bid:e?(man(e.bid)+'~'+man(c.hi)):'진입 불가',
+      market:it.land?('공시 '+man(it.market.low)):(man(it.market.low)+'~'+man(it.market.high)),
+      profit:e?(it.land?'현금 '+man(e.bid+e.tax+it.costs):man(e.profit)):'-',
+      when:e?(e.k===c.curK?'금회':rname(e.k)):'-'}}catch(err){return null}
+}
+function detail(r){
+  const x=r.x,it=r.it;let h='<div class="det-in">';
+  h+=`<h3>판단</h3><p>${esc(r.why)}</p>`;
+  const rep=x.report;if(rep)h+='<h3>Claude 검토서</h3><dl class="rec">'+Object.entries(rep).map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')+'</dl>';
+  if(x.open&&x.open.length)h+='<h3>남은 확인</h3><ul>'+x.open.map(o=>`<li>${esc(o)}</li>`).join('')+'</ul>';
+  if(it&&!it.land&&it.market){
+    if(it.market.basis&&it.market.basis.length)h+='<h3>시세 근거</h3><ul>'+it.market.basis.map(b=>`<li>${esc(b)}</li>`).join('')+'</ul>';
+    if(it.marketReview)h+=`<h3>결론이 뒤집히는 기준선</h3><p>${esc(it.marketReview)}</p>`;
+    if(it.rights&&it.rights.length)h+='<h3>권리</h3><ul>'+it.rights.map(b=>`<li>${esc(b)}</li>`).join('')+'</ul>';
+    if(it.tax11)h+=`<h3>공시가·취득세</h3><p>${esc(it.tax11)}</p>`;
+  }
+  const hist=r.hist.length>1?r.hist.map(hh=>`${esc(hh.from)} ${esc(hh.kind)}`).join(' → '):'';
+  h+='<dl class="rec" style="margin-top:10px">'+(hist?`<dt>기록 흐름</dt><dd>${hist}</dd>`:'')+
+    (it&&it.myJudgment?`<dt>정민님</dt><dd>${esc(it.myJudgment)}</dd>`:'')+
+    (it&&it.prediction&&it.prediction.actual?`<dt>결과</dt><dd>${esc(it.prediction.actual)}</dd>`:'')+'</dl>';
+  const cn=String(x.id).replace(/^L:/,'').replace(/\(\d+\)$/,'');
+  h+=`<p style="margin-top:8px"><a href="https://www.jbslab.co.kr/data/#${encodeURIComponent(cn)}" target="_blank" rel="noopener">원문(data) 보기</a>${(!String(x.id).startsWith('L:')&&it)?` · <a href="../review/#i-${encodeURIComponent(x.id)}">입찰 판단표에서 보기</a>`:''}</p>`;
+  return h+'</div>';
+}
+function table(rows,past){
+  if(!rows.length)return '<div class="tbl-wrap"><div class="empty">없습니다.</div></div>';
+  let h='<div class="tbl-wrap"><table><thead><tr><th>기일</th><th>구분</th><th>물건</th><th>금회</th><th class="n">최저가</th><th class="n">입찰예정가</th><th class="n">시세</th><th class="n">세후 수익</th><th>진입</th></tr></thead><tbody>';
+  rows.forEach((r,i)=>{
+    const n=nums(r.it),dd=ddays(r.date),res=r.it&&r.it.prediction&&r.it.prediction.actual;
+    const ddh=dd==null?'<span class="dd past">미정</span>':dd<0?'<span class="dd past">지남</span>':`<span class="dd ${dd<=3?'soon':''}">${dd===0?'D-day':'D-'+dd}</span>`;
+    const key=(past?'p':'l')+i;
+    h+=`<tr class="row" data-k="${key}"><td>${ddh}<span class="date">${esc((r.date||'').slice(5).replace('-','.'))}</span></td>
+<td><span class="st ${stCls(r.kind,res)}">${esc(res||r.kind)}</span>${r.x.budgetOnly?'<div class="case">예산 초과</div>':''}</td>
+<td><div class="addr">${esc(r.addr)}${r.it&&r.it.type?' <span class="case">'+esc(r.it.type)+'</span>':''}</div><div class="case">${esc(String(r.x.id).replace(/^L:/,''))} · ${esc(r.from.slice(5).replace('-','.'))} 기록</div><div class="why1">${esc(r.why)}</div></td>
+<td style="white-space:nowrap">${n?esc(n.round):'-'}</td><td class="n">${n?n.min:'-'}</td><td class="n">${n?esc(n.bid):'-'}</td><td class="n">${n?esc(n.market):'-'}</td><td class="n">${n?esc(n.profit):'-'}</td><td style="white-space:nowrap">${n?esc(n.when):'-'}</td></tr>
+<tr class="det" data-d="${key}" hidden><td colspan="9">${detail(r)}</td></tr>`;
+  });
+  return h+'</tbody></table></div>';
 }
 Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/items.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/land.json',{cache:'no-store'}).then(r=>r.json()).catch(()=>[])]).then(([days,items,land])=>{
-  const by={};items.forEach(x=>by[x.id]=x);window._BY=by;land.forEach(x=>{if(!x.market)x.market={low:x.pubTotal||0,high:x.pubTotal||0,basis:x.pubTotal?['공시지가 합계 '+Math.round(x.pubTotal/1e4).toLocaleString('ko-KR')+'만 — 토지 실거래(내 데이터) 미수집이라 참고값']:[]};x.rounds=x.rounds||[];if(x.yuchal&&!x.rounds.some(r=>r.result==='유찰')){const cur=x.rounds.find(r=>r.result!=='유찰')||{name:x.yuchal+'회 유찰',date:x.date,result:'예정'};x.rounds=Array.from({length:x.yuchal},(_,i)=>({name:i?i+'회 유찰':'최초',date:'',result:'유찰'})).concat([cur])}x.court=x.court||'';x.costs=x.costs||0;x.minProfit=x.minProfit||0;x.type=x.type||('토지('+(x.jimok||'')+')');x.land=true;by['L:'+x.id]=x});
-  days.sort((a,b)=>b.date.localeCompare(a.date));
-  // 2026.10.31: 기일이 아직 안 지난 추천은 날짜와 상관없이 맨 위에 기일 빠른 순으로 모음(아래 날짜 기록에서는 빠짐)
-  const todayK=new Date(Date.now()+9*36e5).toISOString().slice(0,10);
-  const pdate=(p)=>{let d='';try{d=itemDate(p,by[p.id])||''}catch(e){}return /^\d{4}-\d{2}-\d{2}$/.test(d)?d:''};
-  const live=[];days.forEach(d=>(d.picks||[]).forEach(p=>{const pd=pdate(p);if(pd&&pd>=todayK&&!(by[p.id]&&by[p.id].prediction&&by[p.id].prediction.actual))live.push({p,pd,from:d.date})}));
-  live.sort((a,b)=>a.pd.localeCompare(b.pd));
-  const liveIds=new Set(live.map(x=>x.from+'|'+x.p.id));
-  const top=`<section class="day"><h2>기일 남은 추천 ${live.length}건</h2><p class="note">아직 매각기일이 지나지 않은 추천만 기일 빠른 순으로 모았습니다. 각 카드 위에 처음 추천한 날짜를 적었습니다.</p>${live.length?live.map(x=>'<p class="note" style="margin:14px 0 4px">'+esc(x.pd)+' 기일 · '+esc(x.from)+' 추천</p>'+cardSafe(x.p,by[x.p.id])).join(''):'<div class="card">기일이 남은 추천이 없습니다.</div>'}</section>`;
-  document.getElementById('list').innerHTML=top+days.map(d=>{const rest=(d.picks||[]).filter(p=>!liveIds.has(d.date+'|'+p.id));const moved=(d.picks||[]).length-rest.length;return `<section class="day"><h2>${esc(d.date)} 선정 ${(d.picks||[]).length}건</h2><p class="note">${esc(d.note||'')}</p>${moved?'<p class="note">이 날 추천 중 '+moved+'건은 기일이 남아 맨 위로 옮겼습니다.</p>':''}${rest.length?rest.slice().sort((a,b)=>a.rank-b.rank).map(p=>cardSafe(p,by[p.id])).join(''):(moved?'':'<div class="card">오늘 기준을 모두 통과한 물건이 없습니다.</div>')}${extraSafe(d,by)}</section>`}).join('');
+  const by={};items.forEach(x=>by[x.id]=x);
+  land.forEach(x=>{if(!x.market)x.market={low:x.pubTotal||0,high:x.pubTotal||0,basis:[]};x.rounds=x.rounds||[];if(x.yuchal&&!x.rounds.some(r=>r.result==='유찰')){const cur=x.rounds.find(r=>r.result!=='유찰')||{name:x.yuchal+'회 유찰',date:x.date,result:'예정'};x.rounds=Array.from({length:x.yuchal},(_,i)=>({name:i?i+'회 유찰':'최초',date:'',result:'유찰'})).concat([cur])}x.court=x.court||'';x.costs=x.costs||0;x.minProfit=x.minProfit||0;x.type=x.type||('토지('+(x.jimok||'')+')');x.land=true;by['L:'+x.id]=x});
+  days.sort((a,b)=>a.date.localeCompare(b.date)); // 오래된 것부터 쌓아 최신 기록이 덮어쓰게
+  const map=new Map();const drops=[];
+  days.forEach(d=>{
+    [['picks',d.picks||[]],['reserve',d.reserve||[]]].forEach(([src,arr])=>arr.forEach(x=>{
+      const it=by[x.id];const kind=kindOf(x,src);const why=String(x.why||'').replace(/^\[[^\]]*\]\s*/,'');
+      const prev=map.get(x.id);const hist=(prev?prev.hist:[]).concat([{from:d.date,kind}]);
+      map.set(x.id,{x:Object.assign({},prev?prev.x:{},x),it,kind,why,from:d.date,hist,date:normDate(x,it),addr:addrOf(x,it)});
+    }));
+    (d.dropped||[]).forEach(x=>drops.push({from:d.date,x}));
+  });
+  // 나중에 탈락된 물건은 기일 남은 목록에서 뺀다
+  const lastDrop={};drops.forEach(o=>{lastDrop[o.x.id]=o.from});
+  const all=[...map.values()].filter(r=>!(lastDrop[r.x.id]&&lastDrop[r.x.id]>=r.from));
+  const live=all.filter(r=>{const n=ddays(r.date);return (n==null||n>=0)&&!(r.it&&r.it.prediction&&r.it.prediction.actual)});
+  const past=all.filter(r=>!live.includes(r));
+  const order={'추천':0,'예비':1};
+  live.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9')||(order[a.kind]??2)-(order[b.kind]??2));
+  past.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const kinds=['전체',...new Set(live.map(r=>r.kind))];
+  const latest=days[days.length-1];
+  let h=`<p class="sub" style="margin:0 0 4px">최근 실행 ${esc(latest.date)}: ${esc(String(latest.note||'').slice(0,260))}${String(latest.note||'').length>260?'…':''}</p>`;
+  h+=`<h2>기일 남은 물건 <span class="cnt">${live.length}건 · 기일 빠른 순</span></h2><div class="filters">${kinds.map((k,i)=>`<button data-f="${esc(k)}" class="${i?'':'on'}">${esc(k)}</button>`).join('')}</div><div id="live">${table(live,false)}</div>`;
+  h+=`<details class="box"><summary>기일 지난 기록 ${past.length}건</summary><div style="margin-top:10px">${table(past,true)}</div></details>`;
+  h+=`<details class="box"><summary>탈락 ${drops.length}건과 이유</summary>${drops.slice().reverse().map(o=>`<div class="drop"><span class="case">${esc(o.from.slice(5).replace('-','.'))}</span><b>${esc(String(o.x.id).replace(/^L:/,''))}</b> — ${esc(String(o.x.why||'').replace(/^\[[^\]]*\]\s*/,''))}</div>`).join('')}</details>`;
+  const box=document.getElementById('list');box.innerHTML=h;
+  const bind=()=>box.querySelectorAll('tr.row').forEach(tr=>tr.onclick=()=>{const d=box.querySelector(`tr.det[data-d="${tr.dataset.k}"]`);d.hidden=!d.hidden;tr.classList.toggle('open',!d.hidden)});
+  bind();
+  box.querySelectorAll('.filters button').forEach(b=>b.onclick=()=>{box.querySelectorAll('.filters button').forEach(x=>x.classList.toggle('on',x===b));const f=b.dataset.f;document.getElementById('live').innerHTML=table(f==='전체'?live:live.filter(r=>r.kind===f),false);bind()});
 }).catch(e=>{document.getElementById('list').textContent='불러오지 못했습니다: '+e});
 </script>
 </body>
