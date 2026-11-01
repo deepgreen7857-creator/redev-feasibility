@@ -767,39 +767,40 @@ function planCore(a, infraPct, farCalc) {
   const far = RULES.far[P.zone];
   const farUse = P.farMode === 'base' ? far.base : P.farMode === 'allowed' ? far.allowed : P.farMode === 'max' ? far.max : P.farMode === 'calc' ? (farCalc ? farCalc.v : far.max) : Math.min(P.farCustom, far.max);
   const gfa = site * farUse / 100;
-  const mixSum = P.mix59 + P.mix84 + P.mix114 || 1;
-  const avgEx = (59 * P.mix59 + 84 * P.mix84 + 114 * P.mix114) / mixSum;
-  const perUnit = avgEx * P.supplyFactor;
-  const units = Math.floor(gfa / perUnit);
+  // 세대수는 공통 계산(shared/feas.js) — 사업성 검토 첫 화면과 같은 식·같은 평형 비율·같은 임대 비율(임대 49㎡형)
+  const FA = JbsFeas.get(), U = JbsFeas.units(gfa, FA);
+  const mixSum = FA.mix59 + FA.mix84 + FA.mix114 || 1;
+  const avgEx = (59 * FA.mix59 + 84 * FA.mix84 + 114 * FA.mix114) / mixSum;
+  const units = U.total, perUnit = U.perUnit || 1;
   const footMax = site * P.bcr / 100;
   const towerFoot = perUnit * P.coreUnits;
   const floorsAvg = Math.max(1, Math.ceil(gfa / footMax));
   const towers = Math.max(1, Math.ceil(units / (P.coreUnits * floorsAvg)));
   const floorsTower = Math.ceil(units / (towers * P.coreUnits));
-  const rental = Math.round(units * P.rentalRatio / 100);
+  const rental = U.rental;
   const members = Math.min(a.owners, units - rental);
   const general = Math.max(0, units - rental - members);
   const basement = gfa * P.basementRatio / 100;
   return {
     infraPct, site, far, farUse, gfa, avgEx, perUnit, units, footMax, towerFoot, floorsTower, towers, rental, members, general, basement,
-    n59: Math.round(units * P.mix59 / mixSum), n84: Math.round(units * P.mix84 / mixSum), n114: Math.round(units * P.mix114 / mixSum),
+    n59: U.sale[59] || 0, n84: U.sale[84] || 0, n114: U.sale[114] || 0, U,   // 평형별은 분양 세대(임대 제외)
   };
 }
+// 개략 사업성 — 첫 화면 ★빠른 사업성과 같은 가정값·같은 계산(shared/feas.js JbsFeas). 금액은 원 단위로 돌려줌(won 표시용)
 function biz(a, pl) {
-  const avgPy = pl.perUnit / PY;
-  const useJiga = D.real && P.priorMode === 'jiga' && a.priorLand > 0;
-  const priorLand = useJiga ? a.priorLand * P.priorMult : a.landArea * P.landPrice * 1e4;
-  const prior = priorLand + a.fa * P.bldValue * 1e4;
-  const incMember = pl.members * avgPy * P.memberPrice * 1e4;
-  const incGeneral = pl.general * avgPy * P.salePrice * 1e4;
-  const incRental = pl.rental * P.rentalPrice * 1e4;
-  const cost = (pl.gfa + pl.basement) / PY * P.constCost * 1e4;
-  const etc = cost * P.etcRatio / 100;
-  const income = incMember + incGeneral + incRental, expense = cost + etc;
-  const ratio = prior ? (income - expense) / prior : 0;
-  const avgPrior = prior / a.owners, right = avgPrior * ratio;
-  const price84 = 84 * P.supplyFactor / PY * P.memberPrice * 1e4;
-  return { prior, priorLand, useJiga, incMember, incGeneral, incRental, income, cost, etc, expense, ratio, avgPrior, right, price84, contrib: price84 - right, avgPy };
+  const A = JbsFeas.get();
+  const useJiga = D.real && a.priorLand > 0;
+  const landUnit = A.avgLand || P.landPrice;   // 만원/㎡ — 공시지가가 없을 때
+  const priorLand = useJiga ? a.priorLand * A.priorMul : a.landArea * landUnit * A.priorMul * 1e4;
+  const U = pl.U || JbsFeas.units(pl.gfa, A);
+  const m = JbsFeas.money({ sale: U.sale, rental: U.rental, rentSupply: U.rentSupply, supply: U.supply, members: pl.members, owners: a.owners, farArea: pl.gfa, resArea: U.resArea, prior: priorLand / 1e4 }, A);
+  const W = v => v * 1e4, saleU = m.types.reduce((n, t) => n + m.sale[t], 0);
+  const avgPy = saleU ? m.types.reduce((s, t) => s + m.sale[t] * m.sup(t), 0) / saleU / PY : pl.perUnit / PY;
+  const price84 = W(m.memberPrice * m.sup(84) / PY);
+  const right = isFinite(m.right) ? W(m.right) : 0;
+  return { prior: priorLand, priorLand, useJiga, landUnit, incMember: W(m.byCat['조합원'] || 0), incGeneral: W(m.byCat['일반'] || 0), incRental: W(m.byCat['임대'] || 0),
+    income: W(m.rev), cost: W(m.construction), etc: W(m.etc), expense: W(m.cost), ratio: isFinite(m.ratio) ? m.ratio / 100 : 0,
+    avgPrior: a.owners ? priorLand / a.owners : 0, right, price84, contrib: price84 - right, avgPy, planGfa: m.planGfa, m, A };
 }
 
 /* ===== 정비기반시설 제안 ===== */
@@ -2345,6 +2346,8 @@ function renderReq(a) {
   ${evalSection(a)}`;
   const sel = document.getElementById('ptype'); sel.value = P.type; sel.onchange = () => { P.type = sel.value; saveP(); render(); };
 }
+// 공통 가정값(shared/feas.js) 입력칸 — 사업성 검토 첫 화면과 같은 값
+const feasField = (k, unit, attrs = 'step="any"') => `<div class="field"><label for="feas_${k}">${JbsFeas.LABEL[k] || k}</label><input id="feas_${k}" data-feas="${k}" type="number" value="${JbsFeas.get()[k] ?? ''}" ${attrs}><span class="u">${unit}</span></div>`;
 const field = (id, label, val, unit, attrs = '') => `<div class="field"><label for="${id}">${label}</label><input id="${id}" type="number" value="${val}" ${attrs}><span class="u">${unit}</span></div>`;
 function bindNum(ids) { ids.forEach(id => { const e = document.getElementById(id); if (!e) return; e.addEventListener('change', () => { const v = parseFloat(e.value); if (!isNaN(v)) { P[id] = v; saveP(); render(); } }); }); }
 // 토지이용계획표의 정비기반시설·종교용지 행
@@ -2710,11 +2713,13 @@ function renderArch(a) {
   <div class="form">
     ${field('bcr', '건폐율(계획)', P.bcr, '% · 예시 가정')}
     ${field('coreUnits', '주동 1개 층 세대수', P.coreUnits, '세대/층')}
-    ${field('supplyFactor', '전용 → 연면적 환산계수', P.supplyFactor, '공용·주민공동시설 포함, 예시 가정', 'step=0.01')}
-    ${field('rentalRatio', '임대주택 비율', P.rentalRatio, '% of 세대수 · 예시 가정')}
-    ${field('mix59', '59㎡형 비율', P.mix59, '%')}
-    ${field('mix84', '84㎡형 비율', P.mix84, '%')}
-    ${field('mix114', '114㎡형 비율', P.mix114, '%')}
+    ${feasField('rentRatio', '% of 세대수 · 임대는 49㎡형(공급 67㎡)')}
+    ${feasField('mix59', '% · 분양 평형')}
+    ${feasField('mix84', '%')}
+    ${feasField('mix114', '%')}
+  </div>
+  <p class="note">세대수 = 용적률 연면적 × 주거 ${JbsFeas.get().resRatio}% ÷ 세대당 평균 공급면적(표준 평면: 59㎡형 ${JbsFeas.supply(59)}㎡ · 84㎡형 ${JbsFeas.supply(84)}㎡ · 114㎡형 ${JbsFeas.supply(114)}㎡ · 임대 49㎡형 ${JbsFeas.supply(49)}㎡, 개략). 평형·임대 비율은 사업성 검토 첫 화면과 같은 값을 씁니다.</p>
+  <div class="form">
   </div>
   <h3>개략 규모</h3>
   <div class="kpis">
@@ -2732,7 +2737,8 @@ function renderArch(a) {
   </tbody></table></div>
   ${D.map ? gateSection(a, pl) : ''}
   <p class="note">도면의 <b>개략 배치</b>는 주동을 ${S.placedIn === 'lots' ? '정비기반시설(도로·공원·학교·종교용지 등)을 뺀 <b>공동주택 획지</b>' : '구역계'} 안에 격자로 놓아 봅니다(인동간격 높이×0.8 개략, 배치된 주동 ${S.placed ?? '–'}개동${S.placed != null && S.placedNeed && S.placed < S.placedNeed ? ` — 땅 모양 때문에 계산상 ${S.placedNeed}개동(${S.placedFloorsCalc}층)이 다 들어가지 않아 ${S.placed}개동 × ${S.placedFloors}층으로 세대수를 맞췄습니다. 오른쪽 개략 규모도 이 값입니다` : ''}). 일조·높이·학교예정부지·문화재 위치는 /arch 단계에서 다룹니다.</p>`;
-  bindNum(['bcr', 'coreUnits', 'supplyFactor', 'rentalRatio', 'mix59', 'mix84', 'mix114', 'parkCount']);
+  bindNum(['bcr', 'coreUnits', 'parkCount']);
+  side.querySelectorAll('[data-feas]').forEach(e => e.addEventListener('change', () => { const v = parseFloat(e.value); JbsFeas.set({ [e.dataset.feas]: isNaN(v) ? 0 : v }); render(); }));
   side.querySelectorAll('[data-gate]').forEach(b => b.onclick = () => { S.placing = 'gate:' + b.dataset.gate; $id('lmap').classList.add('picking'); toast(`지도에서 ${GATE.KIND[b.dataset.gate]}를 둘 구역 경계를 누르세요`); });
   const gc = document.getElementById('gateClear'); if (gc) gc.onclick = () => { const z = Z.zones[S.region]; if (z && z.infra) { delete z.infra.gates; saveZ(); render(); } };
 }
@@ -2750,41 +2756,39 @@ function gateSection(a, pl) {
 function renderBiz(a) {
   const pl = plan(a), b = biz(a, pl), rp = b.ratio * 100;
   const tone = rp >= 100 ? 'ok' : rp >= 80 ? 'warn' : 'bad';
-  const priorFields = D.real
-    ? `<div class="field"><label for="priorMode">종전 토지 평가 방식</label><select id="priorMode"><option value="jiga">공시지가 × 배율 (조서 공시지가)</option><option value="unit">단가 직접 입력</option></select><span class="u">조서 공시지가 합 ${won(a.priorLand)}</span></div>
-       ${P.priorMode === 'jiga' ? field('priorMult', '공시지가 배율', P.priorMult, '배 (감정평가 추정)', 'step=0.05') : field('landPrice', '종전 토지 평가단가', P.landPrice, '만원/㎡')}`
-    : field('landPrice', '종전 토지 평가단가', P.landPrice, '만원/㎡ (감정평가 추정)');
+  const A = b.A, ff = (k, unit, attrs = 'step="any"') => `<div class="field"><label for="feas_${k}">${JbsFeas.LABEL[k]}</label><input id="feas_${k}" data-feas="${k}" type="number" value="${A[k] || ''}" ${attrs}><span class="u">${unit}</span></div>`;
+  const priorFields = (D.real && a.priorLand > 0)
+    ? `<div class="field"><label>종전 토지 평가</label><span class="u">조서 공시지가 합 ${won(a.priorLand)} × 배율</span></div>${ff('priorMul', '배 (감정평가 추정)', 'step="0.05"')}`
+    : `${ff('avgLand', `만원/㎡ — 비우면 예시 ${P.landPrice}만원/㎡`)}${ff('priorMul', '배 (감정평가 추정)', 'step="0.05"')}`;
   side.innerHTML = `<h2>${regName()} 개략 사업성</h2>
   <div class="flow">
     <div class="kpi"><div class="l">추정 비례율</div><div class="big" style="color:var(--${tone})">${rp.toFixed(1)}%</div><div class="f">(총수입 − 총사업비) ÷ 종전자산</div></div>
     <div class="kpi"><div class="l">조합원 평균 분담금 (84㎡형)</div><div class="big">${won(b.contrib)}</div><div class="f">84㎡형 조합원분양가 ${won(b.price84)} − 평균 권리가액 ${won(b.right)}</div></div>
   </div>
-  <h3>가정값 <span class="badge a">예시 — 직접 바꿔 보세요</span></h3>
+  <h3>가정값 <span class="badge a">가정값 — 사업성 검토 첫 화면(★빠른 사업성)과 같은 값을 씁니다</span></h3>
   <div class="form">
     ${priorFields}
-    ${field('bldValue', '종전 건물 평가단가', P.bldValue, '만원/㎡ (연면적 기준)')}
-    ${field('memberPrice', '조합원 분양가', P.memberPrice, '만원/평(공급)')}
-    ${field('salePrice', '일반 분양가', P.salePrice, '만원/평(공급)')}
-    ${field('rentalPrice', '임대주택 인수가', P.rentalPrice, '만원/세대')}
-    ${field('constCost', '공사비', P.constCost, '만원/평(지상+지하 연면적)')}
-    ${field('basementRatio', '지하 연면적 비율', P.basementRatio, '% of 지상 연면적')}
-    ${field('etcRatio', '기타 사업비', P.etcRatio, '% of 공사비 (설계·감리·이주·금융·보상 등)')}
+    ${ff('generalPrice', '만원/평(공급)')}
+    ${ff('memberRatio', `% → 조합원분양가 ${fmt(b.m.memberPrice)}만원/평`)}
+    ${ff('rentPrice', '만원/평(공급)')}
+    ${ff('conPrice', '만원/평(계획연면적)')}
+    ${ff('gfaFactor', '배 — 지하주차장·공용 포함', 'step="0.01"')}
+    ${ff('etcPct', '% of 공사비 (설계·감리·이주·금융·보상 등)')}
   </div>
   <h3>수입·지출 집계</h3>
   <div class="tscroll"><table class="ledger"><tbody>
-    <tr><td>조합원 분양 ${fmt(pl.members)}세대 × 평균 ${b.avgPy.toFixed(1)}평</td><td class="r">${won(b.incMember)}</td></tr>
-    <tr><td>일반 분양 ${fmt(pl.general)}세대</td><td class="r">${won(b.incGeneral)}</td></tr>
+    <tr><td>조합원 분양 ${fmt(b.m.memTotal)}세대 (평형별 공급면적 × 조합원분양가)</td><td class="r">${won(b.incMember)}</td></tr>
+    <tr><td>일반 분양 ${fmt(b.m.types.reduce((n, t) => n + b.m.sale[t] - b.m.mem[t], 0))}세대</td><td class="r">${won(b.incGeneral)}</td></tr>
     <tr><td>임대주택 인수 ${fmt(pl.rental)}세대</td><td class="r">${won(b.incRental)}</td></tr>
     <tr class="sum"><td>총수입</td><td class="r">${won(b.income)}</td></tr>
-    <tr><td>공사비 (연면적 ${fmt(pl.gfa + pl.basement)}㎡)</td><td class="r">${won(b.cost)}</td></tr>
+    <tr><td>공사비 (계획연면적 ${fmt(b.planGfa)}㎡ = 지상 ${fmt(pl.gfa)}㎡ × ${b.A.gfaFactor})</td><td class="r">${won(b.cost)}</td></tr>
     <tr><td>기타 사업비</td><td class="r">${won(b.etc)}</td></tr>
     <tr class="sum"><td>총사업비</td><td class="r">${won(b.expense)}</td></tr>
-    <tr><td>종전자산 총액 (토지 ${b.useJiga ? '공시지가×' + P.priorMult : fmt(a.landArea) + '㎡×단가'} + 건물 ${fmt(a.fa)}㎡)</td><td class="r">${won(b.prior)}</td></tr>
+    <tr><td>종전자산 총액 (토지 ${b.useJiga ? '공시지가 합 × ' + b.A.priorMul : fmt(a.landArea) + '㎡ × ' + b.landUnit + '만원/㎡ × ' + b.A.priorMul})</td><td class="r">${won(b.prior)}</td></tr>
     <tr class="sum"><td>개발이익 (총수입 − 총사업비)</td><td class="r">${won(b.income - b.expense)}</td></tr>
   </tbody></table></div>
-  <p class="note">조합원 1인당 평균 종전자산 ${won(b.avgPrior)} × 비례율 ${rp.toFixed(1)}% = 평균 권리가액 ${won(b.right)}. 상가·부대복리시설 수입, 국공유지 처리, 세입자 손실보상 세부는 넣지 않은 개략 산정입니다. 세부 사업성은 사업성 검토 화면의 5~7단계에서 다룹니다.</p>`;
-  const pm = document.getElementById('priorMode'); if (pm) { pm.value = P.priorMode; pm.onchange = () => { P.priorMode = pm.value; saveP(); render(); }; }
-  bindNum(['landPrice', 'priorMult', 'bldValue', 'memberPrice', 'salePrice', 'rentalPrice', 'constCost', 'basementRatio', 'etcRatio']);
+  <p class="note">조합원 1인당 평균 종전자산 ${won(b.avgPrior)} × 비례율 ${rp.toFixed(1)}% = 평균 권리가액 ${won(b.right)}. 임대는 작은 평형부터, 조합원은 분양 세대 비율대로 나눴습니다. 건물 평가액·상가 수입·국공유지 처리·세입자 손실보상 세부는 넣지 않은 개략 산정입니다(첫 화면 ★빠른 사업성과 같은 계산). 세부 사업성은 사업성 검토 화면의 5~7단계에서 다룹니다.</p>`;
+  side.querySelectorAll('[data-feas]').forEach(e => e.addEventListener('change', () => { const v = parseFloat(e.value); JbsFeas.set({ [e.dataset.feas]: isNaN(v) ? 0 : v }); render(); }));
 }
 function renderRules() {
   const v = '<span class="badge v">조례 원문 대조</span>', p = '<span class="badge p">고시문 대조 필요</span>';

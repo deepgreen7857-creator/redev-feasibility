@@ -18,7 +18,9 @@ const Quick = {
     max_incentive_formula: { public_facility_build: 1.5 },
   },
   // 정비기반시설 비율 3단계 — 평균·보수는 실무 경험치(가정값, 인천 고시 사례로 보정 전). 최소는 구역마다 자동 계산
-  INFRA: { avg: 25, cons: 30, minFallback: 15, parkPerUnit: 2 },
+  get INFRA() { const A = JbsFeas.get(); return { avg: A.infraAvg, cons: A.infraCons, minFallback: A.infraMinFallback, parkPerUnit: A.parkPerUnit }; },
+  // 시장 값은 공통 가정값(shared/feas.js)에서 읽음 — /urban 사업성 탭과 같은 값
+  FEAS_KEYS: ['mix59', 'mix114', 'generalPrice', 'memberRatio', 'conPrice', 'etcPct', 'priorMul', 'avgLand', 'rentRatio', 'gfaFactor', 'resRatio', 'rentPrice', 'shopPrice'],
   SCEN: [
     { key: '보수', con: 10, gen: -5, note: '공사비 +10%, 일반분양가 −5%' },
     { key: '표준', con: 0, gen: 0, note: '입력값 그대로' },
@@ -47,7 +49,8 @@ const Quick = {
   // 처음 열 때 기본값 채우기(사업성 가정값 창의 기본값과 같은 근거)
   ensure() {
     const q = S.quick || (S.quick = {});
-    if (q.init) { if (!q.infraLevel) q.infraLevel = 'avg'; return q; }
+    const A = JbsFeas.get();
+    if (q.init) { if (!q.infraLevel) q.infraLevel = 'avg'; this.FEAS_KEYS.forEach(k => { q[k] = A[k]; }); return q; }
     const a = Assume.defaults();
     Object.assign(q, {
       init: true, zone: this.zoneKey(S.meta.zoning), farStep: 'calc', farCustom: 250, infraLevel: 'avg', infraPct: 25,
@@ -55,6 +58,7 @@ const Quick = {
       generalPrice: a.generalPrice, memberRatio: a.memberRatio, conPrice: a.conPrice, etcPct: a.etcPct,
       priorMul: a.priorMul, gfaFactor: a.gfaFactor, resRatio: a.resRatio, rentPrice: a.rentPrice, shopPrice: a.shopPrice, target: 100,
     });
+    this.FEAS_KEYS.forEach(k => { q[k] = A[k]; });
     return q;
   },
 
@@ -97,8 +101,8 @@ const Quick = {
     const k = num(q.sizePct || 100) / 100;
     const v = {
       far: f.v, gfaFactor: num(q.gfaFactor) || 1.45, resRatio: num(q.resRatio) || 97, mix59: num(q.mix59),
-      sup59: this.sup('59', 80) * k, sup84: this.sup('84', 110) * k, supRent: this.sup('49', 67) * k,
-      rentRatio: num(q.rentRatio), members: num(q.members), generalPrice: num(q.generalPrice), memberRatio: num(q.memberRatio),
+      sup59: JbsFeas.supply(59) * k, sup84: JbsFeas.supply(84) * k, supRent: JbsFeas.supply(49) * k,
+      rentRatio: num(q.rentRatio), mix114: num(q.mix114), members: num(q.members), generalPrice: num(q.generalPrice), memberRatio: num(q.memberRatio),
       memberPrice: num(q.generalPrice) * num(q.memberRatio) / 100, rentPrice: num(q.rentPrice), shopPrice: num(q.shopPrice),
       conPrice: num(q.conPrice), etcPct: num(q.etcPct), comp: 0, priorMul: num(q.priorMul) || 1.4, src: '',
     };
@@ -119,7 +123,7 @@ const Quick = {
   LEVERS: [
     { key: 'infraPct', label: '정비기반시설 비율', unit: '%p', step: 5, min: 5, max: 50, help: '공공시설을 늘리면 상한용적률 산식으로 용적률이 오르지만 획지는 줄어듦' },
     { key: 'farStep', label: '용적률 단계', discrete: true, help: '허용(인센티브 다 받음) ↔ 산식(공공시설 제공 상한)' },
-    { key: 'mix59', label: '59㎡형 비율', unit: '%p', step: 20, min: 0, max: 100, help: '나머지는 84㎡형' },
+    { key: 'mix59', label: '59㎡형 비율', unit: '%p', step: 20, min: 0, max: 90, help: '84㎡형이 나머지를 채움(114㎡형 비율은 그대로)' },
     { key: 'sizePct', label: '세대당 평면 크기', unit: '%', step: 5, min: 80, max: 120, help: '표준 평면 공급면적 대비. 같은 연면적에서 크기를 줄이면 세대수가 늘어남' },
     { key: 'rentRatio', label: '임대주택 비율', unit: '%p', step: 5, min: 0, max: 30, help: '법정 범위는 정비계획에서 확인' },
   ],
@@ -133,7 +137,8 @@ const Quick = {
       } else {
         const cur = num(q[L.key]);
         const a = Math.max(L.min, cur - L.step), b = Math.min(L.max, cur + L.step);
-        lo = { ...q, [L.key]: a }; hi = { ...q, [L.key]: b };
+        const fix = L.key === 'infraPct' ? { infraLevel: 'custom' } : {};   // 단계(평균 등)가 비율을 덮어쓰지 않게
+        lo = { ...q, ...fix, [L.key]: a }; hi = { ...q, ...fix, [L.key]: b };
         loTxt = `${fmt(a)}%`; hiTxt = `${fmt(b)}%`;
       }
       return { L, base, lo: this.ratio(lo), hi: this.ratio(hi), loTxt, hiTxt };
@@ -144,7 +149,7 @@ const Quick = {
   infraScan(q) {
     const rows = [];
     for (let i = 10; i <= 45; i += 2.5) {
-      const qq = { ...q, infraPct: i, farStep: 'calc' }, e = this.evaluate(qq);
+      const qq = { ...q, infraLevel: 'custom', infraPct: i, farStep: 'calc' }, e = this.evaluate(qq);
       rows.push({ i, far: e.f.v, capped: e.f.capped, units: e.p.total, ratio: e.r.ratio });
     }
     const ok = rows.filter(r => isFinite(r.ratio));
@@ -162,7 +167,7 @@ const Quick = {
     App.update(true);
     App.go('result');
   },
-  reset() { S.quick = {}; this.ensure(); App.update(true); },
+  reset() { if (confirm('빠른 사업성 입력값과 공통 가정값(분양가·공사비 등, /urban 사업성 탭과 같이 씀)을 기본값으로 되돌릴까요?')) { JbsFeas.reset(); S.quick = {}; this.ensure(); App.update(true); } },
 };
 
 // ---------- 탭 ----------
@@ -172,6 +177,13 @@ Tabs.quick = {
     const zs = $('#qk_zone');
     if (zs && !zs.options.length) zs.innerHTML = Quick.zones().map(z => `<option value="${esc(z)}">${esc(z.replace(/_/g, ' '))}</option>`).join('');
     bindInputs($('#tab-quick'));
+    // 공통 가정값 입력: 값 채우기·고치면 공통 저장소에 저장
+    const A = JbsFeas.get();
+    $$('#tab-quick [data-feas]').forEach(inp => {
+      if (document.activeElement !== inp) inp.value = A[inp.dataset.feas] || (inp.dataset.feas === 'avgLand' ? '' : A[inp.dataset.feas]);
+      if (inp._fb) return; inp._fb = true; inp.setAttribute('type', 'number'); inp.setAttribute('inputmode', 'decimal');
+      inp.addEventListener('input', () => { JbsFeas.set({ [inp.dataset.feas]: num(inp.value) }); App.update(); });
+    });
     if (!this._bound) {
       this._bound = true;
       $('#qkApply').onclick = () => Quick.apply();
@@ -219,8 +231,8 @@ Tabs.quick = {
       <div class="as-grid">
         <div><span>구역 면적</span><b>${fmt(site)}㎡</b><em>기반시설 ${fmt(q.infraPct)}% → 획지 ${fmt(f.lot)}㎡</em></div>
         <div><span>적용 용적률</span><b>${fmt(f.v, 1)}%</b><em>${esc(q.zone.replace(/_/g, ' '))}</em></div>
-        <div><span>총 세대수</span><b>${fmt(p.total)}세대</b><em>59㎡ ${fmt(p.u59)} · 84㎡ ${fmt(p.u84)} · 임대 ${fmt(p.rentU)}</em></div>
-        <div><span>조합원 / 일반분양</span><b>${fmt(p.mem59 + p.mem84)} / ${fmt(p.u59 + p.u84 - p.mem59 - p.mem84)}세대</b></div>
+        <div><span>총 세대수</span><b>${fmt(p.total)}세대</b><em>59㎡ ${fmt(p.u59)} · 84㎡ ${fmt(p.u84)}${p.u114 ? ` · 114㎡ ${fmt(p.u114)}` : ''} · 임대 ${fmt(p.rentU)}</em></div>
+        <div><span>조합원 / 일반분양</span><b>${fmt(p.memTotal)} / ${fmt(p.total - p.rentU - p.memTotal)}세대</b></div>
         <div><span>총수입</span><b>${fmtEok(r.rev.total)}</b></div>
         <div><span>총사업비</span><b>${fmtEok(r.cost.total)}</b><em>계획연면적 ${fmt(Calc.gfa(e.t))}㎡</em></div>
         <div><span>종전자산</span><b>${fmtEok(r.prior)}</b><em>${esc(e.priorNote)}</em></div>

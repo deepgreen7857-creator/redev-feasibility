@@ -459,9 +459,9 @@
       <label>직접 입력 용적률 (%)<small>'직접 입력'일 때만 씀, 상한 이내</small><input data-bind="quick.farCustom" data-type="number" inputmode="decimal"></label>
       <label>정비기반시설 비율<small>도로·공원·녹지 등. 처음엔 '평균'으로 보세요</small><select data-bind="quick.infraLevel"><option value="min">최소 (구역별 자동 계산)</option><option value="avg">평균 25% (가정값)</option><option value="cons">보수적 30% (가정값)</option><option value="custom">직접 입력</option></select></label>
       <label>직접 입력 비율 (구역면적 %)<small>'직접 입력'일 때만 씀</small><input id="qk_infraPct" data-bind="quick.infraPct" data-type="number" inputmode="decimal"></label>
-      <label>59㎡형 비율 (%)<small>나머지는 84㎡형</small><input data-bind="quick.mix59" data-type="number" inputmode="decimal"></label>
+      <label>59㎡형 비율 (%)<small>84㎡형이 나머지를 채움 · 114㎡형은 /urban 개략 건축계획에서</small><input data-feas="mix59" inputmode="decimal"></label>
       <label>세대당 평면 크기 (%)<small>표준 평면 공급면적 대비</small><input data-bind="quick.sizePct" data-type="number" inputmode="decimal"></label>
-      <label>임대주택 비율 (세대 %)<input data-bind="quick.rentRatio" data-type="number" inputmode="decimal"></label>
+      <label>임대주택 비율 (세대 %)<input data-feas="rentRatio" inputmode="decimal"></label>
       <label>목표 비례율 (%)<input data-bind="quick.target" data-type="number" inputmode="decimal"></label>
     </div>
     <h3>손잡이별 비례율 변화 <small>한 단계씩 내리고 올렸을 때</small></h3>
@@ -469,15 +469,15 @@
   </div>
 
   <div class="card">
-    <h3>시장 값·종전자산 <small>손잡이가 아님 — 인근 시세·감정평가 수준으로 맞추세요</small></h3>
+    <h3>시장 값·종전자산 <small>손잡이가 아님 — 인근 시세·감정평가 수준으로 맞추세요. /urban 사업성 탭과 같은 가정값을 씁니다</small></h3>
     <div class="form-grid three">
-      <label>일반분양가 (만원/평, 공급면적)<input data-bind="quick.generalPrice" data-type="number" inputmode="decimal"></label>
-      <label>조합원 분양가 비율 (일반 대비 %)<input data-bind="quick.memberRatio" data-type="number" inputmode="decimal"></label>
-      <label>공사비 (만원/평, 계획연면적)<input data-bind="quick.conPrice" data-type="number" inputmode="decimal"></label>
-      <label>기타 사업비 (공사비 대비 %)<small>설계·감리·금융·제세 등</small><input data-bind="quick.etcPct" data-type="number" inputmode="decimal"></label>
+      <label>일반분양가 (만원/평, 공급면적)<input data-feas="generalPrice" inputmode="decimal"></label>
+      <label>조합원 분양가 비율 (일반 대비 %)<input data-feas="memberRatio" inputmode="decimal"></label>
+      <label>공사비 (만원/평, 계획연면적)<input data-feas="conPrice" inputmode="decimal"></label>
+      <label>기타 사업비 (공사비 대비 %)<small>설계·감리·금융·제세 등</small><input data-feas="etcPct" inputmode="decimal"></label>
       <label>조합원 수 (토지등소유자, 명)<input data-bind="quick.members" data-type="number" inputmode="decimal"></label>
-      <label>종전자산 보정배율<small>공시지가 × 배율 ≈ 감정평가액</small><input data-bind="quick.priorMul" data-type="number" inputmode="decimal"></label>
-      <label>평균 공시지가 (만원/㎡)<small>토지조서가 아직 없을 때만 씀</small><input data-bind="quick.avgLand" data-type="number" inputmode="decimal"></label>
+      <label>종전자산 보정배율<small>공시지가 × 배율 ≈ 감정평가액</small><input data-feas="priorMul" inputmode="decimal"></label>
+      <label>평균 공시지가 (만원/㎡)<small>토지조서가 아직 없을 때만 씀</small><input data-feas="avgLand" inputmode="decimal"></label>
     </div>
   </div>
 
@@ -524,24 +524,25 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=76"></script>
-<script src="js/util.js?v=76"></script>
-<script src="js/state.js?v=76"></script>
-<script src="js/calc.js?v=76"></script>
-<script src="js/zonekit.js?v=76"></script>
-<script src="js/map.js?v=76"></script>
-<script src="js/ledger.js?v=76"></script>
-<script src="js/pdfsave.js?v=76"></script>
-<script src="js/overlay.js?v=76"></script>
-<script src="js/export.js?v=76"></script>
-<script src="js/roadcut.js?v=76"></script>
-<script src="shared/site-store.js?v=76"></script>
-<script src="js/assume.js?v=76"></script>
-<script src="js/app.js?v=76"></script>
-<script src="js/quick.js?v=76"></script>
-<script src="js/forms.js?v=76"></script>
-<script src="js/hwpx.js?v=76"></script>
-<script src="js/surveymaps.js?v=76"></script>
-<script src="js/review.js?v=76"></script>
+<script src="js/config.js?v=78"></script>
+<script src="js/util.js?v=78"></script>
+<script src="js/state.js?v=78"></script>
+<script src="js/calc.js?v=78"></script>
+<script src="js/zonekit.js?v=78"></script>
+<script src="js/map.js?v=78"></script>
+<script src="js/ledger.js?v=78"></script>
+<script src="js/pdfsave.js?v=78"></script>
+<script src="js/overlay.js?v=78"></script>
+<script src="js/export.js?v=78"></script>
+<script src="js/roadcut.js?v=78"></script>
+<script src="shared/site-store.js?v=78"></script>
+<script src="shared/feas.js?v=78"></script>
+<script src="js/assume.js?v=78"></script>
+<script src="js/app.js?v=78"></script>
+<script src="js/quick.js?v=78"></script>
+<script src="js/forms.js?v=78"></script>
+<script src="js/hwpx.js?v=78"></script>
+<script src="js/surveymaps.js?v=78"></script>
+<script src="js/review.js?v=78"></script>
 </body>
 </html>

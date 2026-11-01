@@ -11,15 +11,18 @@ const Assume = {
     const withBldg = new Set(S.buildings.map(b => b.pnu).filter(Boolean));
     const est = S.buildings.reduce((a, b) => a + (num(b.hoCount) || num(b.units) || 1), 0)
       + S.lands.filter(l => l.jimok === '대' && l.pnu && !withBldg.has(l.pnu)).length;
+    // 시장 값은 공통 가정값(shared/feas.js — /urban 사업성 탭과 같은 값)
+    const A = JbsFeas.get();
+    const sp = t => JbsFeas.supply(t);
     return {
-      far: num(S.plan.far) || 250, gfaFactor: num(S.plan.gfaFactor) || 1.45,
-      resRatio: 97, mix59: 40, sup59: 82, sup84: 112, rentRatio: 15, supRent: 62,
+      far: num(S.plan.far) || 250, gfaFactor: A.gfaFactor,
+      resRatio: A.resRatio, mix59: A.mix59 ?? 40, sup59: sp(59), sup84: sp(84), rentRatio: A.rentRatio, supRent: sp(49),
       members: Math.max(est, sv.owners, S.members.length),
-      generalPrice: 2500, memberRatio: 80, memberPrice: 2000,
+      generalPrice: A.generalPrice, memberRatio: A.memberRatio, memberPrice: Math.round(A.generalPrice * A.memberRatio / 100),
       // 사업비 표에 세부 항목이 이미 있으면 기타 사업비는 0 (이중 계산 방지)
-      rentPrice: 600, shopPrice: 2500, conPrice: 750, comp: 0,
-      etcPct: S.costs.some(c => c.group !== '공사비' && c.name !== '기타 사업비 (가정값)' && num(c.value) > 0) ? 0 : 30,
-      priorMul: num(S.prior.multiplier) || 1.4,
+      rentPrice: A.rentPrice, shopPrice: A.shopPrice, conPrice: A.conPrice, comp: 0,
+      etcPct: S.costs.some(c => c.group !== '공사비' && c.name !== '기타 사업비 (가정값)' && num(c.value) > 0) ? 0 : A.etcPct,
+      priorMul: A.priorMul,
     };
   },
 
@@ -89,23 +92,19 @@ const Assume = {
     if (v.src) { const x = this.archOf(v.src); if (x) return this.planArch(s, v, x); }
     const site = Calc.siteArea(s);
     const farArea = Calc.netSite(s) * v.far / 100;   // 기반시설을 뺀 건축 대지 기준
-    const resArea = farArea * v.resRatio / 100;
-    const m59 = v.mix59 / 100, rent = v.rentRatio / 100;
-    const avg = rent * v.supRent + (1 - rent) * (m59 * v.sup59 + (1 - m59) * v.sup84);
-    const total = avg > 0 ? Math.floor(resArea / avg) : 0;
-    const rentU = Math.round(total * rent), saleU = total - rentU;
-    const u59 = Math.round(saleU * m59), u84 = saleU - u59;
-    const mem59 = Math.min(u59, Math.round(v.members * m59)), mem84 = Math.min(u84, v.members - Math.round(v.members * m59));
-    const memberPrice = v.generalPrice * v.memberRatio / 100;
-    const sales = [
-      sale('조합원', '59㎡', mem59, v.sup59, memberPrice),
-      sale('조합원', '84㎡', mem84, v.sup84, memberPrice),
-      sale('일반', '59㎡', u59 - mem59, v.sup59, v.generalPrice),
-      sale('일반', '84㎡', u84 - mem84, v.sup84, v.generalPrice),
-      sale('임대', '임대', rentU, v.supRent, v.rentPrice),
-      sale('상가', '근린생활시설', 1, Math.round(farArea - resArea), v.shopPrice),
-    ];
-    return { site, farArea, total, rentU, u59, u84, mem59, mem84, memberPrice, sales, short: Math.max(0, v.members - mem59 - mem84) };
+    // 세대수·분양 행은 공통 계산(shared/feas.js) — /urban 사업성 탭과 같은 식·같은 평형 비율
+    const A0 = JbsFeas.get();
+    const A = { ...A0, rentRatio: v.rentRatio, resRatio: v.resRatio, generalPrice: v.generalPrice, memberRatio: v.memberRatio, rentPrice: v.rentPrice, shopPrice: v.shopPrice };
+    const m114 = v.mix114 ?? A0.mix114, mix = { 59: v.mix59, 84: Math.max(0, 100 - v.mix59 - m114), 114: m114 };
+    const k84 = v.sup84 / JbsFeas.supply(84) || 1;
+    const supOv = { 59: v.sup59, 84: v.sup84, 114: JbsFeas.supply(114) * k84, 49: v.supRent };
+    const U = JbsFeas.units(farArea, A, mix, supOv);
+    const M = JbsFeas.money({ sale: U.sale, rental: U.rental, rentSupply: U.rentSupply, supply: U.supply, members: v.members, farArea, resArea: U.resArea, prior: 0 }, A);
+    const memberPrice = M.memberPrice;
+    const sales = M.rows.map(r => sale(r.cat, r.cat === '상가' ? '근린생활시설' : r.cat === '임대' ? '임대' : r.t + '㎡', r.units, r.cat === '상가' ? Math.round(r.area) : r.area, r.price));
+    const u = t => U.sale[t] || 0, mm = t => M.mem[t] || 0;
+    return { site, farArea, total: U.total, rentU: U.rental, u59: u(59), u84: u(84), u114: u(114), mem59: mm(59), mem84: mm(84), mem114: mm(114), memTotal: M.memTotal,
+      types: M.types, saleBy: U.sale, memBy: M.mem, memberPrice, sales, short: M.short };
   },
 
   applyTo(s, v) {
@@ -173,8 +172,8 @@ const Assume = {
     out.innerHTML = `
       <div class="as-grid">
         <div><span>용적률 연면적</span><b>${fmt(p.farArea)}㎡</b></div>
-        <div><span>총 세대수</span><b>${fmt(p.total)}세대</b><em>59㎡ ${fmt(p.u59)} · 84㎡ ${fmt(p.u84)} · 임대 ${fmt(p.rentU)}</em></div>
-        <div><span>조합원 / 일반분양</span><b>${fmt(p.mem59 + p.mem84)} / ${fmt(p.u59 + p.u84 - p.mem59 - p.mem84)}세대</b></div>
+        <div><span>총 세대수</span><b>${fmt(p.total)}세대</b><em>59㎡ ${fmt(p.u59)} · 84㎡ ${fmt(p.u84)}${p.u114 ? ` · 114㎡ ${fmt(p.u114)}` : ''} · 임대 ${fmt(p.rentU)}</em></div>
+        <div><span>조합원 / 일반분양</span><b>${fmt(p.memTotal ?? (p.mem59 + p.mem84))} / ${fmt(p.total - p.rentU - (p.memTotal ?? (p.mem59 + p.mem84)))}세대</b></div>
         <div><span>조합원 분양가</span><b>${fmt(p.memberPrice)}만원/평</b><em>일반분양가의 ${fmt(v.memberRatio, 1)}%</em></div>
         <div><span>총수입</span><b>${fmtEok(r.rev.total)}</b></div>
         <div><span>총사업비</span><b>${fmtEok(r.cost.total)}</b></div>
@@ -188,7 +187,9 @@ const Assume = {
   },
 
   apply() {
-    this.applyTo(S, this.values());
+    const v0 = this.values();
+    if (window.JbsFeas) JbsFeas.set({ mix59: v0.mix59, generalPrice: v0.generalPrice, memberRatio: v0.memberRatio, rentPrice: v0.rentPrice, shopPrice: v0.shopPrice, conPrice: v0.conPrice, gfaFactor: v0.gfaFactor, priorMul: v0.priorMul, rentRatio: v0.rentRatio, resRatio: v0.resRatio, ...(v0.etcPct > 0 ? { etcPct: v0.etcPct } : {}) });
+    this.applyTo(S, v0);
     $('#assumeDialog').close();
     App.update(true);
     App.go('result');
