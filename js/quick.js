@@ -21,6 +21,13 @@ const Quick = {
   get INFRA() { const A = JbsFeas.get(); return { avg: A.infraAvg, cons: A.infraCons, minFallback: A.infraMinFallback, parkPerUnit: A.parkPerUnit }; },
   // 시장 값은 공통 가정값(shared/feas.js)에서 읽음 — /urban 사업성 탭과 같은 값
   FEAS_KEYS: ['mix59', 'mix114', 'generalPrice', 'memberRatio', 'conPrice', 'etcPct', 'priorMul', 'avgLand', 'rentRatio', 'gfaFactor', 'resRatio', 'rentPrice', 'shopPrice'],
+  // 공사비 단계(기준 공사비 대비) — 구역마다 고름(S.quick.conLevel)
+  CON_LV: [['low', '낮게', -5], ['base', '기준', 0], ['high', '높게', 5], ['higher', '많이 높게', 10]],
+  conMul(q) { const l = this.CON_LV.find(x => x[0] === (q.conLevel || 'base')); return 1 + (l ? l[2] : 0) / 100; },
+  // 조합원 분양가 비율 단계(일반분양가 대비 %) — 공통 가정값(memberRatio)에 저장
+  MEM_LV: [80, 85, 90],
+  // 평형 비율 프리셋(59·84·114㎡형 %) — 공통 가정값(mix59·mix84·mix114)에 저장
+  MIX_LV: [['small', '소형 위주', 60, 35, 5], ['base', '기본', 40, 50, 10], ['large', '중대형 위주', 20, 60, 20]],
   SCEN: [
     { key: '보수', con: 10, gen: -5, note: '공사비 +10%, 일반분양가 −5%' },
     { key: '표준', con: 0, gen: 0, note: '입력값 그대로' },
@@ -104,7 +111,7 @@ const Quick = {
       sup59: JbsFeas.supply(59) * k, sup84: JbsFeas.supply(84) * k, supRent: JbsFeas.supply(49) * k,
       rentRatio: num(q.rentRatio), mix114: num(q.mix114), members: num(q.members), generalPrice: num(q.generalPrice), memberRatio: num(q.memberRatio),
       memberPrice: num(q.generalPrice) * num(q.memberRatio) / 100, rentPrice: num(q.rentPrice), shopPrice: num(q.shopPrice),
-      conPrice: num(q.conPrice), etcPct: num(q.etcPct), comp: 0, priorMul: num(q.priorMul) || 1.4, src: '',
+      conPrice: num(q.conPrice) * this.conMul(q), etcPct: num(q.etcPct), comp: 0, priorMul: num(q.priorMul) || 1.4, src: '',
     };
     const p = Assume.applyTo(t, v);
     // 토지조서가 아직 없으면 평균 공시지가(만원/㎡) × (구역 − 기존 공공시설) × 보정배율로 종전자산 추정
@@ -168,7 +175,8 @@ const Quick = {
     App.go('result');
   },
   // ---------- 사업성 검토서(1회차) — 새 창에 보고서를 열고 인쇄·PDF 저장 ----------
-  report() {
+  // mode: 'client' 사용자용(결과만, 안내 한 줄) · 'staff' 검토자용(산식·가정값·범위·한계 모두)
+  report(mode = 'client') {
     const q0 = this.ensure(), lvNow = q0.infraLevel || 'avg';
     const q = { ...q0, infraLevel: 'custom', infraPct: this.levelPct(q0, lvNow) };
     const site = Calc.siteArea(S);
@@ -198,10 +206,15 @@ const Quick = {
       ['계획 값', [['gfaFactor', '배 (지하·공용 포함)'], ['resRatio', '%'], ['rentRatio', '% (49㎡형)'], ['mix59', '%'], ['mix84', '%'], ['mix114', '%']]],
       ['정비기반시설 비율', [['infraAvg', '% (실무 경험치)'], ['infraCons', '% (실무 경험치)']]]];
     const assume = grp.map(([g, ks]) => `<tr class="h"><th colspan="2">${g}</th></tr>` + ks.map(([k, u]) => `<tr><td>${esc((JbsFeas.LABEL[k] || k).replace(/\(.*\)$/, ''))}</td><td class="n">${fmt(A[k], k === 'gfaFactor' || k === 'priorMul' ? 2 : 0)} ${u}</td></tr>`).join('')).join('');
+    // 검토자용 추가 표: 손잡이, 기반시설 비율 훑기, 공사비×분양가 민감도
+    const lev = mode === 'staff' ? this.leverRows(q) : [];
+    const scan = mode === 'staff' ? this.infraScan(q) : { rows: [] };
+    const steps = [-10, -5, 0, 5, 10];
+    const sens = mode === 'staff' ? steps.map(c => steps.map(g => Calc.result(e.t, { construction: 1 + c / 100, general: 1 + g / 100 }).ratio)) : [];
+    const sg = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v) + '%';
     const name = S.meta.name || '정비구역';
     const zname = name.replace(/사업구역$/, '사업').replace(/정비구역$/, '정비사업');   // 예: 숭의2구역 재개발사업구역 → 숭의2구역 재개발사업
-    const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>(개략)사업성검토서 - ${esc(zname)}</title>
-<style>
+    const css = `<style>
 @page { size: A4; margin: 15mm 14mm 16mm; }
 * { box-sizing: border-box; }
 body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; color: #1d2a33; font-size: 10pt; line-height: 1.55; margin: 0 auto; max-width: 800px; padding: 18px; background: #fff; }
@@ -232,11 +245,14 @@ tr.sum th, tr.sum td { background: #eef1f3; font-weight: 700; }
 .foot { margin-top: 18px; border-top: 1px solid #c9d1d6; padding-top: 6px; font-size: 8pt; color: #8a949b; display: flex; justify-content: space-between; }
 .bar { position: sticky; top: 0; background: #fff; padding: 8px 0; border-bottom: 1px solid #ddd; margin-bottom: 12px; display: flex; gap: 10px; align-items: center; }
 .bar button { font: inherit; padding: 6px 14px; border: 1px solid #c2410c; background: #c2410c; color: #fff; border-radius: 6px; cursor: pointer; }
+.cl h2 { margin: 12px 0 5px; } .cl th, .cl td { padding: 3px 8px; } .cl table { margin: 3px 1px 2px; } .cl .cards { margin: 5px 0; } .cl .foot { margin-top: 8px; }
 @media print { .bar { display: none; } body { padding: 0; max-width: none; } }
-</style></head><body>
+</style>`;
+    const top = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>(개략)사업성검토서 - ${esc(zname)}</title>${css}</head><body>
 <div class="bar"><button onclick="window.print()">PDF로 저장 · 인쇄</button> <span class="note">인쇄 창에서 '대상: PDF로 저장'을 고르면 PDF 파일로 저장됩니다.</span></div>
 <div class="head"><div><div class="brand"><b>jbslab</b> 정비사업 개략 검토</div><h1>(개략)사업성검토서</h1><div class="zn">${esc(zname)}</div>
-<div class="meta">${esc(S.meta.location || '')}${S.meta.location ? ' · ' : ''}검토일 ${today}</div></div><div class="stamp">1회차 · 교통·환경·경관 검토 전</div></div>
+<div class="meta">${esc(S.meta.location || '')}${S.meta.location ? ' · ' : ''}검토일 ${today}</div></div>${mode === 'staff' ? '<div class="stamp">검토자용 · 1회차(교통·환경·경관 검토 전)</div>' : ''}</div>`;
+    const staff = `
 
 <h2>1. 결과 요약</h2>
 <div class="cards">
@@ -270,6 +286,7 @@ tr.sum th, tr.sum td { background: #eef1f3; font-weight: 700; }
 <table><colgroup><col style="width:70%"><col></colgroup><tr class="h"><th>종후자산(총수입)</th><th class="n">금액</th></tr>${revRows}<tr class="sum"><th>합계</th><td class="n">${eok(r.rev.total)}</td></tr></table>
 <table><colgroup><col style="width:70%"><col></colgroup><tr class="h"><th>총사업비</th><th class="n">금액</th></tr>${costRows}<tr class="sum"><th>합계</th><td class="n">${eok(r.cost.total)}</td></tr></table>
 <table><tr><th class="k">종전자산</th><td>${eok(r.prior)} ${esc(e.priorNote ? '(' + e.priorNote + ')' : '')}</td></tr>
+<tr><th class="k">검토 조건</th><td>정비기반시설 ${lvName[lvNow]} ${fmt(q.infraPct, 1)}% · 공사비 ${esc((this.CON_LV.find(x => x[0] === (q0.conLevel || 'base')) || [])[1] || '기준')} ${fmt(e.v.conPrice)}만원/평 · 조합원 분양가 일반분양가의 ${fmt(A.memberRatio)}% · 평형 비율 59·84·114㎡형 ${fmt(A.mix59)}·${fmt(A.mix84)}·${fmt(A.mix114)}%</td></tr>
 <tr><th class="k">비례율</th><td><b class="${cls(r.ratio)}">${pct(r.ratio)}</b> = (종후자산 ${eok(r.rev.total)} − 총사업비 ${eok(r.cost.total)}) ÷ 종전자산 ${eok(r.prior)}</td></tr>
 <tr><th class="k">조합원 분양가</th><td>${fmt(p.memberPrice)}만원/평 (일반분양가 ${fmt(A.generalPrice)}만원/평의 ${fmt(A.memberRatio)}%)</td></tr></table>
 
@@ -283,12 +300,88 @@ ${grid.map(g => `<tr><td>${lvName[g.k]} ${fmt(g.v, 1)}%</td><td class="n">${fmt(
 <p class="note">위 값은 모두 가정값(법정값 아님)이며 화면에서 바꿀 수 있습니다.</p>
 <p class="note">평형별 공급면적은 표준 평면 라이브러리 개략값입니다. 용적률 체계는 2030 인천광역시 도시·주거환경정비기본계획 변경 고시(제2026-96호) 기준입니다. 가정값은 인근 시세·인천 정비계획 사례로 보정해야 합니다.</p>
 
-<h2>7. 한계와 다음 단계</h2>
+<h2>6-1. 조합원 분양가 비율별 비교 <span class="note">(비례율이 분양가 비율 때문에 오른 것인지 구분)</span></h2>
+<table><tr class="h"><th>조합원 분양가 비율</th><th class="n">조합원분양가</th><th class="n">비례율</th><th class="n">평균 권리가액</th>${[['59', p.u59], ['84', p.u84], ['114', p.u114]].filter(([, n]) => n > 0).map(([t]) => `<th class="n">${t}㎡형 분담금</th>`).join('')}</tr>
+${this.MEM_LV.map(mm => { const ee = this.evaluate({ ...q, memberRatio: mm }), rr = ee.r.ratio, rt = num(q.members) > 0 && isFinite(rr) ? ee.r.prior / num(q.members) * rr / 100 : NaN;
+  return `<tr${Math.abs(mm - num(A.memberRatio)) < 0.01 ? ' style="background:#fdeee6"' : ''}><td>${mm}%</td><td class="n">${fmt(ee.p.memberPrice)}만원/평</td><td class="n ${cls(rr)}">${pct(rr)}</td><td class="n">${eok(rt)}</td>${[['59', p.u59], ['84', p.u84], ['114', p.u114]].filter(([, n]) => n > 0).map(([t]) => { const c = isFinite(rt) ? ee.p.memberPrice * JbsFeas.supply(t) * (num(q.sizePct || 100) / 100) / PY - rt : NaN; return `<td class="n">${isFinite(c) ? (c >= 0 ? '' : '환급 ') + eok(Math.abs(c)) : '–'}</td>`; }).join('')}</tr>`; }).join('')}</table>
+<p class="note">조합원 분양가를 올리면 비례율과 권리가액이 함께 올라 조합원 전체 부담은 비슷하고, 평형 사이에서 유불리가 옮겨 갑니다. 사업 자체의 이익은 일반분양 수입·사업비로 판단해야 합니다.</p>
+
+<h2>7. 계획 손잡이별 비례율 변화</h2>
+<table><colgroup><col style="width:34%"><col><col><col></colgroup><tr class="h"><th>손잡이</th><th class="n">내리면</th><th class="n">현재</th><th class="n">올리면</th></tr>
+${lev.map(x => `<tr><td>${esc(x.L.label)}<span class="note" style="display:block">${esc(x.L.help)}</span></td><td class="n">${esc(x.loTxt)} → <b class="${cls(x.lo)}">${pct(x.lo)}</b></td><td class="n">${pct(x.base)}</td><td class="n">${esc(x.hiTxt)} → <b class="${cls(x.hi)}">${pct(x.hi)}</b></td></tr>`).join('')}</table>
+
+<h2>8. 정비기반시설 비율별 결과 <span class="note">(용적률 산식 단계 기준)</span></h2>
+<table><tr class="h"><th class="n">기반시설 비율</th><th class="n">산식 용적률</th><th class="n">세대수</th><th class="n">비례율</th></tr>
+${scan.rows.map(x => `<tr${scan.best && x.i === scan.best.i ? ' style="background:#e3f4e8"' : ''}><td class="n">${fmt(x.i, 1)}%</td><td class="n">${fmt(x.far, 1)}%${x.capped ? ' (상한)' : ''}</td><td class="n">${fmt(x.units)}</td><td class="n ${cls(x.ratio)}">${pct(x.ratio)}</td></tr>`).join('')}</table>
+${scan.best ? `<p class="note">비례율이 가장 높은 지점: 기반시설 ${fmt(scan.best.i, 1)}% (${pct(scan.best.ratio)}). 실제 기반시설은 무상양도 균형·법정 공원·진입도로를 먼저 맞춰야 합니다.</p>` : ''}
+
+<h2>9. 공사비·분양가 민감도</h2>
+<table><tr class="h"><th>공사비 ↓ / 일반분양가 →</th>${steps.map(g => `<th class="n">${sg(g)}</th>`).join('')}</tr>
+${sens.map((row, i) => `<tr><th class="k">${sg(steps[i])}</th>${row.map((v, j) => `<td class="n ${cls(v)}"${steps[i] === 0 && steps[j] === 0 ? ' style="outline:2px solid #1d2a33;outline-offset:-2px"' : ''}>${pct(v)}</td>`).join('')}</tr>`).join('')}</table>
+
+<h2>10. 산식</h2>
+<table><colgroup><col style="width:24%"><col></colgroup>
+<tr><th class="k">세대수</th><td>용적률 연면적 × 주거비율 ÷ 세대당 평균 공급면적. 평균 공급면적 = 임대비율 × 49㎡형 + (1 − 임대비율) × Σ(평형 비율 × 평형 공급면적)</td></tr>
+<tr><th class="k">상한용적률(산식)</th><td>허용용적률 + 1.5 × (새로 설치하는 공공시설 − 용도폐지되는 설치된 기존 공공시설) ÷ 공동주택 획지 × 기준용적률, 상한 이내</td></tr>
+<tr><th class="k">종전자산</th><td>토지조서 공시지가 합 × 보정배율(토지조서가 없으면 평균 공시지가 × 사유지 면적 × 보정배율)</td></tr>
+<tr><th class="k">총사업비</th><td>공사비 단가 × 계획연면적(용적률 연면적 × 계획연면적 배율) + 기타 사업비(공사비 × 비율)</td></tr>
+<tr><th class="k">비례율</th><td>(종후자산 − 총사업비) ÷ 종전자산 × 100</td></tr>
+<tr><th class="k">조합원 분담금</th><td>평형 공급면적 × 조합원분양가 − 권리가액(평균 종전자산 × 비례율)</td></tr></table>
+
+<h2>11. 적용 기준</h2>
+<ul><li>용적률 체계·상한용적률 산식: 2030 인천광역시 도시·주거환경정비기본계획 변경 고시(인천광역시 고시 제2026-96호, 2026. 4. 27.)</li>
+<li>무상양도: 도시 및 주거환경정비법 제97조(용도폐지되는 정비기반시설과 새로 설치하는 정비기반시설)</li>
+<li>법정 공원: 도시공원 및 녹지 등에 관한 법률 시행규칙 별표 2(정비계획 5만㎡ 이상 — 세대당 2㎡ 또는 부지면적 5% 중 큰 면적)</li>
+<li>진입도로: 주택건설기준 등에 관한 규정 제25조</li>
+<li>기반시설 비율 평균·보수, 분양가, 공사비, 평형 공급면적: 가정값(인천 사례·시세로 보정 필요)</li></ul>
+
+<h2>12. 한계와 다음 단계</h2>
 <ul><li>이 검토는 1회차(정비기반시설을 비율로 잡은 개략 검토)입니다. 교통성·환경성·경관 검토 결과(도로 확폭, 높이·배치 조건)를 반영한 2회차에서 세대수와 비례율이 달라질 수 있습니다.</li>
 <li>종전자산은 공시지가 × 보정배율로 추정했습니다. 실제 권리가액은 감정평가 결과에 따릅니다.</li>
 <li>상가·부대복리시설 세부, 국공유지 처리, 세입자 손실보상, 금융비용 세부는 기타 사업비 비율로 묶어 개략 반영했습니다.</li></ul>
 <div class="foot"><span>jbslab.co.kr · 개략 검토 자료(법적 효력 없음)</span><span>${today}</span></div>
 </body></html>`;
+    // 사용자용: 결과·주요 숫자만, 설명은 맨 아래 한 줄
+    const sc = this.SCEN.map(x => ({ x, v: Calc.result(e.t, { construction: 1 + x.con / 100, general: 1 + x.gen / 100 }).ratio }));
+    const scName = { 보수: '분양가 하락·공사비 상승 시', 표준: '기준', 낙관: '분양가 상승·공사비 하락 시' };
+    const c84 = p.u84 ? chg(JbsFeas.supply(84) * (num(q.sizePct || 100) / 100)) : '–';
+    const client = `<div class="cl">
+<h2>1. 결과 요약</h2>
+<div class="cards">
+  <div class="main"><span>추정 비례율</span><b>${pct(r.ratio)}</b></div>
+  <div><span>총 세대수</span><b>${fmt(p.total)}세대</b></div>
+  <div><span>평균 권리가액</span><b>${eok(right)}</b></div>
+  <div><span>84㎡형 평균 분담금</span><b>${c84}</b></div>
+</div>
+
+<h2>2. 구역 개요</h2>
+<table><tr><th class="k">구역 면적</th><td>${fmt(site)}㎡ (${fmt(site / PY)}평)</td></tr>
+<tr><th class="k">용도지역</th><td>${esc(String(q.zone || '').replace(/_/g, ' '))}</td></tr>
+<tr><th class="k">토지등소유자 수</th><td>${fmt(q.members)}명</td></tr></table>
+
+<h2>3. 토지이용·건축 계획(개략)</h2>
+<table><tr><th class="k">정비기반시설</th><td>${fmt(f.infra)}㎡ (구역 면적의 ${fmt(q.infraPct, 1)}%)</td></tr>
+<tr><th class="k">공동주택 용지</th><td>${fmt(f.lot)}㎡</td></tr>
+<tr><th class="k">용적률</th><td>${fmt(f.v, 1)}%</td></tr>
+<tr><th class="k">연면적(지상)</th><td>${fmt(p.farArea)}㎡</td></tr></table>
+<table><tr class="h"><th>평형</th><th class="n">세대</th><th class="n">조합원 평균 분담금</th></tr>
+${[['59', p.u59], ['84', p.u84], ['114', p.u114]].filter(([, n]) => n > 0).map(([t, n]) => `<tr><td>${t}㎡형</td><td class="n">${fmt(n)}</td><td class="n">${chg(JbsFeas.supply(t) * (num(q.sizePct || 100) / 100))}</td></tr>`).join('')}
+<tr><td>임대</td><td class="n">${fmt(p.rentU)}</td><td class="n">–</td></tr>
+<tr class="sum"><th>합계</th><td class="n">${fmt(p.total)}</td><td class="n">조합원 ${fmt(p.memTotal)} · 일반분양 ${fmt(p.total - p.rentU - p.memTotal)}</td></tr></table>
+
+<h2>4. 사업성</h2>
+<table><colgroup><col style="width:26%"><col></colgroup>
+<tr><th class="k">총수입(종후자산)</th><td class="n">${eok(r.rev.total)}</td></tr>
+<tr><th class="k">총사업비</th><td class="n">${eok(r.cost.total)}</td></tr>
+<tr><th class="k">종전자산</th><td class="n">${eok(r.prior)}</td></tr>
+<tr class="sum"><th>추정 비례율</th><td class="n">${pct(r.ratio)}</td></tr>
+<tr><th class="k">적용 단가</th><td class="n">일반분양가 ${fmt(A.generalPrice)} · 조합원분양가 ${fmt(p.memberPrice)} · 공사비 ${fmt(e.v.conPrice)} (만원/평)</td></tr></table>
+<table><tr class="h"><th>분양가·공사비 변동 시 비례율</th>${sc.map(o => `<th class="n">${scName[o.x.key] || o.x.key}</th>`).join('')}</tr><tr><td>추정 비례율</td>${sc.map(o => `<td class="n">${pct(o.v)}</td>`).join('')}</tr></table>
+
+<p class="note" style="margin-top:10px">※ 본 자료는 개략 검토 결과로, 인허가 및 심의 과정에서 변동될 수 있습니다.</p>
+<div class="foot"><span>jbslab.co.kr</span><span>${today}</span></div></div>
+</body></html>`;
+    const html = mode === 'staff' ? top + staff : top + client;
     const w = window.open('', '_blank');
     if (!w) { alert('팝업이 막혀 검토서를 열지 못했습니다. 이 사이트의 팝업을 허용해 주세요.'); return; }
     w.document.open(); w.document.write(html); w.document.close();
@@ -313,7 +406,8 @@ Tabs.quick = {
     if (!this._bound) {
       this._bound = true;
       $('#qkApply').onclick = () => Quick.apply();
-      if ($('#qkReport')) $('#qkReport').onclick = () => Quick.report();
+      if ($('#qkReport')) $('#qkReport').onclick = () => Quick.report('client');
+      if ($('#qkReportStaff')) $('#qkReportStaff').onclick = () => Quick.report('staff');
       $('#qkReset').onclick = () => Quick.reset();
       $('#qkZoneFromMeta').onclick = () => { S.quick.zone = Quick.zoneKey(S.meta.zoning); App.update(true); };
     }
@@ -355,6 +449,30 @@ Tabs.quick = {
           return `<button type="button" class="qk-lv ${ratioClass(rr)}${cur === k ? ' on' : ''}" data-lv="${k}"><span>${nm} ${fmt(v, 1)}%</span><b>${fmtPct(rr)}</b><em>${esc(b)}</em></button>`;
         }).join('')}</div>`;
       })()}
+      ${(() => {
+        const cur = q0.conLevel || 'base';
+        return `<div class="qk-levels qk4"><div class="qk-lv-h">공사비 수준별 사업성 <small>기준 ${fmt(q0.conPrice)}만원/평(계획연면적)</small></div>${Quick.CON_LV.map(([k, nm, d]) => {
+          const rr = Quick.ratio({ ...q, conLevel: k });
+          return `<button type="button" class="qk-lv ${ratioClass(rr)}${cur === k ? ' on' : ''}" data-con="${k}"><span>${nm}${d ? ` ${d > 0 ? '+' : '−'}${Math.abs(d)}%` : ''}</span><b>${fmtPct(rr)}</b><em>${fmt(q0.conPrice * (1 + d / 100))}만원/평</em></button>`;
+        }).join('')}</div>`;
+      })()}
+      ${(() => {
+        const curM = num(q0.memberRatio);
+        return `<div class="qk-levels"><div class="qk-lv-h">조합원 분양가 비율별 사업성 <small>일반분양가 ${fmt(q0.generalPrice)}만원/평 대비 · 비례율과 함께 84㎡형 평균 분담금을 보세요</small></div>${Quick.MEM_LV.map(m => {
+          const ee = Quick.evaluate({ ...q, memberRatio: m }), rr = ee.r.ratio;
+          const rt = num(q.members) > 0 && isFinite(rr) ? ee.r.prior / num(q.members) * rr / 100 : NaN;
+          const c84 = isFinite(rt) ? ee.p.memberPrice * ee.v.sup84 / PY - rt : NaN;
+          return `<button type="button" class="qk-lv ${ratioClass(rr)}${Math.abs(curM - m) < 0.01 ? ' on' : ''}" data-mem="${m}"><span>${m}% (${fmt(q0.generalPrice * m / 100)}만원/평)</span><b>${fmtPct(rr)}</b><em>84㎡형 분담금 ${isFinite(c84) ? (c84 >= 0 ? '' : '환급 ') + fmtEok(Math.abs(c84)) : '–'}</em></button>`;
+        }).join('')}</div>`;
+      })()}
+      ${(() => {
+        const A0 = JbsFeas.get();
+        return `<div class="qk-levels"><div class="qk-lv-h">평형 비율별 사업성 <small>59·84·114㎡형 분양 세대 비율 · 지금 ${fmt(A0.mix59)}·${fmt(A0.mix84)}·${fmt(A0.mix114)}</small></div>${Quick.MIX_LV.map(([k, nm, a, b2, c]) => {
+          const ee = Quick.evaluate({ ...q, mix59: a, mix114: c });
+          const on = Math.abs(A0.mix59 - a) < 0.01 && Math.abs(A0.mix84 - b2) < 0.01 && Math.abs(A0.mix114 - c) < 0.01;
+          return `<button type="button" class="qk-lv ${ratioClass(ee.r.ratio)}${on ? ' on' : ''}" data-mix="${a},${b2},${c}"><span>${nm} ${a}·${b2}·${c}</span><b>${fmtPct(ee.r.ratio)}</b><em>${fmt(ee.p.total)}세대 (조합원 ${fmt(ee.p.memTotal)} · 일반 ${fmt(ee.p.total - ee.p.rentU - ee.p.memTotal)})</em></button>`;
+        }).join('')}</div>`;
+      })()}
       <div class="as-grid">
         <div><span>구역 면적</span><b>${fmt(site)}㎡</b><em>기반시설 ${fmt(q.infraPct)}% → 획지 ${fmt(f.lot)}㎡</em></div>
         <div><span>적용 용적률</span><b>${fmt(f.v, 1)}%</b><em>${esc(q.zone.replace(/_/g, ' '))}</em></div>
@@ -369,6 +487,9 @@ Tabs.quick = {
       ${warn.map(w => `<p class="warn-box">${w}</p>`).join('')}`;
 
     out.querySelectorAll('[data-lv]').forEach(b => { b.onclick = () => { S.quick.infraLevel = b.dataset.lv; App.update(true); }; });
+    out.querySelectorAll('[data-con]').forEach(b => { b.onclick = () => { S.quick.conLevel = b.dataset.con; App.update(true); }; });
+    out.querySelectorAll('[data-mix]').forEach(b => { b.onclick = () => { const [a, b2, c] = b.dataset.mix.split(',').map(Number); JbsFeas.set({ mix59: a, mix84: b2, mix114: c }); App.update(true); }; });
+    out.querySelectorAll('[data-mem]').forEach(b => { b.onclick = () => { JbsFeas.set({ memberRatio: num(b.dataset.mem) }); App.update(true); }; });
     // 손잡이 효과
     const rows = Quick.leverRows(q);
     const span = Math.max(1, ...rows.map(x => Math.max(Math.abs(x.lo - x.base) || 0, Math.abs(x.hi - x.base) || 0)));

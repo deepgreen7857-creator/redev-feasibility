@@ -458,3 +458,5 @@ tr.qk-cur td:first-child { outline: 2px solid var(--ink); outline-offset: -2px; 
 .qk-lv em { font-style: normal; font-size: .74rem; color: var(--muted); }
 .qk-lv.good b { color: var(--good); } .qk-lv.warn b { color: var(--warn); } .qk-lv.bad b { color: var(--bad); }
 @media (max-width: 640px) { .qk-levels { grid-template-columns: 1fr; } }
+.qk-levels.qk4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 640px) { .qk-levels.qk4 { grid-template-columns: 1fr 1fr; } }
