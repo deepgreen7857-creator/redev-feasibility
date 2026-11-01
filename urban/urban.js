@@ -1019,11 +1019,6 @@ const INFRA = {
       // 진입도로 후보: 일방통행이 아니고 구역에 10m 이상 닿은 도로(모퉁이만 스치는 넓은 도로는 진입도로로 보지 않음)
       //  닿은 길이 ≈ 1m 넓힐 때 구역 안에서 새로 도로가 되는 면적
       const front = r => this.widenArea(r, z, r.w + 1);
-      const cand = all.filter(r => !(eo[r.pnu] || {}).oneway && front(r) >= 10);
-      const e1 = all.find(r => r.pnu === pick) || cand[0] || all[0];
-      // ③ 두 번째 진입도로: 일방통행이 아니고 폭 6m 이상(4~6m는 기간도로까지 200m 이내인지 몰라 자동으로는 고르지 않음)
-      const e2 = cand.filter(r => r !== e1 && r.w >= 6 && r.pnu !== pick)[0] || null;
-      const W2 = this.entryWidth2(units);
       // 부분 확폭(병목) 걸러내기: 구역에 닿은 길이 30m 미만이거나 그 도로 필지 길이(≈면적÷폭)의 50% 미만이면 '짧게 닿음'
       //  → 자동 추천에서 넓히지 않음(현황 유지). 짧은 구간만 넓히면 병목 모양이라 교통 기능이 없고, 도로 전체 확폭은 도시계획도로 결정으로 따로 검토
       const touch = new Map(all.map(r => {
@@ -1032,6 +1027,11 @@ const INFRA = {
         return [r.pnu, { front: f, len, partial: f < 30 || (len > 0 && f < len * 0.5) }];
       }));
       const partialOf = r => (touch.get(r.pnu) || {}).partial;
+      const cand = all.filter(r => !(eo[r.pnu] || {}).oneway && front(r) >= 10);
+      const e1 = all.find(r => r.pnu === pick) || cand[0] || all[0];
+      // ③ 두 번째 진입도로: 일방통행이 아니고 폭 6m 이상(4~6m는 기간도로까지 200m 이내인지 몰라 자동으로는 고르지 않음), 짧게 닿은 도로(partial)는 빼고
+      const e2 = cand.filter(r => r !== e1 && r.w >= 6 && r.pnu !== pick && !partialOf(r))[0] || null;
+      const W2 = this.entryWidth2(units);
       // 추천 폭은 기능상 필요한 폭만: 최소 폭·일방통행·도시계획도로 결정 등급 하한(진입도로 제25조 폭은 아래에서). 짧게 닿은 도로는 현황 유지
       const baseOf = r => partialOf(r) ? r.w : Math.max((eo[r.pnu] || {}).oneway ? Math.max(sideW, 10) : sideW, ROADCLS.lower(r.dec));
       const pwOf = (r, base) => { const o = eo[r.pnu] || {}; return num(o.pw) > 0 ? num(o.pw) : o.keep ? r.w : Math.max(base, r.w); };
