@@ -21,7 +21,8 @@
     priorMul: 1.4,        // 종전자산 ≈ 공시지가 합 × 배율
     avgLand: 0,           // 토지조서 공시지가가 없을 때 쓰는 평균 공시지가(만원/㎡)
     rentRatio: 15,        // 임대주택 비율(세대 %) — 임대는 49㎡형(공급 67㎡)으로 셈
-    mix59: 40, mix84: 50, mix114: 10,   // 분양 평형 비율(%)
+    mix59: 40, mix84: 50, mix114: 10,   // 분양 평형 비율(%) — 평형 키는 전용㎡(shared/criteria/arch.json 평면과 같음)
+    mix39: 0, mix49: 0, mix74: 0, mix101: 0,   // 소형·중형 평형(예전 저장값에는 없으므로 0)
     resRatio: 97,         // 용적률 연면적 중 주거 비율(나머지 상가)
     infraAvg: 25,         // 정비기반시설 비율 '평균'(실무 경험치)
     infraCons: 30,        // 정비기반시설 비율 '보수적'(실무 경험치)
@@ -31,7 +32,7 @@
   const LABEL = {
     generalPrice: '일반분양가(만원/평)', memberRatio: '조합원분양가 비율(%)', rentPrice: '임대 건축물 인수가(만원/평)', buildCost: '기본형건축비(만원/㎡, 공급면적)', rentBuildPct: '임대 건축물 인수 비율(%)', rentLand: '임대 부속토지 감정가 포함(1/0)', shopPrice: '상가 분양가(만원/평)',
     conPrice: '공사비(만원/평, 계획연면적)', gfaFactor: '계획연면적 배율', etcPct: '기타 사업비(공사비 대비 %)', priorMul: '종전자산 보정배율(공시지가 ×)',
-    avgLand: '평균 공시지가(만원/㎡)', rentRatio: '임대주택 비율(%)', mix59: '59㎡형 비율(%)', mix84: '84㎡형 비율(%)', mix114: '114㎡형 비율(%)', resRatio: '주거 비율(%)', infraAvg: '기반시설 비율 평균(%)', infraCons: '기반시설 비율 보수적(%)',
+    avgLand: '평균 공시지가(만원/㎡)', rentRatio: '임대주택 비율(%)', mix59: '59㎡형 비율(%)', mix84: '84㎡형 비율(%)', mix114: '114㎡형 비율(%)', mix39: '39㎡형 비율(%)', mix49: '49㎡형 비율(%)', mix74: '74㎡형 비율(%)', mix101: '101㎡형 비율(%)', resRatio: '주거 비율(%)', infraAvg: '기반시설 비율 평균(%)', infraCons: '기반시설 비율 보수적(%)',
   };
   // 표준 평면 공급면적(㎡) — shared/criteria/arch.json 평면과 같은 값(개략, 검증필요)
   const SUPPLY = { 39: 54, 49: 67, 59: 80, 74: 98, 84: 110, 101: 131, 114: 147 };
@@ -48,14 +49,15 @@
     },
     set(patch) {
       const cur = this.get(); Object.assign(cur, patch);
-      // 59㎡형 비율만 바꾸면 84㎡형이 나머지를 채움(114㎡형은 그대로)
-      if (patch.mix59 !== undefined && patch.mix84 === undefined) cur.mix84 = Math.max(0, 100 - num(cur.mix59) - num(cur.mix114));
+      // 59㎡형 비율만 바꾸면 84㎡형이 나머지를 채움(다른 평형은 그대로)
+      if (patch.mix59 !== undefined && patch.mix84 === undefined) cur.mix84 = Math.max(0, 100 - Object.keys(cur).filter(k => /^mix\d+$/.test(k) && k !== 'mix84').reduce((s, k) => s + num(cur[k]), 0));
       try { localStorage.setItem(KEY, JSON.stringify(cur)); } catch (e) { /* 저장 못 해도 계산은 됨 */ }
       return cur;
     },
     reset() { try { localStorage.removeItem(KEY); } catch (e) { /* 무시 */ } return this.get(); },
     supply(t) { return SUPPLY[t] || num(t) * 1.33; },
-    mixOf(A) { return { 59: num(A.mix59), 84: num(A.mix84), 114: num(A.mix114) }; },
+    // 분양 평형 비율 {전용㎡: %} — A의 mixNN 키 전부(0인 평형은 units()에서 빠짐)
+    mixOf(A) { const m = {}; Object.keys(A).forEach(k => { const x = /^mix(\d+)$/.exec(k); if (x) m[x[1]] = num(A[k]); }); return m; },
 
     // 세대수: 용적률 연면적 × 주거비율 ÷ 세대당 평균 공급면적(임대 49㎡형 + 분양 평형 비율). 두 화면 모두 이 식을 씀
     //  supOv {t: 공급㎡} — 평면 크기를 바꿀 때(49는 임대)

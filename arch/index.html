@@ -32,6 +32,9 @@
 .kv div{border:1px solid var(--line);border-radius:6px;padding:8px 10px}
 .kv .l{font-size:11px;color:var(--ink-2)} .kv .v{font-size:17px;font-weight:600;font-family:var(--f-mono)}
 .busy{opacity:.55;pointer-events:none}
+#mixBox{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px 10px}
+#mixBox label{font-size:12px}
+#mixSum{font-size:12px;margin-top:4px}
 .nextsteps{margin-top:10px;padding:10px 12px;border:1px solid var(--ink);border-radius:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px}
 .btnlink{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:6px 12px;color:var(--ink);text-decoration:none;background:var(--sheet)}
 .btnlink.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
@@ -95,10 +98,9 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
         <label>최고 층수 한도<input id="p_maxFloors" inputmode="numeric"></label>
       </div>
       <h3>평형 구성 (세대수 비율 %)</h3>
+      <div class="bar" id="mixPresets"></div>
       <div class="grid">
-        <label>59㎡형<input id="p_m59" inputmode="decimal"></label>
-        <label>84㎡형<input id="p_m84" inputmode="decimal"></label>
-        <label>114㎡형<input id="p_m114" inputmode="decimal"></label>
+        <div id="mixBox" style="grid-column:1/-1"></div>
         <label>주동 방향(정남 기준, 동쪽으로 돌리면 +)<select id="p_angleMode"><option value="auto">자동(가장 유리한 각도)</option><option value="fixed">직접 입력</option></select></label>
         <label>회전각 °<input id="p_angle" inputmode="decimal"></label>
       </div>
@@ -155,11 +157,11 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="../js/config.js?v=1"></script>
-<script src="../shared/site-store.js?v=3"></script>
+<script src="../shared/site-store.js?v=4"></script>
 <script src="../shared/arch-geom.js?v=2"></script>
 <script src="../shared/mass3d.js?v=1"></script>
-<script src="../traffic/traffic-calc.js?v=1"></script>
-<script src="arch-draw.js?v=2"></script>
-<script src="arch.js?v=9"></script>
+<script src="../traffic/traffic-calc.js?v=2"></script>
+<script src="arch-draw.js?v=3"></script>
+<script src="arch.js?v=10"></script>
 </body>
 </html>

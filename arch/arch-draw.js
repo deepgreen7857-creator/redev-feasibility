@@ -2,7 +2,7 @@
 // /arch 도면 그리기(SVG): 배치도, 표준 단위세대 평면, 주동 기준층 구성
 (function (g) {
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const TYPE_FILL = { 59: '#efe2c4', 84: '#d6e6d9', 114: '#d9e1ee' };
+  const TYPE_FILL = { 39: '#f6e7e1', 49: '#f3ead2', 59: '#efe2c4', 74: '#e2ead0', 84: '#d6e6d9', 101: '#d6e3e8', 114: '#d9e1ee' };
   const TAG = {
     boundary: { name: '대지경계', color: '#8a949b' },
     road: { name: '도로 접함', color: '#2f6fa3' },
@@ -112,15 +112,16 @@
     const front = d * 0.56, rear = d - front - bal;
     // 남쪽(아래) 발코니
     room(0, d - bal, w, bal, '발코니(확장 가능)', '#f1f4ee');
-    const bays = t.베이, bw = w / bays, names = bays === 3 ? ['침실2', '거실', '안방'] : t.방 >= 4 ? ['침실2', '거실', '안방', '침실3'] : ['침실2', '거실', '안방', '침실3'];
+    const bays = t.베이, bw = w / bays, names = bays === 2 ? (t.방 >= 2 ? ['거실', '안방'] : ['거실·주방', '침실']) : bays === 3 ? ['침실2', '거실', '안방'] : ['침실2', '거실', '안방', '침실3'];
     for (let i = 0; i < bays; i++) room(i * bw, d - bal - front, bw, front, names[i], names[i] === '거실' ? '#fffaf0' : '#fff');
     // 북쪽(위): 주방·욕실·현관·드레스
-    const li = names.indexOf('거실');
+    const li = Math.max(0, names.findIndex(n => /거실/.test(n)));
     room(li * bw, 0, bw, rear, '주방·식당', '#fffaf0');
     room(0, 0, li * bw * 0.55, rear, '욕실', '#eef4f7');
     room(li * bw * 0.55, 0, li * bw * 0.45, rear, '현관', '#f5f3ee');
     const rx = (li + 1) * bw, rw = w - rx;
-    if (bays === 3) { room(rx, 0, rw * 0.5, rear, '드레스'); room(rx + rw * 0.5, 0, rw * 0.5, rear, '욕실', '#eef4f7'); }
+    if (bays === 2) { if (t.방 >= 2) { room(rx, 0, rw * 0.55, rear, '침실2'); room(rx + rw * 0.55, 0, rw * 0.45, rear, '드레스'); } else room(rx, 0, rw, rear, '수납·드레스'); }
+    else if (bays === 3) { room(rx, 0, rw * 0.5, rear, '드레스'); room(rx + rw * 0.5, 0, rw * 0.5, rear, '욕실', '#eef4f7'); }
     else if (t.방 >= 4) { room(rx, 0, rw * 0.35, rear, '욕실', '#eef4f7'); room(rx + rw * 0.35, 0, rw * 0.3, rear, '드레스'); room(rx + rw * 0.65, 0, rw * 0.35, rear, '침실4'); }
     else { room(rx, 0, rw * 0.4, rear, '드레스'); room(rx + rw * 0.4, 0, rw * 0.3, rear, '욕실', '#eef4f7'); room(rx + rw * 0.7, 0, rw * 0.3, rear, '팬트리'); }
     // 치수선

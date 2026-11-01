@@ -43,3 +43,16 @@ const north = r => Math.max(...r.buildings.map(b => b.ry + b.D));
 console.log(`정북 변: 북쪽 끝 동 ${north(rn).toFixed(0)}m · ${rn.units}세대 / 공원 30m: 북쪽 끝 동 ${north(rp).toFixed(0)}m · ${rp.units}세대`);
 assert.ok(north(rp) > north(rn) && rp.units >= rn.units);
 console.log('공원·녹지 통과');
+
+// 소형만(39·49) 구성 — 가로주택·역세권형
+{
+  const small = run(rect(240, 200), ['road', 'boundary', 'north', 'boundary'], 250, { mix: { 39: 50, 49: 50 } });
+  const ty = Object.keys(small.byType);
+  assert(ty.length && ty.every(t => t === '39' || t === '49'), '소형 구성에 다른 평형이 섞임: ' + ty);
+  const TrafficCalc = require('../traffic/traffic-calc.js'), TC = require('../shared/criteria/traffic.json');
+  let u60 = 0, a85 = 0; Object.entries(small.byType).forEach(([t, n]) => { if (+t <= 60) u60 += n; a85 += n * C.평면[t].전용; });
+  const pk = TrafficCalc.parking(TC, { units: small.units, units60below: u60, area85below: a85, area85above: 0 });
+  console.log(`소형 구성: ${small.units}세대 ${JSON.stringify(small.byType)} 법정주차 ${JSON.stringify(pk).slice(0, 160)}`);
+  assert(u60 === small.units);
+  console.log('소형 평형 통과');
+}

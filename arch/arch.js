@@ -15,16 +15,36 @@
   const crit = id => C.items.find(i => i.id === id);
 
   /* ---------- 조건 입력 ---------- */
-  const FIELDS = { siteArea: 'p_siteArea', infra: 'p_infra', far: 'p_far', maxFloors: 'p_maxFloors', m59: 'p_m59', m84: 'p_m84', m114: 'p_m114', angleMode: 'p_angleMode', angle: 'p_angle', spacing: 'p_spacing', sideGap: 'p_sideGap', roadSb: 'p_roadSb', artSb: 'p_artSb', bndSb: 'p_bndSb', lowCap: 'p_lowCap', lowDist: 'p_lowDist', parkW: 'p_parkW', minFloors: 'p_minFloors', fh: 'p_fh', sf: 'p_sf' };
+  const FIELDS = { siteArea: 'p_siteArea', infra: 'p_infra', far: 'p_far', maxFloors: 'p_maxFloors', angleMode: 'p_angleMode', angle: 'p_angle', spacing: 'p_spacing', sideGap: 'p_sideGap', roadSb: 'p_roadSb', artSb: 'p_artSb', bndSb: 'p_bndSb', lowCap: 'p_lowCap', lowDist: 'p_lowDist', parkW: 'p_parkW', minFloors: 'p_minFloors', fh: 'p_fh', sf: 'p_sf' };
   function defaults() {
     const A = C.가정; let U = {}; try { U = JSON.parse(localStorage.getItem('jbs-urban-plan') || '{}'); } catch (e) { U = {}; }
     const v = site.v || {};
     return {
       siteArea: v.siteArea || '', infra: U.infraRatio ?? 25, far: v.far || U.farCustom || 250, maxFloors: A.maxFloors,
-      m59: U.mix59 ?? 40, m84: U.mix84 ?? 50, m114: U.mix114 ?? 10, angleMode: 'auto', angle: 0,
+      angleMode: 'auto', angle: 0,
       spacing: crit('spacing_ratio').값, sideGap: A.sideGap_m, roadSb: A.roadSetback_m, artSb: A.arterialSetback_m, bndSb: A.boundarySetback_m,
-      lowCap: 15, lowDist: 30, parkW: A.parkWidth_m ?? 20, minFloors: A.minFloors, fh: A.floorHeight_m, sf: U.supplyFactor ?? A.supplyFactor,
+      lowCap: 15, lowDist: 30, parkW: A.parkWidth_m ?? 20, minFloors: A.minFloors, ...defaultMix(), fh: A.floorHeight_m, sf: U.supplyFactor ?? A.supplyFactor,
     };
+  }
+  const TYPES = () => Object.keys(C.평면).filter(k => /^\d+$/.test(k));
+  function initMix() {
+    const box = $('#mixBox'); if (!box || box.dataset.ok) return; box.dataset.ok = 1;
+    box.innerHTML = TYPES().map(t => `<label>${t}㎡형<input id="p_m${t}" inputmode="decimal" placeholder="0"></label>`).join('') + '<div id="mixSum" class="note" style="grid-column:1/-1"></div>';
+    TYPES().forEach(t => { FIELDS['m' + t] = 'p_m' + t; $('#p_m' + t).addEventListener('input', mixSum); $('#p_m' + t).addEventListener('change', () => { saveState(); invalidate(); }); });
+    const pre = C.평형구성_예시 || {};
+    $('#mixPresets').innerHTML = Object.keys(pre).map(k => `<button type="button" data-mixpre="${esc(k)}">${esc(k)}</button>`).join('');
+  }
+  function mixSum() {
+    const v = TYPES().map(t => +($('#p_m' + t).value || 0)), sum = v.reduce((a, b) => a + b, 0);
+    const small = TYPES().filter(t => +t <= 60).reduce((a, t) => a + +($('#p_m' + t).value || 0), 0), u85 = TYPES().filter(t => +t <= 85).reduce((a, t) => a + +($('#p_m' + t).value || 0), 0);
+    $('#mixSum').textContent = sum ? `합 ${sum}% (비율로 나눠 씀) · 전용 60㎡ 이하 ${Math.round(small / sum * 100)}% · 85㎡ 이하 ${Math.round(u85 / sum * 100)}%` : '평형 비율을 하나 이상 넣으세요';
+  }
+  function defaultMix() {
+    let U = {}; try { U = JSON.parse(localStorage.getItem('jbs-urban-plan') || '{}'); } catch (e) { U = {}; }
+    const o = {}; TYPES().forEach(t => { o['m' + t] = ''; });
+    const base = (C.평형구성_예시 || {})['재개발 일반'] || { 59: 40, 84: 50, 114: 10 };
+    Object.entries(base).forEach(([t, v]) => { o['m' + t] = v; });
+    return o;
   }
   const P = () => { const o = {}; Object.entries(FIELDS).forEach(([k, id]) => { o[k] = $('#' + id).value; }); return o; };
   function setP(o) { Object.entries(FIELDS).forEach(([k, id]) => { if (o[k] !== undefined && o[k] !== null && o[k] !== '') $('#' + id).value = o[k]; }); $('#p_angle').disabled = $('#p_angleMode').value === 'auto'; }
@@ -223,7 +243,7 @@
     tags = (a.tags && a.tags.length === pts.length) ? a.tags.slice() : null;
     entries = a.entries || []; exclude = (a.exclude || []).map(ex => ex.map(pr.to));
     exclude.forEach(ex => lyrEx.addLayer(L.polygon(ex.map(p => pr.back(p).slice().reverse()), { color: '#5d7f5a' })));
-    setP(Object.assign(defaults(), filled(a.params)));
+    { const sp = filled(a.params); const hasMix = TYPES().some(t => sp['m' + t] !== undefined); const d0 = defaults(); if (hasMix) TYPES().forEach(t => { d0['m' + t] = ''; }); setP(Object.assign(d0, sp)); mixSum(); }
     if (!tags) { tags = pts.map(() => 'boundary'); autoTag(); }
     const nBefore = entries.length; cleanEntries(); if (entries.length !== nBefore) saveState();
     if (!num($('#p_siteArea').value)) $('#p_siteArea').value = Math.round(turf.area(site.geojson) * 10) / 10;
@@ -250,7 +270,7 @@
     const lot = exclude.length ? siteA - exA : siteA * (1 - (+p.infra || 0) / 100);
     return {
       site: { pts, tags, setbacks: sb, exclude },
-      opt: { units: C.평면, assume: A, mix: { 59: +p.m59 || 0, 84: +p.m84 || 0, 114: +p.m114 || 0 }, spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, parkWidth: +p.parkW || 0 },
+      opt: { units: C.평면, assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, parkWidth: +p.parkW || 0 },
       lot, exA, p,
     };
   }
@@ -336,8 +356,8 @@
   }
   function parkingRow(A) {
     if (!TC || !window.TrafficCalc) return '';
-    const U = C.평면, a85 = (A.byType[59] || 0) * U[59].전용 + (A.byType[84] || 0) * U[84].전용, a85u = (A.byType[114] || 0) * U[114].전용;
-    const pk = TrafficCalc.parking(TC, { units: A.units, units60below: A.byType[59] || 0, area85below: a85, area85above: a85u });
+    const g = groups(A.byType);
+    const pk = TrafficCalc.parking(TC, { units: A.units, units60below: g.u60, area85below: g.a85, area85above: g.a85u });
     return `<tr><th>법정 주차대수</th><td>${fmt(pk.legal)}대</td><td class="note">${esc(pk.formula)} — ${esc(pk.basis)}</td></tr>`;
   }
   function renderSum() {
@@ -362,7 +382,8 @@
       <h3>평형별 세대 구성</h3>
       <table><tr><th>평형</th><th>전용</th><th>공급</th><th>세대수</th><th>비율</th><th>평면 가정(폭×깊이)</th></tr>
       ${types.map(t => `<tr><td>${esc(U[t].이름)}</td><td>${U[t].전용}㎡</td><td>${U[t].공급 ? U[t].공급 + '㎡' : '–'}</td><td>${fmt(A.byType[t])}</td><td>${fmt(A.byType[t] / A.units * 100, 1)}%</td><td>${U[t].폭}m × ${U[t].깊이}m</td></tr>`).join('')}
-      <tr><th>합계</th><td></td><td></td><th>${fmt(A.units)}</th><td>100%</td><td></td></tr></table>
+      <tr><th>합계</th><td></td><td></td><th>${fmt(A.units)}</th><td>100%</td><td></td></tr>
+      <tr><td colspan="6" class="note">전용 60㎡ 이하 ${fmt(groups(A.byType).u60)}세대(${fmt(groups(A.byType).u60 / (A.units || 1) * 100, 1)}%) · 85㎡ 이하 ${fmt(Object.entries(A.byType).filter(([t]) => +t <= 85).reduce((a, [, k]) => a + k, 0) / (A.units || 1) * 100, 1)}% — 주택규모별 건설비율(재개발 국민주택규모 비율·임대 비율 등)은 사업 유형별 고시·조례 확인 필요. 가로주택정비사업 등 소규모주택정비사업은 별도 기준.</td></tr></table>
       <h3>동별 개요</h3>
       <table><tr><th>동</th><th>평형</th><th>층당 세대</th><th>층수</th><th>세대수</th><th>높이</th><th>층수 상한(일조·경계)</th></tr>
       ${A.buildings.map(b => `<tr><td>${b.id}</td><td>${b.t}㎡</td><td>${b.n}</td><td>${b.floors}</td><td>${b.n * b.floors}</td><td>${fmt(A.H(b.floors), 1)}m</td><td>${b.cap >= +I.p.maxFloors ? '-' : b.cap + '층'}</td></tr>`).join('')}</table>
@@ -379,6 +400,12 @@
     $('#plans').innerHTML = types.map(t => `<div>${D.unitPlan(t, U[t])}</div>`).join('') + reps.map(b => `<div>${D.floorPlan(b, U, C.가정.coreW_m)}</div>`).join('');
   }
 
+  // 평형별 세대수 → 전용 60㎡ 이하 세대수, 85㎡ 이하/초과 전용면적 합계
+  function groups(bt) {
+    const U = C.평면; let u60 = 0, a85 = 0, a85u = 0;
+    Object.entries(bt || {}).forEach(([t, n]) => { const ex = (U[t] && U[t].전용) || +t; if (ex <= 60) u60 += n; if (ex <= 85) a85 += n * ex; else a85u += n * ex; });
+    return { u60, a85, a85u };
+  }
   /* ---------- 확정·내보내기 ---------- */
   function confirmAlt() {
     const A = alts[cur], I = buildInput(), U = C.평면;
@@ -394,7 +421,7 @@
       일조_미달_면적_제곱미터: sunRes && sunRes.alt === cur ? Math.round(sunRes.failArea) : '일조 계산 전', at: site.arch.at };
     // 다른 검토서가 같은 값을 쓰도록 계획 규모 갱신
     Object.assign(site.v, { units: String(A.units), floors: String(A.maxFloors), far: String(Math.round(A.far * 10) / 10), bcr: String(Math.round(A.bcr * 10) / 10), aptGFA: String(Math.round(A.gfa)),
-      units60below: String(A.byType[59] || 0), area85below: String((A.byType[59] || 0) * U[59].전용 + (A.byType[84] || 0) * U[84].전용), area85above: String((A.byType[114] || 0) * U[114].전용) });
+      units60below: String(groups(A.byType).u60), area85below: String(Math.round(groups(A.byType).a85)), area85above: String(Math.round(groups(A.byType).a85u)) });
     JbsSite.save(site);
     msg(`'${A.label}'을 확정했습니다. 세대수·층수·전용면적 합계가 교통성·환경성 검토와 높이·경관계획에 그대로 들어갑니다. 사업성 화면의 [사업성 가정값]에서 '세대수 기준'을 이 안으로 고르면 평형별 세대수 그대로 비례율이 계산됩니다.`);
     const nx = $('#nextSteps'), sid = encodeURIComponent(site.id || '');
@@ -446,6 +473,7 @@
     else if (t.id === 'dlSvg') download(svgBlob(D.sitePlan(planOpts())), fname('개략배치도.svg'));
     else if (t.id === 'dlPng') { const u = await svgToPng(D.sitePlan(planOpts())); const a = document.createElement('a'); a.href = u; a.download = fname('개략배치도.png'); a.click(); }
     else if (t.id === 'dlDoc') exportDoc();
+    else if (t.dataset.mixpre) { const pre = (C.평형구성_예시 || {})[t.dataset.mixpre] || {}; TYPES().forEach(k => { $('#p_m' + k).value = pre[k] ?? ''; }); mixSum(); saveState(); invalidate(); }
   });
   $('#sunT').addEventListener('input', () => { if (alts.length) renderSun(); });
   $('#sun3').addEventListener('input', e => { const v = +e.target.value, h = Math.floor(v); $('#sun3v').textContent = `${String(h).padStart(2, '0')}:${String(Math.round((v - h) * 60)).padStart(2, '0')}`; if (v3) v3.setSun(v, pr.lat0); });
@@ -462,7 +490,7 @@
   Promise.all(['../shared/criteria/arch.json', '../shared/criteria/traffic.json'].map(u => fetch(u + '?v=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null)))
     .then(([c, tc]) => {
       if (!c) { msg('기준표(arch.json)를 읽지 못했습니다. 사이트 주소로 열어 주세요.', true); return; }
-      C = c; TC = tc; initLegend();
+      C = c; TC = tc; initMix(); initLegend();
       const sp = crit('spacing_ratio');
       $('#ruleNote').textContent = `인동간격 기본값 ${sp.값}배는 검토 가정값입니다(법 하한 ${sp.법정하한}배, 인천시 건축 조례 확인 필요). 층고·코어·이격·평면 공급면적도 가정값입니다.`;
       const q = new URLSearchParams(location.search);

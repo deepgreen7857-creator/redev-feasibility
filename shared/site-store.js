@@ -56,5 +56,33 @@
       return this.save(site);
     },
   };
+  // /urban 4탭(개략 건축계획)의 계획값을 공통 구역에 넣음 → 교통성·환경성·높이경관 검토서가 그대로 씀
+  // plan: { units, byType:{39,49,59,74,84,101,114 중 쓰는 것}(전용㎡ → 임대 포함 세대수), far, bcr, floors, towers, gfa, retailGFA,
+  //         roads:[{ pnu, jibun, w(현황 폭), pw(계획 폭), role:'진입도로'|'두 번째 진입도로'|'주변 도로', dec(결정 등급), partial }] }
+  JbsSite.applyUrbanPlan = function (key, plan) {
+    const site = this.fromUrban(key); if (!site || !plan) return null;
+    const v = site.v = site.v || {}, n = x => (x === undefined || x === null || isNaN(+x)) ? '' : String(Math.round(+x * 10) / 10);
+    const bt = plan.byType || {};
+    v.units = n(plan.units); v.far = n(plan.far); v.bcr = n(plan.bcr); v.floors = n(plan.floors);
+    v.aptGFA = n(plan.gfa); if (plan.retailGFA !== undefined) v.retailGFA = n(plan.retailGFA);
+    if (Object.keys(bt).length) {
+      // 평형 키 = 전용면적(㎡). 39·49·59·74·84·101·114 등 어떤 구성이든 계산
+      let u60 = 0, a85 = 0, a85u = 0;
+      Object.entries(bt).forEach(([t, c]) => { const ex = +t, k = +c || 0; if (!ex) return; if (ex <= 60) u60 += k; if (ex <= 85) a85 += k * ex; else a85u += k * ex; });
+      v.units60below = n(u60); v.area85below = n(a85); v.area85above = n(a85u);
+    }
+    if (Array.isArray(plan.roads) && plan.roads.length) {
+      const old = {}; (v.roads || []).forEach(r => { old[r.name] = r; });
+      v.roads = plan.roads.map(r => {
+        const name = (r.jibun || '') + ' 도로', o = old[name] || {};
+        return { name, w: n(r.w), pw: r.pw && +r.pw > +r.w + 0.05 ? n(r.pw) : '', role: r.role || '', dec: r.dec || '', partial: !!r.partial, level: o.level || '', levelAuto: o.levelAuto };
+      });
+      v.roadsFrom = '/urban 정비계획(현황 폭은 필지 모양 추정, 계획 폭은 정비계획 값)';
+    }
+    v.planFrom = `/urban 개략 건축계획 ${key}안 (${new Date().toLocaleString('sv-SE').slice(0, 16)})`;
+    site.urbanPlan = Object.assign({}, plan, { at: v.planFrom });
+    if (!v.name || /^정비계획 검토/.test(v.name)) v.name = site.name;
+    return this.save(site);
+  };
   g.JbsSite = JbsSite;
 })(typeof window !== 'undefined' ? window : globalThis);

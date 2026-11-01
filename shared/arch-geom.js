@@ -65,8 +65,74 @@
     }
     return out;
   }
-  // 판상 동 모듈: 평면 t, 층당 세대 n(2·4·6) → 길이·깊이
-  const slab = (U, coreW, t, n) => ({ t, n, L: n * U[t].폭 + (n / 2) * coreW, D: U[t].깊이 });
+  /* ---------- 주동 형태 모듈 ----------
+     지역 좌표: x = 줄 방향(0~L), y = 북쪽(0~D). parts = 볼록 다각형 목록(그림자·3D·건축면적용),
+     cores = 코어(계단·승강기) 사각형, divs = 세대 경계선. 형태: slab 판상 / tower 탑상 / Y Y형 / L ㄱ형 / court ㅁ형(중정형) */
+  const FORM_NAME = { slab: '판상형', tower: '탑상형', Y: 'Y형', L: 'ㄱ형', court: 'ㅁ형(중정형)' };
+  const R4 = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const sq = (cx, cy, a) => R4(cx - a / 2, cy - a / 2, cx + a / 2, cy + a / 2);
+  function slab(U, c, t, n) {
+    const w = U[t].폭, d = U[t].깊이, L = n * w + (n / 2) * c, cores = [], divs = [];
+    for (let k = 0; k < n / 2; k++) {
+      const x0 = k * (2 * w + c);
+      cores.push(R4(x0 + w, d * 0.62, x0 + w + c, d));
+      divs.push([[x0 + w, 0], [x0 + w, d]], [[x0 + w + c, 0], [x0 + w + c, d]]);
+      if (k > 0) divs.push([[x0, 0], [x0, d]]);
+    }
+    return { form: 'slab', t, n, L, D: d, parts: [R4(0, 0, L, d)], cores, divs };
+  }
+  // 탑상형: 코어 하나에 4세대(소형은 6세대까지), 모서리를 깎은 정방형
+  function tower(U, c, t, n = 4) {
+    const w = U[t].폭, d = U[t].깊이;
+    const L = n === 6 ? 3 * w + c : 2 * w + c, D = 2 * d, k = Math.min(w, d) * 0.28;
+    const oct = [[k, 0], [L - k, 0], [L, k], [L, D - k], [L - k, D], [k, D], [0, D - k], [0, k]];
+    const cx = L / 2, cy = D / 2, cores = [sq(cx, cy, c)];
+    const divs = [[[cx, 0], [cx, cy - c / 2]], [[cx, cy + c / 2], [cx, D]], [[0, cy], [cx - c / 2, cy]], [[cx + c / 2, cy], [L, cy]]];
+    if (n === 6) divs.push([[w, 0], [w, cy]], [[L - w, 0], [L - w, cy]]);
+    return { form: 'tower', t, n, L, D, parts: [oct], cores, divs };
+  }
+  // Y형: 육각 코어 + 세 날개(남·북동·북서), 날개마다 1세대(대형) 또는 2세대(소형, 날개 길이 2배)
+  function yForm(U, c, t) {
+    const w = U[t].폭, d = U[t].깊이, per = U[t].전용 <= 60 ? 2 : 1, len = d * per;
+    const a = Math.max(c * 0.8, w / 2 / 1.6), Rh = a / Math.cos(Math.PI / 6);
+    const hex = [0, 1, 2, 3, 4, 5].map(i => [Rh * Math.cos(i * Math.PI / 3), Rh * Math.sin(i * Math.PI / 3)]);
+    const dirs = [-90, 30, 150].map(x => x * D2R), parts = [hex], divs = [];
+    dirs.forEach(th => {
+      const u = [Math.cos(th), Math.sin(th)], v = [-u[1], u[0]], P = (s, q) => [u[0] * s + v[0] * q, u[1] * s + v[1] * q];
+      parts.push([P(a, -w / 2), P(a + len, -w / 2), P(a + len, w / 2), P(a, w / 2)]);
+      divs.push([P(a, -w / 2), P(a, w / 2)]); if (per === 2) divs.push([P(a + d, -w / 2), P(a + d, w / 2)]);
+    });
+    const all = parts.flat(), mx = Math.min(...all.map(p => p[0])), my = Math.min(...all.map(p => p[1]));
+    const sh = p => [p[0] - mx, p[1] - my], L = Math.max(...all.map(p => p[0])) - mx, D = Math.max(...all.map(p => p[1])) - my;
+    return { form: 'Y', t, n: 3 * per, L, D, parts: parts.map(q => q.map(sh)), cores: [hex.map(p => [p[0] * 0.75 - mx, p[1] * 0.75 - my])], divs: divs.map(q => q.map(sh)) };
+  }
+  // ㄱ형: 남향 판상(a세대) + 한쪽 끝에서 북쪽으로 꺾인 날개(b세대). mirror면 서쪽 끝에서 꺾임
+  function lForm(U, c, t, a, b, mirror) {
+    const w = U[t].폭, d = U[t].깊이, L1 = a * w + (a / 2) * c, L2 = b * w + Math.ceil(b / 2) * c, base = slab(U, c, t, a);
+    let parts = [R4(0, 0, L1, d), R4(L1 - d, d, L1, d + L2)], cores = base.cores.concat([R4(L1 - d * 0.62, d + w, L1, d + w + c)]), divs = base.divs.slice();
+    divs.push([[L1 - d, d], [L1, d]], [[L1 - d, d + w], [L1, d + w]], [[L1 - d, d + w + c], [L1, d + w + c]]);
+    if (mirror) { const f = p => [L1 - p[0], p[1]]; parts = parts.map(q => q.map(f)); cores = cores.map(q => q.map(f)); divs = divs.map(q => q.map(f)); }
+    return { form: 'L', t, n: a + b, L: L1, D: d + L2, parts, cores, divs };
+  }
+  // ㅁ형(중정형): 한 변 k세대 폭의 정방형 둘레 동, 가운데 중정
+  function court(U, c, t, k) {
+    const w = U[t].폭, d = U[t].깊이, S = k * w + (k / 2) * c;
+    if (S - 2 * d < Math.max(2 * d, 18)) return null; // 중정이 너무 좁으면 쓰지 않음
+    const n = Math.floor(4 * (S - d) / (w + c / 2) / 2) * 2;
+    const parts = [R4(0, 0, S, d), R4(0, S - d, S, S), R4(0, d, d, S - d), R4(S - d, d, S, S - d)];
+    const cores = [R4(d * 0.55, d * 0.55, d, d), R4(S - d, d * 0.55, S - d * 0.55, d), R4(S - d, S - d, S - d * 0.55, S - d * 0.55), R4(d * 0.55, S - d, d, S - d * 0.55)];
+    const divs = [], m = Math.max(1, Math.round((S - 2 * d) / (w + c / 2)));
+    for (let i = 1; i < m; i++) { const z = d + (S - 2 * d) * i / m; divs.push([[z, 0], [z, d]], [[z, S - d], [z, S]], [[0, z], [d, z]], [[S - d, z], [S, z]]); }
+    return { form: 'court', t, n, L: S, D: S, parts, cores, divs };
+  }
+  // 형태별 후보 모듈(큰 것 → 작은 것 순). 혼합은 forms 배열 순서대로 시도
+  function modulesFor(U, c, t, form) {
+    if (form === 'tower') return U[t].전용 <= 60 ? [tower(U, c, t, 6), tower(U, c, t, 4)] : [tower(U, c, t, 4)];
+    if (form === 'Y') return [yForm(U, c, t)];
+    if (form === 'L') return [lForm(U, c, t, 4, 2, false), lForm(U, c, t, 2, 2, false)];
+    if (form === 'court') return [court(U, c, t, 6), court(U, c, t, 4)].filter(Boolean);
+    return [slab(U, c, t, 4), slab(U, c, t, 6), slab(U, c, t, 2)];
+  }
 
   function layout(site, opt) {
     const U = opt.units, A = opt.assume, mix = opt.mix; // mix: {59:비율,...}
@@ -81,34 +147,48 @@
     const xmin = Math.min(...xs), xmax = Math.max(...xs), ymin = Math.min(...ys), ymax = Math.max(...ys);
     const H = f => f * A.floorHeight_m + A.groundExtra_m;
     const want = {}; const sumMix = types.reduce((s, t) => s + mix[t], 0); types.forEach(t => { want[t] = mix[t] / sumMix; });
+    // opt.form: slab 판상 / tower 탑상 / Y / L ㄱ형 / court ㅁ형 / mix 판상+탑상 혼합(긴 구간은 판상, 남는 짧은 구간은 탑상)
+    const form = FORM_NAME[opt.form] || opt.form === 'mix' ? opt.form : 'slab';
+    const MODS = {}; types.forEach(t => { MODS[t] = form === 'mix' ? modulesFor(U, A.coreW_m, t, 'slab').slice(0, 2).concat(modulesFor(U, A.coreW_m, t, 'tower')) : modulesFor(U, A.coreW_m, t, form); });
+    const Dmax = Math.max(...types.flatMap(t => MODS[t].map(m => m.D)));
 
-    function place(rowFloors) {
-      const blds = []; const cols = {}; types.forEach(t => { cols[t] = 0; });
-      let y = ymin, row = 0, prevH = 0;
-      while (y < ymax) {
-        const f = rowFloors(row), Dmax = Math.max(...types.map(t => U[t].깊이));
-        const y0 = row === 0 ? y : y + opt.spacing * prevH;
-        if (y0 + Dmax > ymax) break;
-        const ranges = stripRanges(test, xmin, xmax, y0, y0 + Dmax);
-        let any = false;
-        ranges.forEach(([s, e]) => {
-          let x = s; const items = [];
-          while (true) {
-            // 부족한 평형부터, 4호 → 6호 → 2호 순으로 들어가는 모듈 고르기
-            const tot = Object.values(cols).reduce((a, b) => a + b, 0) || 1;
-            const order = types.slice().sort((a, b) => (cols[a] / tot - want[a]) - (cols[b] / tot - want[b]));
-            let pick = null;
-            for (const t of order) { for (const n of [4, 6, 2]) { const m = slab(U, A.coreW_m, t, n); if (x + m.L <= e + 1e-6) { pick = m; break; } } if (pick) break; }
-            if (!pick) break;
-            items.push(Object.assign({ x }, pick)); cols[pick.t] += pick.n; x += pick.L + A.sideGap_m;
-          }
-          if (!items.length) return;
-          const used = items[items.length - 1].x + items[items.length - 1].L - s, shift = (e - s - used) / 2; // 가운데 맞춤
-          items.forEach(it => { blds.push({ row, t: it.t, n: it.n, floors: f, L: it.L, D: it.D, rx: it.x + shift, ry: y0 }); any = true; });
+    // 한 줄 채우기: 형태 그룹 fm(같은 형태의 모듈들)으로 [y0, y0+D] 띠를 채움. cols는 복사본에 반영
+    function fillRow(y0, cols0) {
+      const D = Dmax;
+      if (y0 + D > ymax) return null;
+      const cols = Object.assign({}, cols0), out = [];
+      stripRanges(test, xmin, xmax, y0, y0 + D).forEach(([s, e]) => {
+        let x = s; const items = [];
+        while (true) {
+          // 부족한 평형부터, 큰 모듈 → 작은 모듈 순으로 들어가는 것 고르기
+          const tot = Object.values(cols).reduce((a, b) => a + b, 0) || 1;
+          const order = types.slice().sort((a, b) => (cols[a] / tot - want[a]) - (cols[b] / tot - want[b]));
+          let pick = null;
+          for (const t of order) { for (const m of MODS[t]) { if (x + m.L <= e + 1e-6) { pick = m; break; } } if (pick) break; }
+          if (!pick) break;
+          items.push({ x, m: pick }); cols[pick.t] += pick.n; x += pick.L + A.sideGap_m;
+        }
+        if (!items.length) return;
+        const last = items[items.length - 1], shift = (e - s - (last.x + last.m.L - s)) / 2; // 가운데 맞춤
+        items.forEach(it => {
+          let m = it.m; const rx = it.x + shift;
+          if (m.form === 'L' && rx + m.L / 2 < (s + e) / 2) m = lForm(U, A.coreW_m, m.t, m.n - 2, 2, true); // 왼쪽 반은 거울상(날개가 바깥쪽)
+          out.push({ m, rx });
         });
-        if (!any) { y = y0 + 1; if (row === 0) { y = y0 + 1; continue; } }
-        else { prevH = H(f); y = y0 + Dmax; row++; }
-        if (!any && row > 0) { /* 빈 띠: 한 칸 위로 */ }
+      });
+      return out.length ? { D, items: out, cols, units: out.reduce((a, it) => a + it.m.n, 0) } : null;
+    }
+    function place(rowFloors) {
+      const blds = []; let cols = {}; types.forEach(t => { cols[t] = 0; });
+      let y0 = ymin, row = 0;
+      while (y0 < ymax) {
+        const f = rowFloors(row);
+        const best = fillRow(y0, cols);
+        if (!best) { y0 += 1; continue; } // 이 높이엔 들어갈 곳이 없음 → 1m 위로
+        best.items.forEach(it => blds.push({ row, t: it.m.t, n: it.m.n, form: it.m.form, mod: it.m, floors: f, L: it.m.L, D: it.m.D, rx: it.rx, ry: y0 }));
+        cols = best.cols;
+        // 다음 줄: 이 줄 동들의 실제 북쪽 끝 + 인동간격
+        y0 = y0 + Math.max(...best.items.map(it => it.m.D)) + opt.spacing * H(f); row++;
       }
       // 남는 북쪽 여유를 줄 사이·남쪽 마당에 고르게 나눔(남측 개방). 동 꼭짓점·변 중점이 여전히 건축 가능 영역인지 확인하며 최대 이동량을 찾음
       const nRows = row;
@@ -125,7 +205,10 @@
       // 회전 되돌린 꼭짓점
       blds.forEach((b, i) => {
         b.id = 101 + i;
-        b.poly = [[b.rx, b.ry], [b.rx + b.L, b.ry], [b.rx + b.L, b.ry + b.D], [b.rx, b.ry + b.D]].map(p => rot(p, th));
+        const W = p => rot([b.rx + p[0], b.ry + p[1]], th), m = b.mod;
+        b.parts = m.parts.map(q => q.map(W)); b.cores = m.cores.map(q => q.map(W)); b.divs = m.divs.map(q => q.map(W));
+        b.poly = hull(b.parts.flat()); b.angle = opt.angle || 0; b.center = W([b.L / 2, b.D / 2]);
+        b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); delete b.mod;
       });
       return blds;
     }
@@ -197,7 +280,7 @@
     }
     bl.sort((a, b) => a.row - b.row || a.rx - b.rx).forEach((b, i) => { b.id = 101 + i; });
     // 집계
-    const lotA = opt.lot, ba = bl.reduce((s, b) => s + b.L * b.D, 0), gfa = gfaOf(bl);
+    const lotA = opt.lot, ba = bl.reduce((s, b) => s + (b.ba || b.L * b.D), 0), gfa = gfaOf(bl);
     const byType = {}; types.forEach(t => { byType[t] = 0; }); bl.forEach(b => { byType[b.t] += b.n * b.floors; });
     const units = Object.values(byType).reduce((a, b) => a + b, 0);
     const maxF = bl.length ? Math.max(...bl.map(b => b.floors)) : 0;
@@ -249,7 +332,7 @@
   // 격자 점별 동지 일조 시간(합계 08~16, 최대 연속 09~15), 10분 간격
   function sunHours(blds, H, latDeg, pts, tol) {
     const times = []; for (let t = 8; t <= 16 + 1e-9; t += 1 / 6) times.push(t);
-    const shadowsAt = times.map(t => { const s = sun(latDeg, t); return blds.map(b => shadow(b.poly, H(b.floors), s)).filter(Boolean); });
+    const shadowsAt = times.map(t => { const s = sun(latDeg, t); return blds.flatMap(b => (b.parts || [b.poly]).map(q => shadow(q, H(b.floors), s))).filter(Boolean); });
     return pts.map(p => {
       let total = 0, run = 0, best = 0;
       times.forEach((t, k) => {
@@ -261,6 +344,6 @@
     });
   }
 
-  const api = { projector, rot, area, ccw, openRing, inside, segDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
+  const api = { FORM_NAME, modulesFor, projector, rot, area, ccw, openRing, inside, segDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.ArchGeom = api;
 })(typeof window !== 'undefined' ? window : globalThis);

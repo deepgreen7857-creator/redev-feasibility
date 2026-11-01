@@ -31,7 +31,7 @@
 
   // 진입도로 폭 판정 (roads: [{name, w}])
   function accessRoad(C, p) {
-    const units = num(p.units), roads = (p.roads || []).filter(r => num(r.w) !== null).map(r => ({ name: r.name || '도로', w: +r.w })).sort((a, b) => b.w - a.w);
+    const units = num(p.units), roads = (p.roads || []).filter(r => num(r.w) !== null).map(r => ({ name: r.name || '도로', w: num(r.pw) !== null && +r.pw > +r.w ? +r.pw : +r.w, now: +r.w, planned: num(r.pw) !== null && +r.pw > +r.w })).sort((a, b) => b.w - a.w);
     const s = item(C, 'access_road_width_single'), d = item(C, 'access_road_width_dual');
     if (units === null) return { result: '○○', reason: '계획 세대수 미입력', roads, basis: s.근거 };
     const req = band(s.구간, units, '최소폭_m'), reqSum = band(d.구간, units, '합계폭_m');

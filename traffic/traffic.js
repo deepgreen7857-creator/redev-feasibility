@@ -39,11 +39,12 @@ ReviewUI.start({
     <table><tr><th style="width:120px">사업 유형</th><td>${t(TYPES[p.type])}</td><th style="width:110px">위치</th><td>${t(p.loc)}</td></tr>
     <tr><th>구역면적</th><td>${fmt(p.siteArea, 1)}㎡</td><th>용도지역</th><td>${t(p.zoning)}</td></tr>
     <tr><th>계획 세대수</th><td>${fmt(p.units)}세대</td><th>용적률 / 건폐율</th><td>${fmt(p.far, 2)}% / ${fmt(p.bcr, 2)}%</td></tr>
-    <tr><th>최고층수</th><td>${fmt(p.floors)}층</td><th>근생 연면적</th><td>${fmt(p.retailGFA)}㎡</td></tr></table>
+    <tr><th>최고층수</th><td>${fmt(p.floors)}층</td><th>근생 연면적</th><td>${fmt(p.retailGFA)}㎡</td></tr>
+    <tr><th>계획값 출처</th><td colspan="3">${t(site.v.planFrom || (site.arch && site.arch.chosen ? '/arch 확정안' : ''))}</td></tr></table>
 
     <h2>3. 교통 현황</h2>
     <p><b>가. 접도 도로</b>${site.v.roadsFrom ? ` <span class="note">(${esc(site.v.roadsFrom)} — 현장·도로대장 확인 필요)</span>` : ''}</p>
-    <table><tr><th>도로명</th><th>폭(m)</th><th>규모</th><th>위계</th><th>비고</th></tr>${roads.length ? roads.map(x => `<tr><td>${t(x.name)}</td><td>${fmt(x.w, 1)}</td><td>${t(x.dec ? x.dec + '(도시계획도로 결정)' : x.scale)}</td><td>${t(x.level)}${x.levelAuto ? ' <span class="note">(추정)</span>' : ''}</td><td>${+x.w < 4 ? '폭 4m 미만 — 진입도로로 볼 수 없음' : ''}</td></tr>`).join('') : '<tr><td>○○</td><td>○○</td><td>○○</td><td>○○</td><td></td></tr>'}</table>
+    <table><tr><th>도로명</th><th>현황 폭(m)</th><th>계획 폭(m)</th><th>규모(계획)</th><th>위계</th><th>비고</th></tr>${roads.length ? roads.map(x => `<tr><td>${t(x.name)}${x.role && x.role !== '주변 도로' ? ` <span class="note">(${esc(x.role)})</span>` : ''}</td><td>${fmt(x.w, 1)}</td><td>${num(x.pw) !== null && +x.pw > +x.w ? fmt(x.pw, 1) + ' <span class="note">(확폭)</span>' : '현황 유지'}</td><td>${t(x.dec ? x.dec + '(도시계획도로 결정)' : x.scale)}</td><td>${t(x.level)}${x.levelAuto ? ' <span class="note">(추정)</span>' : ''}</td><td>${+x.w < 4 && !(+x.pw >= 4) ? '폭 4m 미만 — 진입도로로 볼 수 없음' : x.partial ? '구역에 짧게 닿음 — 부분 확폭 주의' : ''}</td></tr>`).join('') : '<tr><td>○○</td><td>○○</td><td>○○</td><td>○○</td><td>○○</td><td></td></tr>'}</table>
     <p class="note">규모는 도시·군계획시설의 결정·구조 및 설치기준에 관한 규칙 제9조의 폭 구분, 위계(추정)는 규모로 붙인 개략값입니다. 도로 기능 분류는 도시계획 결정 내용으로 확인합니다.</p>
     <p><b>나. 대중교통</b> 최근접 도시철도역은 ${t(p.station)}(구역 경계에서 약 ${fmt(p.stationDist)}m)이며, 구역 경계 반경 500m 안 버스정류장은 ${fmt(p.bus)}개소이다.${num(p.stationDist) !== null ? (+p.stationDist <= 500 ? ' 역세권(500m) 안에 든다.' : +p.stationDist <= 1000 ? ' 역에서 500m~1km 거리로 2차 역세권에 해당한다.' : ' 역세권(1km) 밖이다.') : ''}</p>
     ${site.v.transitNote ? `<p class="note">${esc(site.v.transitNote)} — 정류장 수는 양방향을 각각 셈, 현장 확인 필요</p>` : ''}
@@ -57,7 +58,7 @@ ReviewUI.start({
     <h2>5. 교통영향 분석</h2>
     <p><b>가. 진입도로 폭</b> ${badge(ar.result)}</p>
     <table><tr><th style="width:200px">기준(세대수 ${fmt(p.units)}세대)</th><td>단일 진입도로 ${ar.required ?? '○○'}m 이상, 또는 폭 4m 이상 2개 진입도로 합계 ${ar.requiredSum ?? '○○'}m 이상</td></tr>
-    <tr><th>현황</th><td>최대 접도 폭 ${ar.maxW ?? '○○'}m${ar.sum2 !== null && ar.sum2 !== undefined ? `, 상위 2개 합계 ${fmt(ar.sum2, 1)}m` : ''}</td></tr>
+    <tr><th>현황·계획</th><td>${ar.roads.some(r => r.planned) ? '정비계획 확폭 반영 후 ' : ''}최대 접도 폭 ${ar.maxW ?? '○○'}m${ar.sum2 !== null && ar.sum2 !== undefined ? `, 상위 2개 합계 ${fmt(ar.sum2, 1)}m` : ''}</td></tr>
     <tr><th>근거</th><td>${esc(ar.basis)}, ${esc(ar.basisDual || '')}<br><span class="note">${esc(ar.noteDual || '')}</span></td></tr></table>
     <p><b>나. 주차</b> 법정 주차대수 ${pk.legal === null ? '○○' : fmt(pk.legal) + '대'}${pk.partial ? ' (전용면적 합계 미입력 — 세대당 최저 기준만 적용)' : ''}, 계획 ${fmt(p.parkPlan)}대 ${badge(parkJudge)}${chk(pk.unconfirmed)}</p>
     <p class="note">산식: ${esc(pk.formula)}<br>근거: ${esc(pk.basis)}. ${esc(pk.note)}</p>
