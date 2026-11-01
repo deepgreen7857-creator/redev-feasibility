@@ -49,6 +49,11 @@
 <dialog id="assumeDialog" class="home-dialog assume-dialog">
   <h2>사업성 가정값</h2>
   <p class="note">아직 확정되지 않은 값을 가정해 비례율·분담금을 미리 봅니다. 값을 바꾸면 아래 결과가 바로 바뀌고, <b>적용</b>을 누르면 분양수입·사업비 표가 이 값으로 채워집니다.</p>
+  <h4>세대수 기준</h4>
+  <div class="form-grid">
+    <label>세대수·평형 산정<small>/arch(개략 건축계획)에서 확정한 배치안을 고르면 그 안의 평형별 세대수·공급면적을 그대로 씁니다</small><select id="as_src"><option value="">용적률·평형 비율로 계산 (아래 가정값)</option></select></label>
+  </div>
+  <div id="as_archInfo" class="note" hidden></div>
   <h4>건축 계획</h4>
   <div class="form-grid three">
     <label>용적률 (%)<input id="as_far" type="number" step="1"></label>
@@ -470,22 +475,23 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=73"></script>
-<script src="js/util.js?v=73"></script>
-<script src="js/state.js?v=73"></script>
-<script src="js/calc.js?v=73"></script>
-<script src="js/zonekit.js?v=73"></script>
-<script src="js/map.js?v=73"></script>
-<script src="js/ledger.js?v=73"></script>
-<script src="js/pdfsave.js?v=73"></script>
-<script src="js/overlay.js?v=73"></script>
-<script src="js/export.js?v=73"></script>
-<script src="js/roadcut.js?v=73"></script>
-<script src="js/assume.js?v=73"></script>
-<script src="js/app.js?v=73"></script>
-<script src="js/forms.js?v=73"></script>
-<script src="js/hwpx.js?v=73"></script>
-<script src="js/surveymaps.js?v=73"></script>
-<script src="js/review.js?v=73"></script>
+<script src="js/config.js?v=74"></script>
+<script src="js/util.js?v=74"></script>
+<script src="js/state.js?v=74"></script>
+<script src="js/calc.js?v=74"></script>
+<script src="js/zonekit.js?v=74"></script>
+<script src="js/map.js?v=74"></script>
+<script src="js/ledger.js?v=74"></script>
+<script src="js/pdfsave.js?v=74"></script>
+<script src="js/overlay.js?v=74"></script>
+<script src="js/export.js?v=74"></script>
+<script src="js/roadcut.js?v=74"></script>
+<script src="shared/site-store.js?v=74"></script>
+<script src="js/assume.js?v=74"></script>
+<script src="js/app.js?v=74"></script>
+<script src="js/forms.js?v=74"></script>
+<script src="js/hwpx.js?v=74"></script>
+<script src="js/surveymaps.js?v=74"></script>
+<script src="js/review.js?v=74"></script>
 </body>
 </html>

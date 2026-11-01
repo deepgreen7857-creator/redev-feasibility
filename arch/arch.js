@@ -357,12 +357,12 @@
       <table><tr><th style="width:160px">구역면적</th><td>${fmt(I.p.siteArea, 1)}㎡</td><td class="note"></td></tr>
       <tr><th>획지(건축대지) 면적</th><td>${fmt(I.lot, 1)}㎡</td><td class="note">${exclude.length ? `그린 기반시설 ${fmt(I.exA)}㎡ 제외` : `기반시설 ${I.p.infra}% 가정`}</td></tr>
       <tr><th>건축면적</th><td>${fmt(A.ba, 1)}㎡</td><td class="note">주동 바닥 합계(부대시설 제외)</td></tr>
-      <tr><th>지상 연면적</th><td>${fmt(A.gfa)}㎡</td><td class="note">전용 × 환산계수 ${I.p.sf}</td></tr>
+      <tr><th>지상 연면적</th><td>${fmt(A.gfa)}㎡</td><td class="note">${types.every(t => +U[t].공급 > 0) ? '타입별 공급면적(전용+주거공용) 합계' : `전용 × 환산계수 ${I.p.sf}`}</td></tr>
       ${parkingRow(A)}</table>
       <h3>평형별 세대 구성</h3>
-      <table><tr><th>평형</th><th>전용</th><th>세대수</th><th>비율</th><th>평면 가정(폭×깊이)</th></tr>
-      ${types.map(t => `<tr><td>${esc(U[t].이름)}</td><td>${U[t].전용}㎡</td><td>${fmt(A.byType[t])}</td><td>${fmt(A.byType[t] / A.units * 100, 1)}%</td><td>${U[t].폭}m × ${U[t].깊이}m</td></tr>`).join('')}
-      <tr><th>합계</th><td></td><th>${fmt(A.units)}</th><td>100%</td><td></td></tr></table>
+      <table><tr><th>평형</th><th>전용</th><th>공급</th><th>세대수</th><th>비율</th><th>평면 가정(폭×깊이)</th></tr>
+      ${types.map(t => `<tr><td>${esc(U[t].이름)}</td><td>${U[t].전용}㎡</td><td>${U[t].공급 ? U[t].공급 + '㎡' : '–'}</td><td>${fmt(A.byType[t])}</td><td>${fmt(A.byType[t] / A.units * 100, 1)}%</td><td>${U[t].폭}m × ${U[t].깊이}m</td></tr>`).join('')}
+      <tr><th>합계</th><td></td><td></td><th>${fmt(A.units)}</th><td>100%</td><td></td></tr></table>
       <h3>동별 개요</h3>
       <table><tr><th>동</th><th>평형</th><th>층당 세대</th><th>층수</th><th>세대수</th><th>높이</th><th>층수 상한(일조·경계)</th></tr>
       ${A.buildings.map(b => `<tr><td>${b.id}</td><td>${b.t}㎡</td><td>${b.n}</td><td>${b.floors}</td><td>${b.n * b.floors}</td><td>${fmt(A.H(b.floors), 1)}m</td><td>${b.cap >= +I.p.maxFloors ? '-' : b.cap + '층'}</td></tr>`).join('')}</table>
@@ -384,7 +384,9 @@
     const A = alts[cur], I = buildInput(), U = C.평면;
     site.arch = Object.assign(site.arch || {}, {
       tags, entries, exclude: exclude.map(ex => ex.map(pr.back)), params: P(), at: new Date().toLocaleString('sv-SE').slice(0, 16),
-      chosen: { label: A.label, angle: A.angle, units: A.units, byType: A.byType, far: A.far, bcr: A.bcr, gfa: A.gfa, lot: I.lot, maxFloors: A.maxFloors, maxHeight: A.maxHeight,
+      chosen: { label: A.label, angle: A.angle, units: A.units, byType: A.byType, far: A.far,
+        supply: Object.fromEntries(Object.keys(A.byType).map(t => [t, +U[t].공급 > 0 ? +U[t].공급 : Math.round(U[t].전용 * (+I.p.sf || C.가정.supplyFactor) * 10) / 10])),
+        exclusive: Object.fromEntries(Object.keys(A.byType).map(t => [t, U[t].전용])), bcr: A.bcr, gfa: A.gfa, lot: I.lot, maxFloors: A.maxFloors, maxHeight: A.maxHeight,
         buildings: A.buildings.map(b => ({ id: b.id, t: b.t, n: b.n, floors: b.floors, H: A.H(b.floors), poly: b.poly.map(pr.back) })) },
     });
     site.constraints = site.constraints || {};
@@ -394,7 +396,7 @@
     Object.assign(site.v, { units: String(A.units), floors: String(A.maxFloors), far: String(Math.round(A.far * 10) / 10), bcr: String(Math.round(A.bcr * 10) / 10), aptGFA: String(Math.round(A.gfa)),
       units60below: String(A.byType[59] || 0), area85below: String((A.byType[59] || 0) * U[59].전용 + (A.byType[84] || 0) * U[84].전용), area85above: String((A.byType[114] || 0) * U[114].전용) });
     JbsSite.save(site);
-    msg(`'${A.label}'을 확정했습니다. 세대수·층수·전용면적 합계가 교통성·환경성 검토와 높이·경관계획에 그대로 들어갑니다.`);
+    msg(`'${A.label}'을 확정했습니다. 세대수·층수·전용면적 합계가 교통성·환경성 검토와 높이·경관계획에 그대로 들어갑니다. 사업성 화면의 [사업성 가정값]에서 '세대수 기준'을 이 안으로 고르면 평형별 세대수 그대로 비례율이 계산됩니다.`);
   }
   const svgBlob = svg => new Blob([svg], { type: 'image/svg+xml' });
   function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000); }
@@ -456,7 +458,7 @@
       if (!c) { msg('기준표(arch.json)를 읽지 못했습니다. 사이트 주소로 열어 주세요.', true); return; }
       C = c; TC = tc; initLegend();
       const sp = crit('spacing_ratio');
-      $('#ruleNote').textContent = `인동간격 기본값 ${sp.값}배는 검토 가정값입니다(법 하한 ${sp.법정하한}배, 인천시 건축 조례 확인 필요). 층고·코어·이격·환산계수도 가정값입니다.`;
+      $('#ruleNote').textContent = `인동간격 기본값 ${sp.값}배는 검토 가정값입니다(법 하한 ${sp.법정하한}배, 인천시 건축 조례 확인 필요). 층고·코어·이격·평면 공급면적도 가정값입니다.`;
       const q = new URLSearchParams(location.search);
       let first = q.get('site') ? JbsSite.get(q.get('site')) : null;
       if (!first) { let cur2 = ''; try { cur2 = localStorage.getItem('jbs.sites.current') || ''; } catch (e) { cur2 = ''; } first = cur2 ? JbsSite.get(cur2) : null; }
