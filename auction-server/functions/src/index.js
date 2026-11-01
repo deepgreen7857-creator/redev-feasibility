@@ -418,7 +418,8 @@ async function tick({ only, force } = {}) {
       if (job === 'zones') out[job] = await runIncheonZones({ force });
       if (job === 'bankrupt') out[job] = await runBankrupt({ force });
       else if (job === 'bankruptDocs') out[job] = await bankrupt.fetchDocs({ db, log: logger.info, limit: only ? 60 : 25, deadline: Date.now() + (only ? 420 : 120) * 1000 });
-      if (job === 'onbid') out[job] = await runOnbid({ deadline, force });
+      // 공매 원문이 한 회차 시간을 다 먹어 뒤 작업(입찰결과·실거래·토지)이 한도를 남기던 문제 → 한 회차에 최대 4분만
+      if (job === 'onbid') out[job] = await runOnbid({ deadline: only ? deadline : Math.min(deadline, Date.now() + 240e3), force });
       if (job === 'results') out[job] = await runOnbidResults({ deadline });
       if (job === 'resultList') out[job] = await runOnbidResultList({ deadline, force });
       if (job === 'trades') out[job] = await runTrades({ deadline });
@@ -435,7 +436,7 @@ async function tick({ only, force } = {}) {
 
 // ---------- 공개 함수 ----------
 exports.collectTick = onSchedule(
-  { schedule: '*/20 0-6 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_GO_KR_KEY, VWORLD_KEY] },
+  { schedule: '*/20 * * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '512MiB', secrets: [DATA_GO_KR_KEY, VWORLD_KEY] },
   async () => { await tick(); },
 );
 
