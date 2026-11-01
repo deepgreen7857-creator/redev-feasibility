@@ -269,6 +269,8 @@
         <button class="btn small" id="btnDxf">CAD 도면 (DXF)</button>
         <button class="btn small" id="btnGeojson">GeoJSON 저장</button>
         <button class="btn small" id="btnGeojsonOpen">구역계 파일 불러오기</button>
+        <label class="inline-field">다른 도구의 구역 <select id="zoneToolSel"></select></label>
+        <button class="btn small" id="btnZoneFromTool">가져와 필지·조서 불러오기</button>
         <p class="note" id="exportMsg" aria-live="polite"></p>
       </div>
       <p class="note">지도에서 그린 면적은 측량 면적이 아닙니다. 정확한 면적은 지적도·토지조서로 확인하세요.</p>
@@ -534,7 +536,7 @@
 <script src="js/state.js?v=79"></script>
 <script src="js/calc.js?v=79"></script>
 <script src="js/zonekit.js?v=79"></script>
-<script src="js/map.js?v=79"></script>
+<script src="js/map.js?v=89"></script>
 <script src="js/ledger.js?v=79"></script>
 <script src="js/pdfsave.js?v=79"></script>
 <script src="js/overlay.js?v=79"></script>
@@ -542,8 +544,8 @@
 <script src="js/roadcut.js?v=79"></script>
 <script src="shared/site-store.js?v=79"></script>
 <script src="shared/feas.js?v=86"></script>
-<script src="js/assume.js?v=87"></script>
-<script src="js/app.js?v=79"></script>
+<script src="js/assume.js?v=88"></script>
+<script src="js/app.js?v=88"></script>
 <script src="js/quick.js?v=86"></script>
 <script src="js/forms.js?v=79"></script>
 <script src="js/hwpx.js?v=79"></script>

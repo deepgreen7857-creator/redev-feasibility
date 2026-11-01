@@ -579,6 +579,10 @@ const MapView = {
     if (!text) return;
     let gj;
     try { gj = JSON.parse(text); } catch (e) { alert('GeoJSON 파일을 읽을 수 없습니다.'); return; }
+    this.setZoneGeo(gj, '구역계 파일', '파일');
+  },
+  // GeoJSON(면) → 구역계로 바꿈. what: 안내 문구용 이름, src: 확인 창 문구('파일'·'/arch 구역' 등)
+  setZoneGeo(gj, what, src, force) {
     const polys = [];
     const take = g => {
       if (!g) return;
@@ -587,17 +591,47 @@ const MapView = {
       else if (g.type === 'Polygon' || g.type === 'MultiPolygon') polys.push({ type: 'Feature', properties: {}, geometry: g });
     };
     take(gj);
-    if (!polys.length) { alert('파일에 면(Polygon) 도형이 없습니다.'); return; }
-    if (S.area.geojson && !confirm('지금 구역계를 파일의 경계로 바꿀까요?')) return;
+    if (!polys.length) { alert(`${src}에 면(Polygon) 도형이 없습니다.`); return false; }
+    if (S.area.geojson && !force && !confirm(`지금 구역계를 ${src}의 경계로 바꿀까요?`)) return false;
     const merged = safeUnion(polys);
-    this.remember('GeoJSON 불러오기');
+    this.remember(`${what} 불러오기`);
     if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; }
     this.items.clearLayers();
     L.geoJSON(merged, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l));
     this.map.fitBounds(this.items.getBounds(), { padding: [30, 30] });
     this.save();
-    $('#jibunMsg').textContent = `구역계 파일을 불러왔습니다 (${fmt(turf.area(merged))}㎡). 필지 경계에 맞추려면 "그린 구역을 필지에 맞추기"를 누르세요.`;
-    this.checkFit('불러온 구역계');
+    $('#jibunMsg').textContent = `${what}를 불러왔습니다 (${fmt(turf.area(merged))}㎡). 필지 경계에 맞추려면 "그린 구역을 필지에 맞추기"를 누르세요.`;
+    this.checkFit(`불러온 ${what}`);
+    return true;
+  },
+  // 다른 도구에서 만든 구역: 공통 구역('jbs.sites.v1' — /arch·교통성·환경성 등)과 /urban(정비계획 검토)의 안
+  toolZones() {
+    const out = [];
+    try {
+      (window.JbsSite ? JbsSite.list() : []).filter(x => x.geojson).forEach(x => {
+        const c = x.arch && x.arch.chosen;
+        out.push({ key: 's:' + x.id, name: x.name || x.id, geo: x.geojson, from: c ? '/arch' : '검토서 도구', note: c ? `확정 ${fmt(c.units)}세대` : '' });
+      });
+      (window.JbsSite ? JbsSite.urbanZones() : []).forEach(u => out.push({ key: 'u:' + u.key, name: `정비계획 검토 ${u.key}안`, geo: u.zone.geojson, from: '/urban', note: '' }));
+    } catch (e) { /* 저장값을 못 읽으면 목록 없음 */ }
+    return out;
+  },
+  fillToolZones() {
+    const sel = $('#zoneToolSel'); if (!sel) return;
+    const cur = sel.value, list = this.toolZones();
+    sel.innerHTML = list.length ? list.map(x => `<option value="${esc(x.key)}">${esc(x.from)} · ${esc(x.name)}${x.note ? ` · ${esc(x.note)}` : ''} (${fmt(turf.area(x.geo))}㎡)</option>`).join('') : '<option value="">이 브라우저에 저장된 구역 없음</option>';
+    if (list.some(x => x.key === cur)) sel.value = cur;
+    const b = $('#btnZoneFromTool'); if (b) b.disabled = !list.length;
+  },
+  // 고른 구역을 구역계로 놓고, 그 안의 필지·건축물(토지조서)을 불러옴 → 면적·종전자산 계산에 씀
+  //  force: 이미 사용자에게 물은 경우(?arch= 흐름) — 구역 교체·조서 다시 불러오기 확인 창을 건너뜀
+  async zoneFromTool(key, force) {
+    const it = this.toolZones().find(x => x.key === key);
+    if (!it) { alert('고른 구역을 찾지 못했습니다.'); return false; }
+    if (!this.setZoneGeo(it.geo, `${it.from} 구역 '${it.name}'`, `${it.from} 구역`, force)) return false;
+    if (!S.meta.name || S.meta.name === '새 정비사업') { S.meta.name = it.name.replace(/^정비계획 검토 /, ''); const nm = document.querySelector('[data-bind="meta.name"]'); if (nm) nm.value = S.meta.name; }
+    await this.importArea(force ? { silent: true } : {});
+    return true;
   },
 
   // 구역계가 현재 지적 경계와 얼마나 맞는지 확인하고, 많이 어긋나면 먼저 알림

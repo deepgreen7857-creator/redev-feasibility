@@ -50,7 +50,23 @@ const Assume = {
     if (!id) return;
     const x = this.archOf(id);
     if (!x) { alert('주소의 /arch 확정안을 이 브라우저에서 찾지 못했습니다. /arch에서 다시 확정해 보세요.'); return; }
-    this.open({ src: id, stage: this.defStage(x) });
+    this.loadSiteZone(x).finally(() => this.open({ src: id, stage: this.defStage(x) }));
+  },
+  // 비례율에는 구역 면적·종전자산(토지조서)이 필요 — 사업성 화면에 구역이 없거나 /arch 구역과 많이 다르면 가져올지 물음
+  async loadSiteZone(x) {
+    if (!x.geojson || !window.turf || typeof MapView === 'undefined') return;
+    const siteA = turf.area(x.geojson);
+    let ov = 0;
+    if (S.area.geojson) { try { const i = turf.intersect(turf.feature(S.area.geojson.geometry || S.area.geojson), turf.feature(x.geojson.geometry || x.geojson)); ov = i ? turf.area(i) / Math.max(siteA, turf.area(S.area.geojson)) : 0; } catch (e) { ov = 0; } }
+    if (S.area.geojson && ov >= 0.9) return;   // 같은 구역(90% 이상 겹침)이면 그대로
+    const ask = S.area.geojson
+      ? `사업성 화면의 구역이 /arch 구역 '${x.name || x.id}'(${fmt(siteA)}㎡)과 다릅니다(겹침 ${fmt(ov * 100)}%).\n/arch 구역으로 바꾸고 필지·토지조서를 다시 불러올까요?\n(취소하면 지금 구역으로 계산합니다)`
+      : `사업성 화면에 구역이 없어 비례율(종전자산)을 계산할 수 없습니다.\n/arch 구역 '${x.name || x.id}'(${fmt(siteA)}㎡)을 가져와 필지·토지조서까지 불러올까요?\n(브이월드 조회에 1~2분 걸릴 수 있습니다)`;
+    if (!confirm(ask)) return;
+    App.go('area');
+    await new Promise(r => setTimeout(r, 300));   // 지도가 그려진 뒤
+    await MapView.zoneFromTool('s:' + x.id, true);   // 이미 물었으므로 다시 묻지 않음
+    App.update(true);
   },
 
   // 가정값 → 세대수·분양 행·사업비 행

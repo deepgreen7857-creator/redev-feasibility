@@ -959,6 +959,10 @@ function boot() {
   $('#searchForm').onsubmit = e => { e.preventDefault(); MapView.search($('#searchInput').value); };
   $('#btnGeojson').onclick = () => MapView.exportGeoJSON();
   $('#btnGeojsonOpen').onclick = () => MapView.importGeoJSON();
+  // /arch·/urban 등 다른 도구에서 만든 구역 가져오기 — 목록은 열 때마다 새로 읽음(다른 탭에서 확정했을 수 있음)
+  MapView.fillToolZones();
+  $('#zoneToolSel').onfocus = () => MapView.fillToolZones();
+  $('#btnZoneFromTool').onclick = () => { const k = $('#zoneToolSel').value; if (k) MapView.zoneFromTool(k); };
   // 참고 도면 겹쳐 보기
   $('#btnRefLoad').onclick = () => RefOverlay.load();
   $('#btnRefAlign').onclick = () => RefOverlay.startAlign();
