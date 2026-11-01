@@ -417,7 +417,7 @@
   // 격자 점별 동지 일조 시간(합계 08~16, 최대 연속 09~15), 10분 간격
   function sunHours(blds, H, latDeg, pts, tol) {
     const times = []; for (let t = 8; t <= 16 + 1e-9; t += 1 / 6) times.push(t);
-    const shadowsAt = times.map(t => { const s = sun(latDeg, t); return blds.flatMap(b => (b.parts || [b.poly]).map(q => shadow(q, H(b.floors), s))).filter(Boolean); });
+    const shadowsAt = times.map(t => { const s = sun(latDeg, t); return blds.flatMap(b => (b.parts || [b.poly]).map(q => shadow(q, b.h != null ? b.h : H(b.floors), s))).filter(Boolean); });
     return pts.map(p => {
       let total = 0, run = 0, best = 0;
       times.forEach((t, k) => {

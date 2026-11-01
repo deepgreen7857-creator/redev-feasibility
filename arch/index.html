@@ -32,6 +32,11 @@
 .kv div{border:1px solid var(--line);border-radius:6px;padding:8px 10px}
 .kv .l{font-size:11px;color:var(--ink-2)} .kv .v{font-size:17px;font-weight:600;font-family:var(--f-mono)}
 .busy{opacity:.55;pointer-events:none}
+.stagebar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:10px 0 4px;padding:10px 14px;border:1px solid var(--line,#d8d8d0);border-radius:8px;background:var(--paper,#fbfbf8);font-size:14px}
+.stagebar .st{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid #c9c9c0;color:#6a6f73}
+.stagebar .st.on{background:#1d2a33;color:#fff;border-color:#1d2a33}
+.stagebar .st.done::after{content:'✓';font-weight:700}
+.cmp td,.cmp th{text-align:right}.cmp td:first-child,.cmp th:first-child{text-align:left}
 #mixBox{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px 10px}
 #mixBox label{font-size:12px}
 #mixSum{font-size:12px;margin-top:4px}
@@ -71,6 +76,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
   <nav class="tools" aria-label="검토 도구">
     <a href="../traffic/">교통성 검토서</a><a href="../env/">환경성 검토서</a><a href="../arch/" aria-current="page">개략 건축계획</a><a href="../landscape/">높이·경관계획</a>
   </nav>
+  <div id="stageBar" class="stagebar"></div>
 
   <div class="layout">
     <section class="panel" aria-label="구역과 경계">
@@ -115,6 +121,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
         <label>대지경계 이격 m<input id="p_bndSb" inputmode="decimal"></label>
         <label>저층 주거 인접부 층수 상한<input id="p_lowCap" inputmode="numeric"></label>
         <label>층수 상한 적용 거리 m<input id="p_lowDist" inputmode="decimal"></label>
+        <label>계획 주차(세대당 대수, 법정보다 작으면 법정)<input id="p_parkPer" inputmode="decimal"></label>
         <label>공원·녹지 폭 m (정북 기준선 계산)<input id="p_parkW" inputmode="decimal"></label>
         <label>최저 층수<input id="p_minFloors" inputmode="numeric"></label>
         <label>층고 m<input id="p_fh" inputmode="decimal"></label>
@@ -142,7 +149,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
     </div>
     <div class="view" id="vplan"><div class="row"><button id="dlSvg">배치도 SVG</button><button id="dlPng">배치도 PNG</button><button id="dlDoc">개략 건축계획(.doc)</button></div><div id="planSvg"></div></div>
     <div class="view" id="vsun" hidden>
-      <div class="row"><button id="calcSun">일조 계산</button><label class="tag">그림자 시각 <input type="range" id="sunT" min="8" max="16" step="0.25" value="12"> <b id="sunTv">12:00</b></label></div>
+      <div class="row"><button id="calcSun">일조 계산</button><button id="loadCtx">주변 건물 다시 불러오기</button><label class="tag">그림자 시각 <input type="range" id="sunT" min="8" max="16" step="0.25" value="12"> <b id="sunTv">12:00</b></label></div>
       <div id="sunNote" class="note"></div><div id="sunSvg"></div>
     </div>
     <div class="view" id="vm3d" hidden>
@@ -159,11 +166,12 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="../js/config.js?v=1"></script>
+<script src="../js/zonekit.js?v=79"></script>
 <script src="../shared/site-store.js?v=5"></script>
-<script src="../shared/arch-geom.js?v=5"></script>
+<script src="../shared/arch-geom.js?v=6"></script>
 <script src="../shared/mass3d.js?v=1"></script>
 <script src="../traffic/traffic-calc.js?v=2"></script>
-<script src="arch-draw.js?v=5"></script>
-<script src="arch.js?v=13"></script>
+<script src="arch-draw.js?v=6"></script>
+<script src="arch.js?v=16"></script>
 </body>
 </html>

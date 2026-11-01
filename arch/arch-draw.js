@@ -35,6 +35,7 @@
     });
     // 그림자
     (o.shadowAt || []).forEach(sh => { s += poly(sh, `fill="#3b4a58" opacity=".18"`); });
+    (o.context || []).forEach(c => { const hit = o.hit && o.hit.has(c); s += poly(c.poly, `fill="${hit ? '#f3c9c4' : c.res ? '#dcdcd6' : '#e8e8e4'}" stroke="${hit ? '#c8322b' : '#9a9a92'}" stroke-width="${(hit ? 1.2 : 0.5) * u}"`); });
     // 구역(대지) 바탕
     s += poly(pts, `fill="#eef2e9" stroke="none"`);
     // 제외 영역(기반시설·공원)
@@ -91,7 +92,7 @@
     const used = [...new Set(o.tags)];
     used.forEach(t => { const c = TAG[t] || TAG.boundary; s += `<line x1="${lx}" y1="${ly}" x2="${lx + 12 * u}" y2="${ly}" stroke="${c.color}" stroke-width="${2.4 * u}"/><text x="${lx + 15 * u}" y="${ly + 2.3 * u}" font-size="${6.5 * u}">${c.name}</text>`; lx += 18 * u + c.name.length * 6.6 * u; });
     s += `<line x1="${lx}" y1="${ly}" x2="${lx + 14 * u}" y2="${ly}" stroke="#c8322b" stroke-width="${1.4 * u}" stroke-dasharray="${5 * u} ${2 * u} ${1 * u} ${2 * u}"/><text x="${lx + 17 * u}" y="${ly + 2.3 * u}" font-size="${6.5 * u}">구역계</text>`;
-    if (o.sunGrid) s += `<rect x="${lx + 50 * u}" y="${ly - 3 * u}" width="${6 * u}" height="${6 * u}" fill="#d9483b" opacity=".5"/><text x="${lx + 59 * u}" y="${ly + 2.3 * u}" font-size="${6.5 * u}">동지 일조 수인한도 미달(판례 기준 참고)</text>`;
+    if (o.sunGrid) s += `<rect x="${lx + 50 * u}" y="${ly - 3 * u}" width="${6 * u}" height="${6 * u}" fill="#d9483b" opacity=".5"/><text x="${lx + 59 * u}" y="${ly + 2.3 * u}" font-size="${6.5 * u}">동지 일조 수인한도 ${o.context && o.context.length ? '새로 ' : ''}미달(판례 기준 참고)${o.context && o.context.length ? ' · 붉은 테 건물: 영향 받는 주변 주택' : ''}</text>`;
     // 표제
     if (A) {
       const tw = 190 * u, th = 46 * u, tx = W - tw - 10 * u, ty = Hh - th - 8 * u;
