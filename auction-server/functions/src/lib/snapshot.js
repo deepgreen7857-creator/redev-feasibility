@@ -37,14 +37,18 @@ async function write(db, name, rows) {
 
 const kst = (d) => new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
 
-// 물건: 최근 120일 기일 ~ 앞으로 전부(진행 중 화면·완료 채점 화면이 같이 씀). 기일 형식 '2026-10-28'(온비드)·'2026.10.28'(법원) 둘 다
-async function listings(db) {
-  const from = kst(new Date(Date.now() - 120 * 86400e3));
+// 물건 두 묶음(기일 형식 '2026-10-28 17:00'(온비드)·'2026.10.28'(법원) 둘 다)
+//  open  : 진행 중 화면용 — 온비드는 오늘 이후, 법원은 50일 전부터(유찰 뒤 다음 기일 대기 물건 포함). 접속 때 이것만 받음
+//  recent: 완료 물건 채점 화면용 — 최근 120일 ~ 앞으로 전부
+async function listings(db, scope) {
+  const today = kst(new Date());
+  const from = scope === 'recent' ? kst(new Date(Date.now() - 120 * 86400e3)) : today;
+  const courtFrom = scope === 'recent' ? from : kst(new Date(Date.now() - 50 * 86400e3));
   const y = from.slice(0, 4);
   const col = db.collection('listings');
   const [a, b] = await Promise.all([
     col.where('bidEnd', '>=', from).where('bidEnd', '<', `${y}-~`).get(),
-    col.where('bidEnd', '>=', from.replace(/-/g, '.')).get(),
+    col.where('bidEnd', '>=', courtFrom.replace(/-/g, '.')).get(),
   ]);
   const seen = new Set(); const out = [];
   [...a.docs, ...b.docs].forEach((d) => { if (seen.has(d.id)) return; seen.add(d.id); out.push({ id: d.id, ...lean(d.data()) }); });
@@ -77,8 +81,9 @@ async function deals(db, keys) {
 // keysOf(rows) → Set('종류|법정동코드5') : 화면과 같은 규칙(shared 모듈)으로 만든다
 async function run({ db, log, keysOf }) {
   const res = {};
-  const rows = await listings(db);
-  res.listings = await write(db, 'listings', rows);
+  const rows = await listings(db, 'open');
+  res.open = await write(db, 'open', rows);
+  try { res.recent = await write(db, 'recent', await listings(db, 'recent')); } catch (e) { res.recent = { error: e.message }; }
   try { res.past = await write(db, 'past', await past(db)); } catch (e) { res.past = { error: e.message }; }
   try {
     const keys = keysOf ? keysOf(rows) : new Set();

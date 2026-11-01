@@ -101,7 +101,7 @@ function demoListings() {
 export async function listListings({ sido, scope = 'open', days = 120 } = {}) {
   const f = await firebase();
   if (!f) return demoListings().filter((x) => !sido || x.sido === sido);
-  const rows = await loadSnapshot(f, 'listings');
+  const rows = await loadSnapshot(f, scope === 'recent' ? 'recent' : 'open');
   if (rows) return rows.filter((x) => inScope(x, scope, days) && (!sido || x.sido === sido));
   return cached(`listings:${scope}:${days}`, 6 * HOUR, () => fetchListings(f, { scope, days })).then((all) => all.filter((x) => !sido || x.sido === sido));
 }
