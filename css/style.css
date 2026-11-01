@@ -448,3 +448,13 @@ tr.qk-best td { background: var(--good-soft); font-weight: 700; }
 tr.qk-cur td:first-child { outline: 2px solid var(--ink); outline-offset: -2px; }
 #qkScan td.good { color: var(--good); } #qkScan td.warn { color: var(--warn); } #qkScan td.bad { color: var(--bad); }
 @media (max-width: 640px) { .qk-scen { grid-template-columns: 1fr; } .qk-barcol { min-width: 90px; } }
+.qk-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 12px; }
+.qk-lv-h { grid-column: 1 / -1; font-weight: 700; font-size: .9rem; }
+.qk-lv-h small { font-weight: 400; color: var(--muted); }
+.qk-lv { text-align: left; font: inherit; color: var(--ink); background: var(--bg); border: 2px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+.qk-lv.on { border-color: var(--accent); background: var(--accent-soft); }
+.qk-lv span { font-size: .85rem; font-weight: 700; }
+.qk-lv b { font-size: 1.35rem; }
+.qk-lv em { font-style: normal; font-size: .74rem; color: var(--muted); }
+.qk-lv.good b { color: var(--good); } .qk-lv.warn b { color: var(--warn); } .qk-lv.bad b { color: var(--bad); }
+@media (max-width: 640px) { .qk-levels { grid-template-columns: 1fr; } }

@@ -17,6 +17,8 @@ const Quick = {
     },
     max_incentive_formula: { public_facility_build: 1.5 },
   },
+  // 정비기반시설 비율 3단계 — 평균·보수는 실무 경험치(가정값, 인천 고시 사례로 보정 전). 최소는 구역마다 자동 계산
+  INFRA: { avg: 25, cons: 30, minFallback: 15, parkPerUnit: 2 },
   SCEN: [
     { key: '보수', con: 10, gen: -5, note: '공사비 +10%, 일반분양가 −5%' },
     { key: '표준', con: 0, gen: 0, note: '입력값 그대로' },
@@ -45,16 +47,31 @@ const Quick = {
   // 처음 열 때 기본값 채우기(사업성 가정값 창의 기본값과 같은 근거)
   ensure() {
     const q = S.quick || (S.quick = {});
-    if (q.init) return q;
+    if (q.init) { if (!q.infraLevel) q.infraLevel = 'avg'; return q; }
     const a = Assume.defaults();
     Object.assign(q, {
-      init: true, zone: this.zoneKey(S.meta.zoning), farStep: 'calc', farCustom: 250, infraPct: 25,
+      init: true, zone: this.zoneKey(S.meta.zoning), farStep: 'calc', farCustom: 250, infraLevel: 'avg', infraPct: 25,
       mix59: 40, sizePct: 100, rentRatio: a.rentRatio, members: a.members, avgLand: 0,
       generalPrice: a.generalPrice, memberRatio: a.memberRatio, conPrice: a.conPrice, etcPct: a.etcPct,
       priorMul: a.priorMul, gfaFactor: a.gfaFactor, resRatio: a.resRatio, rentPrice: a.rentPrice, shopPrice: a.shopPrice, target: 100,
     });
     return q;
   },
+
+  // 최소 비율: 무상양도 균형(구역 안 기존 국공유 도로 등 면적)과 법정 공원(세대당 2㎡) 중 큰 값. 토지조서가 없으면 15%(가정)
+  minInfra(q) {
+    const site = Calc.siteArea(S); if (!(site > 0)) return { v: this.INFRA.minFallback, basis: '구역 면적 없음' };
+    const old = this.existingInfra(S);
+    if (!S.lands.length) return { v: this.INFRA.minFallback, basis: '토지조서가 없어 15%로 둠(가정) — 토지조서를 채우면 구역에 맞게 다시 계산' };
+    let v = Math.max(old / site * 100, 5), units = 0;
+    for (let k = 0; k < 3; k++) {   // 세대수가 비율에 따라 바뀌므로 몇 번 맞춤
+      units = this.evaluate({ ...q, infraLevel: 'custom', infraPct: v }).p.total;
+      v = Math.max(old / site * 100, units * this.INFRA.parkPerUnit / site * 100);
+    }
+    v = Math.ceil(v * 2) / 2;
+    return { v, basis: `기존 국공유 도로 등 ${fmt(old)}㎡(${fmt(old / site * 100, 1)}%)와 법정 공원 세대당 2㎡(${fmt(units)}세대 → ${fmt(units * 2)}㎡) 중 큰 값` };
+  },
+  levelPct(q, lv) { return lv === 'min' ? this.minInfra(q).v : lv === 'cons' ? this.INFRA.cons : lv === 'custom' ? num(q.infraPct) : this.INFRA.avg; },
 
   // 구역 안 '설치된' 기존 공공시설(토지조서 지목 도로·공원 등) — 상한용적률 산식에서 새 공공시설 면적에서 뺌
   existingInfra(s) { return s.lands.filter(l => Calc.isInfra(l.jimok)).reduce((a, l) => a + num(l.area), 0); },
@@ -74,6 +91,7 @@ const Quick = {
   // 입력값 q로 사업성 계산 (S는 건드리지 않음). m: 시나리오 배율
   evaluate(q, m = {}) {
     const t = JSON.parse(JSON.stringify(S));
+    if (q.infraLevel && q.infraLevel !== 'custom') q = { ...q, infraPct: this.levelPct(q, q.infraLevel) };
     t.plan.infraMode = 'ratio'; t.plan.infraRatio = num(q.infraPct);
     const f = this.farOf(q, t);
     const k = num(q.sizePct || 100) / 100;
@@ -136,7 +154,7 @@ const Quick = {
 
   // 지금 값을 사업성 표(분양수입·사업비·종전자산)에 채움
   apply() {
-    const q = this.ensure(), e = this.evaluate(q);
+    const q0 = this.ensure(), q = { ...q0, infraLevel: 'custom', infraPct: this.levelPct(q0, q0.infraLevel || 'avg') }, e = this.evaluate(q);
     S.plan.infraMode = 'ratio'; S.plan.infraRatio = num(q.infraPct);
     Assume.applyTo(S, e.v);
     if (Calc.officialLandValue(S) <= 0 && num(q.avgLand) > 0) { S.prior.mode = 'manual'; S.prior.manual = e.t.prior.manual; }
@@ -163,8 +181,11 @@ Tabs.quick = {
     this.refresh();
   },
   refresh() {
-    const q = Quick.ensure();
+    const q0 = Quick.ensure();
     bindInputs($('#tab-quick'));
+    // 고른 단계(최소·평균·보수)를 실제 비율로 바꿔 아래 계산·손잡이·표에 씀
+    const q = { ...q0, infraLevel: 'custom', infraPct: Quick.levelPct(q0, q0.infraLevel || 'avg') };
+    const pin = $('#qk_infraPct'); if (pin) pin.disabled = (q0.infraLevel || 'avg') !== 'custom';
     const out = $('#qkOut'); if (!out) return;
     const site = Calc.siteArea(S);
     if (!(site > 0)) { out.innerHTML = '<p class="warn-box">구역 면적이 없습니다. <b>2 구역계</b>에서 구역을 그리거나 면적을 직접 넣으면 바로 계산됩니다.</p>'; $('#qkLevers').innerHTML = ''; $('#qkScan').innerHTML = ''; return; }
@@ -187,6 +208,14 @@ Tabs.quick = {
         <div class="qk-ratio ${ratioClass(r.ratio)}"><span>1차 비례율 (표준)</span><b>${fmtPct(r.ratio)}</b><em>${isFinite(r.ratio) ? (r.ratio >= tgt ? `목표 ${tgt}% 이상` : `목표 ${tgt}%까지 ${fmt(tgt - r.ratio, 1)}%p 부족`) : '계산 전'}</em></div>
         <div class="qk-scen">${scen.map(x => `<div class="${ratioClass(x.ratio)}"><span>${x.sc.key}</span><b>${fmtPct(x.ratio)}</b><em>${x.sc.note}</em></div>`).join('')}</div>
       </div>
+      ${(() => {
+        const mi = Quick.minInfra(q0), lv = [['min', '최소', mi.v, mi.basis], ['avg', '평균', Quick.INFRA.avg, '실무 경험치(가정값)'], ['cons', '보수적', Quick.INFRA.cons, '도로·공원을 더 내놓는 경우(가정값)']];
+        const cur = q0.infraLevel || 'avg';
+        return `<div class="qk-levels"><div class="qk-lv-h">정비기반시설(도로·공원 등) 비율별 사업성 <small>표준 시나리오</small></div>${lv.map(([k, nm, v, b]) => {
+          const rr = Quick.ratio({ ...q, infraPct: v });
+          return `<button type="button" class="qk-lv ${ratioClass(rr)}${cur === k ? ' on' : ''}" data-lv="${k}"><span>${nm} ${fmt(v, 1)}%</span><b>${fmtPct(rr)}</b><em>${esc(b)}</em></button>`;
+        }).join('')}</div>`;
+      })()}
       <div class="as-grid">
         <div><span>구역 면적</span><b>${fmt(site)}㎡</b><em>기반시설 ${fmt(q.infraPct)}% → 획지 ${fmt(f.lot)}㎡</em></div>
         <div><span>적용 용적률</span><b>${fmt(f.v, 1)}%</b><em>${esc(q.zone.replace(/_/g, ' '))}</em></div>
@@ -200,6 +229,7 @@ Tabs.quick = {
       <p class="note">${esc(farTxt)}. 용적률 체계는 2030 인천 도시·주거환경정비기본계획 변경 고시(제2026-96호) 기준입니다. 평면 공급면적은 표준 평면 라이브러리의 개략값(검증필요)입니다.</p>
       ${warn.map(w => `<p class="warn-box">${w}</p>`).join('')}`;
 
+    out.querySelectorAll('[data-lv]').forEach(b => { b.onclick = () => { S.quick.infraLevel = b.dataset.lv; App.update(true); }; });
     // 손잡이 효과
     const rows = Quick.leverRows(q);
     const span = Math.max(1, ...rows.map(x => Math.max(Math.abs(x.lo - x.base) || 0, Math.abs(x.hi - x.base) || 0)));

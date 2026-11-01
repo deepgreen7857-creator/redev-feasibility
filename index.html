@@ -457,7 +457,8 @@
       <label>용도지역<select id="qk_zone" data-bind="quick.zone" data-rerender="1"></select><button type="button" class="btn small ghost" id="qkZoneFromMeta">개요의 용도지역으로</button></label>
       <label>용적률 단계<select data-bind="quick.farStep"><option value="base">기준용적률</option><option value="allowed">허용용적률 (인센티브 다 받음)</option><option value="calc">산식 — 공공시설 제공 (상한 이내)</option><option value="custom">직접 입력</option></select></label>
       <label>직접 입력 용적률 (%)<small>'직접 입력'일 때만 씀, 상한 이내</small><input data-bind="quick.farCustom" data-type="number" inputmode="decimal"></label>
-      <label>정비기반시설 비율 (구역면적 %)<small>도로·공원·녹지 등 새로 만드는 공공시설</small><input data-bind="quick.infraPct" data-type="number" inputmode="decimal"></label>
+      <label>정비기반시설 비율<small>도로·공원·녹지 등. 처음엔 '평균'으로 보세요</small><select data-bind="quick.infraLevel"><option value="min">최소 (구역별 자동 계산)</option><option value="avg">평균 25% (가정값)</option><option value="cons">보수적 30% (가정값)</option><option value="custom">직접 입력</option></select></label>
+      <label>직접 입력 비율 (구역면적 %)<small>'직접 입력'일 때만 씀</small><input id="qk_infraPct" data-bind="quick.infraPct" data-type="number" inputmode="decimal"></label>
       <label>59㎡형 비율 (%)<small>나머지는 84㎡형</small><input data-bind="quick.mix59" data-type="number" inputmode="decimal"></label>
       <label>세대당 평면 크기 (%)<small>표준 평면 공급면적 대비</small><input data-bind="quick.sizePct" data-type="number" inputmode="decimal"></label>
       <label>임대주택 비율 (세대 %)<input data-bind="quick.rentRatio" data-type="number" inputmode="decimal"></label>
@@ -523,24 +524,24 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=75"></script>
-<script src="js/util.js?v=75"></script>
-<script src="js/state.js?v=75"></script>
-<script src="js/calc.js?v=75"></script>
-<script src="js/zonekit.js?v=75"></script>
-<script src="js/map.js?v=75"></script>
-<script src="js/ledger.js?v=75"></script>
-<script src="js/pdfsave.js?v=75"></script>
-<script src="js/overlay.js?v=75"></script>
-<script src="js/export.js?v=75"></script>
-<script src="js/roadcut.js?v=75"></script>
-<script src="shared/site-store.js?v=75"></script>
-<script src="js/assume.js?v=75"></script>
-<script src="js/app.js?v=75"></script>
-<script src="js/quick.js?v=75"></script>
-<script src="js/forms.js?v=75"></script>
-<script src="js/hwpx.js?v=75"></script>
-<script src="js/surveymaps.js?v=75"></script>
-<script src="js/review.js?v=75"></script>
+<script src="js/config.js?v=76"></script>
+<script src="js/util.js?v=76"></script>
+<script src="js/state.js?v=76"></script>
+<script src="js/calc.js?v=76"></script>
+<script src="js/zonekit.js?v=76"></script>
+<script src="js/map.js?v=76"></script>
+<script src="js/ledger.js?v=76"></script>
+<script src="js/pdfsave.js?v=76"></script>
+<script src="js/overlay.js?v=76"></script>
+<script src="js/export.js?v=76"></script>
+<script src="js/roadcut.js?v=76"></script>
+<script src="shared/site-store.js?v=76"></script>
+<script src="js/assume.js?v=76"></script>
+<script src="js/app.js?v=76"></script>
+<script src="js/quick.js?v=76"></script>
+<script src="js/forms.js?v=76"></script>
+<script src="js/hwpx.js?v=76"></script>
+<script src="js/surveymaps.js?v=76"></script>
+<script src="js/review.js?v=76"></script>
 </body>
 </html>
