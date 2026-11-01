@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findArchive } from './archive.js';
+import { loadPubPrice, pubVerdict, pubRank } from './pubprice.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -176,6 +177,8 @@ async function main() {
   try {
     if (today >= cfg.dailyMax) return log('오늘 한도 — 내일 이어서');
     let todo = targets();
+    // 2026-11-01: 주택 공시가격 1억 이하 확인 → 먼저, 1억 초과 확인 → 받지 않음(review 후보는 그대로 둠)
+    { const pubMap = await loadPubPrice(log); const pr = (v) => pubRank(pubVerdict(pubMap, v.court, v.caseNo)); const n0 = todo.length; todo = todo.filter((v) => v.review || pr(v) < 9).sort((a, b) => (b.review - a.review) || pr(a) - pr(b) || String(a.sale || '9').localeCompare(String(b.sale || '9'))); if (n0 - todo.length) log(`공시가격 1억 초과 확인 ${n0 - todo.length}사건은 받지 않음`); }
     if (arg('--case')) todo = [{ court: arg('--court') || '인천지방법원', caseNo: arg('--case'), sale: '', review: true }];
     log(`시작 — 감정평가서 없는 사건 ${todo.length}건, 오늘 ${today}/${cfg.dailyMax}`);
     let failRun = 0; let rests = 0; let k0 = 0;

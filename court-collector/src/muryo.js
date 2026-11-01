@@ -34,7 +34,7 @@ const LIMIT = Number(arg('--limit')) || Infinity;
 
 const cfgAll = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
 const DEFAULT_SCOPE = [
-  { name: 'A 수도권 아파트·다세대·도시형 5천만 이하', regions: ['서울', '인천', '경기'], use1: '01,03,07', minPriceMax: 50000000 },
+  { name: 'A 수도권 아파트·다세대·도시형(공시가격 1억 이하만)', regions: ['서울', '인천', '경기'], use1: '01,03,07' },
   { name: 'B 수도권·충청 땅 3천만 이하', regions: ['서울', '인천', '경기', '충북', '충남', '대전', '세종'], use3: '41,42,43,44,45,46', minPriceMax: 30000000 },
   { name: 'B 경남 남해안 땅 3천만 이하', regions: ['경남'], use3: '41,42,43,44,45,46', minPriceMax: 30000000, addr: '통영|거제|남해군|사천|고성군|하동|진해|마산합포' },
 ];
@@ -367,6 +367,7 @@ function parseResults(t) {
 // ── 사이트(jbslab.co.kr/auction)에 결과 붙이기 ────────────────
 //  사이트의 법원 물건 중 매각기일이 지났는데 그 기일 결과가 없는 것을 가져와(공개 읽기) 같이 확인하고,
 //  확인한 결과를 수집 서버(ingestCourt)로 보낸다 → 완료 물건 채점에 바로 쓰임. forecast(입찰 전 예측)는 건드리지 않는다.
+import { loadPubPrice, pubVerdict, pubRank } from './pubprice.js';
 const FS_BASE = 'https://firestore.googleapis.com/v1/projects/jbslab-auction/databases/(default)/documents';
 const fsVal = (v) => { if (!v) return v; if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, fsVal(x)])); if ('arrayValue' in v) return (v.arrayValue.values || []).map(fsVal); if ('integerValue' in v) return Number(v.integerValue); if ('nullValue' in v) return null; return Object.values(v)[0]; };
 const dash = (d) => String(d || '').replace(/\./g, '-').slice(0, 10);
@@ -551,7 +552,12 @@ async function main() {
         for (const v of wide.values()) if (!doneByCaseNo(caseOf(v), true)) left.push(v);
         log(`넓은 범위 — 남은 것 ${left.length}사건`);
       }
-      todo = left.sort((a, b) => (a.src === 'review' ? 0 : 1) - (b.src === 'review' ? 0 : 1) || String(a.sale || '9').localeCompare(String(b.sale || '9')));
+      // 2026-11-01: 주택 공시가격 1억 이하 확인 → 먼저, 미확인 → 다음, 1억 초과 확인 → 받지 않음(땅은 공시가 판정 없음 → 미확인 순서)
+      const pubMap = await loadPubPrice(log);
+      const pr = (v) => pubRank(pubVerdict(pubMap, v.rows?.[0]?.court || '', caseOf(v)));
+      const before = left.length; const kept = left.filter((v) => pr(v) < 9);
+      if (before - kept.length) log(`공시가격 1억 초과 확인 ${before - kept.length}사건은 받지 않음`);
+      todo = kept.sort((a, b) => pr(a) - pr(b) || (a.src === 'review' ? 0 : 1) - (b.src === 'review' ? 0 : 1) || String(a.sale || '9').localeCompare(String(b.sale || '9')));
     }
     let failRun = 0; let restRounds = 0;
     for (const v of todo) {

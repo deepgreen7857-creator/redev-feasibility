@@ -10,6 +10,7 @@ import { readSpecDoc, fetchDocPdf } from './specFetch.js';
 import { FileStore, listingIdOf } from './files.js';
 import { pdfText, pdfPages } from './spec.js';
 import { slimPdf } from './slim.js';
+import { loadPubPrice, pubVerdict } from './pubprice.js';
 
 // 브라우저는 AppData 가 아니라 이 폴더의 node_modules 안에 둔다(npm run setup-browser 와 같은 위치).
 // AppData 에 두면 설치한 프로그램과 작업 스케줄러가 서로 다른 곳을 볼 수 있다(MSIX 앱 안에서 설치한 경우 등).
@@ -327,13 +328,17 @@ async function main() {
     const focus = cfg.focus?.courts?.length ? cfg.focus : null;
     const focusRe = focus?.address ? new RegExp(focus.address) : null;
     // 검토 범위(config.focus.scope): 용도·최저가 상한에 맞는 물건은 집중 지역 밖이어도 상세(원본 PDF·사진)를 연다 — 제이옥션 차단 대체(2026-10-30)
-    const scopeRules = (focus?.scope || []).map((r) => ({ re: new RegExp(r.usage), max: r.maxMinBid }));
-    const inScope = (row) => scopeRules.some((r) => r.re.test(String(row.usage || '')) && Number(row.minBid || 0) > 0 && Number(row.minBid) <= r.max);
+    // 2026-11-01: 주택은 최저가 상한 대신 공시가격 1억 이하(pubCap) — 1억 초과 확인 물건은 빼고, 1억 이하 확인 물건을 '급한 것'으로 먼저
+    const scopeRules = (focus?.scope || []).map((r) => ({ re: new RegExp(r.usage), max: r.maxMinBid, pub: r.pubCap }));
+    const pubMap = scopeRules.some((r) => r.pub) ? await loadPubPrice(log) : null;
+    const pv = (row) => pubVerdict(pubMap, row.court, row.caseNo);
+    const inScope = (row) => scopeRules.some((r) => r.re.test(String(row.usage || '')) && (r.pub ? pv(row) !== 'over' : (Number(row.minBid || 0) > 0 && Number(row.minBid) <= r.max)));
+    const pubOk = (row) => scopeRules.some((r) => r.pub && r.re.test(String(row.usage || ''))) ? pv(row) === 'ok' : true;
     // 매각(종료)되면 대법원 서류가 내려가므로, 매각기일이 가까운 검토 범위 물건부터 상세를 연다(2026-10-31)
     //  1단계 '급한 것': 집중 지역 + 검토 범위 중 매각기일 urgentDays(기본 6일) 안 → 2단계 '검토 범위': 나머지 검토 범위 → 3단계: 그 밖(목록만)
     const urgentDays = cfg.focus?.urgentDays || 6;
     const daysLeft = (row) => { const m = String(row.bidEnd || '').match(/(\d{4})\.(\d{2})\.(\d{2})/); if (!m) return 99; return Math.floor((Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(...kstDay().split('-').map((x, i) => (i === 1 ? +x - 1 : +x)))) / 86400e3); };
-    const urgentRe = { test: (s, row) => (focusRe && focusRe.test(s)) || (inScope(row) && daysLeft(row) <= urgentDays) };
+    const urgentRe = { test: (s, row) => (focusRe && focusRe.test(s)) || (inScope(row) && pubOk(row) && daysLeft(row) <= urgentDays) };
     const phases = focus
       ? [{ name: '급한 것', list: focus.courts, key: 'court', re: urgentRe },
         ...(scopeRules.length ? [{ name: '검토 범위', list: focus.courts, key: 'scopeCourt', re: { test: (s, row) => (focusRe && focusRe.test(s)) || inScope(row) } }] : []),
