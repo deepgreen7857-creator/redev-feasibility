@@ -268,7 +268,7 @@
     }
     function pack(F) {
       const blds = [], cols = {}; types.forEach(t => { cols[t] = 0; });
-      const st = GW * GH > 25000 ? 2 : 1; // 큰 구역은 2m 간격으로 자리 찾기(개략 배치 정밀도로 충분)
+      const st = opt.quick ? 3 : GW * GH > 25000 ? 2 : 1; // 큰 구역은 2m 간격(방향 고르기용 빠른 추정은 3m)
       const ordOf = () => { const tot = Object.values(cols).reduce((a, b) => a + b, 0) || 1; return types.slice().sort((a, b) => (cols[a] / tot - want[a]) - (cols[b] / tot - want[b])); };
       let order = ordOf();
       for (let y = GY0; y <= ymax; y += st) {
@@ -288,6 +288,7 @@
     }
     // 줄 배치와 자유 배치 중 연면적이 큰 쪽
     function placeBest(F) {
+      if (opt.quick) return finish(pack(F));
       const a = finish(place(() => F)), b = finish(pack(F));
       return gfaOf(b) > gfaOf(a) * 1.001 ? b : a;
     }
@@ -372,7 +373,7 @@
   function alternatives(site, opt) {
     const A = opt.assume, cands = [];
     // 기준 층수: 범위가 넓으면 2층 간격(계산 시간 절반, 결과 차이 작음)
-    const stepF = A.maxFloors - A.minFloors > 16 ? 2 : 1, all = [];
+    const span = A.maxFloors - A.minFloors, stepF = span > 24 ? 3 : span > 12 ? 2 : 1, all = [];
     for (let F = A.minFloors; F <= A.maxFloors; F += stepF) {
       try { const r = layout(site, Object.assign({}, opt, { fixedF: F })); if (r.units) all.push(r); if (r.units && r.gfa >= r.target * 0.97) cands.push(r); } catch (e) { /* 건너뜀 */ }
     }
@@ -417,11 +418,12 @@
   // 격자 점별 동지 일조 시간(합계 08~16, 최대 연속 09~15), 10분 간격
   function sunHours(blds, H, latDeg, pts, tol) {
     const times = []; for (let t = 8; t <= 16 + 1e-9; t += 1 / 6) times.push(t);
-    const shadowsAt = times.map(t => { const s = sun(latDeg, t); return blds.flatMap(b => (b.parts || [b.poly]).map(q => shadow(q, b.h != null ? b.h : H(b.floors), s))).filter(Boolean); });
+    // 시각별 그림자 + 외접사각형(점이 사각형 밖이면 다각형 검사를 건너뜀 — 주변 건물이 수천 동이어도 빠르게)
+    const shadowsAt = times.map(t => { const s = sun(latDeg, t); return blds.flatMap(b => (b.parts || [b.poly]).map(q => shadow(q, b.h != null ? b.h : H(b.floors), s))).filter(Boolean).map(sh => { const xs = sh.map(p => p[0]), ys = sh.map(p => p[1]); return { sh, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; }); });
     return pts.map(p => {
       let total = 0, run = 0, best = 0;
       times.forEach((t, k) => {
-        const lit = !shadowsAt[k].some(sh => inside(p[0], p[1], sh));
+        const lit = !shadowsAt[k].some(o => p[0] >= o.x0 && p[0] <= o.x1 && p[1] >= o.y0 && p[1] <= o.y1 && inside(p[0], p[1], o.sh));
         if (lit && t >= tol.합계_구간[0] && t < tol.합계_구간[1]) total += 1 / 6;
         if (t >= tol.연속_구간[0] && t < tol.연속_구간[1]) { if (lit) { run += 1 / 6; best = Math.max(best, run); } else run = 0; }
       });

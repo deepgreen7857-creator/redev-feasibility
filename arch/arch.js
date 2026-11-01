@@ -333,12 +333,12 @@
       // 방향별로 대안을 만들어 가장 좋은 방향 고르기. 점수: 목표 연면적 충족도 우선, 그다음 남향(각도 작을수록), 건폐율 낮을수록
       async function searchAngle(form, label) {
         // 방향 고르기는 빠른 추정(기준 층수 2개로만 배치)으로, 대안 3개는 고른 방향에서만 자세히 계산
-        const As = I.opt.assume, Fs = [Math.round((As.minFloors + As.maxFloors) / 2), Math.round(As.minFloors + (As.maxFloors - As.minFloors) * 0.8)];
+        const As = I.opt.assume, Fs = [Math.round(As.minFloors + (As.maxFloors - As.minFloors) * 0.6)];
         let b = null, k = 0;
         for (const a of angles) {
           msg(`배치안 계산 중… ${label ? label + ' · ' : ''}방향 ${++k}/${angles.length}`); await tick();
           let top = 0, bcr = 100;
-          for (const F of Fs) { try { const r = G.layout(I.site, Object.assign({}, I.opt, { angle: a, form, fixedF: F })); if (r.units) { top = Math.max(top, r.gfa); bcr = Math.min(bcr, r.bcr); } } catch (e) { /* 건너뜀 */ } }
+          for (const F of Fs) { try { const r = G.layout(I.site, Object.assign({}, I.opt, { angle: a, form, fixedF: F, quick: true })); if (r.units) { top = Math.max(top, r.gfa); bcr = Math.min(bcr, r.bcr); } } catch (e) { /* 건너뜀 */ } }
           if (!top) continue;
           const score = Math.min(top / (I.lot * I.opt.far / 100), 1) * 100 - Math.abs(a) * 0.08 - bcr * 0.02;
           if (!b || score > b.score) b = { score, a };
@@ -367,7 +367,8 @@
       } else alts.forEach(x => { x.label = `${G.FORM_NAME[I.opt.form] || '판상형'} · ${x.label}`; });
       // 기본 선택: 최고 층수가 25층에 가장 가까운 안(재개발 일반 규모)
       cur = alts.reduce((bi, x, i) => Math.abs(x.maxFloors - 25) < Math.abs(alts[bi].maxFloors - 25) ? i : bi, 0);
-      if (I.p.form === 'compare') cur = alts.reduce((bi, x, i) => (x.gfa > alts[bi].gfa * 1.01 || (x.gfa > alts[bi].gfa * 0.99 && x.units > alts[bi].units)) ? i : bi, 0);
+      if (I.p.form === 'compare') { const pref = ['slab', 'mix', 'tower', 'L', 'Y', 'court'], ok = alts.map((x, i) => [x, i]).filter(([x]) => x.gfa >= x.target * 0.97).sort((a, b) => pref.indexOf(a[0].form) - pref.indexOf(b[0].form)); if (ok.length) cur = ok[0][1]; else cur = alts.reduce((bi, x, i) => x.gfa > alts[bi].gfa ? i : bi, 0); }
+      if (false) cur = alts.reduce((bi, x, i) => (x.gfa > alts[bi].gfa * 1.01 || (x.gfa > alts[bi].gfa * 0.99 && x.units > alts[bi].units)) ? i : bi, 0);
       if (I.p.angleMode === 'auto') $('#p_angle').value = alts[cur].angle;
       sunRes = null; v3 = null;
       $('#out').hidden = false; $('#confirm').disabled = false;
@@ -449,16 +450,23 @@
     sunRes = { alt: cur, cells, step, fail: fail.length, failArea: fail.length * step * step, worst: fail.length ? Math.min(...fail.map(c => c.cont)) : null };
   }
   // 주변 건물이 있을 때: 기존 건물 그림자만 있을 때(전)와 새 동을 더했을 때(후)를 비교 → 새로 수인한도를 못 채우게 되는 곳만 영향으로 셈
+  // 배치도·그림자에 그릴 주변 건물: 구역 둘레 150m 안
+  function ctxNear() {
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), b = [Math.min(...xs) - 150, Math.min(...ys) - 150, Math.max(...xs) + 150, Math.max(...ys) + 150];
+    return ctx.filter(c => c.poly.some(p => p[0] > b[0] && p[0] < b[2] && p[1] > b[1] && p[1] < b[3]));
+  }
   function computeSunCtx() {
     const A = alts[cur], tol = crit('sun_tolerance'), newB = A.buildings;
     const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
     const box = [Math.min(...xs) - 60, Math.min(...ys) - 30, Math.max(...xs) + 60, Math.max(...ys) + 90];
     let step = 6; while (((box[2] - box[0]) / step) * ((box[3] - box[1]) / step) > 6000) step += 2;
-    const P2 = []; for (let x = box[0]; x <= box[2]; x += step) for (let y = box[1]; y <= box[3]; y += step) if (!G.inside(x, y, pts) && !ctx.some(c => G.inside(x, y, c.poly))) P2.push([x, y]);
+    // 그림자를 드리울 수 있는 주변 건물(측정 범위 + 남쪽 120m·양옆 80m)만 계산에 넣음
+    const ctxIn = ctx.filter(c => c.poly.some(p => p[0] > box[0] - 80 && p[0] < box[2] + 80 && p[1] > box[1] - 120 && p[1] < box[3]));
+    const near = ctxIn.filter(c => c.res && c.poly.some(p => p[0] > box[0] && p[0] < box[2] && p[1] > Math.min(...ys) - 10 && p[1] < box[3]));
+    const P2 = []; for (let x = box[0]; x <= box[2]; x += step) for (let y = box[1]; y <= box[3]; y += step) if (!G.inside(x, y, pts) && !ctxIn.some(c => G.inside(x, y, c.poly))) P2.push([x, y]);
     // 영향권(구역에서 북쪽 150m 안) 주택만 측정
-    const near = ctx.filter(c => c.res && c.poly.some(p => p[0] > box[0] - 20 && p[0] < box[2] + 20 && p[1] > Math.min(...ys) - 10 && p[1] < Math.max(...ys) + 150));
     const fp = near.map(c => facadePoints(c)), FP = fp.flat();
-    const bef = G.sunHours(ctx, A.H, pr.lat0, P2.concat(FP), tol), aft = G.sunHours(ctx.concat(newB), A.H, pr.lat0, P2.concat(FP), tol);
+    const bef = G.sunHours(ctxIn, A.H, pr.lat0, P2.concat(FP), tol), aft = G.sunHours(ctxIn.concat(newB), A.H, pr.lat0, P2.concat(FP), tol);
     const cells = P2.map((p, i) => Object.assign({ p }, aft[i], { was: bef[i].ok }));
     const fail = cells.filter(c => !c.ok && c.was);
     let k = P2.length; const houses = near.map((c, i) => {
@@ -466,27 +474,27 @@
       const newly = r.filter(x => x.b.ok && !x.a.ok).length, already = r.filter(x => !x.b.ok).length;
       return { c, n: r.length, newly, already, worst: r.length ? Math.min(...r.map(x => x.a.cont)) : null };
     }).filter(h => h.n);
-    sunRes = { alt: cur, cells: cells.filter(c => !c.ok && c.was), step, fail: fail.length, failArea: fail.length * step * step, worst: fail.length ? Math.min(...fail.map(c => c.cont)) : null, houses, ctx: true };
+    sunRes = { alt: cur, nCtx: ctxIn.length, cells: cells.filter(c => !c.ok && c.was), step, fail: fail.length, failArea: fail.length * step * step, worst: fail.length ? Math.min(...fail.map(c => c.cont)) : null, houses, ctx: true };
   }
   function renderSun() {
     const t = +$('#sunT').value, hh = Math.floor(t), mm = Math.round((t - hh) * 60);
     $('#sunTv').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     const A = alts[cur], s = G.sun(pr.lat0, t);
-    const sh = A.buildings.flatMap(b => (b.parts || [b.poly]).map(q => G.shadow(q, A.H(b.floors), s))).concat(ctx.map(c => G.shadow(c.poly, c.h, s))).filter(Boolean);
+    const sh = A.buildings.flatMap(b => (b.parts || [b.poly]).map(q => G.shadow(q, A.H(b.floors), s))).concat(ctxNear().map(c => G.shadow(c.poly, c.h, s))).filter(Boolean);
     const tol = crit('sun_tolerance');
     const hit = sunRes && sunRes.ctx ? sunRes.houses.filter(h => h.newly > 0) : [];
     $('#sunNote').innerHTML = sunRes && sunRes.alt === cur && sunRes.ctx
-      ? `주변 기존 건물 ${fmt(ctx.length)}동의 그림자를 넣고, 새 동이 생기기 전·후를 비교했습니다(동지 ${tol.연속_구간[0]}~${tol.연속_구간[1]}시 연속 ${tol.연속_h}시간 또는 ${tol.합계_구간[0]}~${tol.합계_구간[1]}시 합계 ${tol.합계_h}시간). `
+      ? `주변 기존 건물 ${fmt(sunRes.nCtx)}동(그림자가 닿는 범위)의 그림자를 넣고, 새 동이 생기기 전·후를 비교했습니다(동지 ${tol.연속_구간[0]}~${tol.연속_구간[1]}시 연속 ${tol.연속_h}시간 또는 ${tol.합계_구간[0]}~${tol.합계_구간[1]}시 합계 ${tol.합계_h}시간). `
         + `<b>주변 주택 ${fmt(sunRes.houses.length)}동 중 ${fmt(hit.length)}동</b>이 새 동 때문에 남쪽 벽면 일부가 수인한도를 못 채우게 됩니다${hit.length ? ` (${hit.slice(0, 8).map(h => `${esc(h.c.name || h.c.use)} ${h.c.floors}층: 측정점 ${h.n}곳 중 ${h.newly}곳`).join(', ')}${hit.length > 8 ? ' 외' : ''})` : ''}. `
         + `이미 기존 건물 때문에 미달인 곳은 영향에서 뺐습니다. 빈 땅 기준 새로 미달: ${fmt(sunRes.failArea)}㎡. 층고 3m 가정·평지 기준 개략 판정입니다.`
       : sunRes && sunRes.alt === cur
       ? `구역 밖 주변 땅 기준, 동지 ${tol.연속_구간[0]}~${tol.연속_구간[1]}시 연속 ${tol.연속_h}시간과 ${tol.합계_구간[0]}~${tol.합계_구간[1]}시 합계 ${tol.합계_h}시간을 <b>모두</b> 못 채우는 곳: <b>${fmt(sunRes.failArea)}㎡</b>(격자 ${sunRes.step}m)${sunRes.fail ? `, 가장 나쁜 곳 연속 ${fmt(sunRes.worst, 1)}시간` : ''}. 평지·기존 건물 없음 가정이며 판례상 수인한도를 참고한 개략 판정입니다.`
       : (ctx.length ? `주변 기존 건물 ${fmt(ctx.length)}동을 반영합니다. ` : '주변 건물 정보가 없어 주변을 빈 땅으로 봅니다. ') + '[일조 계산]을 누르면 동지 일조 시간을 계산합니다(수 초 걸릴 수 있음). 지금은 선택한 시각의 그림자만 보입니다.';
-    $('#sunSvg').innerHTML = D.sitePlan(planOpts({ shadowAt: sh, sunGrid: sunRes && sunRes.alt === cur ? sunRes : null, context: ctx, hit: new Set(hit.map(h => h.c)) }));
+    $('#sunSvg').innerHTML = D.sitePlan(planOpts({ shadowAt: sh, sunGrid: sunRes && sunRes.alt === cur ? sunRes : null, context: ctxNear(), hit: new Set(hit.map(h => h.c)) }));
   }
   function render3d() {
     const A = alts[cur], blds = A.buildings.flatMap(b => (b.parts || [b.poly]).map(q => ({ poly: q, h: A.H(b.floors), color: TYPE_HEX[b.t] })));
-    const cx = ctx.map(c => ({ poly: c.poly, h: c.h }));
+    const cx = ctxNear().map(c => ({ poly: c.poly, h: c.h }));
     if (!v3) v3 = Mass3D.create($('#v3d'), { site: pts, buildings: blds, context: cx, sunHour: +$('#sun3').value, lat: pr.lat0 });
     else v3.setBuildings(blds, cx);
   }
@@ -518,7 +526,7 @@
         return `<tr><th>계획 주차대수</th><td>${fmt(X.plan)}대</td><td class="note">법정 ${fmt(X.legal)}대와 세대당 ${X.per}대 중 큰 값(세대당 ${fmt(X.plan / (A.units || 1), 2)}대)</td></tr>
         <tr><th>지하주차장</th><td>${fmt(X.ugArea)}㎡ · 지하 ${X.ugFloors ?? '○○'}개층</td><td class="note">1대당 ${C.가정.parkAreaPerStall_m2}㎡(차로·램프 포함 가정), 한 층 = 획지 × ${C.가정.ugFootprintRatio} 가정</td></tr>
         <tr><th>주민공동시설</th><td>${fmt(X.comm)}㎡ 이상${ck(cf)}</td><td class="note">${esc(cf.근거)} — 의무 시설: ${X.must.length ? esc(X.must.join(', ')) : '해당 없음(150세대 미만)'}</td></tr>
-        <tr><th>관리사무소·경비실</th><td>${fmt(X.mgmt)}㎡ 이상${ck(mo)}</td><td class="note">${esc(mo.근거)}</td></tr>
+        <tr><th>관리사무소·휴게시설</th><td>${fmt(X.mgmt)}㎡ 이상${ck(mo)}</td><td class="note">${esc(mo.근거)}</td></tr>
         <tr><th>총 연면적(추정)</th><td>${fmt(X.totalGfa)}㎡</td><td class="note">지상 연면적 + 지하주차장 + 주민공동시설 + 관리사무소(공사비 산정 참고, 기계·전기실 등 제외)</td></tr>`; })()}</table>
       ${compareHtml()}
       <h3>평형별 세대 구성</h3>
