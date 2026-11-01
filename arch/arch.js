@@ -397,6 +397,12 @@
       units60below: String(A.byType[59] || 0), area85below: String((A.byType[59] || 0) * U[59].전용 + (A.byType[84] || 0) * U[84].전용), area85above: String((A.byType[114] || 0) * U[114].전용) });
     JbsSite.save(site);
     msg(`'${A.label}'을 확정했습니다. 세대수·층수·전용면적 합계가 교통성·환경성 검토와 높이·경관계획에 그대로 들어갑니다. 사업성 화면의 [사업성 가정값]에서 '세대수 기준'을 이 안으로 고르면 평형별 세대수 그대로 비례율이 계산됩니다.`);
+    const nx = $('#nextSteps'), sid = encodeURIComponent(site.id || '');
+    nx.innerHTML = `<b>다음 단계</b> — 이 배치로 바로 검토서 만들기:
+      <a class="btnlink primary" href="../traffic/?site=${sid}&make=1">교통성 검토서 →</a>
+      <a class="btnlink" href="../env/?site=${sid}&make=1">환경성 검토서 →</a>
+      <a class="btnlink" href="../landscape/?site=${sid}&make=1">높이·경관계획 →</a>`;
+    nx.hidden = false; nx.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   const svgBlob = svg => new Blob([svg], { type: 'image/svg+xml' });
   function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000); }
@@ -460,7 +466,8 @@
       const sp = crit('spacing_ratio');
       $('#ruleNote').textContent = `인동간격 기본값 ${sp.값}배는 검토 가정값입니다(법 하한 ${sp.법정하한}배, 인천시 건축 조례 확인 필요). 층고·코어·이격·평면 공급면적도 가정값입니다.`;
       const q = new URLSearchParams(location.search);
-      let first = q.get('site') ? JbsSite.get(q.get('site')) : null;
+      let first = q.get('urban') ? JbsSite.fromUrban(q.get('urban')) : null;
+      if (!first && q.get('site')) first = JbsSite.get(q.get('site'));
       if (!first) { let cur2 = ''; try { cur2 = localStorage.getItem('jbs.sites.current') || ''; } catch (e) { cur2 = ''; } first = cur2 ? JbsSite.get(cur2) : null; }
       if (!first) { const u = JbsSite.urbanZones(); first = u.length ? JbsSite.fromUrban(u[0].key) : null; }
       load(first || { name: '', v: {} });

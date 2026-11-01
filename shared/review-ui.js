@@ -173,8 +173,8 @@
           if (site !== me) return;
           if (r.changed) { JbsSite.save(me); toForm(); fillSel(); msg('자동으로 채웠습니다: ' + r.notes.join(' · ') + '. 값이 다르면 칸에서 바로 고치세요.'); }
           else msg('');
-        }).catch(e => { console.warn(e); msg(''); });
-      }
+        }).catch(e => { console.warn(e); msg(''); }).finally(() => { if (site === me && autoMake) { autoMake = false; make(); } });
+      } else if (autoMake && site.geojson) { autoMake = false; make(); }
     }
 
     // 검토서
@@ -237,6 +237,7 @@
     // 시작: 기준표·문장 틀 읽기
     initMap();
     const q = new URLSearchParams(location.search);
+    let autoMake = q.get('make') === '1';
     Promise.all([cfg.criteriaUrl, cfg.templatesUrl].map(u => fetch(u + '?v=' + Date.now()).then(r => { if (!r.ok) throw new Error(u); return r.json(); })))
       .then(([c, t]) => {
         C = c; Tp = t;
