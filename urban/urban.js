@@ -740,7 +740,7 @@ const ROADCLS = {
 const FACCLS = {
   LAB: { exec: '집행(설치·기부채납)', keep: '존치', alt: '선형 변경(대체)', abolish: '폐지' },
   of(f, zone, innerU) {
-    if (f._cls && f._cls.v === 2) return f._cls;
+    if (f._cls && f._cls.v === 3) return f._cls;
     const g = { type: 'Feature', properties: {}, geometry: f.geom }, A = turf.area(g) || 1;
     let edgeR = 0, ends = 0, curR = 0;
     try {
@@ -753,9 +753,10 @@ const FACCLS = {
     try { if (innerU) { const z2 = turf.intersect(g, innerU); curR = z2 ? turf.area(z2) / A : 0; } } catch (er) { curR = 0; }
     const type = edgeR >= 0.6 ? 'edge' : ends >= 2 ? 'through' : 'inner';
     const cur = curR >= 0.5;
-    const rec = type === 'edge' ? 'exec' : type === 'through' ? (cur ? 'keep' : 'alt') : 'abolish';
-    const why = type === 'edge' ? '구역 경계를 따라감 → 사업시행자가 집행(확폭·설치)해 기부채납' : type === 'through' ? `구역을 관통해 밖 도로와 이어짐 → 가로망 연결 유지(${cur ? '이미 도로로 쓰여 존치' : '단지 배치에 맞춰 선형 변경·대체'})` : '구역 안에서 끝남 → 단지화하면 폐지하고 단지 안 도로로 대체';
-    f._cls = { v: 2, type, edgeR, ends, cur, curR, rec, why };
+    // 결정선 아래가 이미 국공유 도로(현황 도로)면 '집행'이 아니라 '존치' — 지도상 미집행 표시와 실제가 다를 수 있음(구획정리로 이미 만든 도로 등)
+    const rec = type === 'edge' ? (cur ? 'keep' : 'exec') : type === 'through' ? (cur ? 'keep' : 'alt') : 'abolish';
+    const why = type === 'edge' ? (cur ? '구역 경계를 따라가고 이미 국공유 도로로 쓰임 → 존치(경계 도로 확폭은 위 표에서)' : '구역 경계를 따라감 → 사업시행자가 집행(설치)해 기부채납') : type === 'through' ? `구역을 관통해 밖 도로와 이어짐 → 가로망 연결 유지(${cur ? '이미 도로로 쓰여 존치' : '단지 배치에 맞춰 선형 변경·대체'})` : '구역 안에서 끝남 → 단지화하면 폐지하고 단지 안 도로로 대체';
+    f._cls = { v: 3, type, edgeR, ends, cur, curR, rec, why };
     return f._cls;
   },
 };
@@ -2302,7 +2303,8 @@ function facSection(inf) {
   const TY = { edge: '경계형', through: '관통형', inner: '내부형' };
   const sum = k => fs.filter(x => x.d === k).reduce((t, x) => t + (x.f.area || 0), 0);
   return `<details class="gi" open><summary><b>기정 도시계획시설 처리</b> — ${fs.length}건 ${fmt(inf.facArea)}㎡ · 집행 ${fmt(sum('exec'))} · 존치 ${fmt(sum('keep'))} · 대체 ${fmt(sum('alt'))} · 폐지 ${fmt(sum('abolish'))}㎡</summary>
-    <p class="hint">시설마다 성격을 자동으로 나눠 처리를 추천합니다. <b>경계형</b>(구역 경계 12m 띠 안이 60% 이상) → 집행, <b>관통형</b>(구역 경계와 두 곳 이상 만나 밖과 이어짐) → 이미 도로로 쓰이면 존치, 아니면 선형 변경, <b>내부형</b> → 폐지. 집행·존치는 획지에서 빼고, 대체는 면적만 기반시설에 더합니다(위치는 ✂로 그리세요). 상한용적률 산식은 '계획 공공시설 총량 − 기정 시설 총량'이라 존치분은 양쪽에서 상쇄됩니다.</p>
+    ${fs.length && fs.every(x => x.c.cur) ? '<p class="hint"><b class="warn">모든 시설이 이미 국공유 도로 위에 있습니다</b> — 지도에는 미집행으로 나와도 실제로는 도로로 쓰이고 있을 수 있습니다(구획정리 등으로 먼저 만든 도로). 재산관리·도로관리 부서 확인을 권합니다.</p>' : ''}
+    <p class="hint">시설마다 성격을 자동으로 나눠 처리를 추천합니다. <b>경계형</b>(구역 경계 12m 띠 안이 60% 이상) → 집행(이미 국공유 도로면 존치), <b>관통형</b>(구역 경계와 두 곳 이상 만나 밖과 이어짐) → 이미 도로로 쓰이면 존치, 아니면 선형 변경, <b>내부형</b> → 폐지. 집행·존치는 획지에서 빼고, 대체는 면적만 기반시설에 더합니다(위치는 ✂로 그리세요). 상한용적률 산식은 '계획 공공시설 총량 − 기정 시설 총량'이라 존치분은 양쪽에서 상쇄됩니다.</p>
     <div class="tscroll"><table class="gi-tbl"><thead><tr><th>시설</th><th class="r">구역 안㎡</th><th>성격</th><th>근거</th><th>처리</th></tr></thead><tbody>
     ${fs.map(x => `<tr><td><button type="button" class="linkbtn" data-facfocus="${x.i}">${esc(x.f.name)}${x.f.exc ? `(${esc(x.f.exc)})` : ''}</button></td><td class="r">${fmt(x.f.area)}</td><td>${TY[x.c.type]}${x.c.cur ? '<br><span class="u">현황 도로</span>' : ''}</td>
       <td class="wrap u">${x.c.why} (경계 띠 ${Math.round(x.c.edgeR * 100)}% · 경계와 만나는 곳 ${x.c.ends} · 국공유 도로와 겹침 ${Math.round(x.c.curR * 100)}%)</td>
