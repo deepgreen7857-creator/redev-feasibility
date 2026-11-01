@@ -2205,7 +2205,10 @@ function sideWOf() { return num(P.sideRoadW) || 8; }
 //  자동으로 넓히지 않고 '추천'으로만 보여 주고, [추천대로 적용]을 누르면 도로별 계획 폭(edgeOpt.pw)에 넣음
 function fillSuggest(inf, need) {
   const z = Z.zones[S.region], e = inf.entry; if (!z || !z.roads || !e || !(need > 1)) return null;
-  const rs = z.roads.edge.map(r => { const w = Math.max(r.w, num((e.per[r.pnu] || {}).pw) || r.w); return { r, w, big: ROADCLS.big(ROADCLS.of(w)), front: INFRA.widenArea(r, z, r.w + 1) }; }).filter(x => x.front >= 10).sort((a, b) => b.front - a.front);
+  // 도로 성격: 구역에 10m 이상 닿은 도로만, 사용자가 '현황 유지'로 고른 도로·이미 20m 이상인 간선은 넓히지 않음, 많이 닿은 도로부터
+  const eo = (z.infra && z.infra.edgeOpt) || {};
+  const rs = z.roads.edge.map(r => { const w = Math.max(r.w, num((e.per[r.pnu] || {}).pw) || r.w); return { r, w, big: ROADCLS.big(ROADCLS.of(w)), front: INFRA.widenArea(r, z, r.w + 1) }; })
+    .filter(x => x.front >= 10 && !(eo[x.r.pnu] || {}).keep && x.w < 20).sort((a, b) => b.front - a.front);
   const steps = []; let got = 0;
   for (let round = 0; round < 4 && got < need; round++) {
     for (const x of rs) {
@@ -2215,11 +2218,22 @@ function fillSuggest(inf, need) {
       const d = INFRA.widenArea(x.r, z, nx) - INFRA.widenArea(x.r, z, x.w);
       if (d < 1) continue;
       const prev = steps.find(st => st.pnu === x.r.pnu);
-      if (prev) { prev.to = nx; prev.area += d; } else steps.push({ pnu: x.r.pnu, jibun: x.r.jibun, from: x.w, to: nx, area: d });
+      if (prev) { prev.to = nx; prev.area += d; } else steps.push({ pnu: x.r.pnu, jibun: x.r.jibun, from: x.w, to: nx, area: d, cls0: ROADCLS.of(x.w) });
       x.w = nx; got += d;
     }
   }
   return steps.length ? { steps, got, enough: got >= need } : null;
+}
+// 도로 성격을 고려해 넓히기 — 목표 면적(확보 목표 부족분·상한용적률 도달)에 맞춰 도로별로 한 등급씩 올리는 안을 보여 주고 적용
+function widenByChar(inf, pl) {
+  const goals = [];
+  if (inf.short > 1) goals.push(['확보 목표(면적) 부족분', inf.short]);
+  const c = pl.farCalc, f2 = RULES.far[P.zone];
+  if (c && !c.capped && f2) { const needPa = Math.max(0, (f2.max - f2.allowed) / (1.5 * f2.base) * c.site - c.pb / 1.5), more = needPa + c.fac - c.newPub; if (more > 1) goals.push([`상한용적률 ${f2.max}% 도달(지금 산식 ${c.v}%)`, more]); }
+  if (!goals.length) return '';
+  const rows = goals.map(([t, need]) => { const sg = fillSuggest(inf, need); return `<li><b>${t}</b> ${fmt(need)}㎡ → ${sg ? `${sg.steps.map(st => `${esc(st.jibun)} ${st.from}→${st.to}m(${st.cls0}→${ROADCLS.of(st.to)}, +${fmt(st.area)}㎡)`).join(' · ')} = ${fmt(sg.got)}㎡${sg.enough ? '' : ` <b class="warn">(경계 도로만으로 ${fmt(need - sg.got)}㎡ 모자람 — 공원·구역 안 도로로 채워야 함)</b>`} <button type="button" class="btn ghost sm" data-fill='${esc(JSON.stringify(sg.steps.map(st => [st.pnu, st.to])))}'>이 안 적용</button>` : '넓힐 수 있는 경계 도로 없음'}</li>`; }).join('');
+  return `<div style="margin-top:8px"><b>도로 성격을 고려해 넓히기(추천)</b><ul style="margin:4px 0 0 18px">${rows}</ul>
+    <p class="u" style="margin:4px 0 0">구역에 10m 이상 닿은 도로를 많이 닿은 순서로, 도로 등급 표준 폭(8·10·12·15·20m) 한 단계씩 올립니다. 이미 20m 이상인 간선도로·'현황 유지'로 고른 도로·모퉁이만 닿은 도로는 넓히지 않고, 첫 단계 뒤에는 같은 대분류(소로·중로) 안에서만 올립니다. '이 안 적용'을 누르면 위 표의 계획 폭에 들어가고, 표에서 도로별로 다시 고칠 수 있습니다. 획지가 줄어드는 만큼 산식이 조금 달라지니 적용 뒤 다시 확인하세요.</p></div>`;
 }
 function entrySection(inf, pl) {
   const e = inf.entry; if (!e || !inf.roadsReady) return '';
@@ -2265,6 +2279,7 @@ function entrySection(inf, pl) {
       <td><input type="checkbox" data-edgeopt="green" data-pnu="${esc(r.pnu)}" ${(eo[r.pnu] || {}).green ? 'checked' : ''} aria-label="${esc(r.jibun)} 건너편 녹지"></td></tr>`).join('')}
     </tbody></table></div>
     ${e.picked ? '<button type="button" class="btn ghost sm" id="entryAuto">진입도로 자동으로 되돌리기</button>' : ''}
+    ${widenByChar(inf, pl)}
     <p class="u" style="margin:4px 0 0">현황 폭은 필지 모양으로 추정한 값입니다. 진입도로 자동 선택은 구역에 10m 이상 닿은 도로만 봅니다(모퉁이만 스치는 도로 제외). 진입도로는 제25조 폭 아래로 고를 수 없습니다(골라도 제25조 폭으로 계산). 일방통행 도로는 진입도로 후보에서 뺍니다. 건너편 녹지가 있는 쪽은 구역 안에 완충녹지를 따로 두지 않아도 되는 것으로 봅니다.${z.roads && !z.roads.edgeDecOk ? ' 도시계획도로 결정 여부를 확인하는 중…' : ''}${wide.length ? ` <b class="warn">폭 20m 이상 경계 도로(${wide.map(r => esc(r.jibun)).join(', ')})에 닿아 있음 — 소음·완충녹지 필요 여부를 검토하세요(건너편 녹지가 있으면 체크).</b>` : ''}</p>
   </details>`;
 }
@@ -2352,7 +2367,7 @@ function infraSection(a, pl) {
     const ok = inf.short <= 1, tgt = inf.keepArea, nw = inf.newArea, okAll = ok || (inf.money && inf.money.newCost >= inf.money.oldVal - 1);
     return `<div class="target-box ${okAll ? 'ok' : 'ng'}"><div><b>확보 목표(면적, 개략)</b> ${fmt(tgt)}㎡ = ${P.keepInnerRoads ? '기존 도로를 존치해 용도폐지 없음' : `용도폐지되는 설치된 국공유 기반시설 ${inf.inner.length}필지 중 사용 중인 면적`}${inf.innerOcc >= 1 ? ` — <b>건물 점유 ${fmt(inf.innerOcc)}㎡ 뺌</b>(국공유 공공시설 필지 안쪽을 건물이 덮은 부분, 보수적으로 제외)` : ''}</div>
       <div><b>신설 정비기반시설</b> ${fmt(nw)}㎡ → ${ok ? '<b class="good">면적으로도 충족</b>' : `면적으로는 ${fmt(inf.short)}㎡ 적음 <span class="u">(참고 — 무상양도는 아래 금액 기준으로 판단)</span>`}</div>
-      ${(() => { const mOk = inf.money && inf.money.newCost >= inf.money.oldVal - 1; const sg = !ok && !mOk ? fillSuggest(inf, inf.short) : null; return sg ? `<div><b>경계 도로로 채우는 추천</b> — 구역에 많이 닿은 도로부터 한 등급씩: ${sg.steps.map(st => `${esc(st.jibun)} ${st.from}→${st.to}m(+${fmt(st.area)}㎡)`).join(' · ')} → 합 ${fmt(sg.got)}㎡${sg.enough ? '' : ` <b class="warn">(지금 등급 안에서 올릴 수 있는 만큼 올려도 ${fmt(inf.short - sg.got)}㎡ 모자람 — 공원·구역 안 도로(✂)로 채우거나 도로별로 더 넓은 폭을 고르세요)</b>`} <button type="button" class="btn ghost sm" id="fillApply" data-fill='${esc(JSON.stringify(sg.steps.map(st => [st.pnu, st.to])))}'>추천대로 적용</button></div>` : ''; })()}
+      ${(() => { const mOk = inf.money && inf.money.newCost >= inf.money.oldVal - 1; const sg = !ok && !mOk ? fillSuggest(inf, inf.short) : null; return sg ? `<div><b>경계 도로로 채우는 추천</b> — 구역에 많이 닿은 도로부터 한 등급씩: ${sg.steps.map(st => `${esc(st.jibun)} ${st.from}→${st.to}m(${st.cls0}→${ROADCLS.of(st.to)}, +${fmt(st.area)}㎡)`).join(' · ')} → 합 ${fmt(sg.got)}㎡${sg.enough ? '' : ` <b class="warn">(지금 등급 안에서 올릴 수 있는 만큼 올려도 ${fmt(inf.short - sg.got)}㎡ 모자람 — 공원·구역 안 도로(✂)로 채우거나 도로별로 더 넓은 폭을 고르세요)</b>`} <button type="button" class="btn ghost sm" data-fill='${esc(JSON.stringify(sg.steps.map(st => [st.pnu, st.to])))}'>추천대로 적용</button></div>` : ''; })()}
       ${moneyBox(inf)}
       <div class="u">용도폐지 대상은 결정되어 <b>설치된</b> 국공유 정비기반시설(제97조③). 위 면적 목표는 개략 확인용입니다.${(inf.facList || []).length ? ` 구역 안 도시계획시설 결정선 ${inf.facList.length}건 ${fmt(inf.facArea)}㎡는 상쇄하지 않고 '추후 할 일'에 남깁니다.` : ''}</div></div>`;
   })()}
@@ -2448,7 +2463,7 @@ function bindInfra() {
   side.querySelectorAll('[data-entrypick]').forEach(el => el.onchange = () => { const inf = zi(); if (!inf) return; inf.entryPnu = el.dataset.entrypick; saveZ(); INFRA.memo = {}; render(); });
   on('entryAuto', () => { const inf = zi(); if (!inf) return; delete inf.entryPnu; saveZ(); INFRA.memo = {}; render(); });
   side.querySelectorAll('[data-edgeopt]').forEach(el => el.onchange = () => { const inf = zi(); if (!inf) return; inf.edgeOpt = inf.edgeOpt || {}; const o = inf.edgeOpt[el.dataset.pnu] = inf.edgeOpt[el.dataset.pnu] || {}; if (el.checked) o[el.dataset.edgeopt] = true; else delete o[el.dataset.edgeopt]; if (!Object.keys(o).length) delete inf.edgeOpt[el.dataset.pnu]; if (el.dataset.edgeopt === 'oneway' && el.checked && inf.entryPnu === el.dataset.pnu) delete inf.entryPnu; saveZ(); INFRA.memo = {}; render(); });
-  on('fillApply', () => { const inf = zi(); if (!inf) return; let st = []; try { st = JSON.parse(document.getElementById('fillApply').dataset.fill); } catch (er) { st = []; } inf.edgeOpt = inf.edgeOpt || {}; st.forEach(([k, w]) => { const o = inf.edgeOpt[k] = inf.edgeOpt[k] || {}; delete o.keep; o.pw = w; }); saveZ(); INFRA.memo = {}; render(); toast('추천 폭을 도로별 계획 폭에 넣었습니다. 아래 표에서 바꿀 수 있습니다'); });
+  side.querySelectorAll('[data-fill]').forEach(btn => btn.onclick = () => { const inf = zi(); if (!inf) return; let st = []; try { st = JSON.parse(btn.dataset.fill); } catch (er) { st = []; } inf.edgeOpt = inf.edgeOpt || {}; st.forEach(([k, w]) => { const o = inf.edgeOpt[k] = inf.edgeOpt[k] || {}; delete o.keep; o.pw = w; }); saveZ(); INFRA.memo = {}; render(); toast('추천 폭을 도로별 계획 폭에 넣었습니다. 아래 표에서 바꿀 수 있습니다'); });
   side.querySelectorAll('[data-edgesel]').forEach(el => el.onchange = () => {
     const inf = zi(); if (!inf) return; inf.edgeOpt = inf.edgeOpt || {}; const k = el.dataset.edgesel, o = inf.edgeOpt[k] = inf.edgeOpt[k] || {};
     let v = el.value;
