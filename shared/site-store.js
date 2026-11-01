@@ -46,7 +46,7 @@
       site.geojson = it.zone.geojson;
       site.profile = site.profile || {};
       if (it.zone.roads && it.zone.roads.edge && it.zone.roads.edge.length) {
-        site.profile.roads = it.zone.roads.edge.map(r => ({ name: (r.jibun || '') + ' 도로', w: r.w, level: '' }));
+        site.profile.roads = it.zone.roads.edge.map(r => ({ name: (r.jibun || '') + ' 도로', w: r.w, level: '', dec: r.dec || '' }));
         site.profile.roadsFrom = 'urban 주변 도로(지목 도) 폭 추정값';
         site.profile.roadGeoms = it.zone.roads.edge.filter(r => r.geom).map(r => ({ name: (r.jibun || '') + ' 도로', w: r.w, geom: r.geom }));
       }

@@ -1,0 +1,124 @@
+'use strict';
+// 공통 개략 사업성 — jbslab 첫 화면(★빠른 사업성·사업성 가정값)과 /urban '사업성' 탭이 같은 가정값·같은 계산을 쓰도록 한 곳에 둠
+//  가정값 저장: 브라우저 localStorage 'jbs-feas-assume-v1' (같은 사이트의 두 화면이 함께 씀, 서버로 보내지 않음)
+//  금액 단위: 만원, 면적: ㎡, 분양가·공사비 단가: 만원/평
+(function (g) {
+  const KEY = 'jbs-feas-assume-v1', PY = 3.305785;
+  // 기본 가정값 — 모두 '가정값'(법정값 아님). 인천 사례·시세로 보정 전까지 검증필요
+  const DEF = {
+    generalPrice: 2300,   // 일반분양가(공급면적 평당)
+    memberRatio: 80,      // 조합원분양가 = 일반분양가 × %
+    rentPrice: 600,       // 임대주택 인수가(공급면적 평당)
+    shopPrice: 2500,      // 상가 분양가(평당)
+    conPrice: 750,        // 공사비(계획연면적 평당)
+    gfaFactor: 1.45,      // 계획연면적 = 용적률 연면적 × 배율(지하주차장·공용 포함)
+    etcPct: 30,           // 기타 사업비(설계·감리·금융·제세·이주·보상 등) % of 공사비
+    priorMul: 1.4,        // 종전자산 ≈ 공시지가 합 × 배율
+    avgLand: 0,           // 토지조서 공시지가가 없을 때 쓰는 평균 공시지가(만원/㎡)
+    rentRatio: 15,        // 임대주택 비율(세대 %) — 임대는 49㎡형(공급 67㎡)으로 셈
+    mix59: 40, mix84: 50, mix114: 10,   // 분양 평형 비율(%)
+    resRatio: 97,         // 용적률 연면적 중 주거 비율(나머지 상가)
+    infraAvg: 25,         // 정비기반시설 비율 '평균'(실무 경험치)
+    infraCons: 30,        // 정비기반시설 비율 '보수적'(실무 경험치)
+    infraMinFallback: 15, // 토지조서가 없을 때 '최소' 대신 쓰는 값
+    parkPerUnit: 2,       // 법정 공원 세대당 ㎡(도시공원법 시행규칙 별표2 — 정비계획 5만㎡ 이상)
+  };
+  const LABEL = {
+    generalPrice: '일반분양가(만원/평)', memberRatio: '조합원분양가 비율(%)', rentPrice: '임대 인수가(만원/평)', shopPrice: '상가 분양가(만원/평)',
+    conPrice: '공사비(만원/평, 계획연면적)', gfaFactor: '계획연면적 배율', etcPct: '기타 사업비(공사비 대비 %)', priorMul: '종전자산 보정배율(공시지가 ×)',
+    avgLand: '평균 공시지가(만원/㎡)', rentRatio: '임대주택 비율(%)', mix59: '59㎡형 비율(%)', mix84: '84㎡형 비율(%)', mix114: '114㎡형 비율(%)', resRatio: '주거 비율(%)', infraAvg: '기반시설 비율 평균(%)', infraCons: '기반시설 비율 보수적(%)',
+  };
+  // 표준 평면 공급면적(㎡) — shared/criteria/arch.json 평면과 같은 값(개략, 검증필요)
+  const SUPPLY = { 39: 54, 49: 67, 59: 80, 74: 98, 84: 110, 101: 131, 114: 147 };
+  const num = v => { const n = parseFloat(String(v ?? '').replace(/,/g, '')); return isFinite(n) ? n : 0; };
+
+  const JbsFeas = {
+    KEY, DEF, LABEL, SUPPLY, PY,
+    get() {
+      let v = {}; try { v = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { v = {}; }
+      const out = Object.assign({}, DEF);
+      Object.keys(DEF).forEach(k => { if (v[k] !== undefined && v[k] !== '' && isFinite(+v[k])) out[k] = +v[k]; });
+      return out;
+    },
+    set(patch) {
+      const cur = this.get(); Object.assign(cur, patch);
+      // 59㎡형 비율만 바꾸면 84㎡형이 나머지를 채움(114㎡형은 그대로)
+      if (patch.mix59 !== undefined && patch.mix84 === undefined) cur.mix84 = Math.max(0, 100 - num(cur.mix59) - num(cur.mix114));
+      try { localStorage.setItem(KEY, JSON.stringify(cur)); } catch (e) { /* 저장 못 해도 계산은 됨 */ }
+      return cur;
+    },
+    reset() { try { localStorage.removeItem(KEY); } catch (e) { /* 무시 */ } return this.get(); },
+    supply(t) { return SUPPLY[t] || num(t) * 1.33; },
+    mixOf(A) { return { 59: num(A.mix59), 84: num(A.mix84), 114: num(A.mix114) }; },
+
+    // 세대수: 용적률 연면적 × 주거비율 ÷ 세대당 평균 공급면적(임대 49㎡형 + 분양 평형 비율). 두 화면 모두 이 식을 씀
+    //  supOv {t: 공급㎡} — 평면 크기를 바꿀 때(49는 임대)
+    units(farArea, A, mix, supOv) {
+      A = A || this.get(); mix = mix || this.mixOf(A); supOv = supOv || {};
+      const sp = t => num(supOv[t]) || this.supply(t);
+      const ts = Object.keys(mix).filter(t => num(mix[t]) > 0).sort((a, b) => num(a) - num(b));
+      const ms = ts.reduce((s, t) => s + num(mix[t]), 0) || 1;
+      const rent = num(A.rentRatio) / 100, resArea = num(farArea) * num(A.resRatio) / 100;
+      const avgSale = ts.reduce((s, t) => s + num(mix[t]) / ms * sp(t), 0);
+      const avg = rent * sp(49) + (1 - rent) * avgSale;
+      const total = avg > 0 ? Math.floor(resArea / avg) : 0, rental = Math.round(total * rent), saleU = total - rental;
+      const sale = {}; let g0 = 0;
+      ts.forEach(t => { sale[t] = Math.floor(saleU * num(mix[t]) / ms); g0 += sale[t]; });
+      const big = ts.slice().sort((a, b) => num(mix[b]) - num(mix[a]))[0]; if (big) sale[big] += saleU - g0;
+      const supply = {}; ts.forEach(t => { supply[t] = sp(t); });
+      return { total, rental, sale, saleU, avg, resArea, rentSupply: sp(49), supply, perUnit: total ? num(farArea) / total : 0 };
+    },
+
+    // 세대 구성·연면적·종전자산 → 수입·사업비·비례율·분담금
+    //  inp.byType {t: 전체 세대(임대 포함)}, inp.rental 임대 세대, inp.members 조합원(분양 신청) 수, inp.owners 평균 권리가액 나눌 사람 수,
+    //  inp.farArea 용적률 연면적(지상), inp.resArea 그중 주거, inp.prior 종전자산(만원), inp.supply {t: 공급㎡}(없으면 표준)
+    //  임대는 작은 평형부터, 조합원은 분양 세대 비율대로 배분(빠른 사업성의 /arch 확정안 방식과 같음)
+    money(inp, A) {
+      A = A || this.get();
+      const sup = t => num((inp.supply || {})[t]) || this.supply(t);
+      //  inp.sale {t: 분양 세대} + inp.rental(49㎡형 임대, inp.rentSupply) — units() 결과 그대로
+      //  inp.byType {t: 전체 세대} — 실제 배치안(/arch)처럼 평형별 세대가 정해진 경우, 임대를 작은 평형부터 뺌
+      const src = inp.sale || inp.byType || {};
+      const types = Object.keys(src).filter(t => num(src[t]) > 0).sort((a, b) => num(a) - num(b));
+      const rent = {}, sale = {}, mem = {};
+      let total, rentSep = 0;
+      if (inp.sale) {
+        types.forEach(t => { sale[t] = num(inp.sale[t]); rent[t] = 0; });
+        rentSep = Math.round(num(inp.rental));
+        total = types.reduce((n, t) => n + sale[t], 0) + rentSep;
+      } else {
+        total = types.reduce((n, t) => n + num(inp.byType[t]), 0);
+        let rentLeft = Math.min(total, Math.round(num(inp.rental)));
+        types.forEach(t => { const r = Math.min(rentLeft, num(inp.byType[t])); rent[t] = r; rentLeft -= r; sale[t] = num(inp.byType[t]) - r; });
+      }
+      const saleU = types.reduce((n, t) => n + sale[t], 0);
+      const memWant = Math.min(Math.max(0, Math.round(num(inp.members))), saleU);
+      let given = 0;
+      types.forEach(t => { mem[t] = saleU ? Math.floor(memWant * sale[t] / saleU) : 0; given += mem[t]; });
+      for (const t of types.slice().sort((a, b) => sale[b] - sale[a])) { if (given >= memWant) break; if (mem[t] < sale[t]) { mem[t]++; given++; } }
+      const memberPrice = A.generalPrice * A.memberRatio / 100;
+      const amt = (n, t, p) => n * sup(t) / PY * p;
+      const rows = [];
+      types.forEach(t => { if (mem[t]) rows.push({ cat: '조합원', t, units: mem[t], area: sup(t), price: memberPrice, amount: amt(mem[t], t, memberPrice) }); });
+      types.forEach(t => { const n = sale[t] - mem[t]; if (n) rows.push({ cat: '일반', t, units: n, area: sup(t), price: A.generalPrice, amount: amt(n, t, A.generalPrice) }); });
+      types.forEach(t => { if (rent[t]) rows.push({ cat: '임대', t, units: rent[t], area: sup(t), price: A.rentPrice, amount: amt(rent[t], t, A.rentPrice) }); });
+      if (rentSep) { const ra = num(inp.rentSupply) || this.supply(49); rows.push({ cat: '임대', t: '49', units: rentSep, area: ra, price: A.rentPrice, amount: rentSep * ra / PY * A.rentPrice }); }
+      const shopArea = Math.max(0, num(inp.farArea) - num(inp.resArea || inp.farArea));
+      if (shopArea > 1) rows.push({ cat: '상가', t: '', units: 1, area: shopArea, price: A.shopPrice, amount: shopArea / PY * A.shopPrice });
+      const rev = rows.reduce((s, r) => s + r.amount, 0);
+      const byCat = rows.reduce((o, r) => { o[r.cat] = (o[r.cat] || 0) + r.amount; return o; }, {});
+      const planGfa = num(inp.farArea) * A.gfaFactor;
+      const construction = planGfa / PY * A.conPrice, etc = construction * A.etcPct / 100, cost = construction + etc;
+      const prior = num(inp.prior);
+      const ratio = prior > 0 && rev > 0 ? (rev - cost) / prior * 100 : NaN;
+      const owners = num(inp.owners) || memWant;
+      const right = owners > 0 && isFinite(ratio) ? prior / owners * ratio / 100 : NaN;
+      const charge = {}; types.forEach(t => { charge[t] = isFinite(right) ? memberPrice * sup(t) / PY - right : NaN; });
+      const rentU = rentSep + types.reduce((n, t) => n + rent[t], 0);
+      return { types, total, rentU, rent, sale, mem, memTotal: given, short: Math.max(0, Math.round(num(inp.members)) - given), rows, rev, byCat,
+        planGfa, construction, etc, cost, prior, ratio, profit: rev - cost, memberPrice, right, charge, sup, A };
+    },
+  };
+  g.JbsFeas = JbsFeas;
+  if (typeof module !== 'undefined' && module.exports) module.exports = JbsFeas;
+})(typeof window !== 'undefined' ? window : globalThis);

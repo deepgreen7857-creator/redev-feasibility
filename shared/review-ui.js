@@ -82,7 +82,7 @@
       return `<label>${esc(f.label)}<input data-k="${f.k}"${f.num ? ' inputmode="decimal"' : ''} placeholder="${esc(f.ph || '')}"></label>`;
     };
     $('#form').innerHTML = groups.map(gp => gp.roads
-      ? `<h3>접도 도로</h3><table><thead><tr><th>도로명</th><th style="width:80px">폭(m)</th><th style="width:130px">위계</th><th style="width:44px"></th></tr></thead><tbody id="roads"></tbody></table>
+      ? `<h3>접도 도로</h3><table><thead><tr><th>도로명</th><th style="width:76px">폭(m)</th><th style="width:96px">규모</th><th style="width:130px">위계</th><th style="width:44px"></th></tr></thead><tbody id="roads"></tbody></table>
          <div class="bar" style="margin-top:6px"><button id="addRoad">도로 추가</button><span class="note" id="roadsFrom"></span></div>`
       : `${gp.title ? `<h3>${esc(gp.title)}</h3>` : ''}<div class="grid">${gp.fields.map(fieldHtml).join('')}</div>${gp.note ? `<p class="note">${esc(gp.note)}</p>` : ''}`).join('');
 
@@ -95,12 +95,13 @@
     }
     function fromForm() {
       document.querySelectorAll('#form [data-k]').forEach(el => { v()[el.dataset.k] = el.value.trim(); });
-      if (cfg.roads) v().roads = [...document.querySelectorAll('#roads tr')].map(tr => ({ name: tr.querySelector('.rn').value.trim(), w: tr.querySelector('.rw').value.trim(), level: tr.querySelector('.rl').value })).filter(r => r.name || r.w);
+      if (cfg.roads) v().roads = [...document.querySelectorAll('#roads tr')].map(tr => { const w = tr.querySelector('.rw').value.trim(), dec = tr.dataset.dec || ''; return { name: tr.querySelector('.rn').value.trim(), w, level: tr.querySelector('.rl').value, dec, scale: dec || (num(w) !== null && window.AutoSite ? AutoSite.scaleOf(w) : '') }; }).filter(r => r.name || r.w);
       site.name = v().name || site.name || '이름 없는 구역';
     }
     function renderRoads() {
       const rs = v().roads && v().roads.length ? v().roads : [{ name: '', w: '', level: '' }];
-      $('#roads').innerHTML = rs.map(r => `<tr><td><input class="rn" value="${esc(r.name)}" placeholder="예: 숭의로"></td><td><input class="rw" inputmode="decimal" value="${esc(r.w)}"></td>
+      $('#roads').innerHTML = rs.map(r => `<tr data-dec="${esc(r.dec || '')}"><td><input class="rn" value="${esc(r.name)}" placeholder="예: 숭의로"></td><td><input class="rw" inputmode="decimal" value="${esc(r.w)}"></td>
+        <td class="rs note" title="${r.dec ? '도시계획도로 결정 등급' : '폭 기준(도시·군계획시설 규칙 제9조)'}">${esc(r.dec ? r.dec + '(결정)' : (num(r.w) !== null && window.AutoSite ? AutoSite.scaleOf(r.w) : ''))}${num(r.w) !== null && +r.w < 4 ? '<br><b style="color:var(--bad)">4m 미만</b>' : ''}</td>
         <td><select class="rl">${LEVELS.map(l => `<option${l === (r.level || '') ? ' selected' : ''} value="${l}">${l || '모름'}</option>`).join('')}</select></td><td><button class="rx" aria-label="도로 삭제">×</button></td></tr>`).join('');
       $('#roadsFrom').textContent = v().roadsFrom ? `가져온 값: ${v().roadsFrom}` : '';
     }
@@ -164,6 +165,16 @@
       if (!site.v.name) site.v.name = site.name || '';
       toForm(); showGeo(); showMarks(); fillSel(); $('#report').innerHTML = '';
       try { localStorage.setItem('jbs.sites.current', site.id || ''); } catch (e) { /* 무시 */ }
+      // 자동 채우기(빈 칸만): 도로 규모·위계, 위치, 최근접 역·버스정류장
+      if (window.AutoSite && site.geojson) {
+        const me = site;
+        msg('현황 자동 채우는 중…(도로 위계·위치·대중교통)');
+        AutoSite.fill(me).then(r => {
+          if (site !== me) return;
+          if (r.changed) { JbsSite.save(me); toForm(); fillSel(); msg('자동으로 채웠습니다: ' + r.notes.join(' · ') + '. 값이 다르면 칸에서 바로 고치세요.'); }
+          else msg('');
+        }).catch(e => { console.warn(e); msg(''); });
+      }
     }
 
     // 검토서

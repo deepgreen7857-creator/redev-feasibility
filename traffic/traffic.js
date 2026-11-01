@@ -43,8 +43,10 @@ ReviewUI.start({
 
     <h2>3. 교통 현황</h2>
     <p><b>가. 접도 도로</b>${site.v.roadsFrom ? ` <span class="note">(${esc(site.v.roadsFrom)} — 현장·도로대장 확인 필요)</span>` : ''}</p>
-    <table><tr><th>도로명</th><th>폭(m)</th><th>위계</th></tr>${roads.length ? roads.map(x => `<tr><td>${t(x.name)}</td><td>${fmt(x.w, 1)}</td><td>${t(x.level)}</td></tr>`).join('') : '<tr><td>○○</td><td>○○</td><td>○○</td></tr>'}</table>
-    <p><b>나. 대중교통</b> 최근접 도시철도역은 ${t(p.station)}(약 ${fmt(p.stationDist)}m)이며, 반경 500m 안 버스정류장은 ${fmt(p.bus)}개소이다.</p>
+    <table><tr><th>도로명</th><th>폭(m)</th><th>규모</th><th>위계</th><th>비고</th></tr>${roads.length ? roads.map(x => `<tr><td>${t(x.name)}</td><td>${fmt(x.w, 1)}</td><td>${t(x.dec ? x.dec + '(도시계획도로 결정)' : x.scale)}</td><td>${t(x.level)}${x.levelAuto ? ' <span class="note">(추정)</span>' : ''}</td><td>${+x.w < 4 ? '폭 4m 미만 — 진입도로로 볼 수 없음' : ''}</td></tr>`).join('') : '<tr><td>○○</td><td>○○</td><td>○○</td><td>○○</td><td></td></tr>'}</table>
+    <p class="note">규모는 도시·군계획시설의 결정·구조 및 설치기준에 관한 규칙 제9조의 폭 구분, 위계(추정)는 규모로 붙인 개략값입니다. 도로 기능 분류는 도시계획 결정 내용으로 확인합니다.</p>
+    <p><b>나. 대중교통</b> 최근접 도시철도역은 ${t(p.station)}(구역 경계에서 약 ${fmt(p.stationDist)}m)이며, 구역 경계 반경 500m 안 버스정류장은 ${fmt(p.bus)}개소이다.${num(p.stationDist) !== null ? (+p.stationDist <= 500 ? ' 역세권(500m) 안에 든다.' : +p.stationDist <= 1000 ? ' 역에서 500m~1km 거리로 2차 역세권에 해당한다.' : ' 역세권(1km) 밖이다.') : ''}</p>
+    ${site.v.transitNote ? `<p class="note">${esc(site.v.transitNote)} — 정류장 수는 양방향을 각각 셈, 현장 확인 필요</p>` : ''}
     <p><b>다. 보행·주차</b> 현장 조사 후 기재(보도 유무·폭, 노상주차 현황, 통학로).</p>
 
     <h2>4. 장래 교통수요</h2>
