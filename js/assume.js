@@ -30,16 +30,27 @@ const Assume = {
     const v = {};
     this.FIELDS.forEach(k => { v[k] = num($('#as_' + k).value); });
     v.src = ($('#as_src') && $('#as_src').value) || '';
+    v.stage = v.src ? num(($('#as_stage') || {}).value) : 0;
+    v.gfaBasis = v.src ? (($('#as_gfaBasis') || {}).value || 'factor') : 'factor';
     return v;
   },
 
-  open() {
-    const v = { ...this.defaults(), ...(S.assume || {}) };
+  // pre: { src, stage } — 주소의 ?arch=<site id>로 열 때 그 확정안을 세대수 기준으로 미리 고름
+  open(pre) {
+    const v = { ...this.defaults(), ...(S.assume || {}), ...(pre || {}) };
     v.memberPrice = Math.round(v.generalPrice * v.memberRatio / 100);
     this.FIELDS.forEach(k => { $('#as_' + k).value = v[k]; });
-    this.fillSrc(v.src || '');
+    this.fillSrc(v.src || '', v.stage, v.gfaBasis);
     this.preview();
     $('#assumeDialog').showModal();
+  },
+  // 주소에 ?arch=<site id>가 있으면 그 구역의 /arch 확정안으로 가정값 창을 바로 엶(기본은 마지막 단계 — 2차가 있으면 2차)
+  openFromUrl() {
+    let id = ''; try { id = new URLSearchParams(location.search).get('arch') || ''; } catch (e) { id = ''; }
+    if (!id) return;
+    const x = this.archOf(id);
+    if (!x) { alert('주소의 /arch 확정안을 이 브라우저에서 찾지 못했습니다. /arch에서 다시 확정해 보세요.'); return; }
+    this.open({ src: id, stage: this.defStage(x) });
   },
 
   // 가정값 → 세대수·분양 행·사업비 행
@@ -50,7 +61,7 @@ const Assume = {
   archOf(id) {
     try { const x = id && window.JbsSite ? JbsSite.get(id) : null; return x && x.arch && x.arch.chosen && x.arch.chosen.units > 0 ? x : null; } catch (e) { return null; }
   },
-  fillSrc(cur) {
+  fillSrc(cur, stage, gfaBasis) {
     const sel = $('#as_src'); if (!sel) return;
     const list = this.archList();
     sel.innerHTML = '<option value="">용적률·평형 비율로 계산 (아래 가정값)</option>' + list.map(x => {
@@ -58,11 +69,36 @@ const Assume = {
       return `<option value="${esc(x.id)}">/arch 확정안: ${esc(x.name || x.id)} · ${esc(c.label || '')} · ${fmt(c.units)}세대 (${esc(x.arch.at || '')})</option>`;
     }).join('');
     sel.value = list.some(x => x.id === cur) ? cur : '';
+    this.syncStage(stage, gfaBasis);
+  },
+  // /arch 단계: stages[1] 1차 개략(초기 사업성), stages[2] 2차(교통·환경 반영). 예전 저장안(stage·stages 없음)은 1차로 봄
+  STAGE_LABEL: { 1: '1차 개략 (초기 사업성)', 2: '2차 (교통·환경 반영)' },
+  stagesOf(x) {
+    const a = (x && x.arch) || {}, st = {};
+    [1, 2].forEach(k => { const c = (a.stages || {})[k]; if (c && c.units > 0) st[k] = c; });
+    if (!Object.keys(st).length && a.chosen) st[num(a.chosen.stage) || 1] = a.chosen;
+    return st;
+  },
+  defStage(x) { const st = this.stagesOf(x); return st[2] ? 2 : st[1] ? 1 : 0; },
+  chosenOf(x, stage) { const st = this.stagesOf(x); return st[stage] || st[this.defStage(x)] || x.arch.chosen; },
+  syncStage(stage, gfaBasis) {
+    const x = this.archOf(($('#as_src') || {}).value), wrap = $('#as_stageWrap'), ss = $('#as_stage'), gw = $('#as_gfaBasisWrap'), gb = $('#as_gfaBasis');
+    if (!wrap || !ss) return;
+    if (!x) { wrap.hidden = true; if (gw) gw.hidden = true; return; }
+    const st = this.stagesOf(x), ks = Object.keys(st).map(Number);
+    ss.innerHTML = ks.map(k => `<option value="${k}">${this.STAGE_LABEL[k]} · ${fmt(st[k].units)}세대${st[k].at ? ` (${esc(st[k].at)})` : ''}</option>`).join('');
+    const want = num(stage) || num(ss.value);
+    ss.value = String(st[want] ? want : this.defStage(x));
+    ss.disabled = ks.length < 2;
+    wrap.hidden = false;
+    // 공사비 연면적: /arch가 총 연면적(지상+지하주차장+주민공동시설+관리사무소)을 낸 안이면 고를 수 있음
+    const c = st[num(ss.value)] || {};
+    if (gw && gb) { const has = num((c.ex || {}).totalGfa) > 0; gw.hidden = !has; if (gfaBasis) gb.value = gfaBasis; if (!has) gb.value = 'factor'; }
   },
 
   // /arch 확정안 → 분양 행. 임대는 작은 평형부터, 조합원은 분양 세대 비율대로 배분
   planArch(s, v, x) {
-    const c = x.arch.chosen, site = Calc.siteArea(s);
+    const c = this.chosenOf(x, v.stage), site = Calc.siteArea(s);
     const types = Object.keys(c.byType || {}).filter(t => num(c.byType[t]) > 0).sort((a, b) => num(a) - num(b));
     const avgSup = num(c.gfa) && num(c.units) ? num(c.gfa) / num(c.units) : 0;
     const sup = t => num((c.supply || {})[t]) || avgSup;
@@ -85,7 +121,7 @@ const Assume = {
     if (farArea - resArea > 1) sales.push(sale('상가', '근린생활시설', 1, Math.round(farArea - resArea), v.shopPrice));
     const rentU = types.reduce((n, t) => n + rent[t], 0);
     return { site, farArea, total, rentU, types, byType: c.byType, sup, mem, saleBy: sale_, rentBy: rent, memberPrice, sales,
-      memTotal: given, short: Math.max(0, Math.round(v.members) - given), arch: x };
+      memTotal: given, short: Math.max(0, Math.round(v.members) - given), arch: x, chosen: c, stage: num(c.stage) || (Object.entries(this.stagesOf(x)).find(([, cc]) => cc === c) || [1])[0] * 1 };
   },
 
   plan(s, v) {
@@ -117,8 +153,10 @@ const Assume = {
     const p = this.plan(s, v);
     if (p.arch) {
       // 공사비 기준 계획연면적 = /arch 지상 연면적(주거) ÷ 주거비율 × 계획연면적 배율(지하·공용 포함)
-      s.plan.far = Math.round(num(p.arch.arch.chosen.far) * 10) / 10; s.plan.gfaFactor = v.gfaFactor;
-      s.plan.gfaManual = Math.round(p.farArea * v.gfaFactor);
+      //  '개략 건축계획 기준'을 고르면 /arch 총 연면적(지상 + 지하주차장 + 주민공동시설 + 관리사무소)을 그대로 씀
+      const tg = num((p.chosen.ex || {}).totalGfa);
+      s.plan.far = Math.round(num(p.chosen.far) * 10) / 10; s.plan.gfaFactor = v.gfaFactor;
+      s.plan.gfaManual = v.gfaBasis === 'arch' && tg > 0 ? Math.round(tg) : Math.round(p.farArea * v.gfaFactor);
     } else { s.plan.far = v.far; s.plan.gfaFactor = v.gfaFactor; s.plan.gfaManual = 0; }
     s.sales = p.sales;
     const setCost = (match, make, value) => {
@@ -131,8 +169,27 @@ const Assume = {
     setCost(c => c.group === '보상비', () => cost('보상비', '현금청산·손실보상·주거이전비', 'fixed', 0), v.comp * 10000);
     s.prior.multiplier = v.priorMul;
     s.assume = { ...v };
-    s.assumeSource = p.arch ? { siteId: p.arch.id, name: p.arch.name || '', label: p.arch.arch.chosen.label || '', at: p.arch.arch.at || '', units: p.total } : null;
+    s.assumeSource = p.arch ? { siteId: p.arch.id, name: p.arch.name || '', label: p.chosen.label || '', at: p.chosen.at || p.arch.arch.at || '', units: p.total, stage: p.stage, stageName: this.STAGE_LABEL[p.stage] || '', gfaBasis: v.gfaBasis } : null;
     return p;
+  },
+
+  // /arch 1차·2차가 모두 있으면 같은 가정값으로 둘을 계산해 비례율·총수입·총사업비를 나란히 보여 줌
+  stageCompare(v, p) {
+    const box = $('#as_stageCmp'); if (!box) return;
+    const st = p.arch ? this.stagesOf(p.arch) : {};
+    if (!st[1] || !st[2]) { box.hidden = true; box.innerHTML = ''; return; }
+    const run = k => { const t = JSON.parse(JSON.stringify(S)), q = this.applyTo(t, { ...v, stage: k }); return { q, r: Calc.result(t) }; };
+    const a = run(1), b = run(2);
+    const d = (x, y, f) => isFinite(x) && isFinite(y) ? `${y - x >= 0 ? '+' : '−'}${f(Math.abs(y - x))}` : '–';
+    const row = (name, f, g) => `<tr><td>${name}</td><td>${f(a)}</td><td>${f(b)}</td><td>${g ? g(a, b) : ''}</td></tr>`;
+    box.hidden = false;
+    box.innerHTML = `<table class="grid" style="margin:8px 0"><caption style="text-align:left;font-weight:600;padding:4px 0">1차 · 2차 건축계획 사업성 비교 (같은 가정값)</caption>
+      <tr><th>항목</th><th>${this.STAGE_LABEL[1]}</th><th>${this.STAGE_LABEL[2]}</th><th>증감</th></tr>
+      ${row('세대수', x => `${fmt(x.q.total)}세대`, (x, y) => d(x.q.total, y.q.total, n => fmt(n)))}
+      ${row('비례율', x => fmtPct(x.r.ratio), (x, y) => d(x.r.ratio, y.r.ratio, n => `${fmt(n, 1)}%p`))}
+      ${row('총수입', x => fmtEok(x.r.rev.total), (x, y) => d(x.r.rev.total, y.r.rev.total, fmtEok))}
+      ${row('총사업비', x => fmtEok(x.r.cost.total), (x, y) => d(x.r.cost.total, y.r.cost.total, fmtEok))}
+    </table>`;
   },
 
   preview() {
@@ -149,10 +206,11 @@ const Assume = {
     if (info) {
       info.hidden = !p.arch;
       if (p.arch) {
-        const c = p.arch.arch.chosen;
-        info.innerHTML = `<b>/arch 확정안 기준</b>: ${esc(c.label || '')} · ${fmt(c.units)}세대 · 용적률 ${fmt(c.far, 1)}% · 지상 연면적 ${fmt(c.gfa)}㎡ — ${p.types.map(t => `${t}㎡ ${fmt(p.byType[t])}세대(공급 ${fmt(p.sup(t), 1)}㎡)`).join(' · ')}. 이 기준에서는 아래 용적률·평형 비율·공급면적 입력은 쓰지 않습니다.`;
+        const c = p.chosen, ex = c.ex || {};
+        info.innerHTML = `<b>/arch 확정안 기준 · ${esc(this.STAGE_LABEL[p.stage] || '')}</b>: ${esc(c.label || '')} · ${fmt(c.units)}세대 · 용적률 ${fmt(c.far, 1)}% · 지상 연면적 ${fmt(c.gfa)}㎡${num(ex.totalGfa) > 0 ? ` · 총 연면적(추정) ${fmt(ex.totalGfa)}㎡(지하주차장 ${fmt(ex.ugArea)}㎡·${fmt(ex.ugFloors)}개 층, 계획 주차 ${fmt(ex.plan)}대)` : ''} — ${p.types.map(t => `${t}㎡ ${fmt(p.byType[t])}세대(공급 ${fmt(p.sup(t), 1)}㎡)`).join(' · ')}. 이 기준에서는 아래 용적률·평형 비율·공급면적 입력은 쓰지 않습니다.`;
       }
     }
+    this.stageCompare(v, p);
     ['far', 'mix59', 'sup59', 'sup84', 'supRent'].forEach(k => { const e = $('#as_' + k); if (e) e.disabled = !!p.arch; });
     if (p.arch) {
       if (!p.site) { out.innerHTML = '<p class="warn-box">구역 면적이 없습니다. 구역계를 먼저 정하거나 구역 면적을 직접 입력하세요.</p>'; return; }
@@ -203,7 +261,11 @@ const Assume = {
 
   bind() {
     const d = $('#assumeDialog');
-    d.addEventListener('change', e => { if (e.target.id === 'as_src') this.preview(); });
+    d.addEventListener('change', e => {
+      const id = e.target.id;
+      if (id === 'as_src' || id === 'as_stage') this.syncStage(id === 'as_src' ? 0 : num(e.target.value), id === 'as_stage' ? ($('#as_gfaBasis') || {}).value : '');
+      if (id === 'as_src' || id === 'as_stage' || id === 'as_gfaBasis') this.preview();
+    });
     d.addEventListener('input', e => {
       const id = e.target.id;
       // 조합원 분양가 ↔ 비율 어느 쪽을 고쳐도 맞춤
@@ -224,5 +286,7 @@ const Assume = {
       this.fillSrc('');
       this.preview();
     };
+    // /arch [초기 사업성 보기]·[사업성 다시 보기]로 열린 경우(?arch=<site id>) — 화면이 다 그려진 뒤 엶
+    setTimeout(() => this.openFromUrl(), 400);
   },
 };

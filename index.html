@@ -52,8 +52,11 @@
   <h4>세대수 기준</h4>
   <div class="form-grid">
     <label>세대수·평형 산정<small>/arch(개략 건축계획)에서 확정한 배치안을 고르면 그 안의 평형별 세대수·공급면적을 그대로 씁니다</small><select id="as_src"><option value="">용적률·평형 비율로 계산 (아래 가정값)</option></select></label>
+    <label id="as_stageWrap" hidden>건축계획 단계<small>/arch에서 확정한 1차(초기 사업성)·2차(교통·환경 검토 반영)</small><select id="as_stage"></select></label>
+    <label id="as_gfaBasisWrap" hidden>공사비 연면적<small>공사비(만원/평)를 곱하는 연면적</small><select id="as_gfaBasis"><option value="factor">용적률 연면적 × 계획연면적 배율</option><option value="arch">개략 건축계획 기준 (지상 + 지하주차장 + 주민공동시설 + 관리사무소)</option></select></label>
   </div>
   <div id="as_archInfo" class="note" hidden></div>
+  <div id="as_stageCmp" hidden></div>
   <h4>건축 계획</h4>
   <div class="form-grid three">
     <label>용적률 (%)<input id="as_far" type="number" step="1"></label>
@@ -539,7 +542,7 @@
 <script src="js/roadcut.js?v=79"></script>
 <script src="shared/site-store.js?v=79"></script>
 <script src="shared/feas.js?v=86"></script>
-<script src="js/assume.js?v=86"></script>
+<script src="js/assume.js?v=87"></script>
 <script src="js/app.js?v=79"></script>
 <script src="js/quick.js?v=86"></script>
 <script src="js/forms.js?v=79"></script>
