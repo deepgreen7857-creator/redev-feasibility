@@ -53,6 +53,18 @@
     return (x, y) => inside(x, y, pts) && E.every((e, i) => segDist([x, y], e.a, e.b) >= (setbacks[i] || 0) - 1e-6);
   }
 
+  // 다각형 poly 각 부분에서 정북(+y)으로 올라가 선분 ab를 만나는 최소 거리. 만나는 곳이 없으면 null
+  function northDist(poly, a, b) {
+    const pts = []; poly.forEach((p, i) => { const q = poly[(i + 1) % poly.length]; for (let k = 0; k < 6; k++) pts.push([p[0] + (q[0] - p[0]) * k / 6, p[1] + (q[1] - p[1]) * k / 6]); });
+    let best = null;
+    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]);
+    pts.forEach(p => {
+      if (p[0] < x0 - 1e-9 || p[0] > x1 + 1e-9 || Math.abs(b[0] - a[0]) < 1e-9) return;
+      const y = a[1] + (b[1] - a[1]) * (p[0] - a[0]) / (b[0] - a[0]), dy = y - p[1];
+      if (dy >= -1e-6 && (best === null || dy < best)) best = Math.max(0, dy);
+    });
+    return best;
+  }
   /* ---------- 줄 단위 배치 ---------- */
   // 회전 좌표계에서 [y0, y1] 띠 전체가 들어가는 x 구간들 (가로선 표본 + 경계 검사)
   function stripRanges(test, xmin, xmax, y0, y1, step = 1) {
@@ -223,7 +235,10 @@
         const tag = site.tags[i];
         const d = Math.min(...b.poly.map(p => segDist(p, e.a, e.b)));
         if (tag === 'north' || (tag === 'park' && e.out[1] > 0.5)) {
-          const s = opt.sun, dd = tag === 'park' ? d + (opt.parkWidth || 0) : d; let Hmax;
+          // 정북 일조(건축법 시행령 제86조①): 건축물 각 부분에서 '정북 방향'으로 잰 인접대지경계선까지 거리.
+          // 경계가 비스듬하면 수직 거리보다 길어짐. 정북 방향 연장선에 이 변이 없으면 이 변은 제한하지 않음
+          const dn = northDist(b.poly, e.a, e.b); if (dn === null) return;
+          const s = opt.sun, dd = tag === 'park' ? dn + (opt.parkWidth || 0) : dn; let Hmax;
           if (dd < s.높이10m이하_m) Hmax = 0; else Hmax = Math.max(10, dd / s.높이10m초과_높이비);
           cap = Math.min(cap, Math.floor((Hmax - A.groundExtra_m) / A.floorHeight_m));
         }
@@ -249,9 +264,11 @@
       }
       best = { F: opt.fixedF, bl: b0, gfa: gfaOf(b0) };
     } else {
+      // 기준 층수를 올리면 인동간격이 커져 줄 수가 줄어듦 → 목표 이하에서 연면적이 가장 큰 층수(같으면 낮은 층수)
       for (let F = A.minFloors; F <= A.maxFloors; F++) {
         const bl = finish(place(() => F)), gfa = gfaOf(bl);
-        if (gfa <= target * 1.0001) best = { F, bl, gfa }; else break;
+        if (gfa > target * 1.0001) break;
+        if (!best || gfa > best.gfa * 1.005) best = { F, bl, gfa };
       }
       if (!best) { const bl = finish(place(() => A.minFloors)); best = { F: A.minFloors, bl, gfa: gfaOf(bl) }; }
     }
@@ -299,7 +316,15 @@
     for (let F = A.minFloors; F <= A.maxFloors; F++) {
       try { const r = layout(site, Object.assign({}, opt, { fixedF: F })); if (r.units && r.gfa >= r.target * 0.97) cands.push(r); } catch (e) { /* 건너뜀 */ }
     }
-    if (!cands.length) { const r = layout(site, opt); return [Object.assign(r, { label: '최대 배치(목표 미달)' })]; }
+    if (!cands.length) {
+      // 목표를 못 채우는 구역: 기준 층수별 결과 중 연면적이 큰 안(층수가 서로 다른 것) 최대 3개
+      const all = [];
+      for (let F = A.minFloors; F <= A.maxFloors; F++) { try { const r = layout(site, Object.assign({}, opt, { fixedF: F })); if (r.units) all.push(r); } catch (e) { /* 건너뜀 */ } }
+      if (!all.length) { const r = layout(site, opt); return [Object.assign(r, { label: '최대 배치(목표 미달)' })]; }
+      all.sort((x, y) => y.gfa - x.gfa);
+      const out = []; all.forEach(r => { if (out.length < 3 && out.every(o => Math.abs(o.maxFloors - r.maxFloors) >= 4)) out.push(r); });
+      return out.sort((x, y) => x.maxFloors - y.maxFloors).map((r, i) => Object.assign(r, { label: (i === 0 && out.length > 1 ? '다동형' : i === out.length - 1 && out.length > 1 ? '소동형' : '최대 배치') + '(목표 미달)' }));
+    }
     const lo = cands[0], hi = cands[cands.length - 1], mid = cands[Math.floor((cands.length - 1) / 2)];
     const out = [Object.assign(lo, { label: '다동형(층수 낮게)' })];
     if (mid !== lo && mid !== hi) out.push(Object.assign(mid, { label: '중간형' }));

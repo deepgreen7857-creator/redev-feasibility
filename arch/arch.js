@@ -306,39 +306,45 @@
         G.edges(pts).sort((a, b) => b.len - a.len).slice(0, 3).forEach(e => { let a = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]) * 180 / Math.PI; while (a > 45) a -= 90; while (a < -45) a += 90; if (Math.abs(a) <= 45) set.add(Math.round(a)); });
         angles = [...set];
       }
-      let best = null, k = 0;
-      for (const a of angles) {
-        msg(`배치안 계산 중… (방향 ${++k}/${angles.length})`); await tick();
-        const r = G.alternatives(I.site, Object.assign({}, I.opt, { angle: a }));
-        // 점수: 목표 연면적 충족도 우선, 그다음 남향(각도 작을수록), 건폐율 낮을수록
-        const top = r.reduce((m, x) => Math.max(m, x.gfa), 0) / (I.lot * I.opt.far / 100);
-        const score = Math.min(top, 1) * 100 - Math.abs(a) * 0.08 - Math.min(...r.map(x => x.bcr)) * 0.02;
-        if (!best || score > best.score) best = { score, a, r };
+      // 방향별로 대안을 만들어 가장 좋은 방향 고르기. 점수: 목표 연면적 충족도 우선, 그다음 남향(각도 작을수록), 건폐율 낮을수록
+      async function searchAngle(form, label) {
+        let b = null, k = 0;
+        for (const a of angles) {
+          msg(`배치안 계산 중… ${label ? label + ' · ' : ''}방향 ${++k}/${angles.length}`); await tick();
+          let r; try { r = G.alternatives(I.site, Object.assign({}, I.opt, { angle: a, form })); } catch (e) { continue; }
+          if (!r.length) continue;
+          const top = r.reduce((m, x) => Math.max(m, x.gfa), 0) / (I.lot * I.opt.far / 100);
+          const score = Math.min(top, 1) * 100 - Math.abs(a) * 0.08 - Math.min(...r.map(x => x.bcr)) * 0.02;
+          if (!b || score > b.score) b = { score, a, r };
+        }
+        return b;
       }
+      const best = await searchAngle(I.opt.form, I.p.form === 'compare' ? '판상형' : '');
+      if (!best) throw new Error('어느 방향으로도 동이 들어가지 않습니다');
       alts = best.r.map(x => Object.assign(x, { angle: best.a, form: I.opt.form }));
       if (I.p.form === 'compare') {
         // 형태 비교: 같은 방향에서 형태마다 대안을 만들고, 형태별로 최고 층수 25층에 가장 가까운 안 하나씩
         alts = [];
         for (const fm of ['slab', 'tower', 'mix', 'Y', 'L', 'court']) {
-          msg(`형태 비교 중… ${G.FORM_NAME[fm]}`); await tick();
-          try {
-            const r = G.alternatives(I.site, Object.assign({}, I.opt, { angle: best.a, form: fm })).filter(x => x.units > 0);
-            if (!r.length) continue;
-            const pick = r.reduce((m, x) => Math.abs(x.maxFloors - 25) < Math.abs(m.maxFloors - 25) ? x : m, r[0]);
-            alts.push(Object.assign(pick, { angle: best.a, form: fm, label: `${G.FORM_NAME[fm]} · ${pick.label.replace(/\(.*\)/, '').trim()}` }));
-          } catch (e) { /* 이 형태는 안 들어감 */ }
+          // 형태마다 방향을 따로 찾음(판상은 남향, 탑상은 구역 긴 변 쪽이 유리한 경우가 많음)
+          const bf = fm === 'slab' ? best : await searchAngle(fm, G.FORM_NAME[fm]);
+          if (!bf) continue;
+          const r = bf.r.filter(x => x.units > 0); if (!r.length) continue;
+          const reach = r.filter(x => x.gfa >= x.target * 0.97), pool = reach.length ? reach : r;
+          const pick = reach.length ? pool.reduce((m, x) => Math.abs(x.maxFloors - 25) < Math.abs(m.maxFloors - 25) ? x : m, pool[0]) : pool.reduce((m, x) => x.gfa > m.gfa ? x : m, pool[0]);
+          alts.push(Object.assign(pick, { angle: bf.a, form: fm, label: `${G.FORM_NAME[fm]} · ${pick.label}` }));
         }
         if (!alts.length) throw new Error('어느 형태도 들어가지 않습니다');
       } else alts.forEach(x => { x.label = `${G.FORM_NAME[I.opt.form] || '판상형'} · ${x.label}`; });
       // 기본 선택: 최고 층수가 25층에 가장 가까운 안(재개발 일반 규모)
       cur = alts.reduce((bi, x, i) => Math.abs(x.maxFloors - 25) < Math.abs(alts[bi].maxFloors - 25) ? i : bi, 0);
       if (I.p.form === 'compare') cur = alts.reduce((bi, x, i) => (x.gfa > alts[bi].gfa * 1.01 || (x.gfa > alts[bi].gfa * 0.99 && x.units > alts[bi].units)) ? i : bi, 0);
-      if (I.p.angleMode === 'auto') $('#p_angle').value = best.a;
+      if (I.p.angleMode === 'auto') $('#p_angle').value = alts[cur].angle;
       sunRes = null; v3 = null;
       $('#out').hidden = false; $('#confirm').disabled = false;
       renderAlts(); showView('plan'); drawBuildingsOnMap();
       const A = alts[cur];
-      msg(`${alts.length}개 대안을 만들었습니다(주동 방향 ${best.a >= 0 ? '+' : ''}${best.a}°). 획지 ${fmt(I.lot)}㎡ 기준 목표 용적률 ${fmt(I.opt.far)}%${A.far < I.opt.far * 0.97 ? ' — 이 구역 조건으로는 목표에 못 미칩니다(최대 ' + fmt(Math.max(...alts.map(x => x.far)), 1) + '%)' : ''}.`);
+      msg(`${alts.length}개 대안을 만들었습니다(${I.p.form === 'compare' ? '형태마다 방향을 따로 찾음, 선택한 안 ' : '주동 방향 '}${alts[cur].angle >= 0 ? '+' : ''}${alts[cur].angle}°). 획지 ${fmt(I.lot)}㎡ 기준 목표 용적률 ${fmt(I.opt.far)}%${A.far < I.opt.far * 0.97 ? ' — 이 구역 조건으로는 목표에 못 미칩니다(최대 ' + fmt(Math.max(...alts.map(x => x.far)), 1) + '%)' : ''}.`);
       $('#out').scrollIntoView({ behavior: 'smooth' });
     } catch (e) { console.error(e); msg('배치를 만들지 못했습니다: ' + e.message, true); }
     finally { $('#run').classList.remove('busy'); }
