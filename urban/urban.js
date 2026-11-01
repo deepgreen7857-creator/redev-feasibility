@@ -768,9 +768,13 @@ function planCore(a, infraPct, farCalc) {
   const farUse = P.farMode === 'base' ? far.base : P.farMode === 'allowed' ? far.allowed : P.farMode === 'max' ? far.max : P.farMode === 'calc' ? (farCalc ? farCalc.v : far.max) : Math.min(P.farCustom, far.max);
   const gfa = site * farUse / 100;
   // 세대수는 공통 계산(shared/feas.js) — 사업성 검토 첫 화면과 같은 식·같은 평형 비율·같은 임대 비율(임대 49㎡형)
-  const FA = JbsFeas.get(), U = JbsFeas.units(gfa, FA);
-  const mixSum = FA.mix59 + FA.mix84 + FA.mix114 || 1;
-  const avgEx = (59 * FA.mix59 + 84 * FA.mix84 + 114 * FA.mix114) / mixSum;
+  //  평형은 전용㎡ 키 {39, 49, 59, 74, 84, 101, 114 …} — 비율이 0이거나 빈 평형은 빠짐
+  const FA = JbsFeas.get(), U = JbsFeas.units(gfa, FA), mix = JbsFeas.mixOf(FA);
+  const mixSum = Object.values(mix).reduce((s, v) => s + num(v), 0) || 1;
+  const avgEx = Object.keys(mix).reduce((s, t) => s + num(t) * num(mix[t]), 0) / mixSum;
+  // 평형별 세대(임대 포함) — 임대는 49㎡형으로 셈. 검토서 도구로 넘기는 byType {전용㎡: 세대수}
+  const byType = {}; Object.keys(U.sale).forEach(t => { if (U.sale[t] > 0) byType[t] = U.sale[t]; });
+  if (U.rental > 0) byType[49] = (byType[49] || 0) + U.rental;
   const units = U.total, perUnit = U.perUnit || 1;
   const footMax = site * P.bcr / 100;
   const towerFoot = perUnit * P.coreUnits;
@@ -783,7 +787,7 @@ function planCore(a, infraPct, farCalc) {
   const basement = gfa * P.basementRatio / 100;
   return {
     infraPct, site, far, farUse, gfa, avgEx, perUnit, units, footMax, towerFoot, floorsTower, towers, rental, members, general, basement,
-    n59: U.sale[59] || 0, n84: U.sale[84] || 0, n114: U.sale[114] || 0, U,   // 평형별은 분양 세대(임대 제외)
+    n59: U.sale[59] || 0, n84: U.sale[84] || 0, n114: U.sale[114] || 0, U, byType,   // n59 등·U.sale은 분양 세대(임대 제외), byType은 임대 포함
   };
 }
 // 개략 사업성 — 첫 화면 ★빠른 사업성과 같은 가정값·같은 계산(shared/feas.js JbsFeas). 금액은 원 단위로 돌려줌(won 표시용)
@@ -1807,7 +1811,8 @@ const GATE = {
     });
     return best && best.r;
   },
-  parkCount(pl) { return num(P.parkCount) > 0 ? num(P.parkCount) : Math.round(pl.units * 1.0); },
+  // 주차대수: 입력값 → 없으면 법정 하한(shared/criteria/traffic.json parking_housing, 평형별 세대로) → 기준표 전이면 세대당 1대
+  parkCount(pl) { if (num(P.parkCount) > 0) return num(P.parkCount); const lp = legalPark(pl); return lp ? lp.legal : Math.round(pl.units * 1.0); },
   // 검사표: st ok/ng/warn/info, law 법정 적용 여부
   check(a, pl) {
     const z = Z.zones[a.key]; if (!z) return { rows: [], gates: [] };
@@ -1838,7 +1843,8 @@ const GATE = {
     sub.forEach(g => { if (!g.r) add('부출입구', 'warn', '경계 도로에 닿지 않습니다.', '', false); else if (g.r.w < 4) add('부출입구 접속 도로', 'warn', `${esc(g.r.jibun)} 폭 약 ${g.r.w}m — 4m 미만`, '제25조③ 진입도로는 폭 4m 이상(참고)', false); });
     // 주차장 출입구 (부설주차장: 주차장법 시행규칙 제11조① 준용 조항)
     const pkG = pk.length ? pk : main;
-    add('주차대수(가정)', 'info', `${fmt(nPark)}대${num(P.parkCount) > 0 ? '(입력값)' : ` — 세대당 1대로 가정(${fmt(pl.units)}세대). 위 칸에 넣으면 바뀜`}`, '주택건설기준 등에 관한 규정 제27조·지자체 조례로 확정', false);
+    const lp = legalPark(pl);
+    add('주차대수(가정)', 'info', `${fmt(nPark)}대${num(P.parkCount) > 0 ? '(입력값)' : lp ? ` — 법정 하한으로 가정: 세대당 최저 ${fmt(lp.minByUnits)}대(전용 60㎡ 이하 ${fmt(lp.u60)}세대 × ${lp.per60} + 그 밖 ${fmt(pl.units - lp.u60)}세대 × ${lp.per}) vs 전용면적 기준 ${fmt(lp.byArea)}대 중 큰 값. 위 칸에 넣으면 바뀜` : ` — 세대당 1대로 가정(${fmt(pl.units)}세대). 위 칸에 넣으면 바뀜`}`, lp ? esc(lp.basis) : '주택건설기준 등에 관한 규정 제27조·지자체 조례로 확정', false);
     add('출입구 너비·분리', nPark >= 50 ? 'info' : 'ok', nPark >= 50 ? '50대 이상: 출구·입구를 나누거나 너비 5.5m 이상 출입구' : '50대 미만: 출입구 너비 3.5m 이상', '주차장법 시행규칙 제6조제1항제4호(제11조① 준용)', true);
     if (nPark > 400) add('출구·입구 따로', pk.length >= 2 ? 'ok' : 'warn', pk.length >= 2 ? `주차장 출입구 ${pk.length}곳` : '400대 초과: 출구와 입구를 따로 설치(너비 합 5.5m 이상이고 차선으로 나누면 함께 가능) — 주차장 출입구를 2곳 이상 표시하거나 분리 계획 필요', '주차장법 시행규칙 제5조제7호(제11조① 준용)', true);
     const roadsN = new Set(((z.roads && z.roads.edge) || []).map(r => r.pnu)).size;
@@ -2729,6 +2735,37 @@ function bindInfra() {
   side.querySelectorAll('[data-gireply]').forEach(el => el.onchange = () => { const inf = zi(); if (!inf) return; inf.giReply = inf.giReply || {}; if (el.value) inf.giReply[el.dataset.gireply] = el.value; else delete inf.giReply[el.dataset.gireply]; saveZ(); INFRA.memo = {}; render(); });
   const ki = document.getElementById('keepInner'); if (ki) ki.onchange = () => { P.keepInnerRoads = ki.checked; saveP(); INFRA.memo = {}; render(); };
 }
+// 평형 구성 — 평형 목록은 shared/criteria/arch.json '평면'(39·49·59·74·84·101·114㎡형), 비율은 공통 가정값(mixNN)에 저장
+function mixSection() {
+  const A = JbsFeas.get(), ts = unitTypes(), sum = ts.reduce((s, t) => s + num(A['mix' + t]), 0);
+  const pre = Object.keys((ARCHC || {})['평형구성_예시'] || {});
+  return `<h3>분양 평형 구성</h3>
+  ${pre.length ? `<div class="zk-btns" style="margin-bottom:6px">${pre.map(k => `<button type="button" class="btn ghost sm" data-mixpreset="${esc(k)}">${esc(k)}</button>`).join('')}</div>` : ''}
+  <div style="display:flex;flex-wrap:wrap;gap:6px 10px">${ts.map(t => `<label style="display:flex;flex-direction:column;font-size:12px">${t}㎡형 %<input data-feas="mix${t}" type="number" min="0" max="100" step="any" value="${num(A['mix' + t]) || ''}" placeholder="0" style="width:64px" aria-label="${t}㎡형 비율(%)"></label>`).join('')}</div>
+  <p class="u" style="margin:2px 0 0">합계 ${fmt(sum)}%${Math.abs(sum - 100) > 0.5 ? ' — 100%가 아니면 합계에 대한 비율로 나눔' : ''}. 0이거나 빈 평형은 짓지 않는 것으로 봅니다. 임대는 위 임대 비율만큼 49㎡형으로 따로 셈.</p>`;
+}
+// 개략 건축계획 결과 → 공통 구역(JbsSite.applyUrbanPlan) → 교통성·환경성·높이경관 검토서(?urban=키&make=1)
+function handoffReady() { const z = Z.zones[S.region]; return !!(D.map && z && z.geojson && z.roads && INFRA.ready(S.region)); }
+function handoffPlan(a) {
+  const pl = plan(a), z = Z.zones[S.region] || {}, e = pl.infra && pl.infra.entry;
+  const role = r => e && e.e1 && r.pnu === e.e1.pnu ? '진입도로' : e && e.mode === 3 && e.e2 && r.pnu === e.e2.pnu ? '두 번째 진입도로' : '주변 도로';
+  const roads = ((z.roads && z.roads.edge) || []).map(r => { const p = (e && e.per[r.pnu]) || {}; return { pnu: r.pnu, jibun: r.jibun, w: r.w, pw: p.pw || r.w, role: role(r), dec: r.dec || '', partial: !!p.partial }; });
+  const retail = pl.gfa - num(pl.U.resArea);
+  return Object.assign({ units: pl.units, byType: pl.byType, far: pl.farUse, bcr: P.bcr, floors: pl.floorsTower, towers: pl.towers, gfa: pl.gfa, roads }, retail > 1 ? { retailGFA: retail } : {});
+}
+function handoff(a, tool) {
+  if (!handoffReady()) { toast('구역계와 주변 도로를 먼저 불러오세요', 2500); return; }
+  if (!window.JbsSite) { toast('공통 구역 저장 기능을 불러오지 못했습니다 — 새로고침해 보세요', 2500); return; }
+  saveZ();
+  if (!JbsSite.applyUrbanPlan(S.region, handoffPlan(a))) { toast('검토서로 넘기지 못했습니다(구역계 저장 확인)', 2500); return; }
+  location.href = `../${tool}/?urban=${encodeURIComponent(S.region)}&make=1`;
+}
+function handoffSection() {
+  const ok = handoffReady(), dis = ok ? '' : 'disabled';
+  return `<h3>검토서로 넘기기</h3>
+  <div class="zk-btns"><button type="button" class="btn" data-handoff="traffic" ${dis}>교통성 검토서로 →</button><button type="button" class="btn" data-handoff="env" ${dis}>환경성 검토서로 →</button><button type="button" class="btn" data-handoff="landscape" ${dis}>높이·경관계획으로 →</button></div>
+  <p class="hint">${ok ? '지금 정비계획·개략 건축계획 값(세대수·평형·용적률·층수·도로 계획 폭)이 검토서로 넘어갑니다. 동 배치·일조·3D까지 보려면 /arch(자세한 배치)에서 확정하세요.' : '구역계와 주변 도로를 먼저 불러오세요(지도에서 그린 안, 정비계획 탭에서 주변 도로 확인 후).'}</p>`;
+}
 function renderArch(a) {
   const pl = plan(a);
   side.innerHTML = `<h2>${regName()} 개략 건축계획</h2>
@@ -2738,11 +2775,9 @@ function renderArch(a) {
     ${field('bcr', '건폐율(계획)', P.bcr, '% · 예시 가정')}
     ${field('coreUnits', '주동 1개 층 세대수', P.coreUnits, '세대/층')}
     ${feasField('rentRatio', '% of 세대수 · 임대는 49㎡형(공급 67㎡)')}
-    ${feasField('mix59', '% · 분양 평형')}
-    ${feasField('mix84', '%')}
-    ${feasField('mix114', '%')}
   </div>
-  <p class="note">세대수 = 용적률 연면적 × 주거 ${JbsFeas.get().resRatio}% ÷ 세대당 평균 공급면적(표준 평면: 59㎡형 ${JbsFeas.supply(59)}㎡ · 84㎡형 ${JbsFeas.supply(84)}㎡ · 114㎡형 ${JbsFeas.supply(114)}㎡ · 임대 49㎡형 ${JbsFeas.supply(49)}㎡, 개략). 평형·임대 비율은 사업성 검토 첫 화면과 같은 값을 씁니다.</p>
+  ${mixSection()}
+  <p class="note">세대수 = 용적률 연면적 × 주거 ${JbsFeas.get().resRatio}% ÷ 세대당 평균 공급면적(표준 평면: ${Object.keys(pl.U.supply).map(t => `${t}㎡형 ${fmt(pl.U.supply[t])}㎡`).join(' · ')} · 임대 49㎡형 ${JbsFeas.supply(49)}㎡, 개략). 평형·임대 비율은 사업성 검토 첫 화면과 같은 값을 씁니다.</p>
   <div class="form">
   </div>
   <h3>개략 규모</h3>
@@ -2754,14 +2789,17 @@ function renderArch(a) {
   </div>
   <h3>세대 구성</h3>
   <div class="tscroll"><table><thead><tr><th>구분</th><th class="r">세대</th></tr></thead><tbody>
-    <tr><td>59㎡형</td><td class="r">${fmt(pl.n59)}</td></tr><tr><td>84㎡형</td><td class="r">${fmt(pl.n84)}</td></tr><tr><td>114㎡형</td><td class="r">${fmt(pl.n114)}</td></tr>
+    ${Object.keys(pl.U.sale).filter(t => pl.U.sale[t] > 0).map(t => `<tr><td>${t}㎡형 분양</td><td class="r">${fmt(pl.U.sale[t])}</td></tr>`).join('')}
     <tr><td>조합원 분양(토지등소유자 추정 ${fmt(a.owners)}명)</td><td class="r">${fmt(pl.members)}</td></tr>
     <tr><td>일반분양</td><td class="r">${fmt(pl.general)}</td></tr>
     <tr><td>임대주택</td><td class="r">${fmt(pl.rental)}</td></tr>
   </tbody></table></div>
   ${D.map ? gateSection(a, pl) : ''}
-  <p class="note">도면의 <b>개략 배치</b>는 주동을 ${S.placedIn === 'lots' ? '정비기반시설(도로·공원·학교·종교용지 등)을 뺀 <b>공동주택 획지</b>' : '구역계'} 안에 격자로 놓아 봅니다(인동간격 높이×0.8 개략, 배치된 주동 ${S.placed ?? '–'}개동${S.placed != null && S.placedNeed && S.placed < S.placedNeed ? ` — 땅 모양 때문에 계산상 ${S.placedNeed}개동(${S.placedFloorsCalc}층)이 다 들어가지 않아 ${S.placed}개동 × ${S.placedFloors}층으로 세대수를 맞췄습니다. 오른쪽 개략 규모도 이 값입니다` : ''}). 일조·높이·학교예정부지·문화재 위치는 /arch 단계에서 다룹니다.</p>`;
+  <p class="note">도면의 <b>개략 배치</b>는 주동을 ${S.placedIn === 'lots' ? '정비기반시설(도로·공원·학교·종교용지 등)을 뺀 <b>공동주택 획지</b>' : '구역계'} 안에 격자로 놓아 봅니다(인동간격 높이×0.8 개략, 배치된 주동 ${S.placed ?? '–'}개동${S.placed != null && S.placedNeed && S.placed < S.placedNeed ? ` — 땅 모양 때문에 계산상 ${S.placedNeed}개동(${S.placedFloorsCalc}층)이 다 들어가지 않아 ${S.placed}개동 × ${S.placedFloors}층으로 세대수를 맞췄습니다. 오른쪽 개략 규모도 이 값입니다` : ''}). 일조·높이·학교예정부지·문화재 위치는 /arch 단계에서 다룹니다.</p>
+  ${handoffSection()}`;
   bindNum(['bcr', 'coreUnits', 'parkCount']);
+  side.querySelectorAll('[data-mixpreset]').forEach(b => b.onclick = () => { const pr = ((ARCHC || {})['평형구성_예시'] || {})[b.dataset.mixpreset] || {}, patch = {}; unitTypes().forEach(t => { patch['mix' + t] = num(pr[t]); }); JbsFeas.set(patch); render(); });
+  side.querySelectorAll('[data-handoff]').forEach(b => b.onclick = () => handoff(a, b.dataset.handoff));
   side.querySelectorAll('[data-feas]').forEach(e => e.addEventListener('change', () => { const v = parseFloat(e.value); JbsFeas.set({ [e.dataset.feas]: isNaN(v) ? 0 : v }); render(); }));
   side.querySelectorAll('[data-gate]').forEach(b => b.onclick = () => { S.placing = 'gate:' + b.dataset.gate; $id('lmap').classList.add('picking'); toast(`지도에서 ${GATE.KIND[b.dataset.gate]}를 둘 구역 경계를 누르세요`); });
   const gc = document.getElementById('gateClear'); if (gc) gc.onclick = () => { const z = Z.zones[S.region]; if (z && z.infra) { delete z.infra.gates; saveZ(); render(); } };
@@ -2772,7 +2810,7 @@ function gateSection(a, pl) {
   return `<h3>단지 출입구 (가정 — 교통 검토 후 확정)</h3>
   <p class="hint">주출입구·부출입구·주차장 출입구를 지도에서 구역 경계에 찍으면 기준을 검사합니다. 점을 누르면 지워집니다. '법정'은 공동주택(부설주차장)에 바로 적용되는 조항, '참고'는 노외주차장 기준·협의 관행입니다.</p>
   <div class="zk-btns"><button type="button" class="btn ghost sm" data-gate="main">주출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="sub">부출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="park">주차장 출입구 찍기</button>${ck.gates.length ? '<button type="button" class="btn ghost sm" id="gateClear">모두 지우기</button>' : ''}</div>
-  <div class="form" style="margin-top:6px">${field('parkCount', '주차대수(계획)', P.parkCount || '', `대 · 0이면 세대당 1대(${fmt(pl.units)}대)로 가정`)}</div>
+  <div class="form" style="margin-top:6px">${field('parkCount', '주차대수(계획)', P.parkCount || '', `대 · 0이면 ${legalPark(pl) ? `법정 하한 ${fmt(legalPark(pl).legal)}대` : `세대당 1대(${fmt(pl.units)}대)`}로 가정`)}</div>
   <div class="tscroll"><table class="gi-tbl"><thead><tr><th>항목</th><th>판정</th><th>내용</th><th>근거</th></tr></thead><tbody>
   ${ck.rows.map(r => `<tr><td>${r.item}</td><td><span class="pill ${cls[r.st]}">${lab[r.st]}</span></td><td class="wrap">${r.text}</td><td class="wrap u">${r.law ? '<b>법정</b> ' : '참고 '}${r.basis}</td></tr>`).join('')}
   </tbody></table></div>`;
@@ -3186,7 +3224,20 @@ $id('searchForm').onsubmit = async e => {
 
 // 교통·환경 검토서 기준표(숫자는 shared/criteria에서만) — 요건판정 탭의 '관련 평가 대상(개략)'에 씀
 const CRIT = {};
-['traffic', 'environment'].forEach(k => fetch(`../shared/criteria/${k}.json`, { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) { CRIT[k] = {}; (j.items || []).forEach(it => { CRIT[k][it.id] = it; }); if (S.tab === 'req') render(); } }).catch(() => {}));
+['traffic', 'environment'].forEach(k => fetch(`../shared/criteria/${k}.json`, { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) { CRIT[k] = {}; (j.items || []).forEach(it => { CRIT[k][it.id] = it; }); if (S.tab === 'req' || S.tab === 'arch') render(); } }).catch(() => {}));
+// 평형 목록·평형 구성 예시(개략 건축계획 탭) — shared/criteria/arch.json의 '평면'(숫자 키)·'평형구성_예시'. /arch와 같은 표
+let ARCHC = null;
+fetch('../shared/criteria/arch.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) { ARCHC = j; if (S.tab === 'arch') render(); } }).catch(() => {});
+const unitTypes = () => { const ks = ARCHC && ARCHC['평면'] ? Object.keys(ARCHC['평면']).filter(k => /^\d+$/.test(k)) : Object.keys(JbsFeas.mixOf(JbsFeas.get())); return ks.map(Number).sort((x, y) => x - y); };
+// 법정 주차 하한(주택) — 숫자는 shared/criteria/traffic.json parking_housing에서만. pl.byType(임대 포함 평형별 세대)로 계산
+function legalPark(pl) {
+  const it = CRIT.traffic && CRIT.traffic.parking_housing; if (!it || !pl || !pl.byType) return null;
+  let u = 0, u60 = 0, a85 = 0, a85u = 0;
+  Object.entries(pl.byType).forEach(([t, c]) => { const ex = num(t), k = num(c); u += k; if (ex <= 60) u60 += k; if (ex <= 85) a85 += k * ex; else a85u += k * ex; });
+  const per60 = it.세대당_최저.전용60이하, per = it.세대당_최저.일반;
+  const minByUnits = Math.ceil(u60 * per60 + Math.max(0, u - u60) * per - 1e-9), byArea = Math.ceil(a85 / it.비율['85이하'] + a85u / it.비율['85초과'] - 1e-9);
+  return { legal: Math.max(minByUnits, byArea), minByUnits, byArea, u60, per60, per, basis: it.근거 || '' };
+}
 fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) applyJson(j); }).catch(() => {}).finally(() => {
   loadData();
   const first = D.map && D.keys.find(k => D.regions[k].geojson);

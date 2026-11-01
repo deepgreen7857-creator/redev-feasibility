@@ -95,7 +95,9 @@ const Assume = {
     // 세대수·분양 행은 공통 계산(shared/feas.js) — /urban 사업성 탭과 같은 식·같은 평형 비율
     const A0 = JbsFeas.get();
     const A = { ...A0, rentRatio: v.rentRatio, resRatio: v.resRatio, generalPrice: v.generalPrice, memberRatio: v.memberRatio, rentPrice: v.rentPrice, shopPrice: v.shopPrice };
-    const m114 = v.mix114 ?? A0.mix114, mix = { 59: v.mix59, 84: Math.max(0, 100 - v.mix59 - m114), 114: m114 };
+    // /urban에서 고른 다른 평형(39·49·74·101㎡형 등)이 있으면 그대로 넣고, 84㎡형이 나머지를 채움
+    const m114 = v.mix114 ?? A0.mix114, mix = { ...JbsFeas.mixOf(A0), 59: v.mix59, 114: m114 };
+    mix[84] = Math.max(0, 100 - Object.keys(mix).filter(t => t !== '84').reduce((s, t) => s + (+mix[t] || 0), 0));
     const k84 = v.sup84 / JbsFeas.supply(84) || 1;
     const supOv = { 59: v.sup59, 84: v.sup84, 114: JbsFeas.supply(114) * k84, 49: v.supRent };
     const U = JbsFeas.units(farArea, A, mix, supOv);

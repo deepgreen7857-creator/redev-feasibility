@@ -488,7 +488,7 @@ Tabs.quick = {
 
     out.querySelectorAll('[data-lv]').forEach(b => { b.onclick = () => { S.quick.infraLevel = b.dataset.lv; App.update(true); }; });
     out.querySelectorAll('[data-con]').forEach(b => { b.onclick = () => { S.quick.conLevel = b.dataset.con; App.update(true); }; });
-    out.querySelectorAll('[data-mix]').forEach(b => { b.onclick = () => { const [a, b2, c] = b.dataset.mix.split(',').map(Number); JbsFeas.set({ mix59: a, mix84: b2, mix114: c }); App.update(true); }; });
+    out.querySelectorAll('[data-mix]').forEach(b => { b.onclick = () => { const [a, b2, c] = b.dataset.mix.split(',').map(Number); JbsFeas.set({ mix39: 0, mix49: 0, mix74: 0, mix101: 0, mix59: a, mix84: b2, mix114: c }); App.update(true); }; });
     out.querySelectorAll('[data-mem]').forEach(b => { b.onclick = () => { JbsFeas.set({ memberRatio: num(b.dataset.mem) }); App.update(true); }; });
     // 손잡이 효과
     const rows = Quick.leverRows(q);
