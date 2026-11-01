@@ -2386,6 +2386,14 @@ function bindNum(ids) { ids.forEach(id => { const e = document.getElementById(id
 function saveUrbanOut(a, pl) {
   const inf = pl.infra; if (!inf || !a.area) return;
   const other = inf.schoolArea + (inf.pubB || 0) + (inf.relArea || 0), infraA = inf.total - other;
+  // /arch(개략 건축계획)가 건축 불가 영역으로 쓰도록 기반시설 도형 저장: 도로(확폭·지정·존치), 공원·녹지, 학교용지, 종교용지(존치·대체), 공동주택 획지
+  try {
+    const r7 = g => g && g.geometry ? { type: g.geometry.type, coordinates: JSON.parse(JSON.stringify(g.geometry.coordinates, (k, v) => typeof v === 'number' ? Math.round(v * 1e7) / 1e7 : v)) } : null;
+    const keep = (P.keepInnerRoads && inf.inner) ? inf.inner.filter(q => q.geom).map(q => r7({ geometry: q.geom })) : [];
+    const all = JSON.parse(localStorage.getItem('jbs-urban-infra-v1') || '{}');
+    all[a.key] = { at: new Date().toLocaleString('sv-SE').slice(0, 16), road: r7(inf.roadGeom), park: r7(inf.parkGeom), school: r7(inf.schoolGeom), rel: r7(inf.relGeom), relKeep: !inf.relC, keepRoads: keep, lots: (inf.lots || []).map(l => ({ no: l.no, area: Math.round(l.area), geom: r7(l.geom) })) };
+    localStorage.setItem('jbs-urban-infra-v1', JSON.stringify(all));
+  } catch (e) { /* 무시 */ }
   try { localStorage.setItem('jbs-urban-out', JSON.stringify({ title: Z.title || '', region: a.key, at: new Date().toLocaleString('sv-SE').slice(0, 16), area: a.area, infra: infraA, other, site: pl.site, units: pl.units, short: inf.short, keepArea: inf.keepArea })); } catch (e) { /* 무시 */ }
 }
 function luRows(a, pl) {

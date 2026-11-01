@@ -8,7 +8,7 @@
   const fmt = (v, d = 0) => num(v) === null ? '○○' : (+v).toLocaleString('ko-KR', { maximumFractionDigits: d });
   const TAGS = ['boundary', 'road', 'arterial', 'north', 'park', 'lowrise'];
   const TYPE_HEX = { 39: 0xf6e7e1, 49: 0xf3ead2, 59: 0xf3e6c8, 74: 0xe2ead0, 84: 0xd9eadc, 101: 0xd6e3e8, 114: 0xdde5f1 };
-  let C = null, TC = null, site = null, pr = null, pts = null, tags = [], entries = [], exclude = [];
+  let C = null, TC = null, site = null, pr = null, pts = null, tags = [], entries = [], exclude = [], exKinds = [], exFrom = '';
   let alts = [], cur = 0, map, lyrSite, lyrEdges, lyrEx, lyrBld, mode = 'edge', v3 = null, sunRes = null;
 
   const msg = (t, bad) => { const m = $('#msg'); m.textContent = t; m.style.display = t ? 'block' : 'none'; m.style.background = bad ? 'var(--bad-soft)' : 'var(--accent-soft)'; };
@@ -51,7 +51,7 @@
   const filled = o => { const r = {}; Object.entries(o || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') r[k] = v; }); return r; };
   function saveState() {
     if (!site) return;
-    site.arch = Object.assign(site.arch || {}, { tags, entries, exclude: exclude.map(ex => ex.map(pr.back)), params: P() });
+    site.arch = Object.assign(site.arch || {}, { tags, entries, exclude: exclude.map(ex => ex.map(pr.back)), exKinds, exFrom, params: P() });
     if (site.id || site.geojson) JbsSite.save(site);
   }
 
@@ -71,9 +71,9 @@
     map.on(L.Draw.Event.EDITED, syncExclude); map.on(L.Draw.Event.DELETED, syncExclude);
   }
   function syncExclude() {
-    exclude = [];
-    lyrEx.eachLayer(l => { const c = l.toGeoJSON().geometry.coordinates[0]; exclude.push(G.openRing(c).map(pr.to)); });
-    saveState(); invalidate();
+    exclude = []; exKinds = [];
+    lyrEx.eachLayer(l => { const c = l.toGeoJSON().geometry.coordinates[0]; exclude.push(G.openRing(c).map(pr.to)); exKinds.push(l.options.kind || '직접 그림'); });
+    exFrom = 'manual'; saveState(); invalidate();
   }
   // 같은 성격이면서 방향이 비슷하게(꺾임 30° 이하) 이어진 변들 — 곡선 경계를 한 덩어리로
   function sideRun(E, i) {
@@ -241,8 +241,8 @@
     const ring = G.openRing(ringOf(site.geojson)); pr = G.projector(ring); pts = G.ccw(ring.map(pr.to));
     const a = site.arch || {};
     tags = (a.tags && a.tags.length === pts.length) ? a.tags.slice() : null;
-    entries = a.entries || []; exclude = (a.exclude || []).map(ex => ex.map(pr.to));
-    exclude.forEach(ex => lyrEx.addLayer(L.polygon(ex.map(p => pr.back(p).slice().reverse()), { color: '#5d7f5a' })));
+    entries = a.entries || []; exclude = (a.exclude || []).map(ex => ex.map(pr.to)); exKinds = (a.exKinds || []).slice(); exFrom = a.exFrom || '';
+    drawExclude();
     { const sp = filled(a.params); const hasMix = TYPES().some(t => sp['m' + t] !== undefined); const d0 = defaults(); if (hasMix) TYPES().forEach(t => { d0['m' + t] = ''; }); setP(Object.assign(d0, sp)); mixSum(); }
     if (!tags) { tags = pts.map(() => 'boundary'); autoTag(); }
     const nBefore = entries.length; cleanEntries(); if (entries.length !== nBefore) saveState();
@@ -251,7 +251,25 @@
     try { map.fitBounds(L.polygon(pts.map(p => pr.back(p).slice().reverse())).getBounds(), { padding: [20, 20] }); } catch (e) { /* 무시 */ }
     setTimeout(() => { try { if (leg && leg.autoCorner) leg.autoCorner(); } catch (e) { /* 자동 위치 실패 시 그대로 */ } }, 300);
     try { localStorage.setItem('jbs.sites.current', site.id || ''); } catch (e) { /* 무시 */ }
+    // /urban 정비계획의 기반시설(도로 확폭·공원·학교·종교용지)을 건축 불가 영역으로 — 직접 고친 적이 없을 때만 자동
+    const inf = site.urbanInfra;
+    if (inf && (!exclude.length || (exFrom.startsWith('urban:') && exFrom !== 'urban:' + inf.at))) importInfra(true);
     carry();
+  }
+  function drawExclude() {
+    lyrEx.clearLayers();
+    exclude.forEach((ex, i) => lyrEx.addLayer(L.polygon(ex.map(p => pr.back(p).slice().reverse()), { color: '#5d7f5a', kind: exKinds[i] || '직접 그림' }).bindTooltip(exKinds[i] || '건축 불가 영역')));
+  }
+  function importInfra(auto) {
+    const inf = site && site.urbanInfra;
+    if (!inf) { if (!auto) msg('이 구역에는 /urban 정비계획의 기반시설 배치가 없습니다. /urban에서 이 안의 [정비기반시설] 탭을 한 번 열면 저장되고, 그다음 이 버튼을 누르세요. 또는 지도 왼쪽 위 다각형 도구로 직접 그리세요.', true); return; }
+    const rings = [], kinds = [];
+    const add = (g, k) => { if (!g) return; const ps = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : []; ps.forEach(pc => { const r = G.openRing(pc[0]).map(pr.to); if (Math.abs(G.area(r)) >= 20) { rings.push(r); kinds.push(k); } }); };
+    add(inf.road, '도로(확폭·지정)'); add(inf.park, '공원·녹지'); add(inf.school, '학교용지'); add(inf.rel, inf.relKeep ? '종교용지(존치)' : '종교용지(대체부지)');
+    (inf.keepRoads || []).forEach(g => add(g, '존치 도로'));
+    exclude = rings; exKinds = kinds; exFrom = 'urban:' + inf.at; drawExclude(); saveState(); invalidate();
+    const sum = {}; kinds.forEach((k, i) => { sum[k] = (sum[k] || 0) + Math.abs(G.area(rings[i])); });
+    msg(`/urban 정비계획(${inf.at})의 기반시설을 건축 불가 영역으로 넣었습니다: ${Object.entries(sum).map(([k, v]) => `${k} ${fmt(v)}㎡`).join(', ') || '없음'}. 획지는 구역에서 이 면적을 뺀 땅입니다.`);
   }
   // 다른 검토에서 넘어온 조건 안내
   function carry() {
@@ -266,11 +284,11 @@
     const p = P(), A = Object.assign({}, C.가정, { floorHeight_m: +p.fh || C.가정.floorHeight_m, sideGap_m: +p.sideGap, supplyFactor: +p.sf, minFloors: +p.minFloors, maxFloors: +p.maxFloors });
     const sb = tags.map(t => t === 'road' ? +p.roadSb : t === 'arterial' ? +p.artSb : +p.bndSb);
     const siteA = num(p.siteArea) || G.area(pts);
-    const exA = exclude.reduce((s, ex) => s + Math.abs(G.area(ex)), 0);
+    const exA = exclude.reduce((s, ex) => { try { const g = turf.intersect(turf.polygon([ex.concat([ex[0]]).map(pr.back)]), site.geojson.geometry ? site.geojson : turf.feature(site.geojson)); return s + (g ? turf.area(g) : 0); } catch (e) { return s + Math.abs(G.area(ex)); } }, 0);
     const lot = exclude.length ? siteA - exA : siteA * (1 - (+p.infra || 0) / 100);
     return {
       site: { pts, tags, setbacks: sb, exclude },
-      opt: { units: C.평면, assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'compare' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, parkWidth: +p.parkW || 0 },
+      opt: { units: C.평면, assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'compare' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, parkWidth: +p.parkW || 0, exSetback: +p.bndSb || 0 },
       lot, exA, p,
     };
   }
@@ -338,7 +356,7 @@
     ['plan', 'sun', 'm3d', 'sum', 'unit'].forEach(k => { $('#v' + k).hidden = k !== v; });
     ({ plan: renderPlan, sun: renderSun, m3d: render3d, sum: renderSum, unit: renderUnits })[v]();
   }
-  const planOpts = extra => Object.assign({ site: pts, tags, setbacks: buildInput().site.setbacks, exclude, entries, alt: alts[cur], title: site.name || '', coreW: C.가정.coreW_m }, extra || {});
+  const planOpts = extra => Object.assign({ site: pts, tags, setbacks: buildInput().site.setbacks, exclude, exKinds, entries, alt: alts[cur], title: site.name || '', coreW: C.가정.coreW_m }, extra || {});
   function renderPlan() { $('#planSvg').innerHTML = D.sitePlan(planOpts()); }
 
   // 동지 일조: 구역 밖 주변 땅(평지·기존 건물 없음 가정)의 일조 시간
@@ -425,7 +443,7 @@
   function confirmAlt() {
     const A = alts[cur], I = buildInput(), U = C.평면;
     site.arch = Object.assign(site.arch || {}, {
-      tags, entries, exclude: exclude.map(ex => ex.map(pr.back)), params: P(), at: new Date().toLocaleString('sv-SE').slice(0, 16),
+      tags, entries, exclude: exclude.map(ex => ex.map(pr.back)), exKinds, exFrom, params: P(), at: new Date().toLocaleString('sv-SE').slice(0, 16),
       chosen: { label: A.label, angle: A.angle, units: A.units, byType: A.byType, far: A.far,
         supply: Object.fromEntries(Object.keys(A.byType).map(t => [t, +U[t].공급 > 0 ? +U[t].공급 : Math.round(U[t].전용 * (+I.p.sf || C.가정.supplyFactor) * 10) / 10])),
         exclusive: Object.fromEntries(Object.keys(A.byType).map(t => [t, U[t].전용])), bcr: A.bcr, gfa: A.gfa, lot: I.lot, maxFloors: A.maxFloors, maxHeight: A.maxHeight,
@@ -479,6 +497,7 @@
     if (t.id === 'run') run();
     else if (t.id === 'confirm') confirmAlt();
     else if (t.id === 'autoTag') { if (pts) autoTag(); }
+    else if (t.id === 'loadInfra') { if (pts) importInfra(false); }
     else if (t.id === 'mEdge' || t.id === 'mEntry') { mode = t.id === 'mEdge' ? 'edge' : 'entry'; $('#mEdge').setAttribute('aria-pressed', mode === 'edge'); $('#mEntry').setAttribute('aria-pressed', mode === 'entry'); $('#modeHint').textContent = mode === 'edge' ? '지금: 경계 성격 바꾸기 — 경계선을 누를 때마다 성격이 바뀝니다(곡선처럼 이어진 짧은 변은 한꺼번에).' : '지금: 차량 출입구 찍기 — 도로 쪽 경계선(파랑·보라)을 누르면 출입구가 찍힙니다. 다 찍었으면 [경계 성격 바꾸기]를 눌러 빠져나오세요.'; if (pts) drawSite(); msg(mode === 'entry' ? '도로 쪽 경계선(파랑·보라)을 누르면 차량 출입구가 찍힙니다(최대 3곳, 표시 근처를 다시 누르면 지움).' : ''); }
     else if (t.dataset.alt !== undefined) { cur = +t.dataset.alt; renderAlts(); drawBuildingsOnMap(); showView(curView); }
     else if (t.dataset.v) showView(t.dataset.v);

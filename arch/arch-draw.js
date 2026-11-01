@@ -14,6 +14,7 @@
   const fmt = (v, d = 0) => (v === null || v === undefined || isNaN(v)) ? '○○' : (+v).toLocaleString('ko-KR', { maximumFractionDigits: d });
 
   // 배치도. o: {site, tags, setbacks, exclude, entries, alt, title, shadowAt:{polys}, sunGrid:{cells, step}, H}
+  const ar = q => { let a = 0; for (let i = 0, j = q.length - 1; i < q.length; j = i++) a += q[j][0] * q[i][1] - q[i][0] * q[j][1]; return a / 2; };
   function sitePlan(o) {
     const pts = o.site, xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
     let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
@@ -37,7 +38,9 @@
     // 구역(대지) 바탕
     s += poly(pts, `fill="#eef2e9" stroke="none"`);
     // 제외 영역(기반시설·공원)
-    (o.exclude || []).forEach(ex => { s += poly(ex, `fill="url(#hatch)" stroke="#7d9a7a" stroke-width="${0.8 * u}"`); });
+    const EXC = k => /공원|녹지/.test(k) ? '#cfe3c6' : /종교/.test(k) ? '#e9dcef' : /학교/.test(k) ? '#f3e3c3' : /도로/.test(k) ? '#e4e4e0' : 'none';
+    (o.exclude || []).forEach((ex, i) => { const k = (o.exKinds || [])[i] || ''; if (EXC(k) !== 'none') s += poly(ex, `fill="${EXC(k)}" stroke="none"`); s += poly(ex, `fill="url(#hatch)" stroke="#7d9a7a" stroke-width="${0.8 * u}"`); });
+    (o.exclude || []).forEach((ex, i) => { const k = (o.exKinds || [])[i]; if (!k || /도로/.test(k) || Math.abs(ar(ex)) < 300) return; const c = ex.reduce((a, p) => [a[0] + p[0] / ex.length, a[1] + p[1] / ex.length], [0, 0]); s += `<text x="${X(c[0])}" y="${Y(c[1])}" font-size="${7 * u}" text-anchor="middle" font-weight="600" fill="#3d5a3a" paint-order="stroke" stroke="#fbfbf8" stroke-width="${2 * u}">${esc(k)}</text>`; });
     // 이격선(변별 안쪽 평행선)
     const E = ArchGeom.edges(pts), cen = [xs.reduce((a, b) => a + b, 0) / xs.length, ys.reduce((a, b) => a + b, 0) / ys.length];
     E.forEach((e, i) => {

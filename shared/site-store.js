@@ -50,6 +50,8 @@
         site.profile.roadsFrom = 'urban 주변 도로(지목 도) 폭 추정값';
         site.profile.roadGeoms = it.zone.roads.edge.filter(r => r.geom).map(r => ({ name: (r.jibun || '') + ' 도로', w: r.w, geom: r.geom }));
       }
+      // /urban 정비기반시설 탭이 저장한 기반시설 도형(도로·공원·학교·종교용지, 획지) → /arch 건축 불가 영역
+      try { const inf = JSON.parse(localStorage.getItem('jbs-urban-infra-v1') || '{}')[key]; if (inf) site.urbanInfra = inf; } catch (e) { /* 무시 */ }
       site.plan = site.plan || {};
       if (P.zone && !site.profile.zoning) site.profile.zoning = P.zone;
       if (!site.plan.type) site.plan.type = 'redev';
