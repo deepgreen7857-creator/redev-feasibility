@@ -364,6 +364,123 @@ function parseResults(t) {
   }
   return out;
 }
+// ── 사이트(jbslab.co.kr/auction)에 결과 붙이기 ────────────────
+//  사이트의 법원 물건 중 매각기일이 지났는데 그 기일 결과가 없는 것을 가져와(공개 읽기) 같이 확인하고,
+//  확인한 결과를 수집 서버(ingestCourt)로 보낸다 → 완료 물건 채점에 바로 쓰임. forecast(입찰 전 예측)는 건드리지 않는다.
+const FS_BASE = 'https://firestore.googleapis.com/v1/projects/jbslab-auction/databases/(default)/documents';
+const fsVal = (v) => { if (!v) return v; if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, fsVal(x)])); if ('arrayValue' in v) return (v.arrayValue.values || []).map(fsVal); if ('integerValue' in v) return Number(v.integerValue); if ('nullValue' in v) return null; return Object.values(v)[0]; };
+const dash = (d) => String(d || '').replace(/\./g, '-').slice(0, 10);
+async function serverTargets() {
+  const today0 = kstDay(); const from = kstDay(-(cfg.resultsBackDays ?? 75));
+  const out = []; let after = null;
+  for (let p = 0; p < 30; p++) {
+    const sq = { from: [{ collectionId: 'listings' }], where: { compositeFilter: { op: 'AND', filters: [
+      { fieldFilter: { field: { fieldPath: 'bidEnd' }, op: 'GREATER_THAN_OR_EQUAL', value: { stringValue: from.replace(/-/g, '.') } } },
+      { fieldFilter: { field: { fieldPath: 'bidEnd' }, op: 'LESS_THAN', value: { stringValue: today0.replace(/-/g, '.') } } }] } },
+      orderBy: [{ field: { fieldPath: 'bidEnd' } }, { field: { fieldPath: '__name__' } }], limit: 500,
+      select: { fields: ['court', 'caseNo', 'itemNo', 'bidEnd', 'minBid', 'round', 'result', 'source'].map((f) => ({ fieldPath: f })) } };
+    if (after) sq.startAt = { values: after, before: false };
+    const res = await fetch(`${FS_BASE}:runQuery`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ structuredQuery: sq }), signal: AbortSignal.timeout(60e3) });
+    if (!res.ok) { log(`사이트 대상 목록 실패 HTTP ${res.status}`); break; }
+    const docs = (await res.json()).filter((x) => x.document).map((x) => x.document);
+    for (const d of docs) {
+      const f = Object.fromEntries(Object.entries(d.fields || {}).map(([k, v]) => [k, fsVal(v)]));
+      if (f.source !== 'court' || !/^\d{4}타경\d+$/.test(f.caseNo || '') || !f.court) continue;
+      if (f.result && dash(f.result.openAt) === dash(f.bidEnd)) continue; // 그 기일 결과가 이미 있음
+      out.push({ id: d.name.split('/').pop(), court: normCourt(f.court), courtRaw: f.court, caseNo: f.caseNo, itemNo: String(f.itemNo || '1'), bidEnd: f.bidEnd, minBid: f.minBid ?? null, round: f.round ?? null });
+    }
+    if (docs.length < 500) break;
+    const last = docs[docs.length - 1]; after = [last.fields.bidEnd, { referenceValue: last.name }];
+  }
+  return out;
+}
+const pushQueue = [];
+async function pushResults(force = false) {
+  if (DRY || !pushQueue.length || (!force && pushQueue.length < 10)) return;
+  if (!env.INGEST_URL || !env.INGEST_TOKEN) { log('.env 에 INGEST_URL, INGEST_TOKEN 이 없어 결과를 사이트에 못 보냄'); pushQueue.length = 0; return; }
+  const items = pushQueue.splice(0, pushQueue.length);
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(env.INGEST_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.INGEST_TOKEN}` }, body: JSON.stringify({ items }), signal: AbortSignal.timeout(330e3) });
+      const t = await res.text();
+      if (res.ok) { log(`사이트에 결과 ${items.length}건 보냄: ${t.slice(0, 160)}`); return; }
+      log(`결과 보내기 실패 HTTP ${res.status} ${t.slice(0, 160)}`); if (res.status < 500) break;
+    } catch (e) { log(`결과 보내기 실패 ${e.message}`); }
+    await sleep(30e3 * (i + 1));
+  }
+  pushQueue.unshift(...items); // 다음에 다시
+}
+function queueResult(t, res, today0) {
+  const want = dash(t.bidEnd);
+  const hit = res.find((x) => x.매각기일 === want); // 그 기일 결과만(다른 기일 결과를 붙이면 채점이 틀어짐)
+  if (!hit || hit.결과 === '예정' || hit.결과 === '진행') return null;
+  const result = { status: hit.결과, openAt: hit.매각기일, minBid: hit.최저가 || null, soldPrice: hit.낙찰가 || null, rate: hit.낙찰가율 ? hit.낙찰가율 / 100 : null,
+    bidders: hit.입찰인원 ?? null, second: hit['2등입찰가'] || null, round: hit.회차, source: '무료경매.kr 기일현황', at: new Date().toISOString() };
+  const item = { caseNo: t.caseNo, court: t.courtRaw, itemNo: t.itemNo, result };
+  if (t.minBid != null) item.minBid = t.minBid; // 서버가 '바뀐 물건'으로 보지 않게 지금 값 그대로
+  if (t.round != null) item.round = t.round;
+  if (hit.결과 !== '유찰') item.status = hit.결과; // 유찰이면 법원 수집기가 다음 회차로 상태를 바꿈
+  pushQueue.push(item);
+  return hit;
+}
+const triedFile = path.join(STATE, 'muryo-server-tried.json');
+let tried = {}; try { tried = JSON.parse(fs.readFileSync(triedFile, 'utf8')); } catch { /* 처음 */ }
+const saveTried = () => { if (!DRY) fs.writeFileSync(triedFile, JSON.stringify(tried)); };
+async function checkServerTargets(maxN) {
+  let targets = [];
+  try { targets = await serverTargets(); } catch (e) { log(`사이트 대상 목록 오류 ${e.message}`); return 0; }
+  // 결과를 못 찾은 물건은 3일 뒤 다시, 4번까지만(같은 화면을 매일 헛되이 열지 않게)
+  const day0 = kstDay();
+  targets = targets.filter((t) => { const k = `${t.id}|${dash(t.bidEnd)}`; const x = tried[k]; return !x || (x.n < 4 && x.day <= kstDay(-3)); });
+  if (!targets.length) { log('사이트: 결과가 비어 있는 지난 법원 물건 없음'); return 0; }
+  const today0 = kstDay();
+  // 사건별로 묶기, 최근 기일부터
+  const byCase = new Map();
+  for (const t of targets) { const k = `${t.court}_${t.caseNo}`; (byCase.get(k) || byCase.set(k, []).get(k)).push(t); }
+  const cases = [...byCase.values()].sort((a, b) => String(b[0].bidEnd).localeCompare(String(a[0].bidEnd)));
+  log(`사이트: 결과가 비어 있는 지난 법원 물건 ${targets.length}건(${cases.length}사건) — 오늘 화면 ${maxN}개 안에서 확인`);
+  let pages = 0; let filled = 0; let reused = 0;
+  for (const list of cases) {
+    if (fs.existsSync(stopFile)) break;
+    const t0 = list[0]; const [y, num] = t0.caseNo.split('타경');
+    // 이미 받아 둔 결과(같은 사건, 기일 이후 확인)가 있고 물건이 하나면 화면을 다시 열지 않음
+    const dir0 = path.join(ARCHIVE, t0.court, y, t0.caseNo);
+    let hist = []; try { hist = JSON.parse(fs.readFileSync(resultsFile(dir0), 'utf8')); } catch { /* 없음 */ }
+    const lastChk = hist[hist.length - 1];
+    if (lastChk && lastChk.확인일 > dash(t0.bidEnd) && list.every((t) => t.itemNo === '1')) {
+      for (const t of list) if (queueResult(t, lastChk.기일 || [], today0)) { filled++; reused++; }
+      await pushResults(); continue;
+    }
+    if (pages + 1 + list.length > maxN) break;
+    await pause('itemSeconds');
+    const cc = courtCode(t0.court);
+    const rows = (await listPage(searchForm({ courtMain: cc, year: y, num, all: true }))).filter((x) => x.year === y && x.num === num && (cc === '0' || x.courtNo[0] === cc[0]));
+    pages++;
+    const miss = (t) => { const k = `${t.id}|${dash(t.bidEnd)}`; tried[k] = { day: day0, n: (tried[k]?.n || 0) + 1 }; saveTried(); };
+    if (!rows.length) { list.forEach(miss); log(`${t0.court} ${t0.caseNo}: 무료경매.kr 에서 못 찾음`); continue; }
+    for (const t of list) {
+      const r0 = rows.find((x) => x.objNo === t.itemNo) || (rows.length === 1 ? rows[0] : null);
+      if (!r0) { miss(t); log(`${t0.court} ${t0.caseNo}(${t.itemNo}): 물건번호를 못 찾음`); continue; }
+      await pause('pageSeconds');
+      const h = await get('/auctionInfo/view.php', { method: 'POST', form: { courtNo: r0.courtNo, courtNo2: r0.courtNo2, eventNo1: r0.year, eventNo2: r0.num, objNo: r0.objNo }, referer: `${BASE}/auctionInfo/info_result_switch.php` });
+      pages++;
+      const info = parseView(h);
+      if (info.court && info.court.replace(/\s/g, '') !== t.court.replace(/\s/g, '')) { log(`${t.caseNo}: 다른 법원(${info.court}) — 건너뜀`); continue; }
+      const res = parseResults(info.text);
+      const dir = path.join(ARCHIVE, info.court || t.court, y, t.caseNo); fs.mkdirSync(dir, { recursive: true });
+      let h2 = []; try { h2 = JSON.parse(fs.readFileSync(resultsFile(dir), 'utf8')); } catch { /* 처음 */ }
+      h2.push({ 확인일: today0, 출처: '무료경매.kr', 물건번호: t.itemNo, 기일: res });
+      fs.writeFileSync(resultsFile(dir), JSON.stringify(h2, null, 1));
+      const hit = queueResult(t, res, today0);
+      if (hit) { filled++; log(`${t.court} ${t.caseNo}(${t.itemNo}) ${hit.매각기일} ${hit.결과}${hit.낙찰가 ? ` · 낙찰 ${hit.낙찰가.toLocaleString()}원 · ${hit.입찰인원}명` : ''}`); }
+      else { const k = `${t.id}|${dash(t.bidEnd)}`; tried[k] = { day: day0, n: (tried[k]?.n || 0) + 1 }; saveTried(); log(`${t.court} ${t.caseNo}(${t.itemNo}): ${dash(t.bidEnd)} 결과가 아직 없음`); }
+    }
+    await pushResults();
+  }
+  await pushResults(true);
+  log(`사이트 결과 확인 끝 — 결과 붙임 ${filled}건(받아 둔 것 재사용 ${reused}건), 화면 ${pages}개`);
+  return pages;
+}
 async function checkResults(maxN) {
   const today0 = kstDay(); const cand = new Map();
   const addC = (court, caseNo, sale, review) => { if (!court || !/^\d{4}타경\d+$/.test(caseNo || '') || !sale || sale >= today0) return; const k = `${court}_${caseNo}`; const v = cand.get(k) || { court, caseNo, sale, review }; if (review) v.review = true; cand.set(k, v); };
@@ -409,9 +526,10 @@ async function main() {
   let n = 0;
   try {
     if (!anyHour && !inHours()) return log('쉬는 시간대 — 다음 실행에 이어서');
-    if (today >= cfg.dailyMax) { if (!DRY && (await robotsAllows(['/v1/s01/01.htm', '/auctionInfo/view.php']))) { const rn = await checkResults(Math.max(0, (cfg.resultsMax ?? 60) - resToday)); resToday += rn; fs.writeFileSync(resCountFile, JSON.stringify({ count: resToday })); } return log('오늘 한도 — 내일 이어서(매각 결과 확인은 했음)'); }
+    if (today >= cfg.dailyMax) { if (!DRY && (await robotsAllows(['/v1/s01/01.htm', '/auctionInfo/view.php']))) { const sp = await checkServerTargets(Math.max(0, (cfg.resultsMax ?? 60) - resToday)); resToday += sp; const rn = await checkResults(Math.max(0, (cfg.resultsMax ?? 60) - resToday)); resToday += rn; fs.writeFileSync(resCountFile, JSON.stringify({ count: resToday })); } return log('오늘 한도 — 내일 이어서(매각 결과 확인은 했음)'); }
     if (!(await robotsAllows(['/v1/s01/01.htm', '/auctionInfo/view.php', '/auctionInfo/zoom/']))) return log('robots.txt 가 막고 있음 — 받지 않고 끝냄');
     let todo;
+    if (args.includes('--results-only')) { const sp = await checkServerTargets(Number(arg('--pages')) || 20); resToday += sp; if (!DRY) fs.writeFileSync(resCountFile, JSON.stringify({ count: resToday })); return; }
     if (arg('--case')) {
       const m = arg('--case').match(/^(\d{4})타경(\d+)/);
       const court = normCourt(arg('--court') || '');
@@ -421,7 +539,7 @@ async function main() {
       if (!todo.length) log(`${arg('--case')}: 무료경매.kr 에서 못 찾음`);
     } else {
       // 먼저: 매각기일 지난 사건의 결과 확인(하루 resultsMax 건 — 검토 채점용)
-      if (!DRY) { const rn = await checkResults(Math.max(0, (cfg.resultsMax ?? 60) - resToday)); resToday += rn; fs.writeFileSync(resCountFile, JSON.stringify({ count: resToday })); }
+      if (!DRY) { const sp = await checkServerTargets(Math.max(0, (cfg.resultsMax ?? 60) - resToday)); resToday += sp; const rn = await checkResults(Math.max(0, (cfg.resultsMax ?? 60) - resToday)); resToday += rn; fs.writeFileSync(resCountFile, JSON.stringify({ count: resToday })); }
       const all = await collectScope();
       const caseOf = (v) => `${v.rows[0].year}타경${v.rows[0].num}`;
       const left = [...all.values()].filter((v) => !doneByCaseNo(caseOf(v), v.light));

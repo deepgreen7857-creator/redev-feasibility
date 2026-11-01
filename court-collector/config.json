@@ -231,6 +231,7 @@
         "addr": "통영|거제|남해군|사천|고성군|하동|진해|마산합포"
       }
     ],
-    "resultsMax": 60
+    "resultsMax": 200,
+    "resultsBackDays": 75
   }
 }
