@@ -491,19 +491,90 @@ const ZoneKit = {
   },
   reportClass(r) { return r === '포함' ? 'good' : ['갇힌 필지', '도로 잇기', '경계 필지', '경계 정리'].includes(r) ? 'auto' : r === '중복' ? '' : 'warn'; },
 
-  // 엑셀·CSV에서 지번 목록 읽기: '지번' 제목 열을 찾고, '소재지·주소' 열이 있으면 앞에 붙임. rows: 2차원 배열
-  jibunsFromRows(rows) {
-    const hi = rows.findIndex(r => r.some(c => /지번/.test(String(c))));
-    let list;
+  // 엑셀·CSV에서 지번 목록 읽기. rows: 2차원 배열
+  //  반환 { list, base, skipped, how } — list: 지번(소재지 열이 있으면 '소재지 지번'), base: 소재지 열에서 뽑은 기준 동 주소
+  //  - 제목 칸은 띄어쓰기를 무시하고 찾음('지 번'·'소재지번'·'번지'), 제목 줄은 칸이 2개 이상 찬 줄만(표 제목 줄 오인 방지)
+  //  - 본번·부번·산 열로 나뉜 조서도 읽음, 병합된 소재지 칸은 위 값을 이어 씀
+  //  - 지번 꼴(산12-3, 340-1번지, 용현동 340)이 아닌 칸(합계·면적·비고)은 버림
+  //  - 제목 칸이 없으면 지번 꼴 칸이 가장 많은 열 하나만 씀(전 칸을 쓰면 연번·면적까지 수천 개가 되어 조회가 끝나지 않음)
+  parseJibunRows(rows) {
+    rows = (rows || []).map(r => (r || []).map(c => String(c ?? '').trim()));
+    const nz = c => c.replace(/\s+/g, '');
+    const JB = /^(?:(.*?[가-힣](?:동|리|가)\d*)\s*)?(산\s*)?(\d+)(?:\s*-\s*(\d+))?\s*(?:번지)?$/;
+    const jibunOf = (v, addr) => {
+      const m = String(v).replace(/\s+/g, ' ').trim().match(JB);
+      if (!m) return '';
+      const no = `${m[2] ? '산' : ''}${m[3]}${m[4] ? '-' + m[4] : ''}`;
+      const a = (m[1] || addr || '').trim();
+      return a ? `${a} ${no}` : no;
+    };
+    const isJ = c => /^(소재지?)?지번(\(.*\))?$|^번지$/.test(nz(c));
+    const isA = c => /^(토지)?소재지?(\(.*\))?$|^주소$|^(법정)?동(명|리)?$/.test(nz(c));
+    let hi = -1;
+    for (let i = 0; i < Math.min(rows.length, 40); i++) {
+      const r = rows[i];
+      if (r.filter(Boolean).length < 2) continue;
+      if (r.some(isJ) || (r.some(c => nz(c) === '본번'))) { hi = i; break; }
+    }
+    const list = []; let skipped = 0, how = '', addrs = [];
     if (hi >= 0) {
-      const jc = rows[hi].findIndex(c => /지번/.test(String(c)));
-      const ac = rows[hi].findIndex(c => /소재지|주소/.test(String(c)));
-      list = rows.slice(hi + 1).map(r => {
-        const j = String(r[jc] ?? '').trim(), a = ac >= 0 ? String(r[ac] ?? '').trim() : '';
-        return a && !/\d+(-\d+)?$/.test(a) ? `${a} ${j}` : j;
+      const h = rows[hi];
+      const jc = h.findIndex(isJ), ac = h.findIndex((c, k) => k !== jc && isA(c));
+      const bc = h.findIndex(c => nz(c) === '본번'), sc = h.findIndex(c => nz(c) === '부번'), mc = h.findIndex(c => nz(c) === '산');
+      how = jc >= 0 ? `'${h[jc]}' 열` : `'본번·부번' 열`;
+      let lastA = '';
+      rows.slice(hi + 1).forEach(r => {
+        if (ac >= 0 && r[ac] && !/^\d/.test(r[ac])) lastA = r[ac];
+        const a = ac >= 0 ? lastA : '';
+        let v = jc >= 0 ? r[jc] : '';
+        if (jc < 0 && bc >= 0 && /^\d+$/.test(r[bc] || '')) v = `${mc >= 0 && /산|^[2Yy1]$/.test(r[mc] || '') ? '산' : ''}${r[bc]}${sc >= 0 && /^\d+$/.test(r[sc] || '') && +r[sc] ? '-' + r[sc] : ''}`;
+        if (!v) return;
+        const j = jibunOf(v, a);
+        if (j) { list.push(j); if (a) addrs.push(a); } else skipped++;
       });
-    } else list = rows.flat().map(c => String(c ?? '').trim());
-    return list.filter(s => /\d/.test(s));
+    } else {
+      // 제목 없는 목록: 지번 꼴 칸이 가장 많은 열
+      const w = Math.max(0, ...rows.map(r => r.length));
+      let best = -1, bestN = 0;
+      for (let k = 0; k < w; k++) {
+        const vals = rows.map(r => r[k]).filter(v => v && jibunOf(v));
+        const seq = vals.length > 2 && vals.every((v, i) => +v === i + 1);   // 연번 열(1, 2, 3…)은 빼기
+        const n = seq ? 0 : vals.length + vals.filter(v => /-|산/.test(v)).length;   // 부번·산이 있는 열을 우선
+        if (n > bestN) { bestN = n; best = k; }
+      }
+      if (best >= 0) {
+        how = `${best + 1}번째 열`;
+        rows.forEach(r => { const v = r[best]; if (!v) return; const j = jibunOf(v); if (j) list.push(j); else skipped++; });
+      }
+    }
+    // 기준 동: 소재지 열(또는 지번 앞 주소)에서 가장 많이 나온 동까지
+    const pool = addrs.length ? addrs : list.map(j => (j.match(/^(.*[가-힣](?:동|리|가)\d*)\s/) || [])[1]).filter(Boolean);
+    const cnt = {}; pool.forEach(a => { const m = a.match(/^(.*?[가-힣]+(?:동|리|가)\d*)(?=\s|$)/); if (m) cnt[m[1]] = (cnt[m[1]] || 0) + 1; });
+    const base = Object.keys(cnt).sort((x, y) => cnt[y] - cnt[x])[0] || '';
+    return { list: [...new Set(list)], base, skipped, how };
+  },
+  // 예전 호출 호환
+  jibunsFromRows(rows) { return this.parseJibunRows(rows).list; },
+
+  // 파일(엑셀 .xlsx·.xls, CSV·TXT) → parseJibunRows 결과 + sheet(읽은 시트 이름). 지번 제목이 있는 시트를 먼저 고름
+  async readJibunFile(f) {
+    const buf = await f.arrayBuffer();
+    const isXls = /\.xls[xm]?$/i.test(f.name);
+    if (isXls) {
+      if (!window.XLSX) throw new Error('엑셀 읽기 도구(XLSX)를 불러오지 못했습니다. 새로고침하거나 CSV로 저장해 넣어 주세요.');
+      const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+      let pick = null;
+      for (const name of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: '', blankrows: false });
+        const r = this.parseJibunRows(rows);
+        if (r.list.length && (!pick || (r.how.startsWith("'") && !pick.how.startsWith("'")) || (r.how.startsWith("'") === pick.how.startsWith("'") && r.list.length > pick.list.length))) pick = { ...r, sheet: name };
+      }
+      return pick || { list: [], base: '', skipped: 0, how: '', sheet: wb.SheetNames[0] };
+    }
+    let text;
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { text = new TextDecoder('euc-kr').decode(buf); }
+    const rows = text.replace(/^﻿/, '').split(/\r?\n/).map(l => l.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim()));
+    return { ...this.parseJibunRows(rows), sheet: '' };
   },
 };
 

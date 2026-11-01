@@ -3037,21 +3037,19 @@ const ZK = {
       try { await navigator.clipboard.writeText(text); toast('대조표를 복사했습니다'); } catch (e) { toast('복사가 막혀 있습니다. 표를 직접 선택해 복사해 주세요'); }
     };
   },
+  // 파일 → 지번 목록 → 바로 구역 만들기 (읽기 규칙은 js/zonekit.js, 사업성 검토 화면과 같음)
   async readFile(f) {
-    let rows;
-    if (/\.xlsx?$/i.test(f.name)) {
-      if (!window.XLSX) { this.say('엑셀 읽기 도구를 불러오지 못했습니다. CSV로 저장해 넣어 주세요.'); return; }
-      const wb = XLSX.read(await f.arrayBuffer());
-      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false });
-    } else {
-      const buf = await f.arrayBuffer();
-      let text;
-      try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { text = new TextDecoder('euc-kr').decode(buf); }
-      rows = text.split(/\r?\n/).map(l => l.split(/[,\t]/).map(c => c.replace(/^"|"$/g, '').trim()));
-    }
-    const list = ZoneKit.jibunsFromRows(rows);
-    $id('zkList').value = list.join('\n');
-    this.say(`${f.name}에서 지번 ${list.length}개를 읽었습니다. 기준 동을 확인하고 지번으로 구역 만들기를 누르세요.`);
+    this.say(`${f.name} 읽는 중…`);
+    let r;
+    try { r = await ZoneKit.readJibunFile(f); }
+    catch (e) { this.say(`${f.name}을(를) 읽지 못했습니다: ${e.message}`); return; }
+    if (!r.list.length) { this.say(`${f.name}${r.sheet ? ` (${r.sheet} 시트)` : ''}에서 지번을 찾지 못했습니다. '지번' 제목이 있는 열이나 지번만 있는 열을 넣어 주세요.`); return; }
+    $id('zkList').value = r.list.join('\n');
+    if (!this.base() && r.base) $id('zkBase').value = r.base;
+    const head = `${f.name}${r.sheet ? ` · ${r.sheet} 시트` : ''} ${r.how}에서 지번 ${r.list.length}개를 읽었습니다${r.skipped ? ` (지번 꼴이 아닌 칸 ${r.skipped}개 제외)` : ''}.`;
+    if (!this.base()) { this.say(head + ' 기준 동 주소를 넣고 지번으로 구역 만들기를 누르세요.'); $id('zkBase').focus(); return; }
+    this.say(head + ' 구역계를 만드는 중…');
+    await this.fromJibuns();
   },
   toggleFull() {
     const m = $id('mapWrap'); m.classList.toggle('full');

@@ -1050,26 +1050,36 @@ function boot() {
     const items = $('#jibunList').value.split(/[\n,;\t]+/);
     MapView.zoneFromJibuns(items, base, { fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked, edgeRoad: ($('#optEdgeRoad') || {}).value || 'none' });
   };
+  // 파일(엑셀·CSV) → 지번 목록 → 바로 구역 만들기·조서 불러오기 (읽기 규칙은 js/zonekit.js, /urban과 같음)
   $('#btnJibunFile').onclick = () => {
     const i = document.createElement('input');
     i.type = 'file';
-    i.accept = '.xlsx,.xls,.csv,.txt';
+    i.accept = '.xlsx,.xls,.xlsm,.csv,.txt';
+    i.style.display = 'none';
+    document.body.append(i);   // 문서에 붙여 두어야 고른 뒤 change가 빠짐없이 옴
     i.onchange = async () => {
       const f = i.files[0];
+      i.remove();
       if (!f) return;
-      let rows;
-      if (/\.xlsx?$/i.test(f.name)) {
-        const wb = XLSX.read(await f.arrayBuffer());
-        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false });
-      } else {
-        const buf = await f.arrayBuffer();
-        let text;
-        try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { text = new TextDecoder('euc-kr').decode(buf); }
-        rows = parseCSV(text);
+      const msg = $('#jibunMsg');
+      const det = msg.closest('details'); if (det) det.open = true;
+      msg.textContent = `${f.name} 읽는 중…`;
+      msg.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      let r;
+      try { r = await ZoneKit.readJibunFile(f); }
+      catch (e) { msg.textContent = `${f.name}을(를) 읽지 못했습니다: ${e.message}`; return; }
+      if (!r.list.length) { msg.textContent = `${f.name}${r.sheet ? ` (${r.sheet} 시트)` : ''}에서 지번을 찾지 못했습니다. '지번' 제목이 있는 열이나 지번만 있는 열을 넣어 주세요.`; return; }
+      $('#jibunList').value = r.list.join('\n');
+      if (!$('#jibunBase').value.trim() && r.base) $('#jibunBase').value = r.base;
+      const base = $('#jibunBase').value.trim() || guessBase();
+      const head = `${f.name}${r.sheet ? ` · ${r.sheet} 시트` : ''} ${r.how}에서 지번 ${r.list.length}개를 읽었습니다${r.skipped ? ` (지번 꼴이 아닌 칸 ${r.skipped}개 제외)` : ''}.`;
+      if (!base && r.list.some(j => !/[가-힣](동|리|가)\d*\s/.test(j))) {
+        msg.textContent = head + ' 기준 동 주소를 넣고 "지번으로 구역 만들기"를 누르세요.';
+        $('#jibunBase').focus();
+        return;
       }
-      // '지번' 제목이 있는 열을 찾고, '소재지·주소' 열이 있으면 앞에 붙임 (js/zonekit.js, /urban과 같은 규칙)
-      $('#jibunList').value = ZoneKit.jibunsFromRows(rows).join('\n');
-      $('#jibunMsg').textContent = `${f.name}에서 지번 ${$('#jibunList').value.split('\n').filter(Boolean).length}개를 읽었습니다. 기준 동을 확인하고 "지번으로 구역 만들기"를 누르세요.`;
+      msg.textContent = head + ' 구역계를 만드는 중…';
+      await MapView.zoneFromJibuns(r.list, base, { fillHoles: $('#optFillHoles').checked, bridge: $('#optBridge').checked, edgeRoad: ($('#optEdgeRoad') || {}).value || 'none' });
     };
     i.click();
   };
