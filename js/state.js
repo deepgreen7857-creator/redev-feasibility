@@ -139,6 +139,7 @@ function defaultState() {
     exposUnits: [],   // 건축물대장 전유부 호별 목록 (엑셀 조서 시트용)
     sens: { range: 20, step: 10 },
     assume: null,     // 사업성 가정값 대화창에 마지막으로 넣은 값
+    quick: null,      // 빠른 사업성 화면 입력값(처음 열 때 기본값으로 채움)
   };
 }
 

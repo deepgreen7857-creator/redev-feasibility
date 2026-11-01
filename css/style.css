@@ -424,3 +424,27 @@ td.heat.base { outline: 2px solid var(--ink); outline-offset: -2px; font-weight:
   input, select, textarea { border: none !important; padding: 0 !important; }
   .table-wrap { overflow: visible; }
 }
+
+/* 빠른 사업성 */
+.qk-head { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 12px; }
+.qk-ratio { flex: 1 1 220px; background: var(--bg); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; border: 2px solid var(--line); }
+.qk-ratio span, .qk-scen span { font-size: .8rem; color: var(--muted); }
+.qk-ratio b { font-size: 2rem; line-height: 1.1; }
+.qk-ratio em, .qk-scen em { font-style: normal; font-size: .78rem; color: var(--muted); }
+.qk-ratio.good { border-color: var(--good); } .qk-ratio.good b { color: var(--good); }
+.qk-ratio.warn { border-color: var(--warn); } .qk-ratio.warn b { color: var(--warn); }
+.qk-ratio.bad { border-color: var(--bad); } .qk-ratio.bad b { color: var(--bad); }
+.qk-scen { flex: 2 1 360px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.qk-scen > div { background: var(--bg); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.qk-scen > div.good b { color: var(--good); } .qk-scen > div.warn b { color: var(--warn); } .qk-scen > div.bad b { color: var(--bad); }
+.qk-scen b { font-size: 1.3rem; }
+.qk-lev th small { display: block; font-weight: 400; color: var(--muted); font-size: .76rem; }
+.qk-barcol { width: 34%; min-width: 140px; }
+.qk-track { position: relative; height: 18px; background: var(--bg); border-radius: 4px; }
+.qk-track i { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--ink); }
+.qk-bar { position: absolute; top: 3px; height: 12px; border-radius: 3px; }
+.qk-bar.up { background: var(--good); } .qk-bar.down { background: var(--bad); }
+tr.qk-best td { background: var(--good-soft); font-weight: 700; }
+tr.qk-cur td:first-child { outline: 2px solid var(--ink); outline-offset: -2px; }
+#qkScan td.good { color: var(--good); } #qkScan td.warn { color: var(--warn); } #qkScan td.bad { color: var(--bad); }
+@media (max-width: 640px) { .qk-scen { grid-template-columns: 1fr; } .qk-barcol { min-width: 90px; } }
