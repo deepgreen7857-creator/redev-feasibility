@@ -41,7 +41,7 @@
     if (!v.lat && site.geojson && typeof turf !== 'undefined') { const c = turf.centerOfMass(site.geojson).geometry.coordinates; v.lng = c[0]; v.lat = c[1]; }
     if (typeof VWorld !== 'undefined' && VWorld.enabled && typeof VWorld.dataAll === 'function' && v.lat && v.lng) {
       try {
-        const fs = await VWorld.dataAll('LP_PA_CBND_BUBUN', `POINT(${v.lng} ${v.lat})`, 1);
+        const fs = await Promise.race([VWorld.dataAll('LP_PA_CBND_BUBUN', `POINT(${v.lng} ${v.lat})`, 1), new Promise((_, rj) => setTimeout(() => rj(new Error('timeout')), 9000))]);
         const addr = fs && fs[0] && fs[0].properties && (fs[0].properties.addr || '');
         const m = String(addr).match(/([가-힣0-9]+(동|가|리))(\s|$)/g);
         if (m) dong = m[m.length - 1].trim();
@@ -62,11 +62,21 @@
     const c = turf.centerOfMass(site.geojson).geometry.coordinates, lat = c[1], lng = c[0];
     const bb = turf.bbox(site.geojson), rad = Math.max(turf.distance([bb[0], bb[1]], [bb[2], bb[3]], { units: 'meters' }) / 2, 100);
     const q = `[out:json][timeout:25];(node(around:2500,${lat},${lng})[railway~"^(station|halt)$"];node(around:${Math.round(rad + 520)},${lat},${lng})[highway=bus_stop];node(around:${Math.round(rad + 520)},${lat},${lng})[public_transport=platform][bus=yes];);out body;`;
-    let data = null;
-    for (const ep of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
-      try { const r = await fetch(ep, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }); if (r.ok) { data = await r.json(); break; } } catch (e) { /* 다음 서버 */ }
+    // 여러 서버에 동시에 묻고 먼저 온 답을 씀(서버마다 12초 제한)
+    const ask = ep => new Promise((res, rej) => {
+      const ac = new AbortController(), t = setTimeout(() => { ac.abort(); rej(new Error('timeout')); }, 12000);
+      fetch(ep, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ac.signal })
+        .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))).then(j => { clearTimeout(t); res(j); }, e => { clearTimeout(t); rej(e); });
+    });
+    const any = ps => new Promise((res, rej) => { let n = ps.length; ps.forEach(p => p.then(res, () => { if (--n === 0) rej(new Error('all failed')); })); });
+    let data = null, src = 'OpenStreetMap';
+    try { data = await any(['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'].map(ask)); } catch (e) { data = null; }
+    if (!data) {
+      // 대신 브이월드 장소 검색으로 역만 찾음(버스정류장은 직접 입력)
+      const vs = await vworldStations(lng, lat);
+      if (!vs) return { fail: true };
+      data = { elements: vs }; src = '브이월드 장소 검색(버스정류장 제외)';
     }
-    if (!data) return { fail: true };
     const line = turf.polygonToLine(site.geojson);
     const lines = line.type === 'FeatureCollection' ? line.features : [line];
     const dist = (lo, la) => { const p = turf.point([lo, la]); if (turf.booleanPointInPolygon(p, site.geojson)) return 0; return Math.min(...lines.map(l => turf.pointToLineDistance(p, l, { units: 'meters' }))); };
@@ -86,19 +96,39 @@
     const out = { stations: list.slice(0, 3), bus: new Set(buses.map(b => b.id)).size };
     if (!v.station && list[0]) { v.station = list[0].name; v.stationDist = String(Math.round(list[0].d)); v.stationAuto = true; }
     else if (v.station && num(v.stationDist) === null) { const s = list.find(x => x.name.replace(/역$/, '') === v.station.replace(/역$/, '')); if (s) { v.stationDist = String(Math.round(s.d)); v.stationAuto = true; } }
-    if (num(v.bus) === null) { v.bus = String(out.bus); v.busAuto = true; }
-    v.transitNote = `OpenStreetMap 기준(${new Date().toLocaleDateString('ko-KR')} 조회) · 거리는 구역 경계까지 직선거리` + (list.length > 1 ? ` · 그다음 가까운 역: ${list.slice(1, 3).map(s => `${s.name} ${Math.round(s.d)}m`).join(', ')}` : '');
+    if (num(v.bus) === null && src === 'OpenStreetMap') { v.bus = String(out.bus); v.busAuto = true; }
+    out.src = src;
+    v.transitNote = `${src} 기준(${new Date().toLocaleDateString('ko-KR')} 조회) · 거리는 구역 경계까지 직선거리` + (list.length > 1 ? ` · 그다음 가까운 역: ${list.slice(1, 3).map(s => `${s.name} ${Math.round(s.d)}m`).join(', ')}` : '');
     return out;
+  }
+
+  async function vworldStations(lng, lat) {
+    if (typeof jsonp !== 'function' || typeof VWORLD_KEY !== 'string' || !VWORLD_KEY.trim()) return null;
+    const dx = 3000 / (Math.cos(lat * Math.PI / 180) * 111320), dy = 3000 / 110540, out = [];
+    try {
+      for (const q of ['역', '전철역', '지하철역']) {
+        const d = await jsonp('https://api.vworld.kr/req/search', { service: 'search', request: 'search', version: '2.0', crs: 'EPSG:4326', size: 50, page: 1, query: q, type: 'place', bbox: `${lng - dx},${lat - dy},${lng + dx},${lat + dy}`, format: 'json', errorformat: 'json', key: VWORLD_KEY.trim(), domain: location.origin }, 8000);
+        const items = (((d || {}).response || {}).result || {}).items || [];
+        items.forEach(it => {
+          const t = String(it.title || '').trim(), cat = String(it.category || '');
+          if (!/역$/.test(t) || /입구|앞|역전|사거리|삼거리/.test(t)) return;
+          if (cat && !/지하철|전철|철도|역/.test(cat)) return;
+          out.push({ id: 'v' + out.length, lat: +it.point.y, lon: +it.point.x, tags: { railway: 'station', name: t } });
+        });
+        if (out.length) break;
+      }
+    } catch (e) { return out.length ? out : null; }
+    return out.length ? out : null;
   }
 
   async function fill(site) {
     if (!site || !site.v) return { changed: false };
     const notes = [];
     const nr = roads(site); if (nr) notes.push(`도로 위계 ${nr}곳(폭 기준 추정)`);
-    const loc = await location(site); if (loc) notes.push(`위치 "${loc}"`);
-    const tr = await transit(site);
+    const [loc, tr] = await Promise.all([location(site).catch(() => null), transit(site).catch(() => ({ fail: true }))]);
+    if (loc) notes.push(`위치 "${loc}"`);
     if (tr && tr.fail) notes.push('대중교통 자료(OpenStreetMap)를 불러오지 못해 역·정류장은 직접 넣어 주세요');
-    else if (tr) notes.push(`최근접 역 ${site.v.station || '없음(2.5km 안)'}${site.v.stationDist ? ' ' + site.v.stationDist + 'm' : ''}, 반경 500m 버스정류장 ${site.v.bus}곳`);
+    else if (tr) notes.push(`최근접 역 ${site.v.station || '없음(2.5km 안)'}${site.v.stationDist ? ' ' + site.v.stationDist + 'm' : ''}${tr.src === 'OpenStreetMap' ? `, 반경 500m 버스정류장 ${site.v.bus}곳` : ' (버스정류장 수는 직접 입력)'}`);
     return { changed: notes.length > 0, notes };
   }
   g.AutoSite = { fill, scaleOf, levelOf };
