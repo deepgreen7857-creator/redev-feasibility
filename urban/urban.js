@@ -2277,8 +2277,9 @@ function moneyBox(inf) {
   const won = v => fmt(Math.round(v / 1e6)) + '백만원';
   const hasWork = num(P.roadWork) > 0 || num(P.parkWork) > 0;
   const ok = m.newCost >= m.oldVal - 1;
-  return `<div style="margin-top:4px"><b>무상양도 금액 비교(개략)</b> — 용도폐지 시설 ${won(m.oldVal)}(사용 중 면적 × 공시지가 평균 ${fmt(m.pubPrice)}원/㎡ × ${m.vmul}) vs 신설 설치비용 ${won(m.newCost)}(부지 ${won(m.newLand)} = 신설 면적 × 사유지 공시지가 평균 ${fmt(m.privPrice)}원/㎡ × ${m.vmul}${hasWork ? ` + 공사비 ${won(m.newWork)}` : ' + 공사비 <b>단가 미입력</b>'}) → ${ok ? '<b class="good">설치비용이 커서 용도폐지 시설 전부 무상양도 가능(개략)</b>' : `<b class="warn">설치비용이 ${won(m.oldVal - m.newCost)} 모자람 — 모자라는 만큼은 유상 매입</b>`}
-    <div class="u">감정평가 배율 ${m.vmul}·공사비 단가는 가정값입니다(아래 입력). 설치비용에 부지가액을 넣는지, 공사비 범위는 관리청 협의·감정평가로 정합니다.</div></div>`;
+  const unk = (inf.giAll || []).filter(x => x.pub && x.include && !x.reply).length;
+  return `<div style="margin-top:4px"><b>무상양도 금액 비교(개략 — 확정은 사업시행계획인가 때 감정평가 후)</b> — 용도폐지 시설 ${won(m.oldVal)}(사용 중 면적 × 공시지가 평균 ${fmt(m.pubPrice)}원/㎡ × ${m.vmul}) vs 신설 설치비용 ${won(m.newCost)}(부지 ${won(m.newLand)} = 신설 면적 × 사유지 공시지가 평균 ${fmt(m.privPrice)}원/㎡ × ${m.vmul}${hasWork ? ` + 공사비 ${won(m.newWork)}` : ' + 공사비 <b>단가 미입력</b>'}) → ${ok ? '<b class="good">설치비용이 커서 용도폐지 시설 전부 무상양도 가능(개략)</b>' : `<b class="warn">설치비용이 ${won(m.oldVal - m.newCost)} 모자람 — 모자라는 만큼은 유상 매입</b>`}
+    <div class="u">감정평가 배율 ${m.vmul}·공사비 단가는 가정값입니다(아래 입력). 실제 무상양도 범위는 사업시행계획인가 때 용도폐지 시설 감정평가액과 신설 시설 설치비용을 비교해 정하고, 관리청 의견을 듣습니다(제97조②④). 무상양도는 <b>행정재산</b>만 대상이고 <b>일반재산은 빠집니다</b>(매수 대상, 대법원 2026다202915)${unk ? ` — 넣은 국공유 ${unk}필지는 행정재산·일반재산 회신 전이라, 일반재산이면 위 용도폐지 금액에서 빠지고 매수비로 넘어갑니다` : ''}.</div></div>`;
 }
 // 추후 할 일(지정 단계에서 결정하지 않고 남겨 두는 것)
 function todoSection(a, pl) {
@@ -2286,6 +2287,7 @@ function todoSection(a, pl) {
   const fac = (inf && inf.facList) || [];
   if (fac.length) items.push(`구역 안 도시계획시설 결정선 ${fac.length}건 ${fmt(fac.reduce((t, f) => t + (f.area || 0), 0))}㎡ — 정비계획 결정·사업시행계획인가 때 도시계획시설 변경(폐지·선형 조정) 검토. 미집행이면 실효(국토계획법 제48조, 결정 고시 후 20년) 시기도 확인`);
   if (inf && (inf.giAll || []).some(x => x.pub && x.grade !== '확실' && !x.reply)) items.push('국공유 필지 재산관리 부서 조회(행정재산·일반재산 구분, 점유·대부) — 일반재산은 무상양도 대상이 아님(대법원 2026. 9. 3. 선고 2026다202915). 판단표의 엑셀로 요청');
+  if (inf && inf.money && inf.innerArea > 0 && !P.keepInnerRoads) items.push('무상양도 범위 확정 — 사업시행계획인가 때 용도폐지 시설(행정재산) 감정평가액과 신설 정비기반시설 설치비용 비교, 관리청 의견 청취(도정법 제97조②④). 일반재산·초과분은 매수');
   if (inf && inf.entry) items.push('진입도로·주출입구 위치 — 교통영향평가·경찰 협의 뒤 확정(지금은 가정)');
   if (inf && inf.money && !(num(P.roadWork) > 0)) items.push('정비기반시설 공사비 단가 — 설계·관리청 협의로 정해 무상양도 금액 비교에 넣기');
   if (!items.length) return '';
@@ -2310,7 +2312,7 @@ function giSection(inf) {
       <td class="u">${x.noBld ? '건물 없음' : `건물 ${x.nLedger + x.nGis}동${x.nGis ? `(대장 없음 ${x.nGis})` : ''}`}${x.cover > 0.05 ? `<br>건물 겹침 ${Math.round(x.cover * 100)}% <span title="필지 가장자리 1.2m(처마·지적 경계 어긋남)를 뺀 안쪽 기준">(안쪽 ${Math.round((x.coreC || 0) * 100)}%)</span>${x.bldOn ? ' <b class="warn">점유 의심</b>' : ' — 대부분 가장자리(처마·경계 어긋남)'}` : ''}<br>${x.facKind ? `결정: ${esc(x.facKind)}` : '도시계획시설 결정 없음'}<br>${x.p.chgDate ? `${esc(x.p.chgDate)} ${esc(x.p.chgCause || '')}` : ''}</td>
       <td><span class="pill ${gradeCls[x.grade]}">${x.grade}</span></td>
       <td>${x.pub ? `<select data-gidec="${esc(x.p.pnu)}" aria-label="${esc(x.p.jibun)} 판단"><option value="" ${!x.dec ? 'selected' : ''}>자동(${x.grade === '아닐 가능성' ? '뺌' : '넣음'})</option><option value="in" ${x.dec === 'in' ? 'selected' : ''}>넣기(무상양도 대상)</option><option value="out" ${x.dec === 'out' ? 'selected' : ''}>빼기</option></select>` : '<span class="u">사유 — 제외</span>'}</td>
-      <td>${x.pub ? `<select data-gireply="${esc(x.p.pnu)}" aria-label="${esc(x.p.jibun)} 회신"><option value="">–</option>${[['use', '공공용 사용'], ['occupy', '점유(대부·무단)'], ['mismatch', '지적 불부합'], ['general', '일반재산']].map(([v, t]) => `<option value="${v}" ${x.reply === v ? 'selected' : ''}>${t}</option>`).join('')}</select>` : ''}</td>
+      <td>${x.pub ? `<select data-gireply="${esc(x.p.pnu)}" aria-label="${esc(x.p.jibun)} 회신"><option value="">–</option>${[['use', '행정재산(공공용)'], ['occupy', '행정재산·점유(대부·무단)'], ['mismatch', '지적 불부합'], ['general', '일반재산(무상양도 제외)']].map(([v, t]) => `<option value="${v}" ${x.reply === v ? 'selected' : ''}>${t}</option>`).join('')}</select>` : ''}</td>
       <td class="r">${fmt(x.area)}</td><td class="r">${x.occ >= 1 ? `<b class="warn">${fmt(x.occ)}</b>` : '–'}</td><td class="r">${fmt(x.useA)}</td></tr>`).join('') || '<tr><td colspan="12" class="u">구역 안 국공유·공공 지목 필지 없음</td></tr>'}
     </tbody></table></div>
     <button type="button" class="btn ghost sm" id="giCopy">표 복사(엑셀 붙여넣기용)</button>
