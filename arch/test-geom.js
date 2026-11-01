@@ -35,3 +35,11 @@ const alts = G.alternatives(site, { units: U, assume: A, mix: { 59: 40, 84: 50, 
 alts.forEach(a => console.log(`  ${a.label}: ${a.buildings.length}개동 ${a.units}세대 용적률 ${a.far.toFixed(1)}% 건폐율 ${a.bcr.toFixed(1)}% 최고 ${a.maxFloors}층`));
 assert.ok(alts.length >= 2 && alts.every(a => a.far <= 250.01 && a.far >= 242));
 console.log('대안 통과');
+// 공원·녹지: 북쪽 공원 폭 30m면 북측 경계 바로 옆 동도 더 높게
+const sp = { pts: rect(240, 200), tags: ['road', 'boundary', 'park', 'boundary'] }; sp.setbacks = [3, 5, 5, 5];
+const base = { units: U, assume: A, mix: { 59: 40, 84: 50, 114: 10 }, spacing: 0.8, sun: sunN, lot: 36000, far: 250, angle: 0, fixedF: 25 };
+const rn = G.layout(Object.assign({}, sp, { tags: ['road', 'boundary', 'north', 'boundary'] }), base), rp = G.layout(sp, Object.assign({}, base, { parkWidth: 30 }));
+const north = r => Math.max(...r.buildings.map(b => b.ry + b.D));
+console.log(`정북 변: 북쪽 끝 동 ${north(rn).toFixed(0)}m · ${rn.units}세대 / 공원 30m: 북쪽 끝 동 ${north(rp).toFixed(0)}m · ${rp.units}세대`);
+assert.ok(north(rp) > north(rn) && rp.units >= rn.units);
+console.log('공원·녹지 통과');

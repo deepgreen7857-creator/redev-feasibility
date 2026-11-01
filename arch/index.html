@@ -35,6 +35,17 @@
 .bar button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:600}
 .modehint{font-size:13px;margin:6px 0 0;padding:6px 10px;border-radius:6px;background:var(--accent-soft)}
 details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px}
+#map{position:relative}
+.mlegend{position:absolute;z-index:800;background:var(--sheet);color:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.18);font-size:12px;min-width:210px;max-width:270px;user-select:none}
+.mlegend .hd{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line);cursor:move;font-weight:600;touch-action:none}
+.mlegend .hd span{flex:1}
+.mlegend .hd button{border:0;background:none;padding:0 4px;font-size:13px;line-height:1;cursor:pointer;color:var(--ink-2)}
+.mlegend ul{list-style:none;margin:0;padding:6px 8px 8px}
+.mlegend li{display:flex;gap:7px;align-items:flex-start;padding:2px 0}
+.mlegend li i{flex:none;width:18px;height:5px;border-radius:2px;margin-top:6px}
+.mlegend li small{display:block;color:var(--ink-2);font-size:11px;line-height:1.35}
+.mlegend.min ul{display:none}
+.mlegend .ent{width:11px;height:11px;border:2px solid #1d2a33;border-radius:50%;background:#fff;margin:2px 4px 0 3px;flex:none}
 </style>
 </head>
 <body>
@@ -62,8 +73,8 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       </div>
       <div class="modehint" id="modeHint">지금: 경계 성격 바꾸기 — 경계선을 누를 때마다 성격이 바뀝니다(곡선처럼 이어진 짧은 변은 한꺼번에).</div>
       <div id="map" aria-label="구역 지도"></div>
-      <div class="tags" id="tagLegend"></div>
-      <p class="note">경계선을 누를 때마다 성격이 바뀝니다(대지경계 → 도로 → 간선도로 → 정북 인접대지 → 저층 주거 인접). 공원·도로 등 기반시설 자리는 지도 왼쪽 위 다각형 도구로 그리면 건축 불가 영역이 됩니다.</p>
+      <div class="tags" id="tagLegend" hidden></div>
+      <p class="note">경계선을 누를 때마다 성격이 바뀝니다(대지경계 → 도로 → 간선도로 → 정북 인접대지 → 공원·녹지 접함 → 저층 주거 인접). 지도 위 범례는 제목 줄을 끌어 옮길 수 있습니다. 공원·도로 등 기반시설 자리는 지도 왼쪽 위 다각형 도구로 그리면 건축 불가 영역이 됩니다.</p>
     </section>
 
     <section class="panel" aria-label="계획 조건">
@@ -93,6 +104,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
         <label>대지경계 이격 m<input id="p_bndSb" inputmode="decimal"></label>
         <label>저층 주거 인접부 층수 상한<input id="p_lowCap" inputmode="numeric"></label>
         <label>층수 상한 적용 거리 m<input id="p_lowDist" inputmode="decimal"></label>
+        <label>공원·녹지 폭 m (정북 기준선 계산)<input id="p_parkW" inputmode="decimal"></label>
         <label>최저 층수<input id="p_minFloors" inputmode="numeric"></label>
         <label>층고 m<input id="p_fh" inputmode="decimal"></label>
         <label>전용→연면적 환산계수<input id="p_sf" inputmode="decimal"></label>
@@ -136,10 +148,10 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="../js/config.js?v=1"></script>
 <script src="../shared/site-store.js?v=2"></script>
-<script src="../shared/arch-geom.js?v=1"></script>
+<script src="../shared/arch-geom.js?v=2"></script>
 <script src="../shared/mass3d.js?v=1"></script>
 <script src="../traffic/traffic-calc.js?v=1"></script>
-<script src="arch-draw.js?v=1"></script>
-<script src="arch.js?v=5"></script>
+<script src="arch-draw.js?v=2"></script>
+<script src="arch.js?v=6"></script>
 </body>
 </html>

@@ -8,7 +8,8 @@
     road: { name: '도로 접함', color: '#2f6fa3' },
     arterial: { name: '간선도로(소음)', color: '#7a4fb0' },
     north: { name: '정북 인접대지(일조)', color: '#d0752a' },
-    lowrise: { name: '저층 주거 인접(층수 점감)', color: '#3f8f5a' },
+    park: { name: '공원·녹지 접함', color: '#6aa84f' },
+    lowrise: { name: '저층 주거 인접(층수 점감)', color: '#0f8a8a' },
   };
   const fmt = (v, d = 0) => (v === null || v === undefined || isNaN(v)) ? '○○' : (+v).toLocaleString('ko-KR', { maximumFractionDigits: d });
 

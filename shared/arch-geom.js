@@ -137,9 +137,9 @@
       E.forEach((e, i) => {
         const tag = site.tags[i];
         const d = Math.min(...b.poly.map(p => segDist(p, e.a, e.b)));
-        if (tag === 'north') {
-          const s = opt.sun; let Hmax;
-          if (d < s.높이10m이하_m) Hmax = 0; else Hmax = Math.max(10, d / s.높이10m초과_높이비);
+        if (tag === 'north' || (tag === 'park' && e.out[1] > 0.5)) {
+          const s = opt.sun, dd = tag === 'park' ? d + (opt.parkWidth || 0) : d; let Hmax;
+          if (dd < s.높이10m이하_m) Hmax = 0; else Hmax = Math.max(10, dd / s.높이10m초과_높이비);
           cap = Math.min(cap, Math.floor((Hmax - A.groundExtra_m) / A.floorHeight_m));
         }
         if (tag === 'lowrise' && opt.lowriseCap && d < opt.lowriseDist) cap = Math.min(cap, opt.lowriseCap);
