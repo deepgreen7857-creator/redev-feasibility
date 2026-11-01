@@ -671,7 +671,85 @@ function farCalcOf(inf, site) {
   const raw = far.allowed + (F.public_facility_build * pa + F.public_facility_land_only * pb) / (site || 1) * far.base;
   return { v: Math.round(Math.min(far.max, raw) * 10) / 10, raw, pa, pb, newPub, fac: old, site, capped: raw > far.max };
 }
+// 개략 주동 배치 — 오른쪽 '개략 규모'와 지도가 같은 결과를 쓰도록 계산 단계에서 배치함
+//  기반시설 제안이 있으면 공동주택 획지(1,000㎡ 미만 제외) 안에만, 없으면 구역계 안에 격자로 놓음
+//  땅 모양 때문에 계산상 동 수보다 적게 들어가면 들어간 동 수로 동당 층수를 올려 세대수를 맞춤(층수가 오르면 인동간격도 넓어지므로 다시 배치)
+const TOWERS = {
+  memo: {},
+  rot: ([x, y], t) => [x * Math.cos(t) - y * Math.sin(t), x * Math.sin(t) + y * Math.cos(t)],
+  outer(gm) { const t = gm && (gm.geometry || gm); return !t ? [] : t.type === 'Polygon' ? [t.coordinates[0]] : t.type === 'MultiPolygon' ? t.coordinates.map(c => c[0]) : []; },
+  area(pts) { let a = 0; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]); return Math.abs(a / 2); },
+  // 가장 긴 변 방향(라디안)
+  mainAngle(pts) {
+    let best = 0, ang = 0;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const dx = pts[i][0] - pts[j][0], dy = pts[i][1] - pts[j][1], L2 = dx * dx + dy * dy;
+      if (L2 > best) { best = L2; ang = Math.atan2(dy, dx); }
+    }
+    while (ang > Math.PI / 2) ang -= Math.PI; while (ang <= -Math.PI / 2) ang += Math.PI;
+    return ang;
+  },
+  pack(polys, fw, fh, F, maxN) {
+    const gap = Math.max(fw + 14, 0.8 * F * 2.9 + fh), sx = fw + 16;
+    const big = polys.slice().sort((p, q) => this.area(q) - this.area(p));
+    const angs = [0]; if (big[0]) { const m = this.mainAngle(big[0]); if (Math.abs(m) > 0.05) angs.push(m); }
+    let best = [];
+    for (const th of angs) for (const ox of [0, sx / 2]) for (const oy of [0, gap / 3, 2 * gap / 3]) {
+      const out = [];
+      for (const poly of big) {
+        if (out.length >= maxN) break;
+        const rp = poly.map(q => this.rot(q, -th));
+        const xs = rp.map(q => q[0]), ys = rp.map(q => q[1]);
+        const fits = (x, y) => [[x, y], [x + fw, y], [x + fw, y + fh], [x, y + fh], [x + fw / 2, y], [x + fw / 2, y + fh], [x, y + fh / 2], [x + fw, y + fh / 2]].every(([px, py]) => inside(px, py, rp));
+        for (let y = Math.min(...ys) + 3 + oy; y < Math.max(...ys) - fh && out.length < maxN; y += gap) {
+          for (let x = Math.min(...xs) + 3 + ox; x < Math.max(...xs) - fw && out.length < maxN; x += sx) {
+            if (fits(x, y)) out.push([[x, y], [x + fw, y], [x + fw, y + fh], [x, y + fh]].map(q => this.rot(q, th)));
+          }
+        }
+      }
+      if (out.length > best.length) best = out;
+    }
+    return best;
+  },
+  solve(polys, pl) {
+    const core = P.coreUnits, fw = Math.sqrt(pl.towerFoot * 2.2), fh = pl.towerFoot / fw;
+    let F = pl.floorsTower, rects = [];
+    for (let it = 0; it < 12; it++) {
+      const got = this.pack(polys, fw, fh, F, pl.towers);
+      if (!got.length) break;
+      rects = got;
+      const need = Math.ceil(pl.units / (got.length * core));
+      if (need <= F) { F = need; break; }   // 지금 층수의 인동간격으로 놓은 배치에 다 담김
+      F = need;                              // 층수를 올리고 그 높이의 인동간격으로 다시 놓음
+    }
+    return { rects, F };
+  },
+  fit(a, pl) {
+    const R0 = D.regions[a.key], zg = (R0 && R0.geojson) || (Z.zones[a.key] && Z.zones[a.key].geojson);
+    if (!zg || !(pl.units > 0) || !(pl.towerFoot > 0)) return pl;
+    const ring = this.outer(zg).sort((p, q) => this.area(q) - this.area(p))[0]; if (!ring) return pl;
+    const lat0 = ring.reduce((t, c) => t + c[1], 0) / ring.length, lon0 = ring.reduce((t, c) => t + c[0], 0) / ring.length;
+    const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+    const toLocal = r => r.map(c => [(c[0] - lon0) * kx, -(c[1] - lat0) * ky]);
+    const back = ([x, y]) => [lat0 - y / ky, lon0 + x / kx];
+    const lots = pl.infra && Array.isArray(pl.infra.lots) && pl.infra.lots.length ? pl.infra.lots.filter(l => l.geom && !l.small) : null;
+    const polys = (lots && lots.length ? lots.flatMap(l => this.outer(l.geom)) : this.outer(zg)).map(toLocal);
+    const key = [a.key, pl.units, pl.towers, pl.floorsTower, pl.towerFoot.toFixed(2), P.coreUnits, JSON.stringify(polys.map(q => q.map(v => [Math.round(v[0] * 2), Math.round(v[1] * 2)])))].join('|');
+    if (!this.memo[key]) { const ks = Object.keys(this.memo); if (ks.length > 40) this.memo = {}; this.memo[key] = this.solve(polys, pl); }
+    const r = this.memo[key];
+    const out = Object.assign({}, pl, { towersCalc: pl.towers, floorsCalc: pl.floorsTower, placedIn: lots && lots.length ? 'lots' : 'zone' });
+    if (!r.rects.length) { out.rects = []; out.mapFail = true; return out; }
+    out.towers = r.rects.length; out.floorsTower = r.F; out.rects = r.rects.map(c => c.map(back));
+    return out;
+  },
+};
+// 지도 화면이면 실제로 놓이는 배치로 동 수·층수를 맞춘 값을 씀(개략 규모·높이·소방 검토·지도가 모두 이 값)
 function plan(a) {
+  const pl = planRaw(a);
+  if (!D.map) return pl;
+  try { return TOWERS.fit(a, pl); } catch (er) { console.warn('개략 배치 계산 실패', er); return pl; }
+}
+function planRaw(a) {
   if (!(D.map && P.infraMode !== 'manual')) return planCore(a, P.infraRatio);
   let pl = planCore(a, P.infraRatio), inf = null;
   let fc = null;
@@ -2000,7 +2078,7 @@ function drawLeaflet() {
     L.geoJSON(r.geojson, { style }).eachLayer(l => { l.bindTooltip(r.name + ' 구역계', { sticky: true }); (act ? editGroup : layZ).addLayer(l); });
   });
   if (ZK.rough[S.region]) L.geoJSON(ZK.rough[S.region], { style: { color: cssVar('--ink-2'), weight: 2, dashArray: '6 6', fill: false }, interactive: false }).addTo(layZ);
-  S.placed = null; S.placedIn = null; S.placedNeed = null;
+  S.placed = null; S.placedIn = null; S.placedNeed = null; S.placedFloors = null; S.placedFloorsCalc = null;
   if (S.mode === 'arch' && R && R.geojson) { const a = analyze(S.region); if (a) { drawTowersMap(R.geojson, plan(a)); GATE.draw(layT, a); } if (R.fetched && !INFRA.ready(S.region)) INFRA.fetchRoads(S.region); }
   if (S.mode === 'infra' && R && R.geojson && R.fetched) {
     if (!INFRA.ready(S.region)) INFRA.fetchRoads(S.region);
@@ -2010,6 +2088,12 @@ function drawLeaflet() {
 }
 // 개략 주동 배치: 구역계를 미터 좌표로 펴서 격자로 놓은 뒤 다시 경위도로
 function drawTowersMap(gj, pl) {
+  if (pl.rects) {
+    const col0 = cssVar('--accent');
+    pl.rects.forEach(c => L.polygon(c, { color: col0, weight: 1, fillColor: col0, fillOpacity: 0.85 }).bindTooltip(`${pl.floorsTower}층 · ${P.coreUnits}세대/층 · 높이 약 ${(pl.floorsTower * 2.9).toFixed(0)}m${pl.placedIn === 'lots' ? ' · 공동주택 획지 안' : ''}`, { sticky: true }).addTo(layT));
+    S.placed = pl.rects.length; S.placedIn = pl.placedIn; S.placedNeed = pl.towersCalc; S.placedFloors = pl.floorsTower; S.placedFloorsCalc = pl.floorsCalc;
+    return;
+  }
   const g = gj.geometry;
   const rings = g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map(c => c[0]) : [];
   if (!rings.length) return;
@@ -2118,7 +2202,7 @@ function drawSvg() {
     const minY = Math.min(...reg.pts.map(q => q[1])), atX = reg.pts.find(q => q[1] === minY)[0];
     const lab = el('text', { x: atX + 3 * u, y: minY + 9 * u, fill: 'var(--redline)', 'font-size': 7.5 * u, 'font-weight': 700, 'font-family': 'IBM Plex Sans KR, sans-serif' }); lab.textContent = reg.name + ' 구역계';
   }
-  S.placed = null; S.placedIn = null; S.placedNeed = null;
+  S.placed = null; S.placedIn = null; S.placedNeed = null; S.placedFloors = null; S.placedFloorsCalc = null;
   if (S.mode === 'arch' && reg && reg.pts) { const a = analyze(S.region); if (a) drawTowers(reg.pts, plan(a), u); }
   if (S.drawing) {
     if (S.draft.length) el('polyline', { points: ringStr(S.draft), fill: 'none', stroke: 'var(--redline)', 'stroke-width': 1.4 * u });
@@ -2635,7 +2719,7 @@ function renderArch(a) {
   <h3>개략 규모</h3>
   <div class="kpis">
     ${kpi('총 세대수', fmt(pl.units) + '세대', `연면적 ${fmt(pl.gfa)}㎡ ÷ 세대당 ${pl.perUnit.toFixed(1)}㎡`)}
-    ${kpi('주동', pl.towers + '개동', `평균 ${pl.floorsTower}층 · 높이 약 ${(pl.floorsTower * 2.9).toFixed(0)}m`)}
+    ${kpi('주동', pl.towers + '개동', `동당 ${pl.floorsTower}층 · 높이 약 ${(pl.floorsTower * 2.9).toFixed(0)}m${pl.rects && pl.towersCalc !== pl.towers ? ` · 지도 배치 기준(땅 모양 때문에 ${pl.towersCalc}개동 ${pl.floorsCalc}층 대신)` : pl.rects ? ' · 지도 배치와 같음' : ''}`)}
     ${kpi('건축면적 한도', fmt(pl.footMax) + '㎡', `획지 × ${P.bcr}%`)}
     ${kpi('지하 연면적(주차 등)', fmt(pl.basement) + '㎡', `지상 대비 ${P.basementRatio}%`)}
   </div>
@@ -2647,7 +2731,7 @@ function renderArch(a) {
     <tr><td>임대주택</td><td class="r">${fmt(pl.rental)}</td></tr>
   </tbody></table></div>
   ${D.map ? gateSection(a, pl) : ''}
-  <p class="note">도면의 <b>개략 배치</b>는 주동을 ${S.placedIn === 'lots' ? '정비기반시설(도로·공원·학교·종교용지 등)을 뺀 <b>공동주택 획지</b>' : '구역계'} 안에 격자로 놓아 봅니다(인동간격 높이×0.8 개략, 배치된 주동 ${S.placed ?? '–'}개동${S.placed != null && S.placedNeed && S.placed < S.placedNeed ? ` — 필요한 ${S.placedNeed}개동 중 ${S.placedNeed - S.placed}개동은 격자로 못 놓음, 층수를 올리거나 /arch에서 다시 배치` : ''}). 일조·높이·학교예정부지·문화재 위치는 /arch 단계에서 다룹니다.</p>`;
+  <p class="note">도면의 <b>개략 배치</b>는 주동을 ${S.placedIn === 'lots' ? '정비기반시설(도로·공원·학교·종교용지 등)을 뺀 <b>공동주택 획지</b>' : '구역계'} 안에 격자로 놓아 봅니다(인동간격 높이×0.8 개략, 배치된 주동 ${S.placed ?? '–'}개동${S.placed != null && S.placedNeed && S.placed < S.placedNeed ? ` — 땅 모양 때문에 계산상 ${S.placedNeed}개동(${S.placedFloorsCalc}층)이 다 들어가지 않아 ${S.placed}개동 × ${S.placedFloors}층으로 세대수를 맞췄습니다. 오른쪽 개략 규모도 이 값입니다` : ''}). 일조·높이·학교예정부지·문화재 위치는 /arch 단계에서 다룹니다.</p>`;
   bindNum(['bcr', 'coreUnits', 'supplyFactor', 'rentalRatio', 'mix59', 'mix84', 'mix114', 'parkCount']);
   side.querySelectorAll('[data-gate]').forEach(b => b.onclick = () => { S.placing = 'gate:' + b.dataset.gate; $id('lmap').classList.add('picking'); toast(`지도에서 ${GATE.KIND[b.dataset.gate]}를 둘 구역 경계를 누르세요`); });
   const gc = document.getElementById('gateClear'); if (gc) gc.onclick = () => { const z = Z.zones[S.region]; if (z && z.infra) { delete z.infra.gates; saveZ(); render(); } };
