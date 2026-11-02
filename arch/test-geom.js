@@ -64,18 +64,38 @@ console.log('공원·녹지 통과');
   R5.buildings.forEach(b => { assert.strictEqual(b.form, form === 'mix' ? b.form : form); b.parts.flat().forEach(p => assert.ok(G.inside(p[0], p[1], P))); });
 }));
 
-// 채광창 이격(시행령 제86조③1호): 남쪽 도로 변(도로 폭 12m)에서 높이 ≤ 2 × (거리 + 도로 폭)
-t('채광창 벽면 → 인접 대지경계선(도로 건너편) 높이 ≤ 2×거리', () => {
+// 채광창 이격(시행령 제86조③1호·⑥): 남쪽 도로 변(도로 폭 12m)에서 공동주택은 도로 중심선까지 → 높이 ≤ 2 × (거리 + 6)
+t('채광창 벽면 → 인접 대지경계선(도로 중심선) 높이 ≤ 2×거리', () => {
   const P = rect(240, 200), W12 = [12, 0, 0, 0];
   ['slab', 'tower'].forEach(form => {
     const R6 = run(P, ['road', 'boundary', 'boundary', 'boundary'], 250, { form, winRatio: 2, edgeW: W12, lib: C.평면_라이브러리 });
     R6.buildings.forEach(b => {
       const dS = Math.min(...b.poly.map(p => p[1])), dW = Math.min(...b.poly.map(p => p[0])), dE = 240 - Math.max(...b.poly.map(p => p[0])), dN = 200 - Math.max(...b.poly.map(p => p[1]));
       const h = R6.H(b.floors);
-      assert.ok(h <= 2 * (dS + 12) + 0.01, `${form} ${b.id} 남 ${h} > 2×(${dS.toFixed(1)}+12)`);
+      assert.ok(h <= 2 * (dS + 6) + 0.01, `${form} ${b.id} 남 ${h} > 2×(${dS.toFixed(1)}+6)`);
       assert.ok(h <= 2 * dN + 0.01, `${form} ${b.id} 북 ${h} > 2×${dN.toFixed(1)}`);
       if (form === 'tower') { assert.ok(h <= 2 * dW + 0.01 && h <= 2 * dE + 0.01, `${form} ${b.id} 옆`); }
     });
     console.log(`  ${form}: ${R6.buildings.length}개동 ${R6.units}세대 용적률 ${R6.far.toFixed(1)}% 최고 ${R6.maxFloors}층 · 동 크기 ${R6.buildings[0].L.toFixed(1)}×${R6.buildings[0].D.toFixed(1)}m`);
   });
+});
+
+// 성격이 '대지경계'로 표시된 변이라도 도로가 닿아 있으면(edgeW) 중심선까지 잼 — 표시 실수에 덜 민감하게
+t('도로가 닿은 변은 성격 표시와 관계없이 도로 중심선 적용', () => {
+  const P = rect(240, 200);
+  const a = run(P, ['boundary', 'boundary', 'boundary', 'boundary'], 300, { form: 'tower', winRatio: 2, lib: C.평면_라이브러리, quick: 1 });
+  const b = run(P, ['boundary', 'boundary', 'boundary', 'boundary'], 300, { form: 'tower', winRatio: 2, edgeW: [20, 20, 20, 20], lib: C.평면_라이브러리, quick: 1 });
+  assert.ok(b.far >= a.far - 0.01, `도로 폭이 들어가면 용적률이 줄면 안 됨 ${a.far} → ${b.far}`);
+  console.log(`  대지경계만 ${a.far.toFixed(1)}% → 사방 20m 도로 ${b.far.toFixed(1)}%`);
+});
+
+// 정남 기준(건축법 제61조③): 북쪽 '정북' 변 제한은 빠지고 남쪽 변에 같은 거리 적용
+t('정남 기준 일조: 남쪽 경계에서 높이 10m 초과 부분 높이의 1/2 이상', () => {
+  const P = rect(240, 200);
+  const R7 = run(P, ['boundary', 'boundary', 'north', 'boundary'], 250, { southBase: true });
+  R7.buildings.forEach(b => {
+    const dS = Math.min(...b.poly.map(p => p[1])), h = R7.H(b.floors);
+    if (h > 10) assert.ok(dS + 0.01 >= h * sunN.높이10m초과_높이비, `${b.id} 남쪽 ${dS.toFixed(1)}m < ${h}/2`);
+  });
+  console.log(`  정남 기준: ${R7.buildings.length}개동 ${R7.units}세대 용적률 ${R7.far.toFixed(1)}%`);
 });

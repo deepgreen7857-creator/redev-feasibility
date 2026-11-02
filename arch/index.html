@@ -124,7 +124,8 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
         <label>저층 주거 인접부 층수 상한<input id="p_lowCap" inputmode="numeric"></label>
         <label>층수 상한 적용 거리 m<input id="p_lowDist" inputmode="decimal"></label>
         <label>계획 주차(세대당 대수, 법정보다 작으면 법정)<input id="p_parkPer" inputmode="decimal"></label>
-        <label>공원·녹지 폭 m (정북 기준선 계산)<input id="p_parkW" inputmode="decimal"></label>
+        <label>공원·녹지 폭 m (중심선을 경계로 봄)<input id="p_parkW" inputmode="decimal"></label>
+        <label>일조 높이 제한 기준<select id="p_sunBase"><option value="north">정북방향(기본)</option><option value="south">정남방향(정비구역 등, 건축법 제61조③ — 고시 필요)</option></select></label>
         <label>최저 층수<input id="p_minFloors" inputmode="numeric"></label>
         <label>층고 m<input id="p_fh" inputmode="decimal"></label>
         <label>전용→연면적 환산계수<input id="p_sf" inputmode="decimal"></label>
@@ -170,11 +171,11 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../js/config.js?v=1"></script>
 <script src="../js/zonekit.js?v=79"></script>
 <script src="../shared/site-store.js?v=6"></script>
-<script src="../shared/arch-geom.js?v=8"></script>
+<script src="../shared/arch-geom.js?v=9"></script>
 <script src="../shared/mass3d.js?v=1"></script>
 <script src="../traffic/traffic-calc.js?v=2"></script>
 <script src="arch-draw.js?v=7"></script>
-<script src="arch.js?v=20"></script>
+<script src="arch.js?v=21"></script>
 <script src="../shared/workfile.js?v=1"></script>
 </body>
 </html>

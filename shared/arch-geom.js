@@ -54,6 +54,8 @@
   }
 
   // 다각형 poly 각 부분에서 정북(+y)으로 올라가 선분 ab를 만나는 최소 거리. 만나는 곳이 없으면 null
+  // 정남 기준(건축법 제61조③): 건물 각 점에서 정남 방향으로 잰 경계까지 거리 — 정북 거리를 위아래 뒤집어 잼
+  function southDist(poly, a, b) { const f = p => [p[0], -p[1]]; return northDist(poly.map(f), f(a), f(b)); }
   function northDist(poly, a, b) {
     const pts = []; poly.forEach((p, i) => { const q = poly[(i + 1) % poly.length]; for (let k = 0; k < 6; k++) pts.push([p[0] + (q[0] - p[0]) * k / 6, p[1] + (q[1] - p[1]) * k / 6]); });
     let best = null;
@@ -324,22 +326,25 @@
       E.forEach((e, i) => {
         const tag = site.tags[i];
         const d = Math.min(...b.poly.map(p => segDist(p, e.a, e.b)));
-        if (tag === 'north' || (tag === 'park' && e.out[1] > 0.5)) {
+        // 사이에 도로·공원 등이 있으면 공동주택은 그 중심선을 인접 대지경계선으로 봄(시행령 제86조⑥) → 폭의 절반을 더함
+        const ew = num0((opt.edgeW || [])[i], 0), gap = (ew > 0 ? ew : tag === 'park' ? num0(opt.parkWidth, 0) : 0) / 2;
+        const sunCap = dd => { const s = opt.sun; const Hmax = dd < s.높이10m이하_m ? 0 : Math.max(10, dd / s.높이10m초과_높이비); return Math.floor((Hmax - A.groundExtra_m) / A.floorHeight_m); };
+        if (opt.southBase) {
+          // 정남 기준(건축법 제61조③, 고시 필요): 남쪽을 향한 변에 정북과 같은 거리 적용, 정북 변은 적용 안 함
+          if (e.out[1] < -0.5) { const ds = southDist(b.poly, e.a, e.b); if (ds !== null) cap = Math.min(cap, sunCap(ds + gap)); }
+        } else if (tag === 'north' || (tag === 'park' && e.out[1] > 0.5)) {
           // 정북 일조(건축법 시행령 제86조①): 건축물 각 부분에서 '정북 방향'으로 잰 인접대지경계선까지 거리.
           // 경계가 비스듬하면 수직 거리보다 길어짐. 정북 방향 연장선에 이 변이 없으면 이 변은 제한하지 않음
-          const dn = northDist(b.poly, e.a, e.b); if (dn === null) return;
-          const s = opt.sun, dd = tag === 'park' ? dn + (opt.parkWidth || 0) : dn; let Hmax;
-          if (dd < s.높이10m이하_m) Hmax = 0; else Hmax = Math.max(10, dd / s.높이10m초과_높이비);
-          cap = Math.min(cap, Math.floor((Hmax - A.groundExtra_m) / A.floorHeight_m));
+          const dn = northDist(b.poly, e.a, e.b);
+          if (dn !== null) cap = Math.min(cap, sunCap(dn + gap));
         }
         if (tag === 'lowrise' && opt.lowriseCap && d < opt.lowriseDist) cap = Math.min(cap, opt.lowriseCap);
-        // 채광창 벽면 → 인접 대지경계선(건축법 시행령 제86조③1호): 높이 ≤ 거리 × 배수. 도로·공원 등이 사이에 있으면 반대편 경계선까지(같은 조 ⑥)
-        //  판상·ㄱ형은 앞·뒤 벽면(동 깊이 방향)을 향한 변만, 탑상·Y·ㅁ형은 모든 변
+        // 채광창 벽면 → 인접 대지경계선(건축법 시행령 제86조③1호): 높이 ≤ 거리 × 배수. 도로·공원 등이 사이에 있으면 중심선까지(같은 조 ⑥, 공동주택)
+        //  판상·ㄱ형은 앞·뒤 벽면(동 깊이 방향)을 향한 변만, 탑상·Y·ㅁ형은 모든 변. 도로 폭은 변의 성격 표시와 관계없이 실제로 닿은 도로 폭
         if (opt.winRatio) {
           const yax = rot([0, 1], th), faces = !['slab', 'L'].includes(b.form) || Math.abs(e.out[0] * yax[0] + e.out[1] * yax[1]) >= 0.5;
           if (faces) {
-            const extra = (tag === 'road' || tag === 'arterial') ? num0((opt.edgeW || [])[i], 0) : tag === 'park' ? num0(opt.parkWidth, 0) : 0;
-            const Hw = opt.winRatio * (d + extra);
+            const Hw = opt.winRatio * (d + gap);
             cap = Math.min(cap, Math.floor((Hw - A.groundExtra_m) / A.floorHeight_m));
           }
         }
