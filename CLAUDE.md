@@ -1,5 +1,7 @@
 # jbslab.co.kr — 정비사업 사업성 검토
 
+> 새 대화 시작 시: `docs/인계-다음작업.md`를 먼저 읽고 이어서 할 것.
+
 저장소: https://github.com/deepgreen7857-creator/redev-feasibility (GitHub Pages, `main`에 push하면 배포)
 
 ## 사이트 구조
