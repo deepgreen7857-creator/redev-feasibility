@@ -154,14 +154,14 @@ export default function ListPage({ mode }) {
       {schedule && <Schedule rows={rows} table={table} rates={rates} settings={settings} />}
       {villa && (
         <div className="card border-brand/30 text-sm">
-          <div className="text-base font-extrabold">빌라 단타 — 땅값 수준에 사서 올수리 후 매도</div>
+          <div className="text-base font-extrabold">빌라(다세대) — 대지지분 가치 대비 가격 검토</div>
           <p className="mt-1 text-ink/70">다세대·연립만 모았습니다. 올수리 후 세후 수익 큰 순입니다. 기준: <b>최저가가 땅값(대지지분 가치) 이하인가</b>, <b>올수리 후 500만 원 이상 남나</b>, 그리고 <b>물렸을 때 버틸 수 있나</b>(같은 동 거래가 충분한가, 전세로 돌리면 묶이는 돈이 내 돈 안인가, 월세가 이자를 넘나).</p>
           <p className="mt-1 text-xs text-ink/50">한 달에 2건씩 팔려면 동시에 8~12건이 돌아가야 합니다. 출구가 둘 다 막힌 물건은 한 건만 물려도 연쇄로 막힙니다.</p>
         </div>
       )}
       {opp && (
         <div className="card border-now/30 bg-now/5 text-sm">
-          <div className="text-base font-extrabold">기회 찾기 — 지금 값보다 손을 대면 오르는 물건</div>
+          <div className="text-base font-extrabold">권리분석(심화) — 권리 정리·수리로 가치가 오르는 물건</div>
           <p className="mt-1 text-ink/70"><b>권리 풀기</b>: 도로·지분·법정지상권 등 권리가 복잡한 물건을 풀었을 때(가능성만큼 할인한 기대 가치) 남는 돈. <b>올수리</b>: 빌라·아파트를 올수리해서 팔 때 수리 안 할 때보다 1천만 원 이상 더 남는 물건. 기대 수익 큰 순입니다.</p>
         </div>
       )}
@@ -195,8 +195,8 @@ export default function ListPage({ mode }) {
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink/70">
           <label className="flex items-center gap-1.5 rounded bg-brand2 px-2 py-0.5 font-bold text-brand"><input type="checkbox" checked={f.focus} onChange={set('focus')} /> 집중 지역만({focusCfg.label})</label>
-          <label className="flex items-center gap-1.5 font-bold text-brand"><input type="checkbox" checked={f.corpOnly} onChange={set('corpOnly')} /> 법인 단타 적합만(A·B)</label>
-          <label className="flex items-center gap-1.5 font-bold text-brand" title="수도권 공시가격 1억 이하 주택은 법인도 취득세 중과(12%) 제외 — 정비구역 안은 예외 없음"><input type="checkbox" checked={f.under1} onChange={set('under1')} /> 법인 취득세 1.1%만(공시가격 1억 이하·정비구역 밖)</label>
+          <label className="flex items-center gap-1.5 font-bold text-brand"><input type="checkbox" checked={f.corpOnly} onChange={set('corpOnly')} /> 매입 조건 적합만(A·B)</label>
+          <label className="flex items-center gap-1.5 font-bold text-brand" title="수도권 공시가격 1억 이하 주택은 법인도 취득세 중과(12%) 제외 — 정비구역 안은 예외 없음"><input type="checkbox" checked={f.under1} onChange={set('under1')} /> 취득세 1.1% 대상만(공시가격 1억 이하·정비구역 밖)</label>
           {!done && <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>}
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.showExcluded} onChange={set('showExcluded')} /> 관심 제외 물건도 보기</label>
           {f.sort === 'near' && origin && <span className="text-xs text-ink/60">거리 기준: <b>{origin.label}</b> · 물건 위치는 법정동 중심(대략) — 위치가 아직 없는 물건은 맨 뒤</span>}
@@ -279,7 +279,7 @@ export default function ListPage({ mode }) {
             {a.opportunity && (
               <div className="mt-2 rounded-lg border border-now/30 bg-now/5 p-2 text-sm">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {a.opportunities.map((o) => <Badge key={o.kind} tone="now">기회 · {o.kind}</Badge>)}
+                  {a.opportunities.map((o) => <Badge key={o.kind} tone="now">상승 요인 · {o.kind}</Badge>)}
                   <span className="ml-auto text-xs text-ink/50">{a.opportunity.months}개월 기준</span>
                 </div>
                 <div className="mt-1 grid grid-cols-3 gap-2">

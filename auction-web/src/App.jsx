@@ -14,7 +14,7 @@ import { DEMO, onUser, isAdmin, signOut, clearCache, rebuildSnapshot } from './l
 // 메뉴는 하는 일 기준 네 묶음 — 위는 묶음, 아래 줄은 그 묶음 안의 화면
 //  물건(고르기) · 일정(언제 볼지·오늘 할 일) · 성적(맞았나) · 기준·관리
 const NAV_GROUPS = [
-  { label: '물건', items: [['/', '전체'], ['/villa', '빌라 단타'], ['/opportunity', '기회(특수·올수리)'], ['/bankrupt', '파산 공고']] },
+  { label: '물건', items: [['/', '전체'], ['/villa', '빌라(다세대)'], ['/opportunity', '권리분석(심화)'], ['/bankrupt', '파산 공고']] },
   { label: '일정', items: [['/schedule', '일정표'], ['/asking', '오늘의 호가 확인']] },
   { label: '성적', items: [['/done', '완료 물건 채점'], ['/market', '시세·시세 성적표']] },
   { label: '기준·관리', items: [['/rules', '판단 기준'], ['/admin', '관리자·자료 완성도']] },

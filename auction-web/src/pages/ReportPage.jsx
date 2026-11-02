@@ -81,7 +81,7 @@ export default function ReportPage({ admin }) {
         <div className="text-sm"><b>판정: {verdict}</b>{a.score ? ` · 매력도 ${a.score.grade} ${a.score.total}점` : ''}{a.certainty ? ` · 확실성 ${a.certainty.grade}` : ''}</div>
         <div className="mt-1 font-bold">{conclusion}</div>
         {m && !m.upside && <div className="mt-1 text-sm">내 돈 {eok(m.own)} · {m.owner === 'corp' ? '세후' : '예상'} 수익 {eok(m.profit)} · 수익률 {m.roi === null ? '—' : pct(m.roi)} · {m.months}개월{sp ? ' (바닥 가치에 팔 때)' : ''}</div>}
-        {a.opportunity && <div className="mt-1 text-sm text-now">기회({a.opportunity.kind}): 기대 수익 {eok(a.opportunity.profit)}, 내 돈 {eok(a.opportunity.own)} — {a.opportunity.note}</div>}
+        {a.opportunity && <div className="mt-1 text-sm text-now">상승 요인({a.opportunity.kind}): 기대 수익 {eok(a.opportunity.profit)}, 내 돈 {eok(a.opportunity.own)} — {a.opportunity.note}</div>}
       </div>
 
       <H no="1">물건 기본정보</H>
