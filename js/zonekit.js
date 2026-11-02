@@ -608,6 +608,54 @@ const ZoneKit = {
       dist: best.d, layers: [...new Set(polys.map(p => p.layer))],
     };
   },
+  // CAD(DXF) 정비기반시설도 읽기 — 닫힌 폴리선을 레이어째 모두 경위도로 바꿔 돌려줌(/urban '기반시설도 사용')
+  //  반환 { feats:[{layer, geom(Polygon), area(㎡ 도면 좌표 기준)}], crs, layers:[{layer, n, area}], dist } 또는 { error }
+  async readDxfAll(buf, ref) {
+    let text;
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { text = new TextDecoder('euc-kr').decode(buf); }
+    if (/^AutoCAD Binary DXF/.test(text.slice(0, 22))) return { error: '바이너리 DXF는 읽지 못합니다. CAD에서 ASCII DXF로 다시 저장해 주세요.' };
+    if (!/\bSECTION\b/.test(text.slice(0, 2000))) return { error: 'DXF 파일이 아닙니다. CAD에서 DXF(ASCII)로 저장해 주세요. DWG는 바로 읽지 못합니다.' };
+    const polys = this.dxfPolys(text);
+    if (!polys.length) return { error: '닫힌 폴리선이 없습니다. 기반시설(도로·공원 등) 경계를 닫힌 폴리선(PLINE, 닫기)으로 그린 DXF가 필요합니다.' };
+    const shoe = pts => Math.abs(pts.reduce((a, p, k) => { const q = pts[(k + 1) % pts.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0) / 2);
+    polys.forEach(p => { p.area = shoe(p.pts); });
+    const big = polys.reduce((a, b) => (b.area > a.area ? b : a));
+    const [x0, y0] = big.pts[0];
+    const inKR = (lon, lat) => lon > 124 && lon < 132 && lat > 33 && lat < 39.5;
+    let best = null;
+    if (Math.abs(x0) <= 180 && Math.abs(y0) <= 90 && inKR(x0, y0)) best = { name: '경위도(WGS84)', fn: p => p };
+    else {
+      await this.loadProj4();
+      const dist = (a, b) => { const r = Math.PI / 180, dLat = (b[0] - a[0]) * r, dLon = (b[1] - a[1]) * r; const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLon / 2) ** 2; return 12742 * Math.asin(Math.sqrt(h)); };
+      this.DXF_CRS.forEach(([name, def], k) => {
+        let ll; try { ll = proj4(def, 'WGS84', [x0, y0]); } catch (e) { return; }
+        if (!inKR(ll[0], ll[1])) return;
+        const d = ref ? dist(ref, [ll[1], ll[0]]) : k;
+        if (!best || d < best.d) best = { name, fn: p => proj4(def, 'WGS84', p), d };
+      });
+    }
+    if (!best) return { error: '좌표가 우리나라 측량 좌표가 아닙니다(도면 자체 좌표). 측량 좌표가 들어간 DXF가 필요합니다. 그림 도면이면 "참고 도면 겹쳐 보기"로 맞춘 뒤 기반시설을 직접 그려 주세요.' };
+    const feats = polys.map(p => { const ring = p.pts.map(q => best.fn(q)); ring.push(ring[0]); return { layer: p.layer, area: p.area, geom: { type: 'Polygon', coordinates: [ring] } }; });
+    const by = {}; feats.forEach(f => { const o = by[f.layer] || (by[f.layer] = { layer: f.layer, n: 0, area: 0 }); o.n++; o.area += f.area; });
+    return { feats, crs: best.name, dist: best.d, layers: Object.values(by).sort((a, b) => b.area - a.area) };
+  },
+  // 레이어 이름 → 기반시설 종류(자동 추정, 화면에서 고칠 수 있음)
+  //  road 도로 · park 공원 · green 녹지 · school 학교 · rel 종교 · other 그 밖의 정비기반시설(주차장·공공공지·광장 등) · pub 공공청사 등 · lot 획지 · zone 구역계 · ignore 무시
+  infraKind(layer) {
+    const s = String(layer || '');
+    if (/구역|경계|BOUND|ZONE/i.test(s)) return 'zone';
+    if (/도로|ROAD|가로|보행자|보도/i.test(s)) return 'road';
+    if (/공원|PARK|놀이터/i.test(s)) return 'park';
+    if (/녹지|GREEN|완충|경관녹|연결녹/i.test(s)) return 'green';
+    if (/학교|SCHOOL|초등|중학|고등/i.test(s)) return 'school';
+    if (/종교|교회|성당|사찰|RELIG/i.test(s)) return 'rel';
+    if (/주차장|공공공지|광장|공공용지|PARKING|PLAZA/i.test(s)) return 'other';
+    if (/청사|주민센터|파출소|공공시설|사회복지|도서관/i.test(s)) return 'pub';
+    if (/획지|공동주택|아파트|주택|대지|LOT|APT/i.test(s)) return 'lot';
+    return 'ignore';
+  },
+  INFRA_KINDS: [['road', '도로'], ['park', '공원'], ['green', '녹지'], ['other', '그 밖의 정비기반시설(주차장·공공공지·광장)'], ['school', '학교용지'], ['rel', '종교용지'], ['pub', '공공청사 등'], ['lot', '공동주택 획지'], ['zone', '구역계(무시)'], ['ignore', '무시']],
+
   // 결과 안내 문구(두 화면 공통)
   dxfNote(r, fname) {
     const far = r.dist !== undefined && r.dist > 20;

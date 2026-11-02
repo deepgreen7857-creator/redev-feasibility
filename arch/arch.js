@@ -289,11 +289,11 @@
     if (!inf) { if (!auto) msg('이 구역에는 /urban 정비계획의 기반시설 배치가 없습니다. /urban에서 이 안의 [정비기반시설] 탭을 한 번 열면 저장되고, 그다음 이 버튼을 누르세요. 또는 지도 왼쪽 위 다각형 도구로 직접 그리세요.', true); return; }
     const rings = [], kinds = [];
     const add = (g, k) => { if (!g) return; const ps = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : []; ps.forEach(pc => { const r = G.openRing(pc[0]).map(pr.to); if (Math.abs(G.area(r)) >= 20) { rings.push(r); kinds.push(k); } }); };
-    add(inf.road, '도로(확폭·지정)'); add(inf.park, '공원·녹지'); add(inf.school, '학교용지'); add(inf.rel, inf.relKeep ? '종교용지(존치)' : '종교용지(대체부지)');
+    add(inf.road, inf.fromDrawing ? '도로(정비기반시설도)' : '도로(확폭·지정)'); add(inf.park, '공원·녹지'); add(inf.green, '녹지'); add(inf.other, '그 밖의 정비기반시설'); add(inf.pub, '공공청사 등'); add(inf.school, '학교용지'); add(inf.rel, inf.relKeep ? '종교용지(존치)' : '종교용지(대체부지)');
     (inf.keepRoads || []).forEach(g => add(g, '존치 도로'));
     exclude = rings; exKinds = kinds; exFrom = 'urban:' + inf.at; drawExclude(); saveState(); invalidate();
     const sum = {}; kinds.forEach((k, i) => { sum[k] = (sum[k] || 0) + Math.abs(G.area(rings[i])); });
-    msg(`/urban 정비계획(${inf.at})의 기반시설을 건축 불가 영역으로 넣었습니다: ${Object.entries(sum).map(([k, v]) => `${k} ${fmt(v)}㎡`).join(', ') || '없음'}. 획지는 구역에서 이 면적을 뺀 땅입니다.`);
+    msg(`/urban 정비계획(${inf.at}${inf.fromDrawing ? ', 정비기반시설도 ' + inf.fromDrawing : ''})의 기반시설을 건축 불가 영역으로 넣었습니다: ${Object.entries(sum).map(([k, v]) => `${k} ${fmt(v)}㎡`).join(', ') || '없음'}. 획지는 구역에서 이 면적을 뺀 땅입니다.`);
   }
   // 다른 검토에서 넘어온 조건 안내
   function carry() {
