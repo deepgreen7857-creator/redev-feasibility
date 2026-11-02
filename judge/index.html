@@ -49,13 +49,18 @@ details.box summary{cursor:pointer;font-weight:600}
 .empty{padding:14px;color:var(--muted)}
 .filters{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
 .filters button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:14px;padding:2px 10px;cursor:pointer}
+.top-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 2px}
+.nav-btns{display:flex;gap:6px}
+.nav-btn{display:inline-block;font-size:13px;font-weight:700;padding:4px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--fg);text-decoration:none;white-space:nowrap}
+.nav-btn.main{background:var(--go);border-color:var(--go);color:#fff}
+.nav-btn:hover{opacity:.88}
 .filters button.on{background:var(--fg);color:var(--panel);border-color:var(--fg)}
 @media (max-width:700px){h1{font-size:19px}}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>판단기록장</h1>
+<div class="top-nav"><h1>판단기록장</h1><span class="nav-btns"><a class="nav-btn" href="/auction/">정비경매 리포트</a><a class="nav-btn main" href="/">정비사업 →</a></span></div>
 <p class="sub">한 줄에 물건 하나. 줄을 누르면 검토서가 펼쳐집니다. 최저입찰가 = 그 회차 최저가 + 1만 원, 법인 취득세 1.1% 물건만. · <a href="../review/">입찰 판단표(review)</a></p>
 <div id="list">불러오는 중입니다.</div>
 </div>
