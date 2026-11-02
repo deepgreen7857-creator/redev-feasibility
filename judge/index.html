@@ -54,6 +54,22 @@ details.box summary{cursor:pointer;font-weight:600}
 .nav-btn{display:inline-block;font-size:13px;font-weight:700;padding:4px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--fg);text-decoration:none;white-space:nowrap}
 .nav-btn.main{background:var(--go);border-color:var(--go);color:#fff}
 .nav-btn:hover{opacity:.88}
+.cols{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:20px;align-items:start}
+@media (max-width:900px){.cols{grid-template-columns:1fr}}
+.cols>div{min-width:0}
+.col-l h2,.col-r h2{margin-top:6px}
+.daybox{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:0 0 10px}
+.day-h{display:flex;justify-content:space-between;align-items:center;margin:0 0 4px}
+.fill{font:700 13px var(--mono);color:var(--no)}.fill.ok{color:var(--go)}
+.slot{display:flex;align-items:center;gap:8px;padding:5px 4px;border-top:1px dashed var(--line);text-decoration:none;color:var(--fg);font-size:13.5px}
+.slot:first-of-type{border-top:0}
+a.slot:hover{background:var(--hover)}
+.slot .no{flex:none;width:20px;height:20px;border-radius:50%;background:var(--go-bg);color:var(--go);font:700 12px var(--mono);display:flex;align-items:center;justify-content:center}
+.empty-slot .no{background:transparent;border:1px dashed var(--line);color:var(--muted)}
+.s-main{flex:1;min-width:0;display:flex;flex-direction:column}.s-main b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.why-empty summary{font-size:12px;color:var(--muted);cursor:pointer;margin-top:4px}.why-empty p{font-size:12.5px;color:var(--muted);margin:4px 0 0}
+table.rt{min-width:560px}
+tr.flash td{background:var(--go-bg)!important;transition:background .3s}
 .filters button.on{background:var(--fg);color:var(--panel);border-color:var(--fg)}
 @media (max-width:700px){h1{font-size:19px}}
 </style>
@@ -61,7 +77,7 @@ details.box summary{cursor:pointer;font-weight:600}
 <body>
 <div class="wrap">
 <div class="top-nav"><h1>판단기록장</h1><span class="nav-btns"><a class="nav-btn" href="/auction/">정비경매 리포트</a><a class="nav-btn main" href="/">정비사업 →</a></span></div>
-<p class="sub">한 줄에 물건 하나. 줄을 누르면 검토서가 펼쳐집니다. 최저입찰가 = 그 회차 최저가 + 1만 원, 법인 취득세 1.1% 물건만. · <a href="../review/">입찰 판단표(review)</a></p>
+<p class="sub">왼쪽은 날짜별 매일 5건, 오른쪽은 추천 물건 기일순(최초 추천일). 왼쪽 물건을 누르면 오른쪽 줄로 가서 검토서가 펼쳐집니다. 최저입찰가 = 그 회차 최저가 + 1만 원, 법인 취득세 1.1% 물건만. · <a href="../review/">입찰 판단표(review)</a></p>
 <div id="list">불러오는 중입니다.</div>
 </div>
 <script>
@@ -136,7 +152,7 @@ function table(rows,past){
   rows.forEach((r,i)=>{
     const n=nums(r.it),dd=ddays(r.date),res=r.it&&r.it.prediction&&r.it.prediction.actual;
     const ddh=dd==null?'<span class="dd past">미정</span>':dd<0?'<span class="dd past">지남</span>':`<span class="dd ${dd<=3?'soon':''}">${dd===0?'D-day':'D-'+dd}</span>`;
-    const key=(past?'p':'l')+i;
+    const key=(typeof past==='string'?past:(past?'p':'l'))+i;
     h+=`<tr class="row" data-k="${key}"><td>${ddh}<span class="date">${esc((r.date||'').slice(5).replace('-','.'))}</span></td>
 <td><span class="st ${stCls(r.kind,res)}">${esc(res||r.kind)}</span>${r.x.budgetOnly?'<div class="case">예산 초과</div>':''}</td>
 <td><div class="addr">${esc(r.addr)}${r.it&&r.it.type?' <span class="case">'+esc(r.it.type)+'</span>':''}</div><div class="case">${esc(String(r.x.id).replace(/^L:/,''))} · ${esc(r.from.slice(5).replace('-','.'))} 기록</div><div class="why1">${esc(r.why)}</div></td>
@@ -168,13 +184,35 @@ Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../
   past.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const kinds=['전체',...new Set(live.map(r=>r.kind))];
   const latest=days[days.length-1];
-  let h=`<p class="sub" style="margin:0 0 4px">최근 실행 ${esc(latest.date)}: ${esc(String(latest.note||'').slice(0,260))}${String(latest.note||'').length>260?'…':''}</p>`;
-  h+=`<h2>기일 남은 물건 <span class="cnt">${live.length}건 · 기일 빠른 순</span></h2><div class="filters">${kinds.map((k,i)=>`<button data-f="${esc(k)}" class="${i?'':'on'}">${esc(k)}</button>`).join('')}</div><div id="live">${table(live,false)}</div>`;
+  // 2026-11-02: 2단 — 왼쪽 날짜별 매일 5건, 오른쪽 추천 물건 전체를 기일순(최초 추천일 표시)으로 매칭
+  const pickRows=(d)=>(d.picks||[]).slice().sort((x,y)=>(x.rank||9)-(y.rank||9)).map(x=>{const it=by[x.id];return {x,it,kind:'추천',why:String(x.why||'').replace(/^\[[^\]]*\]\s*/,''),from:d.date,hist:[{from:d.date,kind:'추천'}],date:normDate(x,it),addr:addrOf(x,it)}});
+  const daysDesc=days.slice().reverse();
+  const firstRec={};days.forEach(d=>pickRows(d).forEach(r=>{const k=r.x.id;if(!firstRec[k])firstRec[k]={r,first:d.date,all:[d.date]};else{firstRec[k].all.push(d.date);firstRec[k].r=Object.assign({},r,{x:Object.assign({},firstRec[k].r.x,r.x)})}}));
+  const recs=Object.values(firstRec).map(o=>Object.assign({},o.r,{first:o.first,allDates:o.all}));
+  const upcoming=recs.filter(r=>{const n=ddays(r.date);return n==null||n>=0}).sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+  const gone=recs.filter(r=>!upcoming.includes(r)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const sid=(id)=>'r-'+String(id).replace(/[^\w가-힣-]/g,'_');
+  const dd=(r)=>{const n=ddays(r.date);return n==null?'<span class="dd past">미정</span>':n<0?'<span class="dd past">지남</span>':`<span class="dd ${n<=3?'soon':''}">${n===0?'D-day':'D-'+n}</span>`};
+  // 왼쪽: 날짜별 5칸
+  let left=`<h2>매일 5건 <span class="cnt">날짜별 · 5칸 중 채운 수</span></h2>`+daysDesc.map(d=>{const pr=pickRows(d);let slots='';for(let i=0;i<5;i++){const r=pr[i];slots+=r?`<a class="slot" href="#${sid(r.x.id)}" data-t="${sid(r.x.id)}"><span class="no">${i+1}</span><span class="s-main"><b>${esc(r.addr)}</b><span class="case">${esc(String(r.x.id).replace(/^L:/,''))} · 기일 ${esc((r.date||'미정').slice(5).replace('-','.'))}</span></span>${dd(r)}</a>`:`<div class="slot empty-slot"><span class="no">${i+1}</span><span class="case">빈칸</span></div>`}
+    return `<div class="daybox"><div class="day-h"><b>${esc(d.date)}</b><span class="fill ${pr.length>=5?'ok':''}">${pr.length}/5</span></div>${slots}${pr.length<5&&d.note?`<details class="why-empty"><summary>빈칸 사유(이 날 실행 기록)</summary><p>${esc(String(d.note).slice(0,600))}${String(d.note).length>600?'…':''}</p></details>`:''}</div>`}).join('');
+  // 오른쪽: 추천 물건 기일순
+  const recRow=(r,i,pre)=>{const n=nums(r.it),res=r.it&&r.it.prediction&&r.it.prediction.actual;const key=pre+i;
+    return `<tr class="row" id="${sid(r.x.id)}" data-k="${key}"><td>${dd(r)}<span class="date">${esc((r.date||'').slice(5).replace('-','.'))}</span></td>
+<td><div class="addr">${esc(r.addr)}</div><div class="case">${esc(String(r.x.id).replace(/^L:/,''))}${n?' · '+esc(n.round):''}</div>${res?`<span class="st mute">${esc(res)}</span>`:''}</td>
+<td class="n">${n?n.min:'-'}<span class="date">${n?esc(n.bid):''}</span></td><td class="n">${n?esc(n.profit):'-'}</td>
+<td style="white-space:nowrap"><b>${esc(r.first.slice(5).replace('-','.'))}</b>${r.allDates.length>1?`<span class="date">+${r.allDates.length-1}회 재추천</span>`:''}</td></tr>
+<tr class="det" data-d="${key}" hidden><td colspan="5">${detail(r)}</td></tr>`};
+  const recTable=(rows,pre)=>rows.length?`<div class="tbl-wrap"><table class="rt"><thead><tr><th>기일</th><th>물건</th><th class="n">최저가 / 입찰예정가</th><th class="n">세후</th><th>최초 추천일</th></tr></thead><tbody>${rows.map((r,i)=>recRow(r,i,pre)).join('')}</tbody></table></div>`:'<div class="tbl-wrap"><div class="empty">없습니다.</div></div>';
+  let right=`<h2>추천 물건 기일순 <span class="cnt">기일 남은 ${upcoming.length}건</span></h2>${recTable(upcoming,'u')}`+(gone.length?`<details class="box"><summary>기일 지난 추천 ${gone.length}건</summary><div style="margin-top:8px">${recTable(gone,'g')}</div></details>`:'');
+  let h=`<div class="cols"><div class="col-l">${left}</div><div class="col-r">${right}</div></div>`;
+  h+=`<details class="box"><summary>참고: 기일 남은 추천·예비·보류 전체 ${live.length}건 (기일 빠른 순)</summary><div class="filters" style="margin-top:10px">${kinds.map((k,i)=>`<button data-f="${esc(k)}" class="${i?'':'on'}">${esc(k)}</button>`).join('')}</div><div id="live">${table(live,false)}</div></details>`;
   h+=`<details class="box"><summary>기일 지난 기록 ${past.length}건</summary><div style="margin-top:10px">${table(past,true)}</div></details>`;
   h+=`<details class="box"><summary>탈락 ${drops.length}건과 이유</summary>${drops.slice().reverse().map(o=>`<div class="drop"><span class="case">${esc(o.from.slice(5).replace('-','.'))}</span><b>${esc(String(o.x.id).replace(/^L:/,''))}</b> — ${esc(String(o.x.why||'').replace(/^\[[^\]]*\]\s*/,''))}</div>`).join('')}</details>`;
   const box=document.getElementById('list');box.innerHTML=h;
   const bind=()=>box.querySelectorAll('tr.row').forEach(tr=>tr.onclick=()=>{const d=box.querySelector(`tr.det[data-d="${tr.dataset.k}"]`);d.hidden=!d.hidden;tr.classList.toggle('open',!d.hidden)});
   bind();
+  box.querySelectorAll('a.slot').forEach(el=>el.onclick=(e)=>{e.preventDefault();const tr=document.getElementById(el.dataset.t);if(!tr)return;const det=tr.closest('details');if(det)det.open=true;tr.scrollIntoView({behavior:'smooth',block:'center'});tr.classList.add('flash');setTimeout(()=>tr.classList.remove('flash'),1600);const d=box.querySelector(`tr.det[data-d="${tr.dataset.k}"]`);if(d&&d.hidden){d.hidden=false;tr.classList.add('open')}});
   box.querySelectorAll('.filters button').forEach(b=>b.onclick=()=>{box.querySelectorAll('.filters button').forEach(x=>x.classList.toggle('on',x===b));const f=b.dataset.f;document.getElementById('live').innerHTML=table(f==='전체'?live:live.filter(r=>r.kind===f),false);bind()});
 }).catch(e=>{document.getElementById('list').textContent='불러오지 못했습니다: '+e});
 </script>
