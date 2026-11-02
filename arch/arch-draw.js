@@ -15,6 +15,13 @@
 
   // 배치도. o: {site, tags, setbacks, exclude, entries, alt, title, shadowAt:{polys}, sunGrid:{cells, step}, H}
   const ar = q => { let a = 0; for (let i = 0, j = q.length - 1; i < q.length; j = i++) a += q[j][0] * q[i][1] - q[i][0] * q[j][1]; return a / 2; };
+  // 한 세대(사각형 조각들)의 바깥 선 — turf가 있으면 합쳐서, 없으면 조각 그대로
+  function unitOutline(rs) {
+    if (typeof turf !== 'undefined' && rs.length > 1) {
+      try { let u = turf.polygon([rs[0].concat([rs[0][0]])]); for (let k = 1; k < rs.length; k++) u = turf.union(u, turf.polygon([rs[k].concat([rs[k][0]])])) || u; const g = u.geometry; return (g.type === 'Polygon' ? [g.coordinates] : g.coordinates).map(c => c[0].slice(0, -1)); } catch (e) { /* 조각 그대로 */ }
+    }
+    return rs;
+  }
   function sitePlan(o) {
     const pts = o.site, xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
     let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
@@ -65,6 +72,7 @@
       const parts = b.parts || [b.poly], fill = TYPE_FILL[b.t] || '#eee';
       parts.forEach(q => { s += poly(q, `fill="${fill}" stroke="#1d2a33" stroke-width="${1.8 * u}" stroke-linejoin="round"`); });
       parts.forEach(q => { s += poly(q, `fill="${fill}" stroke="none"`); });
+      (b.units || []).forEach(rs => unitOutline(rs).forEach(q => { s += poly(q, `fill="none" stroke="#1d2a33" stroke-width="${0.4 * u}" opacity=".75"`); }));
       (b.divs || []).forEach(l => { s += `<line x1="${X(l[0][0])}" y1="${Y(l[0][1])}" x2="${X(l[1][0])}" y2="${Y(l[1][1])}" stroke="#1d2a33" stroke-width="${0.35 * u}" opacity=".7"/>`; });
       (b.cores || []).forEach(q => { s += poly(q, `fill="#ffffff" stroke="#1d2a33" stroke-width="${0.5 * u}" opacity=".95"`); });
       const cxy = b.center || [b.poly.reduce((a, p) => a + p[0], 0) / b.poly.length, b.poly.reduce((a, p) => a + p[1], 0) / b.poly.length];
@@ -136,15 +144,16 @@
   // 주동 기준층 구성: [세대][코어][세대] × (n/2)
   const FN = { slab: '판상형', tower: '탑상형', Y: 'Y형', L: 'ㄱ형', court: 'ㅁ형(중정형)' };
   function floorPlan(b, U, coreW) {
-    if (b.local && b.form && b.form !== 'slab') {
+    if (b.local && b.form) {
       const lc = b.local, S = Math.min(7, 420 / Math.max(lc.L, lc.D)), pad = 16, W = lc.L * S + pad * 2, H = lc.D * S + pad * 2 + 14;
       const P = p => `${(p[0] * S).toFixed(1)},${((lc.D - p[1]) * S).toFixed(1)}`;
       let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" font-family="'IBM Plex Sans KR','Malgun Gothic',sans-serif"><rect width="100%" height="100%" fill="#fbfbf8"/><g transform="translate(${pad},${pad + 8})" font-size="9" fill="#1d2a33">`;
       lc.parts.forEach(q => { s += `<polygon points="${q.map(P).join(' ')}" fill="${TYPE_FILL[b.t] || '#eee'}" stroke="#1d2a33" stroke-width="2"/>`; });
       lc.parts.forEach(q => { s += `<polygon points="${q.map(P).join(' ')}" fill="${TYPE_FILL[b.t] || '#eee'}"/>`; });
+      (lc.units || []).forEach(rs => { unitOutline(rs).forEach(q => { s += `<polygon points="${q.map(P).join(' ')}" fill="none" stroke="#1d2a33" stroke-width="1"/>`; }); const all = rs.flat(), cx = all.reduce((a, p) => a + p[0], 0) / all.length, cy = all.reduce((a, p) => a + p[1], 0) / all.length; s += `<text x="${(cx * S).toFixed(1)}" y="${((lc.D - cy) * S + 3).toFixed(1)}" text-anchor="middle" font-size="8.5">${b.t}㎡</text>`; });
       lc.divs.forEach(l => { s += `<line x1="${P(l[0]).split(',')[0]}" y1="${P(l[0]).split(',')[1]}" x2="${P(l[1]).split(',')[0]}" y2="${P(l[1]).split(',')[1]}" stroke="#1d2a33" stroke-width=".8"/>`; });
       lc.cores.forEach(q => { const c = q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length], [0, 0]); s += `<polygon points="${q.map(P).join(' ')}" fill="#fff" stroke="#1d2a33"/><text x="${(c[0] * S).toFixed(1)}" y="${((lc.D - c[1]) * S + 3).toFixed(1)}" text-anchor="middle" font-size="7.5">코어</text>`; });
-      s += `<text x="0" y="-6" font-size="10" font-weight="700">${FN[b.form] || ''} ${b.t}㎡ ${b.n}호 조합 · ${lc.L.toFixed(1)}m × ${lc.D.toFixed(1)}m · 위 북 / 아래 남</text>`;
+      s += `<text x="0" y="-6" font-size="10" font-weight="700">${FN[b.form] || ''} ${b.t}㎡ ${b.n}호 조합(평면 라이브러리) · ${lc.L.toFixed(1)}m × ${lc.D.toFixed(1)}m · 위 북 / 아래 남</text>`;
       return s + '</g></svg>';
     }
     const t = U[b.t], S = 7, unitW = t.폭 * S, cw = coreW * S, D = t.깊이 * S, n = b.n, pad = 16;

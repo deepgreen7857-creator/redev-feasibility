@@ -83,25 +83,46 @@
   const FORM_NAME = { slab: '판상형', tower: '탑상형', Y: 'Y형', L: 'ㄱ형', court: 'ㅁ형(중정형)', mix: '판상+탑상 혼합' };
   const R4 = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
   const sq = (cx, cy, a) => R4(cx - a / 2, cy - a / 2, cx + a / 2, cy + a / 2);
-  function slab(U, c, t, n) {
-    const w = U[t].폭, d = U[t].깊이, L = n * w + (n / 2) * c, cores = [], divs = [];
-    for (let k = 0; k < n / 2; k++) {
-      const x0 = k * (2 * w + c);
-      cores.push(R4(x0 + w, d * 0.62, x0 + w + c, d));
-      divs.push([[x0 + w, 0], [x0 + w, d]], [[x0 + w + c, 0], [x0 + w + c, d]]);
-      if (k > 0) divs.push([[x0, 0], [x0, d]]);
-    }
-    return { form: 'slab', t, n, L, D: d, parts: [R4(0, 0, L, d)], cores, divs };
+  // 평면 라이브러리(criteria/arch.json '평면_라이브러리') — layout이 opt.lib로 넣음
+  let LIB = {};
+  const num0 = (v, d) => (isFinite(+v) && v !== '' && v !== null ? +v : d);
+  // 단위세대 조각: 전면(y=0)이 채광면. 판상은 첫 베이 들임 + 후면 돌출(다용도실·실외기실), 탑상은 들임만
+  function unitRects(u, kind) {
+    const W = u.폭, Dp = u.깊이, bays = u.베이 || 3, bw = W / bays;
+    const P = (LIB[kind === 'tower' ? '탑상_세대' : '판상_세대']) || {};
+    const ri = num0(P.전면들임_m, 0.9), out = [];
+    if (bays >= 3 && ri > 0) { out.push(R4(0, ri, bw, Dp), R4(bw, 0, W, Dp)); } else out.push(R4(0, 0, W, Dp));
+    if (kind !== 'tower') { const bd = num0(P.후면돌출_깊이_m, 1.3), bf = num0(P.후면돌출_폭비, 0.32); if (bd > 0 && bf > 0) out.push(R4(W * (1 - bf) - 0.4, Dp, W - 0.4, Dp + bd)); }
+    return out;
   }
-  // 탑상형: 코어 하나에 4세대(소형은 6세대까지), 모서리를 깎은 정방형
-  function tower(U, c, t, n = 4) {
-    const w = U[t].폭, d = U[t].깊이;
-    const L = n === 6 ? 3 * w + c : 2 * w + c, D = 2 * d, k = Math.min(w, d) * 0.28;
-    const oct = [[k, 0], [L - k, 0], [L, k], [L, D - k], [L - k, D], [k, D], [0, D - k], [0, k]];
-    const cx = L / 2, cy = D / 2, cores = [sq(cx, cy, c)];
-    const divs = [[[cx, 0], [cx, cy - c / 2]], [[cx, cy + c / 2], [cx, D]], [[0, cy], [cx - c / 2, cy]], [[cx + c / 2, cy], [L, cy]]];
-    if (n === 6) divs.push([[w, 0], [w, cy]], [[L - w, 0], [L - w, cy]]);
-    return { form: 'tower', t, n, L, D, parts: [oct], cores, divs };
+  const mirrorX = (rs, x0) => rs.map(q => q.map(([x, y]) => [2 * x0 - x, y]).reverse());
+  const shiftR = (rs, dx, dy) => rs.map(q => q.map(([x, y]) => [x + dx, y + dy]));
+  // 판상형(계단식): [세대 | 코어 | 세대(거울)] 2호 조합을 n/2번 이음. 코어는 전면에서 들여 앉힘
+  function slab(U, c, t, n) {
+    const u = U[t], w = u.폭, d = u.깊이, PC = LIB.판상_코어 || {}, cw = num0(PC.폭_m, c), cf = num0(PC.전면들임_m, 1.5);
+    const bd = num0((LIB.판상_세대 || {}).후면돌출_깊이_m, 1.3), D = d + bd, L = n * w + (n / 2) * cw;
+    const parts = [], cores = [], units = [];
+    for (let k = 0; k < n / 2; k++) {
+      const x0 = k * (2 * w + cw);
+      const left = shiftR(mirrorX(unitRects(u, 'slab'), w / 2), x0, 0);           // 왼쪽 세대: 들임이 바깥(코어 반대)쪽
+      const right = shiftR(unitRects(u, 'slab'), x0 + w + cw, 0);
+      const core = R4(x0 + w, cf, x0 + w + cw, D);
+      units.push(left, right); cores.push(core); parts.push(...left, ...right, core);
+    }
+    return { form: 'slab', t, n, L, D, parts, cores, divs: [], units };
+  }
+  // 탑상형: 바람개비형 4호 — 가운데 코어, 세대 4개가 코어 네 변에 한쪽으로 치우쳐 붙어 도는 모양(세대마다 2면 개방)
+  function tower(U, c, t) {
+    const u = U[t], w = u.폭, d = u.깊이, s = num0((LIB.탑상_코어 || {}).한변_m, Math.max(c + 3, 8));
+    const base = unitRects(u, 'tower').map(q => q.map(([x, y]) => [-s / 2 + x, s / 2 + d - y]));   // 위쪽 세대(전면이 북쪽 바깥)
+    const rotq = (q, k) => q.map(([x, y]) => { let p = [x, y]; for (let i = 0; i < k; i++) p = [p[1], -p[0]]; return p; });
+    const units = [0, 1, 2, 3].map(k => base.map(q => rotq(q, k)));
+    const core = [[-s / 2, -s / 2], [s / 2, -s / 2], [s / 2, s / 2], [-s / 2, s / 2]];
+    const all = units.flat().concat([core]).flat(), mx = Math.min(...all.map(p => p[0])), my = Math.min(...all.map(p => p[1]));
+    const sh = q => q.map(([x, y]) => [x - mx, y - my]);
+    const L = Math.max(...all.map(p => p[0])) - mx, D = Math.max(...all.map(p => p[1])) - my;
+    const U2 = units.map(rs => rs.map(sh));
+    return { form: 'tower', t, n: 4, L, D, parts: U2.flat().concat([sh(core)]), cores: [sh(core)], divs: [], units: U2 };
   }
   // Y형: 육각 코어 + 세 날개(남·북동·북서), 날개마다 1세대(대형) 또는 2세대(소형, 날개 길이 2배)
   function yForm(U, c, t) {
@@ -120,11 +141,13 @@
   }
   // ㄱ형: 남향 판상(a세대) + 한쪽 끝에서 북쪽으로 꺾인 날개(b세대). mirror면 서쪽 끝에서 꺾임
   function lForm(U, c, t, a, b, mirror) {
-    const w = U[t].폭, d = U[t].깊이, L1 = a * w + (a / 2) * c, L2 = b * w + Math.ceil(b / 2) * c, base = slab(U, c, t, a);
-    let parts = [R4(0, 0, L1, d), R4(L1 - d, d, L1, d + L2)], cores = base.cores.concat([R4(L1 - d * 0.62, d + w, L1, d + w + c)]), divs = base.divs.slice();
-    divs.push([[L1 - d, d], [L1, d]], [[L1 - d, d + w], [L1, d + w]], [[L1 - d, d + w + c], [L1, d + w + c]]);
-    if (mirror) { const f = p => [L1 - p[0], p[1]]; parts = parts.map(q => q.map(f)); cores = cores.map(q => q.map(f)); divs = divs.map(q => q.map(f)); }
-    return { form: 'L', t, n: a + b, L: L1, D: d + L2, parts, cores, divs };
+    // 남향 판상(라이브러리 세대·코어) + 동쪽 끝에서 북쪽으로 꺾인 날개(b세대, 세대 사이 코어)
+    const u = U[t], w = u.폭, d = u.깊이, base = slab(U, c, t, a), L1 = base.L, y0 = base.D, L2 = b * w + Math.ceil(b / 2) * c;
+    const wingU = [[R4(L1 - d, y0, L1, y0 + w)], [R4(L1 - d, y0 + w + c, L1, y0 + L2)]].slice(0, b === 1 ? 1 : 2);
+    const wingC = R4(L1 - d * 0.62, y0 + w, L1, y0 + w + c);
+    let parts = base.parts.concat(wingU.flat(), [wingC]), cores = base.cores.concat([wingC]), units = base.units.concat(wingU);
+    if (mirror) { const f = q => q.map(([x, y]) => [L1 - x, y]); parts = parts.map(f); cores = cores.map(f); units = units.map(rs => rs.map(f)); }
+    return { form: 'L', t, n: a + b, L: L1, D: y0 + L2, parts, cores, divs: [], units };
   }
   // ㅁ형(중정형): 한 변 k세대 폭의 정방형 둘레 동, 가운데 중정
   function court(U, c, t, k) {
@@ -139,7 +162,7 @@
   }
   // 형태별 후보 모듈(큰 것 → 작은 것 순). 혼합은 forms 배열 순서대로 시도
   function modulesFor(U, c, t, form) {
-    if (form === 'tower') return U[t].전용 <= 60 ? [tower(U, c, t, 6), tower(U, c, t, 4)] : [tower(U, c, t, 4)];
+    if (form === 'tower') return [tower(U, c, t)];
     if (form === 'Y') return [yForm(U, c, t)];
     if (form === 'L') return [lForm(U, c, t, 4, 2, false), lForm(U, c, t, 2, 2, false)];
     if (form === 'court') return [court(U, c, t, 6), court(U, c, t, 4)].filter(Boolean);
@@ -148,6 +171,7 @@
 
   function layout(site, opt) {
     const U = opt.units, A = opt.assume, mix = opt.mix; // mix: {59:비율,...}
+    LIB = opt.lib || {};
     const types = Object.keys(mix).filter(t => mix[t] > 0 && U[t]);
     if (!types.length) throw new Error('평형 비율이 모두 0입니다');
     const th = (opt.angle || 0) * D2R;
@@ -223,9 +247,9 @@
       blds.forEach((b, i) => {
         b.id = 101 + i;
         const W = p => rot([b.rx + p[0], b.ry + p[1]], th), m = b.mod;
-        b.parts = m.parts.map(q => q.map(W)); b.cores = m.cores.map(q => q.map(W)); b.divs = m.divs.map(q => q.map(W));
+        b.parts = m.parts.map(q => q.map(W)); b.cores = m.cores.map(q => q.map(W)); b.divs = m.divs.map(q => q.map(W)); b.units = (m.units || []).map(rs => rs.map(q => q.map(W)));
         b.poly = hull(b.parts.flat()); b.angle = opt.angle || 0; b.center = W([b.L / 2, b.D / 2]);
-        b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); b.local = { L: m.L, D: m.D, parts: m.parts, cores: m.cores, divs: m.divs }; delete b.mod;
+        b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); b.local = { L: m.L, D: m.D, parts: m.parts, cores: m.cores, divs: m.divs, units: m.units || [] }; delete b.mod;
       });
       return blds;
     }
@@ -309,6 +333,16 @@
           cap = Math.min(cap, Math.floor((Hmax - A.groundExtra_m) / A.floorHeight_m));
         }
         if (tag === 'lowrise' && opt.lowriseCap && d < opt.lowriseDist) cap = Math.min(cap, opt.lowriseCap);
+        // 채광창 벽면 → 인접 대지경계선(건축법 시행령 제86조③1호): 높이 ≤ 거리 × 배수. 도로·공원 등이 사이에 있으면 반대편 경계선까지(같은 조 ⑥)
+        //  판상·ㄱ형은 앞·뒤 벽면(동 깊이 방향)을 향한 변만, 탑상·Y·ㅁ형은 모든 변
+        if (opt.winRatio) {
+          const yax = rot([0, 1], th), faces = !['slab', 'L'].includes(b.form) || Math.abs(e.out[0] * yax[0] + e.out[1] * yax[1]) >= 0.5;
+          if (faces) {
+            const extra = (tag === 'road' || tag === 'arterial') ? num0((opt.edgeW || [])[i], 0) : tag === 'park' ? num0(opt.parkWidth, 0) : 0;
+            const Hw = opt.winRatio * (d + extra);
+            cap = Math.min(cap, Math.floor((Hw - A.groundExtra_m) / A.floorHeight_m));
+          }
+        }
       });
       return Math.max(0, cap);
     }
