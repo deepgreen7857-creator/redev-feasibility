@@ -466,7 +466,8 @@ async function buildSnapshot() {
   return out;
 }
 exports.snapshotTick = onSchedule(
-  { schedule: '10 7,13 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 1800, memory: '4GiB' },
+  // 11-02: 공매 원문이 하루 10만 건으로 빨리 들어오니 판정·묶음도 2시간마다(전엔 하루 두 번)
+  { schedule: '10 */2 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 1800, memory: '4GiB' },
   async () => { await buildSnapshot(); },
 );
 
