@@ -443,8 +443,9 @@ exports.collectTick = onSchedule(
 
 // 매일 밤 11시 40분: 진행 중인 물건을 판정해 '입찰 전 예측'을 저장(기일이 된 물건은 그대로 굳힘)
 exports.forecastTick = onSchedule(
-  { schedule: '40 23 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '2GiB' },
-  async () => { await forecast.run({ db, log: logger.info, deadline: Date.now() + TICK_BUDGET_MS }); },
+  // 물건이 2만 7천 건이라 9분 안에 다 못 돌아 10-25 이후 일부만 갱신되던 문제 → 30분(마감 2분 전까지)
+  { schedule: '40 23 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 1800, memory: '2GiB' },
+  async () => { await forecast.run({ db, log: logger.info, deadline: Date.now() + 1680e3 }); },
 );
 
 // 매일 아침 6시 40분: 진행 중 물건에 법정동 단위 위치를 붙인다(화면 '가까운 순' 정렬용)
@@ -461,7 +462,7 @@ async function buildSnapshot() {
   return out;
 }
 exports.snapshotTick = onSchedule(
-  { schedule: '10 7,13 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '4GiB' },
+  { schedule: '10 7,13 * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 1800, memory: '4GiB' },
   async () => { await buildSnapshot(); },
 );
 
@@ -487,7 +488,7 @@ exports.forecastNow = onCall({ timeoutSeconds: 540, memory: '2GiB' }, async (req
 
 // 관리자: API 연결 시험 — 각 API를 한 번씩 불러 결과코드와 첫 줄의 항목 이름을 돌려준다
 // 관리자: 묶음 자료를 지금 다시 만들기(화면 '자료 새로 받기')
-exports.snapshotNow = onCall({ timeoutSeconds: 540, memory: '4GiB' }, async (request) => {
+exports.snapshotNow = onCall({ timeoutSeconds: 1800, memory: '4GiB' }, async (request) => {
   requireAdmin(request);
   return buildSnapshot();
 });
