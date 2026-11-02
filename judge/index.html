@@ -82,6 +82,9 @@ td.rc .l1{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellip
 td.rc .l2{font:500 12px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 td.rc .l3{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .slot.alt{opacity:.75}.slot.alt .no{background:var(--wait-bg);color:var(--wait)}
+.slot{height:78px;align-items:flex-start;padding-top:9px;box-sizing:border-box}
+.s-main{line-height:1.45}.s-main .case{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.s-main .l3{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .filters button.on{background:var(--fg);color:var(--panel);border-color:var(--fg)}
 @media (max-width:700px){h1{font-size:19px}}
 </style>
@@ -210,8 +213,8 @@ Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../
     const res=(d.reserve||[]).filter(x=>!pr.some(p=>p.x.id===x.id)).map(x=>{const it=by[x.id];return {x,it,addr:addrOf(x,it),date:normDate(x,it),st:x.status||'예비'}});
     const fill=res.slice(0,Math.max(0,5-pr.length));
     let slots='';
-    pr.forEach((r,i)=>{slots+=`<a class="slot" href="#${sid(r.x.id)}" data-t="${sid(r.x.id)}"><span class="no">${i+1}</span><span class="s-main"><b>${esc(r.addr)}</b><span class="case">${esc(String(r.x.id).replace(/^L:/,''))} · 기일 ${esc((r.date||'미정').slice(5).replace('-','.'))}</span></span>${dd(r)}</a>`});
-    fill.forEach((r,j)=>{slots+=`<div class="slot alt"><span class="no">${pr.length+j+1}</span><span class="s-main"><b>${esc(r.addr)}</b><span class="case">${esc(String(r.x.id).replace(/^L:/,''))} · 기일 ${esc((r.date||'미정').slice(5).replace('-','.'))}</span></span><span class="st wait" title="${esc(r.st)}">${esc(String(r.st).replace(/\s*\(.*$/,''))}</span></div>`});
+    pr.forEach((r,i)=>{slots+=`<a class="slot" href="#${sid(r.x.id)}" data-t="${sid(r.x.id)}"><span class="no">${i+1}</span><span class="s-main"><b>${esc(r.addr)}</b><span class="case">${esc(String(r.x.id).replace(/^L:/,''))} · 기일 ${esc((r.date||'미정').slice(5).replace('-','.'))}</span><span class="l3">${esc(r.why)}</span></span>${dd(r)}</a>`});
+    fill.forEach((r,j)=>{slots+=`<div class="slot alt"><span class="no">${pr.length+j+1}</span><span class="s-main"><b>${esc(r.addr)}</b><span class="case">${esc(String(r.x.id).replace(/^L:/,''))} · 기일 ${esc((r.date||'미정').slice(5).replace('-','.'))}</span><span class="l3">${esc(String(r.x.why||'').replace(/^\[[^\]]*\]\s*/,''))}</span></span><span class="st wait" title="${esc(r.st)}">${esc(String(r.st).replace(/\s*\(.*$/,''))}</span></div>`});
     if(!pr.length&&!fill.length)slots=`<div class="slot alt"><span class="case">이 날 추천·예비 물건 없음</span></div>`;
     return `<div class="daybox"><div class="day-h"><b>${esc(d.date)}</b><span class="fill ${pr.length>=5?'ok':''}">${pr.length}/5</span></div>${slots}${pr.length<5&&d.note?`<details class="why-empty"><summary>추천 ${pr.length}건 — 5건을 못 채운 이유(이 날 실행 기록)</summary><p>${esc(String(d.note).slice(0,600))}${String(d.note).length>600?'…':''}</p></details>`:''}</div>`}).join('');
   // 오른쪽: 추천 물건 기일순
