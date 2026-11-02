@@ -15,7 +15,7 @@
 :root[data-theme="dark"]{--bg:#141916;--panel:#1c231f;--fg:#e4ebe6;--muted:#98a39c;--line:#2d3631;--hover:#232b26;--go:#6cc39b;--go-bg:#183326;--wait:#e2b45a;--wait-bg:#3a2f18;--no:#ee8b7c;--no-bg:#3a201c;color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:14.5px/1.55 var(--sans)}
-.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 60px}
+.wrap{max-width:1760px;margin:0 auto;padding:24px 16px 60px}
 h1{font-size:22px;margin:0 0 2px}
 .sub{color:var(--muted);font-size:13px;margin:0 0 18px}.sub a{color:var(--go)}
 h2{font-size:16px;margin:26px 0 8px;display:flex;gap:8px;align-items:baseline}
@@ -54,10 +54,12 @@ details.box summary{cursor:pointer;font-weight:600}
 .nav-btn{display:inline-block;font-size:13px;font-weight:700;padding:4px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--fg);text-decoration:none;white-space:nowrap}
 .nav-btn.main{background:var(--go);border-color:var(--go);color:#fff}
 .nav-btn:hover{opacity:.88}
-.cols{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:20px;align-items:start}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.45fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:1200px){.cols{grid-template-columns:minmax(0,1fr) minmax(0,1.45fr)}.col-w{grid-column:1/-1}}
 @media (max-width:900px){.cols{grid-template-columns:1fr}}
 .cols>div{min-width:0}
-.col-l h2,.col-r h2{margin-top:6px}
+.col-l h2,.col-r h2,.col-w h2{margin-top:6px}
+.col-w .slot .dd{flex:none;margin-top:1px}
 .daybox{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:0 0 10px}
 .day-h{display:flex;justify-content:space-between;align-items:center;margin:0 0 4px}
 .fill{font:700 13px var(--mono);color:var(--no)}.fill.ok{color:var(--go)}
@@ -92,7 +94,7 @@ td.rc .l3{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden
 <body>
 <div class="wrap">
 <div class="top-nav"><h1>판단기록장</h1><span class="nav-btns"><a class="nav-btn" href="/auction/">정비경매 리포트</a><a class="nav-btn main" href="/">정비사업 →</a></span></div>
-<p class="sub">왼쪽은 날짜별 매일 5건, 오른쪽은 추천 물건 기일순(최초 추천일). 왼쪽 물건을 누르면 오른쪽 줄로 가서 검토서가 펼쳐집니다. 최저입찰가 = 그 회차 최저가 + 1만 원, 법인 취득세 1.1% 물건만. · <a href="../review/">입찰 판단표(review)</a></p>
+<p class="sub">왼쪽 날짜별 매일 5건 · 가운데 추천 물건 기일순(최초 추천일) · 오른쪽 예비·보류 기일순. 왼쪽 물건을 누르면 가운데 줄로 가서 검토서가 펼쳐집니다. 최저입찰가 = 그 회차 최저가 + 1만 원, 법인 취득세 1.1% 물건만. · <a href="../review/">입찰 판단표(review)</a></p>
 <div id="list">불러오는 중입니다.</div>
 </div>
 <script>
@@ -226,8 +228,11 @@ Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../
 <tr class="det" data-d="${key}" hidden><td colspan="5">${detail(r)}</td></tr>`};
   const recTable=(rows,pre)=>rows.length?`<div class="tbl-wrap"><table class="rt"><thead><tr><th>기일</th><th>물건</th><th class="n">최저가 / 입찰예정가</th><th class="n">세후</th><th>최초 추천일</th></tr></thead><tbody>${rows.map((r,i)=>recRow(r,i,pre)).join('')}</tbody></table></div>`:'<div class="tbl-wrap"><div class="empty">없습니다.</div></div>';
   let right=`<h2>추천 물건 기일순 <span class="cnt">기일 남은 ${upcoming.length}건</span></h2>${recTable(upcoming,'u')}`+(gone.length?`<details class="box"><summary>기일 지난 추천 ${gone.length}건</summary><div style="margin-top:8px">${recTable(gone,'g')}</div></details>`:'');
-  let h=`<div class="cols"><div class="col-l">${left}</div><div class="col-r">${right}</div></div>`;
-  h+=`<details class="box"><summary>참고: 기일 남은 추천·예비·보류 전체 ${live.length}건 (기일 빠른 순)</summary><div class="filters" style="margin-top:10px">${kinds.map((k,i)=>`<button data-f="${esc(k)}" class="${i?'':'on'}">${esc(k)}</button>`).join('')}</div><div id="live">${table(live,false)}</div></details>`;
+  // 3단: 왼쪽 매일 5건 · 가운데 추천 기일순 · 오른쪽 예비·보류 기일순
+  const waitList=live.filter(r=>r.kind!=='추천'&&!firstRec[r.x.id]);
+  const third=`<h2>예비·보류 기일순 <span class="cnt">기일 남은 ${waitList.length}건</span></h2><div class="daybox">`+(waitList.length?waitList.map(r=>`<div class="slot alt" title="${esc(r.why)}">${dd(r)}<span class="s-main"><b>${esc(r.addr)}</b><span class="case">${esc(String(r.x.id).replace(/^L:/,''))} · 기일 ${esc((r.date||'미정').slice(5).replace('-','.'))} · ${esc(r.from.slice(5).replace('-','.'))} 기록</span><span class="l3">${esc(r.why)}</span></span><span class="st wait" title="${esc(r.kind)}">${esc(String(r.kind).replace(/\s*\(.*$/,''))}</span></div>`).join(''):'<div class="slot alt"><span class="case">없습니다</span></div>')+'</div>';
+  let h=`<div class="cols"><div class="col-l">${left}</div><div class="col-r">${right}</div><div class="col-w">${third}</div></div>`;
+  // (참고 전체 목록은 3단 오른쪽 칸으로 옮김)
   h+=`<details class="box"><summary>기일 지난 기록 ${past.length}건</summary><div style="margin-top:10px">${table(past,true)}</div></details>`;
   h+=`<details class="box"><summary>탈락 ${drops.length}건과 이유</summary>${drops.slice().reverse().map(o=>`<div class="drop"><span class="case">${esc(o.from.slice(5).replace('-','.'))}</span><b>${esc(String(o.x.id).replace(/^L:/,''))}</b> — ${esc(String(o.x.why||'').replace(/^\[[^\]]*\]\s*/,''))}</div>`).join('')}</details>`;
   const box=document.getElementById('list');box.innerHTML=h;
