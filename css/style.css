@@ -480,3 +480,11 @@ tr.qk-cur td:first-child { outline: 2px solid var(--ink); outline-offset: -2px; 
   .area-side { position: static; height: auto; max-height: none; }
   .side-panes { overflow: visible; }
 }
+/* 빠른 사업성 → 1차 재검토 순서 */
+.qk-review { margin-top: 14px; }
+.rv-steps { margin: 10px 0 4px; padding-left: 0; list-style: none; display: grid; gap: 6px; }
+.rv-steps li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: .88rem; color: var(--muted); }
+.rv-steps .btn { min-width: 190px; text-align: left; }
+.rv-steps em { font-style: normal; font-size: .8rem; padding: 1px 8px; border-radius: 10px; background: var(--surface-2); }
+.rv-steps em.ok { background: #e3f3e8; color: #1d6b3a; }
+.rv-steps a.btn { text-decoration: none; }

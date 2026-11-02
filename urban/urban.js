@@ -3254,6 +3254,18 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
   const first = D.map && D.keys.find(k => D.regions[k].geojson);
   if (first) { S.region = first; syncRegionChips(); renderSourceBar(); fitZone(first); }
   render();
+  // 사업성 검토 '1차 재검토' → ?from=main: 사업성 검토 구역계·조서를 빈 안(없으면 새 안)으로 가져와 정비계획(기반시설) 탭을 엶
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('from') === 'main') {
+    history.replaceState(null, '', location.pathname + location.hash);
+    if (!loadProject()) { toast('사업성 검토 화면에 저장된 구역이 없습니다'); return; }
+    if (S.source !== 'map') setSource('map');
+    let id = D.keys.find(k => !D.regions[k].geojson);
+    if (!id && D.keys.length < ZONE_IDS.length) { Z.count = D.keys.length + 1; saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); id = D.keys[D.keys.length - 1]; }
+    if (!id && confirm(`빈 안이 없습니다. ${S.region}안 구역계를 사업성 검토 구역으로 바꿀까요?`)) id = S.region;
+    if (!id) return;
+    importProject(id).then(() => { const b = document.querySelector('nav.steps button[data-tab="plan"]'); if (b) b.click(); toast(`${id}안으로 사업성 검토 구역을 가져왔습니다. 정비기반시설을 정한 뒤 4탭 개략 건축계획에서 검토서 도구로 넘기세요`); });
+  }
 });
 
 

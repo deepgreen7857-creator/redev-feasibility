@@ -174,6 +174,62 @@ const Quick = {
     App.update(true);
     App.go('result');
   },
+  // ---------- 1차 재검토로 넘기기 — 이 구역과 빠른 사업성(1회차) 결과를 공통 구역(jbs.sites.v1)으로 저장 ----------
+  //  같은 구역이면 같은 id를 갱신(S.quick.siteId). 교통·환경·경관·개략 배치·/urban이 ?site=id로 이어받고,
+  //  /arch 확정 뒤 '/?arch=id'로 돌아오면 2차 사업성(stage 2)으로 비교함
+  toReview() {
+    if (!S.area.geojson) { alert('먼저 2단계에서 구역계를 정해 주세요.'); return null; }
+    if (!window.JbsSite) { alert('공통 구역 저장 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'); return null; }
+    const q0 = this.ensure(), q = { ...q0, infraLevel: 'custom', infraPct: this.levelPct(q0, q0.infraLevel || 'avg') }, e = this.evaluate(q), p = e.p;
+    const n = x => (isFinite(+x) ? String(Math.round(+x * 10) / 10) : '');
+    let site = (S.quick.siteId && JbsSite.get(S.quick.siteId)) || null;
+    if (!site) site = { name: S.meta.name || '정비구역', plan: {}, profile: {}, v: {} };
+    site.source = 'main';
+    site.name = S.meta.name || site.name;
+    site.geojson = S.area.geojson;
+    site.profile = site.profile || {}; site.plan = site.plan || {}; site.v = site.v || {};
+    if (S.meta.zoning) site.profile.zoning = S.meta.zoning;
+    site.plan.type = /small|street|가로/.test(S.meta.type || '') ? 'street' : 'redev';
+    const byType = {}; Object.entries(p.saleBy || {}).forEach(([t, c]) => { if (+c) byType[t] = +c; });
+    if (p.rentU) byType[49] = (byType[49] || 0) + p.rentU;
+    let u60 = 0, a85 = 0, a85u = 0;
+    Object.entries(byType).forEach(([t, c]) => { const ex = +t; if (ex <= 60) u60 += c; if (ex <= 85) a85 += c * ex; else a85u += c * ex; });
+    const v = site.v, at = new Date().toLocaleString('sv-SE').slice(0, 16);
+    Object.assign(v, {
+      name: site.name, siteArea: n(Calc.siteArea(S)), units: n(p.total), far: n(e.f.v), aptGFA: n(p.farArea),
+      units60below: n(u60), area85below: n(a85), area85above: n(a85u),
+      planFrom: `사업성 검토 빠른 사업성 1회차 (${at}) — 기반시설 ${fmt(q.infraPct, 1)}%·용적률 ${fmt(e.f.v, 1)}%`,
+    });
+    if (S.meta.zoning) v.zoning = S.meta.zoning;
+    site.quick = { at, infraPct: num(q.infraPct), far: e.f.v, units: p.total, byType, ratio: e.r.ratio };
+    JbsSite.save(site);
+    S.quick.siteId = site.id; App.persist();
+    return site;
+  },
+  // 1차 재검토 순서 안내 + 각 도구로 가는 버튼
+  reviewLinks() {
+    const box = $('#qkReviewBox'); if (!box) return;
+    const id = S.quick && S.quick.siteId, site = id && window.JbsSite ? JbsSite.get(id) : null;
+    if (!site) { box.innerHTML = ''; return; }
+    const c = site.constraints || {}, done = k => (c[k] ? `<em class="ok">완료 ${esc(c[k].at || '')}</em>` : '<em>아직</em>');
+    const archDone = site.arch && site.arch.chosen ? `<em class="ok">확정 ${esc(site.arch.chosen.label || '')}</em>` : '<em>아직</em>';
+    const u = (path, extra = '') => `${path}?site=${encodeURIComponent(site.id)}${extra}`;
+    // /urban(기반시설)을 거쳐 4탭에서 넘긴 경우 구역 id가 'urban:안'으로 따로 생김 → 개략 배치가 확정된 것 중 최근 것으로 2차 사업성
+    const archSite = [site, ...JbsSite.list().filter(x => /^urban:/.test(x.source || ''))].filter(x => x.arch && x.arch.chosen)
+      .sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')))[0];
+    box.innerHTML = `<p class="note">넘긴 구역: <b>${esc(site.name)}</b> (${esc(site.updated || '')}) — 1회차 ${fmt(site.quick ? site.quick.units : 0)}세대 · 용적률 ${fmt(site.quick ? site.quick.far : 0, 1)}%. 아래 순서로 열면 각 도구가 이 구역과 1회차 값을 그대로 이어받습니다.</p>
+      <ol class="rv-steps">
+        <li><a class="btn small" href="urban/?from=main" target="_blank" rel="noopener">① 정비기반시설 (/urban)</a> 구역·조서를 빈 안으로 가져와 도로·공원 배치, 진입도로·경계 도로 폭</li>
+        <li><a class="btn small" href="${u('traffic/')}" target="_blank" rel="noopener">② 교통성 검토</a> ${done('traffic')}</li>
+        <li><a class="btn small" href="${u('env/')}" target="_blank" rel="noopener">③ 환경성 검토</a> ${done('env')}</li>
+        <li><a class="btn small" href="${u('arch/')}" target="_blank" rel="noopener">④ 개략 배치 (/arch)</a> 교통·환경 조건 반영 → [이 안으로 확정] ${archDone}</li>
+        <li><a class="btn small" href="${u('landscape/')}" target="_blank" rel="noopener">⑤ 높이·경관 검토</a> ${done('landscape')}</li>
+        <li>${archSite ? `<a class="btn small primary" href="./?arch=${encodeURIComponent(archSite.id)}">⑥ 2차 사업성 (1회차와 비교)</a> ${esc(archSite.name)} 확정안 기준` : '<span class="btn small" aria-disabled="true" style="opacity:.5">⑥ 2차 사업성 (1회차와 비교)</span> ④ 개략 배치를 확정하면 눌러집니다'}</li>
+      </ol>
+      <p class="note">①에서 기반시설을 정했으면 /urban 4탭 개략 건축계획 아래 '교통성 검토서로 →'·'환경성 검토서로 →'·'높이·경관계획으로 →' 버튼으로 ②~⑤를 이어 가세요(도로 폭·기반시설이 함께 넘어갑니다). 기반시설을 건너뛰면 ②부터 바로 여기 버튼으로 엽니다.</p>
+      <p class="note">구역계나 1회차 값을 바꿨으면 [1차 재검토로 넘기기]를 다시 누르세요. 같은 구역으로 갱신되고, 이미 만든 검토 결과(배치 조건)는 남습니다.</p>`;
+  },
+
   // ---------- 사업성 검토서(1회차) — 새 창에 보고서를 열고 인쇄·PDF 저장 ----------
   // mode: 'client' 사용자용(결과만, 안내 한 줄) · 'staff' 검토자용(산식·가정값·범위·한계 모두)
   report(mode = 'client') {
@@ -409,9 +465,11 @@ Tabs.quick = {
       if ($('#qkReport')) $('#qkReport').onclick = () => Quick.report('client');
       if ($('#qkReportStaff')) $('#qkReportStaff').onclick = () => Quick.report('staff');
       $('#qkReset').onclick = () => Quick.reset();
+      if ($('#qkToReview')) $('#qkToReview').onclick = () => { const st = Quick.toReview(); if (st) { Quick.reviewLinks(); $('#qkReviewBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } };
       $('#qkZoneFromMeta').onclick = () => { S.quick.zone = Quick.zoneKey(S.meta.zoning); App.update(true); };
     }
     this.refresh();
+    Quick.reviewLinks();
   },
   refresh() {
     const q0 = Quick.ensure();
