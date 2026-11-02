@@ -2639,15 +2639,16 @@ function drawingAuto(a) {
 }
 function drawingSection(a, pl) {
   const z = Z.zones[a.key] || {}, dp = (z.infra || {}).plan, inf = pl.infra;
-  const up = `<div class="row" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0"><button type="button" id="drwLoad">${dp ? '도면 다시 올리기' : '정비기반시설도 올리기 (DXF·GeoJSON)'}</button>${dp ? '<button type="button" id="drwClear">도면 지우기</button>' : ''}</div>
+  const up = `<div class="row" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0"><button type="button" id="drwLoad">${dp ? '도면 다시 올리기' : '정비기반시설도 올리기 (DXF·GeoJSON)'}</button><button type="button" id="drwPdf" title="CAD에서 PDF로 내보낸 도면: 지도 왼쪽 '참고 도면 겹쳐 보기'로 올려 두 점으로 맞춘 뒤 누르면 PDF 안 폴리선을 가져옴">겹쳐 맞춘 PDF에서 가져오기</button>${dp ? '<button type="button" id="drwClear">도면 지우기</button>' : ''}</div>
     <input type="file" id="drwFile" accept=".dxf,.geojson,.json" hidden>
-    <p class="hint">구역지정·심의·사업시행인가가 끝난 구역처럼 정비기반시설 계획도가 이미 있으면, CAD 도면(측량 좌표가 들어간 DXF, 닫힌 폴리선)을 올려 실제 계획 그대로 획지·세대수·사업성을 계산합니다. 자동 제안과 나란히 비교해 차이를 봅니다. 그림 파일(PDF·JPG) 도면은 '참고 도면 겹쳐 보기'로 맞춘 뒤 직접 그려 주세요.</p>`;
+    <p class="hint">구역지정·심의·사업시행인가가 끝난 구역처럼 정비기반시설 계획도가 이미 있으면, CAD 도면(측량 좌표가 들어간 DXF, 닫힌 폴리선)을 올려 실제 계획 그대로 획지·세대수·사업성을 계산합니다. 자동 제안과 나란히 비교해 차이를 봅니다. CAD에서 내보낸 PDF(폴리선이 살아 있는 PDF)는 '참고 도면 겹쳐 보기'로 올려 두 점으로 맞춘 뒤 [겹쳐 맞춘 PDF에서 가져오기]를 누르세요 — PDF 레이어 이름이 없으면 색깔별로 묶어 보여 주니 종류를 골라 주세요. 스캔한 PDF·JPG는 선이 그림이라 직접 그려야 합니다.</p>`;
   if (!dp) return up;
   const K = ZoneKit.INFRA_KINDS, kinds = dp.kinds || {};
   const lay = {}; dp.feats.forEach(f => { const o = lay[f.layer] || (lay[f.layer] = { n: 0, A: 0 }); o.n++; try { o.A += turf.area({ type: 'Feature', properties: {}, geometry: f.geom }); } catch (er) { /* 무시 */ } });
   const layRows = Object.entries(lay).sort((x, y) => y[1].A - x[1].A).map(([l, o]) => {
     const k = kinds[l] || ZoneKit.infraKind(l);
-    return `<tr><td>${esc(l)}</td><td class="r">${o.n}</td><td class="r">${fmt(o.A)}</td><td><select data-drwk="${esc(l)}">${K.map(([v, t]) => `<option value="${v}"${v === k ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></td></tr>`;
+    const sw = /^색 (#[0-9a-f]{6})$/i.exec(l);
+    return `<tr><td>${sw ? `<span style="display:inline-block;width:12px;height:12px;border:1px solid #888;background:${sw[1]};vertical-align:-2px;margin-right:4px"></span>` : ''}${esc(l)}</td><td class="r">${o.n}</td><td class="r">${fmt(o.A)}</td><td><select data-drwk="${esc(l)}">${K.map(([v, t]) => `<option value="${v}"${v === k ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></td></tr>`;
   }).join('');
   // 자동 제안 vs 도면(실제) — 같은 줄에 두 값을 나란히
   const au = drawingAuto(a), ai = au && au.infra, d = inf && inf.drawing;
@@ -2678,6 +2679,20 @@ function bindDrawing(a) {
   const z = zoneOf(a.key); z.infra = z.infra || {};
   const f = $id('drwFile'), ld = $id('drwLoad'); if (!f || !ld) return;
   ld.onclick = () => { f.value = ''; f.click(); };
+  // 구역에 닿는 도형만(도면 테두리처럼 구역보다 훨씬 큰 것과 아주 작은 것은 뺌), 좌표는 7자리로 줄여 저장
+  const useFeats = (name, feats, crs) => {
+    const zone = z.geojson, zA = turf.area(zone), r7 = g => JSON.parse(JSON.stringify(g, (k, v) => typeof v === 'number' ? Math.round(v * 1e7) / 1e7 : v));
+    const hit = feats.filter(ft => { try { const F = { type: 'Feature', properties: {}, geometry: ft.geom }, A = turf.area(F); return A >= 5 && A <= zA * 3 && turf.booleanIntersects(F, zone); } catch (er) { return false; } }).map(ft => ({ layer: ft.layer, geom: r7(ft.geom) }));
+    if (!hit.length) { statusMsg(`${name}: 이 구역(${regName()})에 닿는 도형이 없습니다. 좌표계·맞춘 위치·구역을 확인하세요(읽은 도형 ${feats.length}개, ${crs}).`, true); return; }
+    z.infra.plan = { name, at: new Date().toLocaleString('sv-SE').slice(0, 16), crs, feats: hit, kinds: {} };
+    saveZ(); INFRA.memo = {}; render();
+    statusMsg(`${name}: 구역에 닿는 도형 ${hit.length}개(전체 ${feats.length}개, ${crs})를 정비기반시설도로 넣었습니다. 레이어(색) 종류를 확인하세요.`);
+  };
+  const pb = $id('drwPdf'); if (pb) pb.onclick = () => {
+    const v = typeof RefOverlay !== 'undefined' ? RefOverlay.vectorsLL() : null;
+    if (!v) { statusMsg(typeof RefOverlay !== 'undefined' && RefOverlay.img && !RefOverlay.aligned ? '겹친 도면을 먼저 [두 점으로 맞추기]로 맞춰 주세요.' : RefOverlay && RefOverlay.img && !(RefOverlay.vec || []).length ? '겹친 도면에 폴리선이 없습니다(스캔·그림 PDF). 직접 그리거나 CAD에서 DXF로 받아 주세요.' : "지도 왼쪽 '참고 도면 겹쳐 보기'로 CAD에서 내보낸 PDF를 올리고 두 점으로 맞춘 뒤 누르세요.", true); return; }
+    useFeats(`PDF 도면(${RefOverlay.vec.length}개 도형)`, v, 'PDF 두 점 맞춤');
+  };
   f.onchange = async e => {
     const file = e.target.files[0]; if (!file) return;
     statusMsg(`${file.name} 읽는 중…`);
@@ -2693,13 +2708,7 @@ function bindDrawing(a) {
           (g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : []).forEach(c => feats.push({ layer, geom: { type: 'Polygon', coordinates: c } })); });
         crs = 'GeoJSON(경위도)';
       }
-      // 구역에 닿는 도형만, 좌표는 7자리로 줄여 저장
-      const zone = z.geojson, r7 = g => JSON.parse(JSON.stringify(g, (k, v) => typeof v === 'number' ? Math.round(v * 1e7) / 1e7 : v));
-      const hit = feats.filter(ft => { try { return turf.booleanIntersects({ type: 'Feature', properties: {}, geometry: ft.geom }, zone); } catch (er) { return false; } }).map(ft => ({ layer: ft.layer, geom: r7(ft.geom) }));
-      if (!hit.length) { statusMsg(`${file.name}: 이 구역(${regName()})에 닿는 도형이 없습니다. 좌표계·구역을 확인하세요(읽은 도형 ${feats.length}개, ${crs}).`, true); return; }
-      z.infra.plan = { name: file.name, at: new Date().toLocaleString('sv-SE').slice(0, 16), crs, feats: hit, kinds: {} };
-      saveZ(); INFRA.memo = {}; render();
-      statusMsg(`${file.name}: 구역에 닿는 도형 ${hit.length}개(전체 ${feats.length}개, ${crs})를 정비기반시설도로 넣었습니다. 레이어 종류를 확인하세요.`);
+      useFeats(file.name, feats, crs);
     } catch (er) { statusMsg(`${file.name}을(를) 읽지 못했습니다: ${er.message}`, true); }
   };
   const cl = $id('drwClear'); if (cl) cl.onclick = () => { if (!confirm('올린 정비기반시설도를 지울까요?')) return; delete z.infra.plan; saveZ(); INFRA.memo = {}; render(); };

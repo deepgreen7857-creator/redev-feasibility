@@ -62,7 +62,66 @@ const RefOverlay = {
     const c = document.createElement('canvas');
     c.width = vp.width; c.height = vp.height;
     await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    try { this.vec = await this.pdfVectors(pdf, page, vp); } catch (e) { this.vec = null; }   // CAD에서 내보낸 PDF면 폴리선(닫힌 도형)도 읽어 둠
     return new Promise(r => c.toBlob(b => r(URL.createObjectURL(b)), 'image/png'));
+  },
+
+  // PDF 벡터(폴리선) 읽기 — CAD에서 PDF로 내보낸 도면은 선이 그림이 아니라 좌표로 들어 있음
+  //  닫힌 도형(closePath·사각형·처음=끝)만 모아 그림 픽셀 좌표로 바꿔 둠: [{layer, color, pts:[[x,y]...]}]
+  //  layer = PDF 레이어(선택적 콘텐츠 OCG) 이름, 없으면 '색 #rrggbb'(채우기 색 우선) — /urban '정비기반시설도'에서 종류를 고름
+  async pdfVectors(pdf, page, vp) {
+    const OPS = pdfjsLib.OPS, ops = await page.getOperatorList();
+    let ocNames = {};
+    try { const cfg = await pdf.getOptionalContentConfig(); if (cfg && cfg.getOrder) { const walk = o => (Array.isArray(o) ? o : (o && o.order) || []).forEach(x => { if (typeof x === 'string') { const g = cfg.getGroup(x); if (g) ocNames[x] = g.name; } else walk(x); }); walk(cfg.getOrder()); } if (cfg && cfg._groups) cfg._groups.forEach((g, id) => { ocNames[id] = g.name; }); } catch (e) { /* 레이어 없음 */ }
+    const mul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
+    const hex = a => { const v = Array.from(a || []); if (typeof v[0] === 'string') return v[0]; const big = v.some(x => x > 1); return '#' + v.slice(0, 3).map(x => Math.round(big ? x : x * 255).toString(16).padStart(2, '0')).join(''); };
+    let ctm = [1, 0, 0, 1, 0, 0], fill = '#000000', stroke = '#000000';
+    const stack = [], mc = [], out = []; let pend = [];
+    const FILL = new Set([OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]), STROKE = new Set([OPS.stroke, OPS.closeStroke]);
+    const flush = (sub, closed) => {
+      if (sub.length < 3) return;
+      const f = sub[0], l = sub[sub.length - 1], same = Math.hypot(f[0] - l[0], f[1] - l[1]) < 0.5;
+      if (!(closed || same)) return;
+      const m = mul(vp.transform, ctm), pts = (same ? sub.slice(0, -1) : sub).map(([x, y]) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]);
+      if (pts.length < 3) return;
+      const oc = [...mc].reverse().find(x => x);
+      pend.push({ oc: oc ? (ocNames[oc] || oc) : '', pts });
+    };
+    for (let i = 0; i < ops.fnArray.length && out.length < 8000; i++) {
+      const fn = ops.fnArray[i], a = ops.argsArray[i];
+      if (fn === OPS.save) stack.push([ctm, fill, stroke]);
+      else if (fn === OPS.restore) { const t = stack.pop(); if (t) [ctm, fill, stroke] = t; }
+      else if (fn === OPS.transform) ctm = mul(ctm, a);
+      else if (fn === OPS.setFillRGBColor) fill = hex(a);
+      else if (fn === OPS.setStrokeRGBColor) stroke = hex(a);
+      else if (fn === OPS.beginMarkedContentProps) mc.push(a && a[0] === 'OC' && a[1] ? (a[1].id || (typeof a[1] === 'string' ? a[1] : '')) : '');
+      else if (fn === OPS.beginMarkedContent) mc.push('');
+      else if (fn === OPS.endMarkedContent) mc.pop();
+      else if (FILL.has(fn) || STROKE.has(fn) || fn === OPS.endPath) {   // 칠하기 명령: 채우기면 채우기 색, 선만이면 선 색으로 묶음
+        if (fn !== OPS.endPath) pend.forEach(p => out.push({ layer: p.oc || `색 ${FILL.has(fn) ? fill : stroke}`, color: FILL.has(fn) ? fill : stroke, pts: p.pts }));
+        pend = [];
+      }
+      else if (fn === OPS.constructPath) {
+        const sub = a[0], co = a[1]; let k = 0, cur = [];
+        for (const op of sub) {
+          if (op === OPS.moveTo) { flush(cur, false); cur = [[co[k], co[k + 1]]]; k += 2; }
+          else if (op === OPS.lineTo) { cur.push([co[k], co[k + 1]]); k += 2; }
+          else if (op === OPS.curveTo) { cur.push([co[k + 4], co[k + 5]]); k += 6; }
+          else if (op === OPS.curveTo2 || op === OPS.curveTo3) { cur.push([co[k + 2], co[k + 3]]); k += 4; }
+          else if (op === OPS.closePath) { flush(cur, true); cur = []; }
+          else if (op === OPS.rectangle) { flush(cur, false); const [x, y, w, h] = co.slice(k, k + 4); k += 4; flush([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], true); cur = []; }
+        }
+        flush(cur, false);
+      }
+    }
+    return out;
+  },
+  // 맞춘 PDF 폴리선을 경위도 Polygon으로 — 두 점 맞추기가 끝난 뒤에만
+  vectorsLL() {
+    if (!this.vec || !this.vec.length || !this.aligned) return null;
+    const m = this.host.map(), c = Math.cos(this.th), sn = Math.sin(this.th);
+    const toLL = ([x, y]) => { const P = L.point(this.tx + this.s * (c * x - sn * y), this.ty + this.s * (sn * x + c * y)); const ll = m.unproject(P, this.Z0); return [ll.lng, ll.lat]; };
+    return this.vec.map(v => { const ring = v.pts.map(toLL); ring.push(ring[0]); return { layer: v.layer, color: v.color, geom: { type: 'Polygon', coordinates: [ring] } }; });
   },
 
   async load() {
@@ -79,7 +138,7 @@ const RefOverlay = {
     const img = new Image();
     try { await new Promise((ok, bad) => { img.onload = ok; img.onerror = bad; img.src = url; }); }
     catch (e) { this.say('그림 파일을 읽지 못했습니다.'); return; }
-    this.remove(true);
+    const vec = this.vec; this.remove(true); this.vec = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name) ? vec : null; this.aligned = false;
     this.img = img;
     this.W = img.naturalWidth;
     this.H = img.naturalHeight;
@@ -164,13 +223,13 @@ const RefOverlay = {
       const c = Math.cos(this.th), s = Math.sin(this.th);
       this.tx = this.P1.x - this.s * (c * this.q1.x - s * this.q1.y);
       this.ty = this.P1.y - this.s * (s * this.q1.x + c * this.q1.y);
-      this.step = 0;
+      this.step = 0; this.aligned = true;
       this.render();
       this.refreshUi();
       // 맞춘 도면의 축척 (도면 1px이 몇 m인지)
       const mPerPx = this.s * 40075016.7 * Math.cos(e.latlng.lat * Math.PI / 180) / (256 * Math.pow(2, this.Z0));
       const deg = ((this.th * 180 / Math.PI) % 360 + 360) % 360;
-      this.say(`맞췄습니다. 도면 1px ≈ ${this.fmt(mPerPx, 3)}m, 회전 ${this.fmt(deg > 180 ? deg - 360 : deg, 1)}°. 어긋나 보이면 기준점을 바꿔 다시 맞추세요. <b>겹친 도면이 옛 고시 도면이면 그 뒤 분할·합병·지적재조사로 지금 지적도와 경계가 다를 수 있습니다</b> – 지도의 지적선이 최신입니다. 이제 다각형 도구로 빨간 경계를 따라 그리고 <b>그린 구역을 필지에 맞추기</b>를 누르세요.`);
+      this.say(`${this.vec && this.vec.length ? `PDF 안 닫힌 도형(폴리선) ${this.fmt(this.vec.length)}개를 읽었습니다 — /urban 정비계획 탭 '기반시설도 올리기'에서 [겹쳐 맞춘 PDF에서 가져오기]로 쓸 수 있습니다. ` : ''}맞췄습니다. 도면 1px ≈ ${this.fmt(mPerPx, 3)}m, 회전 ${this.fmt(deg > 180 ? deg - 360 : deg, 1)}°. 어긋나 보이면 기준점을 바꿔 다시 맞추세요. <b>겹친 도면이 옛 고시 도면이면 그 뒤 분할·합병·지적재조사로 지금 지적도와 경계가 다를 수 있습니다</b> – 지도의 지적선이 최신입니다. 이제 다각형 도구로 빨간 경계를 따라 그리고 <b>그린 구역을 필지에 맞추기</b>를 누르세요.`);
       setTimeout(() => { if (this.marks && this.step === 0) this.marks.clearLayers(); }, 6000);
     }
   },
@@ -181,7 +240,7 @@ const RefOverlay = {
 
   remove(silent) {
     if (this.img) { this.img.remove(); URL.revokeObjectURL(this.img.src); }
-    this.img = null;
+    this.img = null; this.vec = null; this.aligned = false;
     this.step = 0;
     if (this.marks) this.marks.clearLayers();
     this.refreshUi();
