@@ -283,7 +283,7 @@ const Quick = {
         <label>단계 <select id="csStage">${JbsCases.STAGES.map(t => `<option${c && c.stage === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
         <label class="cs-memo">메모(근거 문서) <input id="csMemo" value="${esc(c ? c.memo || '' : '')}" placeholder="예: ○○고시 제2025-○○호 정비계획 결정"></label>
       </div>
-      ${c && !same ? `<p class="note warn">지금 지도 구역이 이 사례 구역과 다릅니다. '지금 자동'은 비워 두었습니다. <button type="button" class="btn small" id="csLoadZone">이 사례 구역 불러오기</button></p>` : ''}
+      ${c && !same ? (c.geojson ? `<p class="note warn">지금 지도 구역이 이 사례 구역과 다릅니다. '지금 자동'은 비워 두었습니다. <button type="button" class="btn small" id="csLoadZone">이 사례 구역 불러오기</button></p>` : `<p class="note warn">이 사례에는 구역 도형이 없어 '지금 자동'을 비교하지 않습니다. 사례 구역(고시 구역계)을 2단계에서 그리거나 불러온 뒤 [실제 값 저장 + 지금 자동값으로 갱신]을 누르면 자동값이 함께 저장됩니다.</p>`) : ''}
       <div class="table-wrap"><table class="grid cs-tbl"><thead><tr><th>항목</th><th>실제</th><th class="num">저장 당시 자동</th><th>차이</th><th class="num">지금 자동</th><th>차이</th></tr></thead><tbody>${body}</tbody></table></div>
       <div class="btns">
         <button type="button" class="btn primary" id="csSave">${c ? '실제 값 저장 + 지금 자동값으로 갱신' : '새 사례로 저장 (지금 구역·자동값과 함께)'}</button>
