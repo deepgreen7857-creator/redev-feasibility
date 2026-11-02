@@ -24,7 +24,7 @@ t('남북으로 겹치는 동 사이 인동간격 ≥ 0.8H(남쪽 동)', () => {
 });
 t('정북 일조: 북측 경계 거리 d → 높이 ≤ 2d', () => R.buildings.forEach(b => { const d = 200 - (b.ry + b.D); assert.ok(R.H(b.floors) <= Math.max(10, 2 * d) + 1e-6, `${b.id} H=${R.H(b.floors)} d=${d}`); }));
 t('남저북고(가장 남쪽 줄이 최고층을 독차지하지 않음)', () => { const m = r => Math.max(...R.buildings.filter(b => b.row === r).map(b => b.floors)); assert.ok(R.rows < 2 || Math.max(...[...Array(R.rows).keys()].slice(1).map(m)) >= m(0)); });
-t('평형 비율 대략 유지(84형이 가장 많음)', () => assert.ok(R.byType[84] >= R.byType[59] && R.byType[59] > R.byType[114]));
+t('평형 비율 대략 유지(목표 59:84:114 = 40:50:10에서 ±10%p 이내)', () => { const u = R.units; [[59, 40], [84, 50], [114, 10]].forEach(([t, w]) => assert.ok(Math.abs(R.byType[t] / u * 100 - w) <= 10, `${t}형 ${(R.byType[t] / u * 100).toFixed(1)}%`)); });
 t('간선도로변 20m 이격', () => { const R2 = run(rect(240, 200), ['arterial', 'boundary', 'boundary', 'boundary'], 250); R2.buildings.forEach(b => b.poly.forEach(p => assert.ok(p[1] >= 19.9))); });
 t('일조시간 계산(남쪽 빈 땅은 충분)', () => { const r = G.sunHours(R.buildings, R.H, 37.46, [[120, -30]], C.items.find(i => i.id === 'sun_tolerance')); assert.ok(r[0].ok && r[0].total > 7); });
 t('회전 배치(15°)도 구역 안', () => { const R3 = run(rect(240, 200), ['road', 'boundary', 'boundary', 'boundary'], 230, { angle: 15 }); assert.ok(R3.units > 0); R3.buildings.forEach(b => b.poly.forEach(p => assert.ok(G.inside(p[0], p[1], rect(240, 200))))); });
