@@ -2,6 +2,9 @@
 const { XMLParser } = require('fast-xml-parser');
 
 const DAILY_LIMIT = Number(process.env.DATA_GO_KR_DAILY_LIMIT || 1000); // 개발계정 기본 1,000건(API별)
+// 운영계정으로 바꾼 API는 따로 한도(2026-11-02 승인: 온비드 부동산 물건상세·물건상세 입찰정보 각 하루 100,000건)
+const API_LIMITS = { 'onbid-detail': 100000, 'onbid-bid': 100000 };
+const limitOf = (api) => API_LIMITS[api] || DAILY_LIMIT;
 const SAFETY_MARGIN = 30; // 한도 끝까지 쓰지 않고 남겨 둔다(수동 시험용)
 
 const xml = new XMLParser({ parseTagValue: false, processEntities: false, ignoreAttributes: true });
@@ -72,7 +75,7 @@ class Quota {
     const snap = await this.db.collection('quota').doc(k).get();
     return snap.exists ? snap.data().count || 0 : 0;
   }
-  async remaining(api) { return Math.max(0, DAILY_LIMIT - SAFETY_MARGIN - (await this.used(api))); }
+  async remaining(api) { return Math.max(0, limitOf(api) - SAFETY_MARGIN - (await this.used(api))); }
   async add(api, n = 1, extra = {}) {
     const k = this.key(api);
     if (!this.db) { this.mem.set(k, (this.mem.get(k) || 0) + n); return; }
@@ -84,8 +87,8 @@ class Quota {
   }
   async markExhausted(api) {
     const k = this.key(api);
-    if (!this.db) { this.mem.set(k, DAILY_LIMIT); return; }
-    await this.db.collection('quota').doc(k).set({ api, day: kstDay(), count: DAILY_LIMIT, exhausted: true, updatedAt: new Date() }, { merge: true });
+    if (!this.db) { this.mem.set(k, limitOf(api)); return; }
+    await this.db.collection('quota').doc(k).set({ api, day: kstDay(), count: limitOf(api), exhausted: true, updatedAt: new Date() }, { merge: true });
   }
 }
 

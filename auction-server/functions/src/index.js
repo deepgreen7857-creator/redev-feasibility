@@ -414,7 +414,7 @@ async function tick({ only, force } = {}) {
   // 2026-11-02: 한 회차(470초) 안에서 모든 작업이 자기 몫을 쓰게 — 가벼운 작업 먼저, 작업마다 시간 상한.
   //  전에는 공매 원문·토지가 시간을 다 써서 입찰결과·실거래가 매번 'time'으로 멈추고, 함수가 540초에 잘려 기록(runs)도 안 남았다.
   const jobs = only ? [only] : ['zones', 'bankrupt', 'bankruptDocs', 'resultList', 'results', 'trades', 'onbid', 'land', 'zoneMatch'];
-  const SLICE = { resultList: 50e3, results: 60e3, trades: 90e3, onbid: 150e3, land: 50e3, zoneMatch: 30e3 };
+  const SLICE = { resultList: 40e3, results: 50e3, trades: 60e3, onbid: 240e3, land: 40e3, zoneMatch: 20e3 }; // 11-02 공매 원문 운영계정(10만 건) → 원문에 시간을 더 줌
   const until = (job) => (only ? deadline : Math.min(deadline, Date.now() + (SLICE[job] || 60e3)));
   for (const job of jobs) {
     if (!enabled[job] && !only) continue;
