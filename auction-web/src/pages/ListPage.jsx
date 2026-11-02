@@ -22,7 +22,7 @@ export default function ListPage({ mode }) {
   const [past, setPast] = useState([]); // 낙찰 결과(예상 낙찰가 기준표용) — 낙찰가는 이제 pastResults 에만 있다
   const [settings, setSettings] = useState(null);
   const [dealsMap, setDealsMap] = useState({});
-  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: mode ? 'verdict' : 'end', corpOnly: false, under1: true, showExcluded: false, onlyOpen: true, focus: true });
+  const [f, setF] = useState({ source: 'all', sido: '', sgg: '', verdict: 'all', q: '', maxPrice: '', maxOwn: '', sort: mode ? 'verdict' : 'end', corpOnly: false, under1: true, showExcluded: false, onlyOpen: true, focus: false });
   const [error, setError] = useState('');
   // 서버가 판정까지 끝낸 목록용 요약 { byId: Map(id → {a, av}), builtAt } — 있으면 시세 받기·판정 계산을 건너뛴다(완료 화면은 예전 방식)
   const [cardInfo, setCardInfo] = useState(null);

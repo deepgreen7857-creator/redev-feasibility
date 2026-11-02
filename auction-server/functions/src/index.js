@@ -411,21 +411,25 @@ async function tick({ only, force } = {}) {
   const out = {};
   const settings = await getSettings();
   const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, bankruptDocs: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, results: settings.collectOnbid !== false, resultList: settings.collectOnbid !== false, trades: settings.collectTrades !== false, land: settings.collectLand !== false, zoneMatch: true };
-  const jobs = only ? [only] : ['zones', 'bankrupt', 'bankruptDocs', 'onbid', 'land', 'zoneMatch', 'resultList', 'results', 'trades'];
+  // 2026-11-02: 한 회차(470초) 안에서 모든 작업이 자기 몫을 쓰게 — 가벼운 작업 먼저, 작업마다 시간 상한.
+  //  전에는 공매 원문·토지가 시간을 다 써서 입찰결과·실거래가 매번 'time'으로 멈추고, 함수가 540초에 잘려 기록(runs)도 안 남았다.
+  const jobs = only ? [only] : ['zones', 'bankrupt', 'bankruptDocs', 'resultList', 'results', 'trades', 'onbid', 'land', 'zoneMatch'];
+  const SLICE = { resultList: 50e3, results: 60e3, trades: 90e3, onbid: 150e3, land: 50e3, zoneMatch: 30e3 };
+  const until = (job) => (only ? deadline : Math.min(deadline, Date.now() + (SLICE[job] || 60e3)));
   for (const job of jobs) {
     if (!enabled[job] && !only) continue;
     if (Date.now() > deadline) { out[job] = { stopped: 'time' }; continue; }
     try {
       if (job === 'zones') out[job] = await runIncheonZones({ force });
       if (job === 'bankrupt') out[job] = await runBankrupt({ force });
-      else if (job === 'bankruptDocs') out[job] = await bankrupt.fetchDocs({ db, log: logger.info, limit: only ? 60 : 25, deadline: Date.now() + (only ? 420 : 120) * 1000 });
-      // 공매 원문이 한 회차 시간을 다 먹어 뒤 작업(입찰결과·실거래·토지)이 한도를 남기던 문제 → 한 회차에 최대 4분만
-      if (job === 'onbid') out[job] = await runOnbid({ deadline: only ? deadline : Math.min(deadline, Date.now() + 240e3), force });
-      if (job === 'results') out[job] = await runOnbidResults({ deadline });
-      if (job === 'resultList') out[job] = await runOnbidResultList({ deadline, force });
-      if (job === 'trades') out[job] = await runTrades({ deadline });
-      if (job === 'land') out[job] = await runLandBacklog({ deadline: Math.min(deadline, Date.now() + 120e3) });
-      if (job === 'zoneMatch') out[job] = await runZoneMatch({ deadline: Math.min(deadline, Date.now() + 120e3) });
+      else if (job === 'bankruptDocs') out[job] = await bankrupt.fetchDocs({ db, log: logger.info, limit: only ? 60 : 25, deadline: Date.now() + (only ? 420 : 30) * 1000 });
+      // 공매 원문은 한 회차에 최대 150초(하루 72회차라 1,000건 한도는 그대로 채움)
+      if (job === 'onbid') out[job] = await runOnbid({ deadline: until('onbid'), force });
+      if (job === 'results') out[job] = await runOnbidResults({ deadline: until('results') });
+      if (job === 'resultList') out[job] = await runOnbidResultList({ deadline: until('resultList'), force });
+      if (job === 'trades') out[job] = await runTrades({ deadline: until('trades') });
+      if (job === 'land') out[job] = await runLandBacklog({ deadline: until('land') });
+      if (job === 'zoneMatch') out[job] = await runZoneMatch({ deadline: until('zoneMatch') });
     } catch (e) {
       logger.error(job, e);
       out[job] = { error: e.message };
