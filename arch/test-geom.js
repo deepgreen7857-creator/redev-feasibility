@@ -37,7 +37,7 @@ assert.ok(alts.length >= 2 && alts.every(a => a.far <= 250.01 && a.far >= 242));
 console.log('대안 통과');
 // 공원·녹지: 북쪽 공원 폭 30m면 북측 경계 바로 옆 동도 더 높게
 const sp = { pts: rect(240, 200), tags: ['road', 'boundary', 'park', 'boundary'] }; sp.setbacks = [3, 5, 5, 5];
-const base = { units: U, assume: A, mix: { 59: 40, 84: 50, 114: 10 }, spacing: 0.8, sun: sunN, lot: 36000, far: 250, angle: 0, fixedF: 25 };
+const base = { units: U, assume: A, mix: { 59: 40, 84: 50, 114: 10 }, spacing: 0.8, sun: sunN, lot: 36000, far: 250, angle: 0, fixedF: 25, lib: C.평면_라이브러리 };
 const rn = G.layout(Object.assign({}, sp, { tags: ['road', 'boundary', 'north', 'boundary'] }), base), rp = G.layout(sp, Object.assign({}, base, { parkWidth: 30 }));
 const north = r => Math.max(...r.buildings.map(b => b.ry + b.D));
 console.log(`정북 변: 북쪽 끝 동 ${north(rn).toFixed(0)}m · ${rn.units}세대 / 공원 30m: 북쪽 끝 동 ${north(rp).toFixed(0)}m · ${rp.units}세대`);
@@ -63,3 +63,19 @@ console.log('공원·녹지 통과');
   assert.ok(R5.units > 0, form + ' 세대수 0');
   R5.buildings.forEach(b => { assert.strictEqual(b.form, form === 'mix' ? b.form : form); b.parts.flat().forEach(p => assert.ok(G.inside(p[0], p[1], P))); });
 }));
+
+// 채광창 이격(시행령 제86조③1호): 남쪽 도로 변(도로 폭 12m)에서 높이 ≤ 2 × (거리 + 도로 폭)
+t('채광창 벽면 → 인접 대지경계선(도로 건너편) 높이 ≤ 2×거리', () => {
+  const P = rect(240, 200), W12 = [12, 0, 0, 0];
+  ['slab', 'tower'].forEach(form => {
+    const R6 = run(P, ['road', 'boundary', 'boundary', 'boundary'], 250, { form, winRatio: 2, edgeW: W12, lib: C.평면_라이브러리 });
+    R6.buildings.forEach(b => {
+      const dS = Math.min(...b.poly.map(p => p[1])), dW = Math.min(...b.poly.map(p => p[0])), dE = 240 - Math.max(...b.poly.map(p => p[0])), dN = 200 - Math.max(...b.poly.map(p => p[1]));
+      const h = R6.H(b.floors);
+      assert.ok(h <= 2 * (dS + 12) + 0.01, `${form} ${b.id} 남 ${h} > 2×(${dS.toFixed(1)}+12)`);
+      assert.ok(h <= 2 * dN + 0.01, `${form} ${b.id} 북 ${h} > 2×${dN.toFixed(1)}`);
+      if (form === 'tower') { assert.ok(h <= 2 * dW + 0.01 && h <= 2 * dE + 0.01, `${form} ${b.id} 옆`); }
+    });
+    console.log(`  ${form}: ${R6.buildings.length}개동 ${R6.units}세대 용적률 ${R6.far.toFixed(1)}% 최고 ${R6.maxFloors}층 · 동 크기 ${R6.buildings[0].L.toFixed(1)}×${R6.buildings[0].D.toFixed(1)}m`);
+  });
+});

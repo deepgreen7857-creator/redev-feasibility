@@ -303,6 +303,23 @@
     $('#carry').innerHTML = out.length ? '<b>다른 검토에서 넘어온 조건</b> (경계 성격·출입구에 자동 반영됨) <button id="applyReview" type="button">다시 반영</button><br>' + out.map(x => '· ' + x).join('<br>') : '교통성·환경성 검토서를 먼저 만들면 그 결과(진입 도로, 소음 도로, 정북 일조)가 여기에 안내됩니다.';
   }
 
+  // 채광창 이격 배수(시행령 제86조③1호): 근린상업·준주거는 4, 그 밖은 2
+  function winRatio() {
+    const w = crit('window_setback'); if (!w) return 0;
+    const z = String(((site && site.profile) || {}).zoning || '') + ' ' + String(((site && site.v) || {}).zoning || '');
+    return /근린상업|준주거/.test(z) ? (w.값.근린상업_준주거_배수 || 4) : (w.값.배수 || 2);
+  }
+  // 경계 변마다 붙은 도로 폭(계획 폭 우선) — 채광창 이격을 도로 건너편 경계선까지 잴 때 씀
+  function edgeWidths() {
+    if (!pts) return [];
+    const prof = (site && site.profile) || {}, pw = {}; (prof.roads || []).forEach(r => { pw[r.name] = +(r.pw || r.w) || 0; });
+    const roads = (prof.roadGeoms || []).map(r => { const g = r.geom; const rings = g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map(c2 => c2[0]) : []; return { name: r.name, w: pw[r.name] || +r.w || 0, polys: rings.map(rg => G.openRing(rg).map(pr.to)) }; });
+    return G.edges(pts).map(e => {
+      const m = [(e.a[0] + e.b[0]) / 2 + e.out[0] * 3, (e.a[1] + e.b[1]) / 2 + e.out[1] * 3];
+      const hit = roads.find(r => r.polys.some(pl => G.inside(m[0], m[1], pl) || pl.some((q, k) => G.segDist(m, q, pl[(k + 1) % pl.length]) < 4)));
+      return hit ? hit.w : 0;
+    });
+  }
   /* ---------- 배치 계산 ---------- */
   function buildInput() {
     const p = P(), A = Object.assign({}, C.가정, { floorHeight_m: +p.fh || C.가정.floorHeight_m, sideGap_m: +p.sideGap, supplyFactor: +p.sf, minFloors: +p.minFloors, maxFloors: +p.maxFloors });
@@ -312,7 +329,7 @@
     const lot = exclude.length ? siteA - exA : siteA * (1 - (+p.infra || 0) / 100);
     return {
       site: { pts, tags, setbacks: sb, exclude },
-      opt: { units: C.평면, assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'compare' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, parkWidth: +p.parkW || 0, exSetback: +p.bndSb || 0 },
+      opt: { units: C.평면, lib: C.평면_라이브러리, winRatio: winRatio(), edgeW: edgeWidths(), assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'compare' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, parkWidth: +p.parkW || 0, exSetback: +p.bndSb || 0 },
       lot, exA, p,
     };
   }
@@ -541,6 +558,7 @@
       ${A.buildings.map(b => `<tr><td>${b.id}</td><td>${esc(G.FORM_NAME[b.form] || '판상형')}</td><td>${b.t}㎡</td><td>${b.n}</td><td>${b.floors}</td><td>${b.n * b.floors}</td><td>${fmt(A.H(b.floors), 1)}m</td><td>${b.cap >= +I.p.maxFloors ? '-' : b.cap + '층'}</td></tr>`).join('')}</table>
       <h3>적용 기준</h3>
       <table><tr><th style="width:160px">인동간격</th><td>앞 동 높이 × ${I.p.spacing}${/확인필요/.test(sp.상태) ? ' <span class="chk">※ 기준 확인 필요</span>' : ''}<br><span class="note">${esc(sp.근거)} — ${esc(sp.상태)}</span></td></tr>
+      ${(() => { const w = crit('window_setback'); return w ? `<tr><th>채광창 이격</th><td>채광창 벽면에서 인접 대지경계선까지 높이의 1/${winRatio()} 이상(도로·공원은 건너편 경계선까지, 판상형 앞·뒤 벽면 · 탑상형 모든 벽면)<br><span class="note">${esc(w.근거)} — ${esc(w.상태)}</span></td></tr>` : ''; })()}
       <tr><th>정북 일조</th><td>높이 10m 이하 ${sn.이격.높이10m이하_m}m, 초과 부분 높이의 1/2 이상(정북 인접대지 변)<br><span class="note">${esc(sn.근거)}</span></td></tr>
       <tr><th>공원·녹지 접함</th><td>북쪽을 향한 공원·녹지 변은 공원 폭 ${I.p.parkW}m 너머 반대편 경계를 정북 기준선으로 계산<br><span class="note">${esc(crit('sun_open_space').근거)} — ${esc(crit('sun_open_space').상태)}</span></td></tr>
       <tr><th>경계 이격</th><td>도로 ${I.p.roadSb}m · 간선도로 ${I.p.artSb}m · 대지경계 ${I.p.bndSb}m · 동 측면 ${I.p.sideGap}m <span class="note">(검토 가정값)</span></td></tr>
