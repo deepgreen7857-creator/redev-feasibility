@@ -59,7 +59,9 @@ export default function App() {
           </div>
           <Nav />
           <a href="/judge/" className="whitespace-nowrap rounded-md bg-brand px-2.5 py-1 text-xs font-bold text-white hover:opacity-90" title="실제 임장·입찰할 물건(하루 최대 5건)을 보는 판단기록장으로 갑니다">판단기록장 →</a>
-          <button className="whitespace-nowrap text-xs text-ink/50 hover:text-ink" disabled={refreshing} title="서버가 사이트용 묶음 자료를 지금 다시 만들고(관리자), 이 브라우저 보관본을 새 묶음으로 바꿉니다. 평소엔 묶음이 바뀔 때(아침 7시·낮 1시)만 새로 받습니다" onClick={refresh}>{refreshing ? '자료 묶는 중…(1~3분)' : '자료 새로 받기'}</button>
+          {user && <a href="/data/" className="whitespace-nowrap rounded-md border border-brand px-2.5 py-1 text-xs font-bold text-brand hover:bg-brand/10" title="미니PC가 모은 경매 원문 자료(명세서·현황조사서·사진) — 관리자 전용">데이터 →</a>}
+          {user && <a href="#/admin" className="whitespace-nowrap rounded-md border border-brand px-2.5 py-1 text-xs font-bold text-brand hover:bg-brand/10" title="경매·공매 자료 수집 현황(자료 완성도·API 사용량·미니PC 수집기 상태)">경매자료수집 →</a>}
+          <button className="whitespace-nowrap text-xs text-ink/50 hover:text-ink" disabled={refreshing} title="서버가 사이트용 묶음 자료를 지금 다시 만들고(관리자), 이 브라우저 보관본을 새 묶음으로 바꿉니다. 평소엔 묶음이 바뀔 때(2시간마다)만 새로 받습니다" onClick={refresh}>{refreshing ? '자료 묶는 중…(1~3분)' : '자료 새로 받기'}</button>
           {user && <button className="hidden text-xs text-ink/50 sm:block" onClick={() => signOut().then(() => setUser(null))}>로그아웃</button>}
         </div>
         {DEMO && <div className="bg-wait/10 px-4 py-1 text-center text-xs text-ink/80">데모 모드 — 샘플(가상) 물건과 시세로 동작합니다. Firebase를 연결하면 실제 수집 자료로 바뀝니다.</div>}
