@@ -550,7 +550,7 @@
       ${compareHtml()}
       <h3>평형별 세대 구성</h3>
       <table><tr><th>평형</th><th>전용</th><th>공급</th><th>세대수</th><th>비율</th><th>평면 가정(폭×깊이)</th></tr>
-      ${types.map(t => `<tr><td>${esc(U[t].이름)}</td><td>${U[t].전용}㎡</td><td>${U[t].공급 ? U[t].공급 + '㎡' : '–'}</td><td>${fmt(A.byType[t])}</td><td>${fmt(A.byType[t] / A.units * 100, 1)}%</td><td>${U[t].폭}m × ${U[t].깊이}m</td></tr>`).join('')}
+      ${types.map(t => `<tr><td>${esc(U[t].이름)}</td><td>${U[t].전용}㎡</td><td>${U[t].공급 ? U[t].공급 + '㎡' : '–'}</td><td>${fmt(A.byType[t])}</td><td>${fmt(A.byType[t] / A.units * 100, 1)}%</td><td>${U[t].폭}m × ${U[t].깊이}m ${U[t].대표사례 ? `<span class="note">실제 사례${(() => { const c = ((C.평면_라이브러리 || {}).사례 || []).find(x => x.id === U[t].대표사례); return c ? ' · ' + esc(c.단지) + ' ' + esc(c.타입) : ''; })()}</span>` : '<span class="chk">가정(사례 없음)</span>'}</td></tr>`).join('')}
       <tr><th>합계</th><td></td><td></td><th>${fmt(A.units)}</th><td>100%</td><td></td></tr>
       <tr><td colspan="6" class="note">전용 60㎡ 이하 ${fmt(groups(A.byType).u60)}세대(${fmt(groups(A.byType).u60 / (A.units || 1) * 100, 1)}%) · 85㎡ 이하 ${fmt(Object.entries(A.byType).filter(([t]) => +t <= 85).reduce((a, [, k]) => a + k, 0) / (A.units || 1) * 100, 1)}% — 주택규모별 건설비율(재개발 국민주택규모 비율·임대 비율 등)은 사업 유형별 고시·조례 확인 필요. 가로주택정비사업 등 소규모주택정비사업은 별도 기준.</td></tr></table>
       <h3>동별 개요</h3>

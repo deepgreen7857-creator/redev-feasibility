@@ -56,6 +56,12 @@
   // 다각형 poly 각 부분에서 정북(+y)으로 올라가 선분 ab를 만나는 최소 거리. 만나는 곳이 없으면 null
   // 정남 기준(건축법 제61조③): 건물 각 점에서 정남 방향으로 잰 경계까지 거리 — 정북 거리를 위아래 뒤집어 잼
   function southDist(poly, a, b) { const f = p => [p[0], -p[1]]; return northDist(poly.map(f), f(a), f(b)); }
+  // 임의 방향 dir(단위벡터)으로 잰 거리: 건물 각 점에서 dir 방향으로 나아가 변 a-b에 닿는 가장 짧은 거리. 그 방향 연장선에 변이 없으면 null
+  //  채광창 이격(시행령 제86조③1호)은 '채광창이 있는 벽면에서 직각 방향'으로 잼 → 벽면 앞에 있지 않은 경계는 제한하지 않음
+  function dirDist(poly, a, b, dir) {
+    const f = p => [p[0] * dir[1] - p[1] * dir[0], p[0] * dir[0] + p[1] * dir[1]];   // dir이 +y가 되게 돌림
+    return northDist(poly.map(f), f(a), f(b));
+  }
   function northDist(poly, a, b) {
     const pts = []; poly.forEach((p, i) => { const q = poly[(i + 1) % poly.length]; for (let k = 0; k < 6; k++) pts.push([p[0] + (q[0] - p[0]) * k / 6, p[1] + (q[1] - p[1]) * k / 6]); });
     let best = null;
@@ -163,9 +169,11 @@
     return { form: 'court', t, n, L: S, D: S, parts, cores, divs };
   }
   // 형태별 후보 모듈(큰 것 → 작은 것 순). 혼합은 forms 배열 순서대로 시도
+  // 탑상·Y형은 탑상 세대 치수(평면[t].탑상 — 실제 사례 값)가 있으면 그 폭·깊이로 그림(없으면 판상 치수)
+  const towerU = (U, t) => { const tw = U[t] && U[t].탑상; return tw && +tw.폭 > 0 && +tw.깊이 > 0 ? Object.assign({}, U, { [t]: Object.assign({}, U[t], { 폭: +tw.폭, 깊이: +tw.깊이, 베이: +tw.베이 || U[t].베이 }) }) : U; };
   function modulesFor(U, c, t, form) {
-    if (form === 'tower') return [tower(U, c, t)];
-    if (form === 'Y') return [yForm(U, c, t)];
+    if (form === 'tower') return [tower(towerU(U, t), c, t)];
+    if (form === 'Y') return [yForm(towerU(U, t), c, t)];
     if (form === 'L') return [lForm(U, c, t, 4, 2, false), lForm(U, c, t, 2, 2, false)];
     if (form === 'court') return [court(U, c, t, 6), court(U, c, t, 4)].filter(Boolean);
     return [slab(U, c, t, 4), slab(U, c, t, 6), slab(U, c, t, 2)];
@@ -342,11 +350,14 @@
         // 채광창 벽면 → 인접 대지경계선(건축법 시행령 제86조③1호): 높이 ≤ 거리 × 배수. 도로·공원 등이 사이에 있으면 중심선까지(같은 조 ⑥, 공동주택)
         //  판상·ㄱ형은 앞·뒤 벽면(동 깊이 방향)을 향한 변만, 탑상·Y·ㅁ형은 모든 변. 도로 폭은 변의 성격 표시와 관계없이 실제로 닿은 도로 폭
         if (opt.winRatio) {
-          const yax = rot([0, 1], th), faces = !['slab', 'L'].includes(b.form) || Math.abs(e.out[0] * yax[0] + e.out[1] * yax[1]) >= 0.5;
-          if (faces) {
-            const Hw = opt.winRatio * (d + gap);
+          // 벽면 방향: 판상·ㄱ형은 앞·뒤(동 깊이 방향 ±), 탑상·Y·ㅁ형은 네 방향. 경계 변이 바깥쪽(e.out)을 향하는 방향만 봄
+          const yax = rot([0, 1], th), xax = rot([1, 0], th);
+          const dirs = (['slab', 'L'].includes(b.form) ? [yax] : [yax, xax]).flatMap(v => [v, [-v[0], -v[1]]]).filter(v => v[0] * e.out[0] + v[1] * e.out[1] > 0.3);
+          dirs.forEach(v => {
+            const dd = dirDist(b.poly, e.a, e.b, v); if (dd === null) return;
+            const Hw = opt.winRatio * (dd + gap);
             cap = Math.min(cap, Math.floor((Hw - A.groundExtra_m) / A.floorHeight_m));
-          }
+          });
         }
       });
       return Math.max(0, cap);
@@ -470,6 +481,6 @@
     });
   }
 
-  const api = { FORM_NAME, modulesFor, projector, rot, area, ccw, openRing, inside, segDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
+  const api = { FORM_NAME, modulesFor, projector, rot, area, ccw, openRing, inside, segDist, dirDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.ArchGeom = api;
 })(typeof window !== 'undefined' ? window : globalThis);

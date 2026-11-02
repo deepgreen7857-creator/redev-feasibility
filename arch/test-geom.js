@@ -99,3 +99,11 @@ t('정남 기준 일조: 남쪽 경계에서 높이 10m 초과 부분 높이의 
   });
   console.log(`  정남 기준: ${R7.buildings.length}개동 ${R7.units}세대 용적률 ${R7.far.toFixed(1)}%`);
 });
+
+// 채광창 이격은 벽면 직각 방향으로 잼(시행령 제86조③1호): 벽 앞에 있지 않은 경계 변은 제한하지 않음
+t('채광창 거리: 벽면 직각 방향에 있는 경계만', () => {
+  const sq = [[0, 0], [10, 0], [10, 10], [0, 10]];
+  assert.strictEqual(G.dirDist(sq, [20, 30], [30, 30], [0, 1]), null);            // 비스듬히 떨어진 변 → 제한 없음
+  assert.ok(Math.abs(G.dirDist(sq, [-5, 30], [30, 30], [0, 1]) - 20) < 1e-6);     // 바로 앞(북쪽 20m)
+  const r = Math.SQRT1_2; assert.ok(Math.abs(G.dirDist(sq, [30, 0], [30, 10], [1, 0]) - 20) < 1e-6 && G.dirDist(sq, [30, 0], [30, 10], [r, r]) !== undefined);
+});
