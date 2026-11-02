@@ -230,6 +230,104 @@ const Quick = {
       <p class="note">구역계나 1회차 값을 바꿨으면 [1차 재검토로 넘기기]를 다시 누르세요. 같은 구역으로 갱신되고, 이미 만든 검토 결과(배치 조건)는 남습니다.</p>`;
   },
 
+  // ---------- 실제 사례 대조 (shared/cases.js JbsCases) ----------
+  //  지금 구역의 자동 값(빠른 사업성 1회차와 같은 계산) — 실제 사례와 같은 항목 이름으로
+  autoValues() {
+    if (!(Calc.siteArea(S) > 0)) return null;
+    const q0 = this.ensure(), q = { ...q0, infraLevel: 'custom', infraPct: this.levelPct(q0, q0.infraLevel || 'avg') }, e = this.evaluate(q), p = e.p, r = e.r;
+    const k = v => (isFinite(v) ? Math.round(v * 10) / 10 : '');
+    const sb = p.saleBy || {};
+    return {
+      siteArea: k(e.f.site), infraPct: k(num(q.infraPct)), lotArea: k(e.f.lot), far: k(e.f.v), farArea: k(p.farArea),
+      units: k(p.total), rentU: k(p.rentU), u59: k(num(sb[59])), u84: k(num(sb[84])), u114: k(num(sb[114])),
+      conPrice: k(e.v.conPrice), generalPrice: k(e.v.generalPrice),
+      revTotal: k(r.rev.total / 1e4), costTotal: k(r.cost.total / 1e4), prior: r.prior > 0 ? k(r.prior / 1e4) : "", ratio: k(r.ratio),
+    };
+  },
+  // 지금 구역이 사례 구역과 같은지(겹침 90% 이상) — 같을 때만 '지금 자동'을 그 사례와 비교
+  sameZone(c) {
+    try {
+      if (!c || !c.geojson || !S.area.geojson) return false;
+      const i = turf.intersect(turf.feature(c.geojson.geometry || c.geojson), turf.feature(S.area.geojson.geometry || S.area.geojson));
+      if (!i) return false;
+      const a = turf.area(i);
+      return a / turf.area(c.geojson) > 0.9 && a / turf.area(S.area.geojson) > 0.9;
+    } catch (e) { return false; }
+  },
+  caseUi() {
+    const box = $('#csBox'); if (!box || !window.JbsCases) return;
+    const list = JbsCases.list(), sel = this._case && JbsCases.get(this._case) ? this._case : '';
+    const c = sel ? JbsCases.get(sel) : null, auto = this.autoValues(), same = c ? this.sameZone(c) : true;
+    const curAuto = same ? auto : null;
+    const f = (v, u) => (v === '' || v === undefined || v === null || !isFinite(+v) ? '–' : fmt(+v, u === '%' || u === '억원' ? 1 : 0));
+    const dTxt = (d, u) => {
+      if (!d) return '';
+      const cls = Math.abs(d.pct) <= 5 ? 'ok' : Math.abs(d.pct) <= 15 ? 'mid' : 'bad';
+      return `<span class="cs-d ${cls}">${d.d >= 0 ? '+' : ''}${fmt(d.d, u === '%' || u === '억원' ? 1 : 0)}${u === '%' ? '%p' : ''} (${d.pct >= 0 ? '+' : ''}${fmt(d.pct, 1)}%)</span>`;
+    };
+    const rows = JbsCases.rows(c || { actual: {} }, curAuto);
+    let grp = '';
+    const body = rows.map(r => {
+      const head = r.grp !== grp ? `<tr class="cs-grp"><td colspan="6">${esc(r.grp)}</td></tr>` : '';
+      grp = r.grp;
+      return head + `<tr><td>${esc(r.label)} <small>${esc(r.unit)}</small></td>
+        <td><input class="cs-in" data-cs="${r.k}" inputmode="decimal" value="${esc(r.actual ?? '')}" placeholder="실제 값"></td>
+        <td class="num">${c ? f(r.saved, r.unit) : '–'}</td><td>${c ? dTxt(r.dSaved, r.unit) : ''}</td>
+        <td class="num">${curAuto ? f(r.cur, r.unit) : '–'}</td><td>${curAuto ? dTxt(r.dCur, r.unit) : ''}</td></tr>`;
+    }).join('');
+    const sum = JbsCases.summary(list).filter(x => x.n);
+    box.innerHTML = `
+      <div class="cs-top">
+        <label>사례 <select id="csSel"><option value="">+ 새 사례</option>${list.map(x => `<option value="${esc(x.id)}"${x.id === sel ? ' selected' : ''}>${esc(x.name)} · ${esc(x.stage || '')} (${esc(x.updated || '')})</option>`).join('')}</select></label>
+        <label>이름 <input id="csName" value="${esc(c ? c.name : '')}" placeholder="예: A구역 (익명으로)"></label>
+        <label>단계 <select id="csStage">${JbsCases.STAGES.map(t => `<option${c && c.stage === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+        <label class="cs-memo">메모(근거 문서) <input id="csMemo" value="${esc(c ? c.memo || '' : '')}" placeholder="예: ○○고시 제2025-○○호 정비계획 결정"></label>
+      </div>
+      ${c && !same ? `<p class="note warn">지금 지도 구역이 이 사례 구역과 다릅니다. '지금 자동'은 비워 두었습니다. <button type="button" class="btn small" id="csLoadZone">이 사례 구역 불러오기</button></p>` : ''}
+      <div class="table-wrap"><table class="grid cs-tbl"><thead><tr><th>항목</th><th>실제</th><th class="num">저장 당시 자동</th><th>차이</th><th class="num">지금 자동</th><th>차이</th></tr></thead><tbody>${body}</tbody></table></div>
+      <div class="btns">
+        <button type="button" class="btn primary" id="csSave">${c ? '실제 값 저장 + 지금 자동값으로 갱신' : '새 사례로 저장 (지금 구역·자동값과 함께)'}</button>
+        ${c ? '<button type="button" class="btn" id="csSaveActual">실제 값만 저장</button><button type="button" class="btn ghost danger" id="csDel">이 사례 지우기</button>' : ''}
+        <span class="small muted" id="csMsg"></span>
+      </div>
+      <h4>전체 사례 차이 요약 <small>저장 당시 자동값 − 실제, 사례 ${list.length}개</small></h4>
+      ${sum.length ? `<div class="table-wrap"><table class="grid cs-sum"><thead><tr><th>항목</th><th class="num">사례 수</th><th class="num">평균 차이</th><th class="num">평균 크기</th><th class="num">범위</th><th>판단</th></tr></thead><tbody>
+        ${sum.map(x => `<tr><td>${esc(x.label)}</td><td class="num">${x.n}</td><td class="num">${x.mean >= 0 ? '+' : ''}${fmt(x.mean, 1)}%${x.pp !== null ? ` (${x.pp >= 0 ? '+' : ''}${fmt(x.pp, 1)}%p)` : ''}</td><td class="num">${fmt(x.absMean, 1)}%</td><td class="num">${fmt(x.min, 1)} ~ ${fmt(x.max, 1)}%</td>
+          <td>${x.n < 3 ? '사례가 더 필요' : Math.abs(x.mean) <= 5 ? '잘 맞음' : `자동이 ${x.mean > 0 ? '많게(높게)' : '적게(낮게)'} 나옴 — 가정값 보정 검토`}</td></tr>`).join('')}
+        </tbody></table></div>` : '<p class="note">아직 비교할 사례가 없습니다. 실제 값을 넣고 저장하면 여기에 항목별 차이가 쌓입니다.</p>'}
+      <p class="note">이 브라우저에만 저장되고 '작업 저장·불러오기' 파일에 함께 들어갑니다. 사례 이름은 익명으로, 고시된 자료 수준의 숫자만 넣으세요. 빈 칸은 비교하지 않습니다.</p>`;
+    const read = () => { const a = {}; $$('#csBox [data-cs]').forEach(i => { if (i.value.trim() !== '') a[i.dataset.cs] = i.value.trim().replace(/,/g, ''); }); return a; };
+    const say = t => { const m = $('#csMsg'); if (m) m.textContent = t; };
+    $('#csSel').onchange = e => { this._case = e.target.value; this.caseUi(); };
+    const lz = $('#csLoadZone'); if (lz) lz.onclick = () => { App.go('area'); setTimeout(() => MapView.setZoneGeo(c.geojson, `사례 '${c.name}' 구역`, '사례 구역'), 300); };
+    const doSave = withAuto => {
+      const name = $('#csName').value.trim();
+      if (!name) { say('이름을 넣어 주세요(예: A구역).'); $('#csName').focus(); return; }
+      const actual = read();
+      if (!Object.keys(actual).length) { say('실제 값을 하나 이상 넣어 주세요.'); return; }
+      const cc = c ? { ...c } : {};
+      Object.assign(cc, { name, stage: $('#csStage').value, memo: $('#csMemo').value.trim(), actual });
+      if (withAuto) {
+        if (!auto) { say('지금 구역이 없어 자동값을 계산하지 못했습니다. 구역계를 먼저 정하세요.'); return; }
+        if (c && !same && !confirm('지금 지도 구역이 이 사례 구역과 다릅니다. 그래도 지금 구역의 자동값으로 바꿀까요?')) return;
+        cc.auto = auto; cc.autoAt = new Date().toLocaleString('sv-SE').slice(0, 16); cc.geojson = S.area.geojson;
+        cc.assume = { infraLevel: S.quick.infraLevel, farStep: S.quick.farStep, zone: S.quick.zone };
+      }
+      const r = JbsCases.save(cc);
+      if (!r) { say('저장하지 못했습니다(브라우저 저장 공간). 작업 저장으로 파일을 내려받아 두세요.'); return; }
+      this._case = r.id; this.caseUi(); say('저장했습니다.');
+    };
+    $('#csSave').onclick = () => doSave(true);
+    const sa = $('#csSaveActual'); if (sa) sa.onclick = () => doSave(false);
+    const dl = $('#csDel'); if (dl) dl.onclick = () => { if (!confirm(`사례 '${c.name}'을(를) 지울까요?`)) return; JbsCases.remove(c.id); this._case = ''; this.caseUi(); };
+    // 실제 값을 바꾸면 차이를 바로 다시 보여 줌(저장 전 미리 보기)
+    $$('#csBox [data-cs]').forEach(i => i.addEventListener('change', () => {
+      const tr = i.closest('tr'), k = i.dataset.cs, it = JbsCases.ITEMS.find(x => x[0] === k), cells = tr.querySelectorAll('td');
+      if (c) cells[3].innerHTML = dTxt(JbsCases.diff(c.auto && c.auto[k], i.value, it[2]), it[2]);
+      if (curAuto) cells[5].innerHTML = dTxt(JbsCases.diff(curAuto[k], i.value, it[2]), it[2]);
+    }));
+  },
+
   // ---------- 사업성 검토서(1회차) — 새 창에 보고서를 열고 인쇄·PDF 저장 ----------
   // mode: 'client' 사용자용(결과만, 안내 한 줄) · 'staff' 검토자용(산식·가정값·범위·한계 모두)
   report(mode = 'client') {
@@ -470,6 +568,7 @@ Tabs.quick = {
     }
     this.refresh();
     Quick.reviewLinks();
+    Quick.caseUi();
   },
   refresh() {
     const q0 = Quick.ensure();

@@ -488,3 +488,16 @@ tr.qk-cur td:first-child { outline: 2px solid var(--ink); outline-offset: -2px; 
 .rv-steps em { font-style: normal; font-size: .8rem; padding: 1px 8px; border-radius: 10px; background: var(--surface-2); }
 .rv-steps em.ok { background: #e3f3e8; color: #1d6b3a; }
 .rv-steps a.btn { text-decoration: none; }
+/* 실제 사례와 비교 */
+.qk-cases { margin-top: 14px; }
+.cs-top { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: end; margin-bottom: 8px; font-size: .85rem; }
+.cs-top label { display: flex; flex-direction: column; gap: 3px; }
+.cs-top .cs-memo { flex: 1 1 260px; }
+.cs-tbl td, .cs-sum td { font-size: .85rem; }
+.cs-tbl .cs-in { width: 120px; padding: 3px 6px; text-align: right; }
+.cs-grp td { background: var(--surface-2); font-weight: 600; font-size: .78rem; color: var(--muted); }
+.cs-d { font-size: .8rem; white-space: nowrap; padding: 1px 6px; border-radius: 8px; }
+.cs-d.ok { background: #e3f3e8; color: #1d6b3a; }
+.cs-d.mid { background: #fff3d6; color: #8a5a00; }
+.cs-d.bad { background: #fde3e1; color: #a1271d; }
+.qk-cases h4 { margin: 16px 0 6px; font-size: .95rem; }
