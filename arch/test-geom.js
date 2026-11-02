@@ -24,7 +24,7 @@ t('남북으로 겹치는 동 사이 인동간격 ≥ 0.8H(남쪽 동)', () => {
 });
 t('정북 일조: 북측 경계 거리 d → 높이 ≤ 2d', () => R.buildings.forEach(b => { const d = 200 - (b.ry + b.D); assert.ok(R.H(b.floors) <= Math.max(10, 2 * d) + 1e-6, `${b.id} H=${R.H(b.floors)} d=${d}`); }));
 t('남저북고(가장 남쪽 줄이 최고층을 독차지하지 않음)', () => { const m = r => Math.max(...R.buildings.filter(b => b.row === r).map(b => b.floors)); assert.ok(R.rows < 2 || Math.max(...[...Array(R.rows).keys()].slice(1).map(m)) >= m(0)); });
-t('평형 비율 대략 유지(84형이 가장 많음)', () => assert.ok(R.byType[84] >= R.byType[59] && R.byType[59] > R.byType[114]));
+t('평형 비율 대략 유지(목표 59:84:114 = 40:50:10에서 ±10%p 이내)', () => { const u = R.units; [[59, 40], [84, 50], [114, 10]].forEach(([t, w]) => assert.ok(Math.abs(R.byType[t] / u * 100 - w) <= 10, `${t}형 ${(R.byType[t] / u * 100).toFixed(1)}%`)); });
 t('간선도로변 20m 이격', () => { const R2 = run(rect(240, 200), ['arterial', 'boundary', 'boundary', 'boundary'], 250); R2.buildings.forEach(b => b.poly.forEach(p => assert.ok(p[1] >= 19.9))); });
 t('일조시간 계산(남쪽 빈 땅은 충분)', () => { const r = G.sunHours(R.buildings, R.H, 37.46, [[120, -30]], C.items.find(i => i.id === 'sun_tolerance')); assert.ok(r[0].ok && r[0].total > 7); });
 t('회전 배치(15°)도 구역 안', () => { const R3 = run(rect(240, 200), ['road', 'boundary', 'boundary', 'boundary'], 230, { angle: 15 }); assert.ok(R3.units > 0); R3.buildings.forEach(b => b.poly.forEach(p => assert.ok(G.inside(p[0], p[1], rect(240, 200))))); });
@@ -64,18 +64,46 @@ console.log('공원·녹지 통과');
   R5.buildings.forEach(b => { assert.strictEqual(b.form, form === 'mix' ? b.form : form); b.parts.flat().forEach(p => assert.ok(G.inside(p[0], p[1], P))); });
 }));
 
-// 채광창 이격(시행령 제86조③1호): 남쪽 도로 변(도로 폭 12m)에서 높이 ≤ 2 × (거리 + 도로 폭)
-t('채광창 벽면 → 인접 대지경계선(도로 건너편) 높이 ≤ 2×거리', () => {
+// 채광창 이격(시행령 제86조③1호·⑥): 남쪽 도로 변(도로 폭 12m)에서 공동주택은 도로 중심선까지 → 높이 ≤ 2 × (거리 + 6)
+t('채광창 벽면 → 인접 대지경계선(도로 중심선) 높이 ≤ 2×거리', () => {
   const P = rect(240, 200), W12 = [12, 0, 0, 0];
   ['slab', 'tower'].forEach(form => {
     const R6 = run(P, ['road', 'boundary', 'boundary', 'boundary'], 250, { form, winRatio: 2, edgeW: W12, lib: C.평면_라이브러리 });
     R6.buildings.forEach(b => {
       const dS = Math.min(...b.poly.map(p => p[1])), dW = Math.min(...b.poly.map(p => p[0])), dE = 240 - Math.max(...b.poly.map(p => p[0])), dN = 200 - Math.max(...b.poly.map(p => p[1]));
       const h = R6.H(b.floors);
-      assert.ok(h <= 2 * (dS + 12) + 0.01, `${form} ${b.id} 남 ${h} > 2×(${dS.toFixed(1)}+12)`);
+      assert.ok(h <= 2 * (dS + 6) + 0.01, `${form} ${b.id} 남 ${h} > 2×(${dS.toFixed(1)}+6)`);
       assert.ok(h <= 2 * dN + 0.01, `${form} ${b.id} 북 ${h} > 2×${dN.toFixed(1)}`);
       if (form === 'tower') { assert.ok(h <= 2 * dW + 0.01 && h <= 2 * dE + 0.01, `${form} ${b.id} 옆`); }
     });
     console.log(`  ${form}: ${R6.buildings.length}개동 ${R6.units}세대 용적률 ${R6.far.toFixed(1)}% 최고 ${R6.maxFloors}층 · 동 크기 ${R6.buildings[0].L.toFixed(1)}×${R6.buildings[0].D.toFixed(1)}m`);
   });
+});
+
+// 성격이 '대지경계'로 표시된 변이라도 도로가 닿아 있으면(edgeW) 중심선까지 잼 — 표시 실수에 덜 민감하게
+t('도로가 닿은 변은 성격 표시와 관계없이 도로 중심선 적용', () => {
+  const P = rect(240, 200);
+  const a = run(P, ['boundary', 'boundary', 'boundary', 'boundary'], 300, { form: 'tower', winRatio: 2, lib: C.평면_라이브러리, quick: 1 });
+  const b = run(P, ['boundary', 'boundary', 'boundary', 'boundary'], 300, { form: 'tower', winRatio: 2, edgeW: [20, 20, 20, 20], lib: C.평면_라이브러리, quick: 1 });
+  assert.ok(b.far >= a.far - 0.01, `도로 폭이 들어가면 용적률이 줄면 안 됨 ${a.far} → ${b.far}`);
+  console.log(`  대지경계만 ${a.far.toFixed(1)}% → 사방 20m 도로 ${b.far.toFixed(1)}%`);
+});
+
+// 정남 기준(건축법 제61조③): 북쪽 '정북' 변 제한은 빠지고 남쪽 변에 같은 거리 적용
+t('정남 기준 일조: 남쪽 경계에서 높이 10m 초과 부분 높이의 1/2 이상', () => {
+  const P = rect(240, 200);
+  const R7 = run(P, ['boundary', 'boundary', 'north', 'boundary'], 250, { southBase: true });
+  R7.buildings.forEach(b => {
+    const dS = Math.min(...b.poly.map(p => p[1])), h = R7.H(b.floors);
+    if (h > 10) assert.ok(dS + 0.01 >= h * sunN.높이10m초과_높이비, `${b.id} 남쪽 ${dS.toFixed(1)}m < ${h}/2`);
+  });
+  console.log(`  정남 기준: ${R7.buildings.length}개동 ${R7.units}세대 용적률 ${R7.far.toFixed(1)}%`);
+});
+
+// 채광창 이격은 벽면 직각 방향으로 잼(시행령 제86조③1호): 벽 앞에 있지 않은 경계 변은 제한하지 않음
+t('채광창 거리: 벽면 직각 방향에 있는 경계만', () => {
+  const sq = [[0, 0], [10, 0], [10, 10], [0, 10]];
+  assert.strictEqual(G.dirDist(sq, [20, 30], [30, 30], [0, 1]), null);            // 비스듬히 떨어진 변 → 제한 없음
+  assert.ok(Math.abs(G.dirDist(sq, [-5, 30], [30, 30], [0, 1]) - 20) < 1e-6);     // 바로 앞(북쪽 20m)
+  const r = Math.SQRT1_2; assert.ok(Math.abs(G.dirDist(sq, [30, 0], [30, 10], [1, 0]) - 20) < 1e-6 && G.dirDist(sq, [30, 0], [30, 10], [r, r]) !== undefined);
 });

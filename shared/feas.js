@@ -34,8 +34,8 @@
     conPrice: '공사비(만원/평, 계획연면적)', gfaFactor: '계획연면적 배율', etcPct: '기타 사업비(공사비 대비 %)', priorMul: '종전자산 보정배율(공시지가 ×)',
     avgLand: '평균 공시지가(만원/㎡)', rentRatio: '임대주택 비율(%)', mix59: '59㎡형 비율(%)', mix84: '84㎡형 비율(%)', mix114: '114㎡형 비율(%)', mix39: '39㎡형 비율(%)', mix49: '49㎡형 비율(%)', mix74: '74㎡형 비율(%)', mix101: '101㎡형 비율(%)', resRatio: '주거 비율(%)', infraAvg: '기반시설 비율 평균(%)', infraCons: '기반시설 비율 보수적(%)',
   };
-  // 표준 평면 공급면적(㎡) — shared/criteria/arch.json 평면과 같은 값(개략, 검증필요)
-  const SUPPLY = { 39: 54, 49: 67, 59: 80, 74: 98, 84: 110, 101: 131, 114: 147 };
+  // 표준 평면 공급면적(㎡) — shared/criteria/arch.json 평면과 같은 값. 모두 실제 사례 면적표(arch.json 평면 대표사례·면적사례)
+  const SUPPLY = { 39: 53.79, 49: 68.36, 59: 79.34, 74: 102.51, 84: 110.52, 101: 135, 114: 153.76 };
   const num = v => { const n = parseFloat(String(v ?? '').replace(/,/g, '')); return isFinite(n) ? n : 0; };
 
   const JbsFeas = {
