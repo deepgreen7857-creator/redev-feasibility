@@ -58,6 +58,7 @@ export default function App() {
             </span>
           </div>
           <Nav />
+          <a href="/judge/" className="whitespace-nowrap rounded-md bg-brand px-2.5 py-1 text-xs font-bold text-white hover:opacity-90" title="실제 임장·입찰할 물건(하루 최대 5건)을 보는 판단기록장으로 갑니다">판단기록장 →</a>
           <button className="whitespace-nowrap text-xs text-ink/50 hover:text-ink" disabled={refreshing} title="서버가 사이트용 묶음 자료를 지금 다시 만들고(관리자), 이 브라우저 보관본을 새 묶음으로 바꿉니다. 평소엔 묶음이 바뀔 때(아침 7시·낮 1시)만 새로 받습니다" onClick={refresh}>{refreshing ? '자료 묶는 중…(1~3분)' : '자료 새로 받기'}</button>
           {user && <button className="hidden text-xs text-ink/50 sm:block" onClick={() => signOut().then(() => setUser(null))}>로그아웃</button>}
         </div>
