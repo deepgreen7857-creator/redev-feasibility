@@ -2,19 +2,31 @@
 
 // 참고 도면(구역도 그림·PDF)을 지도 위에 반투명으로 겹치고, 두 점으로 위치·크기·방향을 맞춤.
 // 변환: 도면 픽셀 q → 지도 투영 좌표(줌 Z0 기준) P = s·R(θ)·q + t  (닮음 변환)
+//  두 화면이 같이 씀: 사업성 검토(js/map.js MapView, 아래 기본 host)와 /urban(urban.js가 RefOverlay.host를 바꿈)
 const RefOverlay = {
+  host: {
+    map: () => MapView.map,
+    ensure: () => { if (!MapView.map) MapView.init(); },
+    picking: () => !!MapView.picking,
+    stopPicking: () => MapView.setPicking(false),
+    ids: { msg: 'refMsg', also: 'pickMsg', align: 'btnRefAlign', toggle: 'btnRefToggle', remove: 'btnRefRemove', opacity: 'refOpacity' },
+  },
+  el(k) { return document.getElementById(this.host.ids[k]); },
+  esc(v) { return String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); },
+  fmt(n, d = 0) { return Number(n).toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d }); },
   img: null, W: 0, H: 0, Z0: 20,
   s: 1, th: 0, tx: 0, ty: 0,
   opacity: 0.55, visible: true,
   step: 0, q1: null, P1: null, q2: null, marks: null, bound: false,
 
   say(t) {
-    $('#refMsg').innerHTML = t;
-    $('#pickMsg').textContent = $('#refMsg').textContent;   // 전체 화면에서도 보이게 지도 안 알림에도
+    const m = this.el('msg'); if (!m) return;
+    m.innerHTML = t;
+    const a = this.el('also'); if (a) a.textContent = m.textContent;   // 전체 화면에서도 보이게 지도 안 알림에도
   },
 
   pane() {
-    const m = MapView.map;
+    const m = this.host.map();
     if (!m.getPane('refPane')) {
       const p = m.createPane('refPane');
       p.style.zIndex = 350;              // 배경지도 위, 필지·구역계 선 아래
@@ -59,7 +71,7 @@ const RefOverlay = {
   },
 
   async useFile(file) {
-    if (!MapView.map) MapView.init();
+    this.host.ensure();
     this.say('도면을 불러오는 중…');
     let url;
     try { url = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name) ? await this.pdfToUrl(file) : URL.createObjectURL(file); }
@@ -75,7 +87,7 @@ const RefOverlay = {
     this.pane().append(img);
 
     // 처음엔 지금 보이는 화면 가운데에 화면의 80% 크기로
-    const m = MapView.map, b = m.getPixelBounds(), k = Math.pow(2, this.Z0 - m.getZoom());
+    const m = this.host.map(), b = m.getPixelBounds(), k = Math.pow(2, this.Z0 - m.getZoom());
     this.s = Math.min((b.max.x - b.min.x) * k / this.W, (b.max.y - b.min.y) * k / this.H) * 0.8;
     this.th = 0;
     const c = m.project(m.getCenter(), this.Z0);
@@ -89,12 +101,12 @@ const RefOverlay = {
     this.visible = true;
     this.render();
     this.refreshUi();
-    this.say(`<b>${esc(file.name)}</b>를 겹쳤습니다. 이제 <b>두 점으로 맞추기</b>를 눌러 위치를 맞추세요.`);
+    this.say(`<b>${this.esc(file.name)}</b>를 겹쳤습니다. 이제 <b>두 점으로 맞추기</b>를 눌러 위치를 맞추세요.`);
   },
 
   render() {
     if (!this.img) return;
-    const m = MapView.map, k = Math.pow(2, m.getZoom() - this.Z0), o = m.getPixelOrigin();
+    const m = this.host.map(), k = Math.pow(2, m.getZoom() - this.Z0), o = m.getPixelOrigin();
     const a = this.s * Math.cos(this.th) * k, b = this.s * Math.sin(this.th) * k;
     this.img.style.transform = `matrix(${a},${b},${-b},${a},${this.tx * k - o.x},${this.ty * k - o.y})`;
     this.img.style.opacity = this.opacity;
@@ -103,19 +115,19 @@ const RefOverlay = {
 
   // 지도 좌표 → 도면 픽셀
   toImage(latlng) {
-    const P = MapView.map.project(latlng, this.Z0);
+    const P = this.host.map().project(latlng, this.Z0);
     const dx = P.x - this.tx, dy = P.y - this.ty, c = Math.cos(-this.th), s = Math.sin(-this.th);
     return { x: (c * dx - s * dy) / this.s, y: (s * dx + c * dy) / this.s };
   },
 
   mark(latlng, color, label) {
-    if (!this.marks) this.marks = L.layerGroup().addTo(MapView.map);
+    if (!this.marks) this.marks = L.layerGroup().addTo(this.host.map());
     L.circleMarker(latlng, { radius: 7, color, weight: 3, fillOpacity: 0.4 }).bindTooltip(label, { permanent: true, direction: 'right', className: 'ref-tip' }).addTo(this.marks);
   },
 
   startAlign() {
     if (!this.img) { this.say('먼저 <b>도면 불러오기</b>로 구역도를 겹쳐 주세요.'); return; }
-    if (MapView.picking) MapView.setPicking(false);
+    if (this.host.picking()) this.host.stopPicking();
     if (this.marks) this.marks.clearLayers();
     this.visible = true;
     this.render();
@@ -131,7 +143,7 @@ const RefOverlay = {
       this.step = 2;
       this.say('② 이제 <b>실제 지도</b>에서 같은 곳을 누르세요. (투명도를 낮추면 지도가 잘 보입니다)');
     } else if (this.step === 2) {
-      this.P1 = MapView.map.project(e.latlng, this.Z0);
+      this.P1 = this.host.map().project(e.latlng, this.Z0);
       this.mark(e.latlng, '#2563eb', '지도 1');
       this.step = 3;
       this.say('③ <b>도면 위</b>에서 첫 점과 <b>멀리 떨어진</b> 두 번째 기준점을 누르세요.');
@@ -141,7 +153,7 @@ const RefOverlay = {
       this.step = 4;
       this.say('④ <b>실제 지도</b>에서 두 번째 기준점과 같은 곳을 누르세요.');
     } else if (this.step === 4) {
-      const P2 = MapView.map.project(e.latlng, this.Z0);
+      const P2 = this.host.map().project(e.latlng, this.Z0);
       this.mark(e.latlng, '#2563eb', '지도 2');
       const dqx = this.q2.x - this.q1.x, dqy = this.q2.y - this.q1.y;
       const dPx = P2.x - this.P1.x, dPy = P2.y - this.P1.y;
@@ -158,7 +170,7 @@ const RefOverlay = {
       // 맞춘 도면의 축척 (도면 1px이 몇 m인지)
       const mPerPx = this.s * 40075016.7 * Math.cos(e.latlng.lat * Math.PI / 180) / (256 * Math.pow(2, this.Z0));
       const deg = ((this.th * 180 / Math.PI) % 360 + 360) % 360;
-      this.say(`맞췄습니다. 도면 1px ≈ ${fmt(mPerPx, 3)}m, 회전 ${fmt(deg > 180 ? deg - 360 : deg, 1)}°. 어긋나 보이면 기준점을 바꿔 다시 맞추세요. <b>겹친 도면이 옛 고시 도면이면 그 뒤 분할·합병·지적재조사로 지금 지적도와 경계가 다를 수 있습니다</b> – 지도의 지적선이 최신입니다. 이제 다각형 도구로 빨간 경계를 따라 그리고 <b>그린 구역을 필지에 맞추기</b>를 누르세요.`);
+      this.say(`맞췄습니다. 도면 1px ≈ ${this.fmt(mPerPx, 3)}m, 회전 ${this.fmt(deg > 180 ? deg - 360 : deg, 1)}°. 어긋나 보이면 기준점을 바꿔 다시 맞추세요. <b>겹친 도면이 옛 고시 도면이면 그 뒤 분할·합병·지적재조사로 지금 지적도와 경계가 다를 수 있습니다</b> – 지도의 지적선이 최신입니다. 이제 다각형 도구로 빨간 경계를 따라 그리고 <b>그린 구역을 필지에 맞추기</b>를 누르세요.`);
       setTimeout(() => { if (this.marks && this.step === 0) this.marks.clearLayers(); }, 6000);
     }
   },
@@ -177,13 +189,10 @@ const RefOverlay = {
   },
 
   refreshUi() {
-    const has = !!this.img;
-    $('#btnRefAlign').disabled = !has;
-    $('#btnRefToggle').disabled = !has;
-    $('#btnRefRemove').disabled = !has;
-    $('#refOpacity').disabled = !has;
-    $('#btnRefToggle').textContent = this.visible ? '도면 숨기기' : '도면 보이기';
-    $('#btnRefAlign').classList.toggle('on', this.step > 0);
-    if (MapView.map) MapView.map.getContainer().classList.toggle('picking', this.step > 0 || MapView.picking);
+    const has = !!this.img, set = (k, f) => { const e = this.el(k); if (e) f(e); };
+    ['align', 'toggle', 'remove', 'opacity'].forEach(k => set(k, e => { e.disabled = !has; }));
+    set('toggle', e => { e.textContent = this.visible ? '도면 숨기기' : '도면 보이기'; });
+    set('align', e => e.classList.toggle('on', this.step > 0));
+    const m = this.host.map(); if (m) m.getContainer().classList.toggle('picking', this.step > 0 || this.host.picking());
   },
 };

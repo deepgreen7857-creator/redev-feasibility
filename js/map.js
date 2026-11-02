@@ -573,12 +573,30 @@ const MapView = {
     S.area.drawnArea = S.area.geojson ? turf.area(S.area.geojson) : 0;
   },
 
-  // GeoJSON 파일(구역계)을 불러와 구역계로
+  // 구역계 파일 불러오기: GeoJSON 또는 CAD(DXF, 측량 좌표 — js/zonekit.js ZoneKit.readDxf, /urban과 같은 코드)
   async importGeoJSON() {
-    const text = await pickTextFile('.geojson,.json,application/geo+json,application/json');
-    if (!text) return;
+    const f = await new Promise(res => {
+      const i = document.createElement('input');
+      i.type = 'file'; i.accept = '.geojson,.json,.dxf,application/geo+json,application/json'; i.style.display = 'none';
+      document.body.append(i);
+      i.onchange = () => { res(i.files[0] || null); i.remove(); };
+      i.click();
+    });
+    if (!f) return;
+    const msg = $('#exportMsg');
+    if (/\.dxf$/i.test(f.name)) {
+      msg.textContent = `${f.name} 읽는 중…`;
+      const c = this.map ? this.map.getCenter() : null;
+      let r;
+      try { r = await ZoneKit.readDxf(await f.arrayBuffer(), c ? [c.lat, c.lng] : null); }
+      catch (e) { msg.textContent = `${f.name}을(를) 읽지 못했습니다: ${e.message}`; return; }
+      if (r.error) { msg.textContent = r.error; return; }
+      msg.textContent = '';
+      if (this.setZoneGeo(r.fc, 'CAD 구역계', 'CAD 파일')) $('#jibunMsg').textContent = ZoneKit.dxfNote(r, f.name);
+      return;
+    }
     let gj;
-    try { gj = JSON.parse(text); } catch (e) { alert('GeoJSON 파일을 읽을 수 없습니다.'); return; }
+    try { gj = JSON.parse(await f.text()); } catch (e) { alert('GeoJSON 파일을 읽을 수 없습니다.'); return; }
     this.setZoneGeo(gj, '구역계 파일', '파일');
   },
   // GeoJSON(면) → 구역계로 바꿈. what: 안내 문구용 이름, src: 확인 창 문구('파일'·'/arch 구역' 등)

@@ -189,6 +189,9 @@ td .u{font-size:11px;font-weight:400;color:var(--ink-2)}
 .zk textarea{width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--sheet);color:var(--ink);resize:vertical}
 .zk-opts{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;margin:6px 0}
 .zk-btns{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.zk-ref{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line,#ddd);font-size:.88rem}.zk-ref .zk-btns{margin-top:6px}.zk-ref input[type=range]{width:110px;vertical-align:middle}
+.ref-img{position:absolute;left:0;top:0;transform-origin:0 0;max-width:none!important;pointer-events:none;user-select:none}.ref-tip{font-weight:700;font-size:12px}
+.lmap.picking,.lmap.picking .leaflet-interactive{cursor:crosshair}
 .zk-anchor{display:inline-flex;gap:4px}
 .zk-closure{border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-top:6px;font-size:13px;color:var(--ink)}
 .zk-closure.ok{border-color:var(--ok)}
@@ -301,6 +304,17 @@ a.back:hover{text-decoration:underline}
             <span class="zk-anchor"><input id="zkTarget" inputmode="decimal" placeholder="목표 면적 ㎡" aria-label="목표 면적"><button class="btn ghost sm" type="button" id="zkAnchorBtn" title="고시문의 위치 지번들과 면적으로 대략 범위를 추정한 뒤 필지에 맞춥니다">위치 지번 + 면적으로 추정</button></span>
             <input id="zkFile" type="file" accept=".xlsx,.xls,.csv,.txt" hidden>
           </div>
+          <div class="zk-ref">
+            <b>참고 도면 겹쳐 보기</b> <span class="u">구역도 그림(JPG·PNG)·PDF를 반투명으로 겹치고 두 점으로 위치를 맞춘 뒤, 구역계 그리기로 따라 그리고 '그린 구역을 필지에 맞추기'</span>
+            <div class="zk-btns">
+              <button class="btn sm" type="button" id="zkRefLoad">도면 불러오기</button>
+              <button class="btn ghost sm" type="button" id="zkRefAlign" disabled>두 점으로 맞추기</button>
+              <button class="btn ghost sm" type="button" id="zkRefToggle" disabled>도면 숨기기</button>
+              <button class="btn ghost sm" type="button" id="zkRefRemove" disabled>지우기</button>
+              <label class="zk-edge">투명도 <input type="range" id="zkRefOpacity" min="0.1" max="0.95" step="0.05" value="0.55" disabled></label>
+            </div>
+            <p class="hint" id="zkRefMsg" aria-live="polite"></p>
+          </div>
           <p class="hint" id="zkMsg"></p>
           <div id="zkReport"></div>
         </div>
@@ -328,10 +342,10 @@ a.back:hover{text-decoration:underline}
           <button class="mt" id="redoBtn" type="button" disabled data-tip="다시 실행 (Ctrl+Y)" aria-label="다시 실행">↷</button>
           <span class="mt-sep" aria-hidden="true"></span>
           <button class="mt" id="fetchBtn" type="button" data-tip="필지·건축물·토지특성·건축물대장 다시 불러오기" aria-label="다시 불러오기">⟳</button>
-          <button class="mt" id="geoInBtn" type="button" data-tip="GeoJSON 파일로 구역계 열기" aria-label="GeoJSON 열기">⇩</button>
+          <button class="mt" id="geoInBtn" type="button" data-tip="구역계 파일 열기 — GeoJSON 또는 CAD 구역도(DXF, 측량 좌표)" aria-label="구역계 파일 열기(GeoJSON·DXF)">⇩</button>
           <button class="mt" id="geoOutBtn" type="button" data-tip="구역계를 GeoJSON 파일로 저장" aria-label="GeoJSON 저장">⇧</button>
           <button class="mt danger" id="clearBtn" type="button" data-tip="이 안의 구역계 지우기" aria-label="이 안 지우기">✕</button>
-          <input id="geoFile" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
+          <input id="geoFile" type="file" accept=".geojson,.json,.dxf,application/geo+json,application/json" hidden>
         </div>
         <div id="lmap" class="lmap"></div>
       </div>
@@ -351,11 +365,12 @@ a.back:hover{text-decoration:underline}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../js/config.js?v=68"></script>
-<script src="../js/zonekit.js?v=92"></script>
+<script src="../js/zonekit.js?v=94"></script>
 <script src="placefit.js?v=64"></script>
 <script src="../shared/feas.js?v=86"></script>
 <script src="../shared/site-store.js?v=5"></script>
-<script src="urban.js?v=93"></script>
+<script src="../js/overlay.js?v=94"></script>
+<script src="urban.js?v=94"></script>
 <script src="../shared/workfile.js?v=1"></script>
 </body>
 </html>

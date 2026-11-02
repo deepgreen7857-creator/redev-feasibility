@@ -1365,7 +1365,7 @@ const INFRA = {
       const g = L.geoJSON(l.geom, { style: { color: '#b08900', weight: 1.5, fillColor: l.small ? '#e8590c' : '#f2c94c', fillOpacity: l.small ? 0.35 : 0.28 }, interactive: true })
         .bindTooltip(`획지 ${l.no} · 공동주택용지 ${fmt(l.area)}㎡${l.small ? ' — 1,000㎡ 미만이라 단독 개발이 어려움' : ''} · 누르면 옆 시설에 붙이기`, { sticky: true }).addTo(layer);
       g.on('click', ev => {
-        if (CUT.active || ZK.picking || drawH || editH || S.placing) return;
+        if (CUT.active || ZK.picking || drawH || editH || S.placing || (typeof RefOverlay !== "undefined" && RefOverlay.step)) return;
         L.DomEvent.stop(ev);
         const kinds = [['rel', '종교용지', inf.relGeom], ['park', '공원·녹지', inf.parkGeom], ['school', '학교용지', inf.schoolGeom]].filter(k => k[2]);
         const box = document.createElement('div'); box.className = 'zk-pop';
@@ -1516,7 +1516,7 @@ const INFRA = {
     };
     this.divStart = ev => start(ev);
     const start = ev => {
-      if (CUT.active || ZK.picking || drawH || editH || S.placing) return;
+      if (CUT.active || ZK.picking || drawH || editH || S.placing || (typeof RefOverlay !== "undefined" && RefOverlay.step)) return;
       L.DomEvent.stop(ev); LM.dragging.disable(); hit.closeTooltip();
       let lo = pr.u0 + 3, hi = pr.u1 - 3;
       // 공원 최소 면적(법정·제안 기준) 아래로는 못 가게: 나눔선이 갈 수 있는 끝을 미리 구함
@@ -1602,7 +1602,7 @@ const INFRA = {
     const shift = (ll, d) => Array.isArray(ll) ? ll.map(x => shift(x, d)) : L.latLng(ll.lat + d[0], ll.lng + d[1]);
     lyr.eachLayer(l => { const el = l.getElement && l.getElement(); if (el) el.style.cursor = 'move'; });
     lyr.on('mousedown', ev => {
-      if (CUT.active || ZK.picking || drawH || editH || S.placing) return;
+      if (CUT.active || ZK.picking || drawH || editH || S.placing || (typeof RefOverlay !== "undefined" && RefOverlay.step)) return;
       const pk = { religion: 'rel', park: 'park', school: 'school' }[kind];
       if (this.divNear && this.curPair && this.curPair.kinds.includes(pk) && this.divNear(ev)) { this.divStart(ev); return; }
       L.DomEvent.stop(ev);
@@ -2014,7 +2014,7 @@ function initLeaflet() {
   LM.on(L.Draw.Event.DRAWSTOP, () => { drawH = null; $id('drawBtn').textContent = '구역계 그리기'; });
   LM.on(L.Draw.Event.EDITED, () => { const l = editGroup.getLayers()[0]; if (l) setZoneGeom(S.region, l.toGeoJSON(), 0, '꼭짓점 고치기'); });
   LM.on('moveend', () => { const c = LM.getCenter(); Z.center = [c.lat, c.lng]; Z.zoom = LM.getZoom(); saveZ(); });
-  LM.on('click', e => { if (CUT.active && !CUT.pieces) return; if (S.placing) { INFRA.place(S.placing, e.latlng); return; } if (ZK.picking && !drawH && !editH) ZK.pick(e.latlng); });
+  LM.on('click', e => { if (typeof RefOverlay !== 'undefined' && RefOverlay.step) { RefOverlay.onClick(e); return; } if (CUT.active && !CUT.pieces) return; if (S.placing) { INFRA.place(S.placing, e.latlng); return; } if (ZK.picking && !drawH && !editH) ZK.pick(e.latlng); });
   const FullBtn = L.Control.extend({ options: { position: 'topleft' }, onAdd: () => {
     const b = L.DomUtil.create('a', 'leaflet-bar lmap-btn'); b.href = '#'; b.title = '지도 크게 보기 (Esc로 닫기)'; b.textContent = '⛶';
     L.DomEvent.on(b, 'click', ev => { L.DomEvent.stop(ev); ZK.toggleFull(); }); return b; } });
@@ -3206,7 +3206,34 @@ $id('geoInBtn').onclick = () => {
   if (R.geojson && !confirm(`${R.name} 구역계를 파일 내용으로 바꿀까요?`)) return;
   $id('geoFile').value = ''; $id('geoFile').click();
 };
-$id('geoFile').onchange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => importGeoJSONText(String(r.result)); r.readAsText(f); };
+$id('geoFile').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (/\.dxf$/i.test(f.name)) {   // CAD 구역도 — js/zonekit.js ZoneKit.readDxf (사업성 검토와 같은 코드)
+    statusMsg(`${f.name} 읽는 중…`);
+    const c = LM ? LM.getCenter() : null;
+    let r; try { r = await ZoneKit.readDxf(await f.arrayBuffer(), c ? [c.lat, c.lng] : null); } catch (er) { statusMsg(`${f.name}을(를) 읽지 못했습니다: ${er.message}`, true); return; }
+    if (r.error) { statusMsg(r.error, true); return; }
+    importGeoJSONText(JSON.stringify(r.fc));
+    statusMsg(ZoneKit.dxfNote(r, f.name));
+    return;
+  }
+  const r = new FileReader(); r.onload = () => importGeoJSONText(String(r.result)); r.readAsText(f);
+};
+// 참고 도면 겹쳐 보기 — js/overlay.js(사업성 검토와 같은 코드)를 이 화면 지도(LM)에 연결
+if (typeof RefOverlay !== 'undefined') {
+  RefOverlay.host = {
+    map: () => LM,
+    ensure: () => { if (S.source !== 'map') setSource('map'); initLeaflet(); },
+    picking: () => !!ZK.picking,
+    stopPicking: () => { ZK.picking = false; },
+    ids: { msg: 'zkRefMsg', also: 'zkMsg', align: 'zkRefAlign', toggle: 'zkRefToggle', remove: 'zkRefRemove', opacity: 'zkRefOpacity' },
+  };
+  $id('zkRefLoad').onclick = () => RefOverlay.load();
+  $id('zkRefAlign').onclick = () => RefOverlay.startAlign();
+  $id('zkRefToggle').onclick = () => RefOverlay.toggle();
+  $id('zkRefRemove').onclick = () => RefOverlay.remove();
+  $id('zkRefOpacity').oninput = e => RefOverlay.setOpacity(+e.target.value);
+}
 $id('geoOutBtn').onclick = () => {
   const R = D.regions[S.region];
   if (!R.geojson) { toast('내보낼 구역계가 없습니다'); return; }

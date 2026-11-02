@@ -506,6 +506,117 @@ const ZoneKit = {
   },
   reportClass(r) { return r === '포함' ? 'good' : ['갇힌 필지', '도로 잇기', '경계 필지', '경계 정리'].includes(r) ? 'auto' : r === '중복' ? '' : 'warn'; },
 
+  // ---------- CAD(DXF) 구역계 읽기 ----------
+  //  닫힌 폴리선(LWPOLYLINE·POLYLINE, 첫 점=끝 점 포함)을 모아, 레이어 이름에 '구역·경계·정비'가 있으면 그 레이어, 없으면 가장 큰 도형을 구역계로 씀
+  //  좌표계는 한국 측량 좌표 후보(GRS80·Bessel 중부·서부·동부·동해, UTM-K, 경위도)로 바꿔 보고, 지금 지도 가운데(ref: [lat, lon])에 가장 가까운 것을 고름
+  //  반환 { fc(경위도 FeatureCollection), crs, layer, count, pick, dist(km), all:[{layer, area}] } 또는 { error }
+  DXF_CRS: [
+    ['EPSG:5186 (GRS80 중부)', '+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs'],
+    ['EPSG:5185 (GRS80 서부)', '+proj=tmerc +lat_0=38 +lon_0=125 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs'],
+    ['EPSG:5187 (GRS80 동부)', '+proj=tmerc +lat_0=38 +lon_0=129 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs'],
+    ['EPSG:5188 (GRS80 동해)', '+proj=tmerc +lat_0=38 +lon_0=131 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs'],
+    ['EPSG:5174 (Bessel 중부, 보정)', '+proj=tmerc +lat_0=38 +lon_0=127.0028902777778 +k=1 +x_0=200000 +y_0=500000 +ellps=bessel +towgs84=-115.80,474.99,674.11,1.16,-2.31,-1.63,6.43 +units=m +no_defs'],
+    ['EPSG:2097 (Bessel 중부)', '+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=500000 +ellps=bessel +towgs84=-115.80,474.99,674.11,1.16,-2.31,-1.63,6.43 +units=m +no_defs'],
+    ['EPSG:5181 (GRS80 중부 50만)', '+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=500000 +ellps=GRS80 +units=m +no_defs'],
+    ['EPSG:5179 (UTM-K)', '+proj=tmerc +lat_0=38 +lon_0=127.5 +k=0.9996 +x_0=1000000 +y_0=2000000 +ellps=GRS80 +units=m +no_defs'],
+  ],
+  async loadProj4() {
+    if (typeof proj4 !== 'undefined') return;
+    await new Promise((ok, bad) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js'; s.onload = ok; s.onerror = () => bad(new Error('좌표 변환 도구(proj4)를 불러오지 못했습니다')); document.head.append(s); });
+  },
+  // DXF 글자 → 닫힌 폴리선 [{layer, pts:[[x,y]...]}] (ASCII DXF)
+  dxfPolys(text) {
+    const L = text.split(/\r?\n/), out = [];
+    let i = 0, inEnt = false;
+    const pairs = [];
+    for (; i + 1 < L.length; i += 2) pairs.push([L[i].trim(), L[i + 1].trim()]);
+    let cur = null, poly = null;
+    const close = () => {
+      if (cur && cur.type === 'LWPOLYLINE') finish(cur);
+      cur = null;
+    };
+    const finish = e => {
+      let pts = e.pts.filter(p => isFinite(p[0]) && isFinite(p[1]));
+      if (pts.length < 3) return;
+      const f = pts[0], l = pts[pts.length - 1], same = Math.hypot(f[0] - l[0], f[1] - l[1]) < 1e-6;
+      if (!(e.closed || same)) return;
+      if (same) pts = pts.slice(0, -1);
+      if (pts.length < 3) return;
+      out.push({ layer: e.layer || '0', pts });
+    };
+    for (const [c, v] of pairs) {
+      if (c === '0') {
+        if (v === 'SECTION' || v === 'ENDSEC') { close(); inEnt = false; }
+        if (cur && cur.type === 'LWPOLYLINE') close();
+        if (v === 'LWPOLYLINE') { cur = { type: 'LWPOLYLINE', layer: '', pts: [], closed: false }; continue; }
+        if (v === 'POLYLINE') { poly = { layer: '', pts: [], closed: false }; cur = { type: 'POLYLINE' }; continue; }
+        if (v === 'VERTEX' && poly) { cur = { type: 'VERTEX', p: [NaN, NaN] }; poly.pts.push(cur.p); continue; }
+        if (v === 'SEQEND' && poly) { finish(poly); poly = null; cur = null; continue; }
+        if (cur && cur.type !== 'VERTEX') cur = null;
+        if (cur && cur.type === 'VERTEX' && v !== 'VERTEX') cur = null;
+        continue;
+      }
+      if (!cur) continue;
+      if (cur.type === 'LWPOLYLINE') {
+        if (c === '8') cur.layer = v;
+        else if (c === '70') cur.closed = (parseInt(v, 10) & 1) === 1;
+        else if (c === '10') cur.pts.push([parseFloat(v), NaN]);
+        else if (c === '20' && cur.pts.length) cur.pts[cur.pts.length - 1][1] = parseFloat(v);
+      } else if (cur.type === 'POLYLINE' && poly) {
+        if (c === '8') poly.layer = v;
+        else if (c === '70') poly.closed = (parseInt(v, 10) & 1) === 1;
+      } else if (cur.type === 'VERTEX') {
+        if (c === '10') cur.p[0] = parseFloat(v);
+        else if (c === '20') cur.p[1] = parseFloat(v);
+      }
+    }
+    close();
+    return out;
+  },
+  async readDxf(buf, ref) {
+    let text;
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { text = new TextDecoder('euc-kr').decode(buf); }
+    if (/^AutoCAD Binary DXF/.test(text.slice(0, 22))) return { error: '바이너리 DXF는 읽지 못합니다. CAD에서 ASCII DXF로 다시 저장해 주세요.' };
+    if (!/\bSECTION\b/.test(text.slice(0, 2000))) return { error: 'DXF 파일이 아닙니다. CAD에서 DXF(ASCII)로 저장해 주세요. DWG는 바로 읽지 못합니다.' };
+    const polys = this.dxfPolys(text);
+    if (!polys.length) return { error: '닫힌 폴리선(경계선)이 없습니다. 구역 경계를 닫힌 폴리선(PLINE, 닫기)으로 그린 DXF가 필요합니다.' };
+    const shoe = pts => Math.abs(pts.reduce((a, p, k) => { const q = pts[(k + 1) % pts.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0) / 2);
+    polys.forEach(p => { p.area = shoe(p.pts); });
+    const pref = polys.filter(p => /구역|경계|정비|BOUND|ZONE|AREA/i.test(p.layer));
+    const pool = pref.length ? pref : polys;
+    const pick = pool.reduce((a, b) => (b.area > a.area ? b : a));
+    const layerPolys = pref.length ? pool.filter(p => p.layer === pick.layer && p.area > pick.area * 0.01) : [pick];
+    // 좌표계 고르기
+    const [x0, y0] = pick.pts[0];
+    const inKR = (lon, lat) => lon > 124 && lon < 132 && lat > 33 && lat < 39.5;
+    let best = null;
+    if (Math.abs(x0) <= 180 && Math.abs(y0) <= 90 && inKR(x0, y0)) best = { name: '경위도(WGS84)', fn: p => p, lon: x0, lat: y0 };
+    else {
+      await this.loadProj4();
+      const dist = (a, b) => { const r = Math.PI / 180, dLat = (b[0] - a[0]) * r, dLon = (b[1] - a[1]) * r; const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLon / 2) ** 2; return 12742 * Math.asin(Math.sqrt(h)); };
+      this.DXF_CRS.forEach(([name, def], k) => {
+        let ll; try { ll = proj4(def, 'WGS84', [x0, y0]); } catch (e) { return; }
+        if (!inKR(ll[0], ll[1])) return;
+        const d = ref ? dist(ref, [ll[1], ll[0]]) : k;   // 기준점이 없으면 목록 순서(중부 GRS80 먼저)
+        if (!best || d < best.d) best = { name, fn: p => proj4(def, 'WGS84', p), lon: ll[0], lat: ll[1], d };
+      });
+    }
+    if (!best) return { error: '좌표가 우리나라 측량 좌표가 아닙니다(도면 자체 좌표). 그림으로 바꿔 "참고 도면 겹쳐 보기"로 두 점을 맞춘 뒤 따라 그려 주세요.' };
+    const feats = layerPolys.map(p => { const ring = p.pts.map(q => best.fn(q)); ring.push(ring[0]); return { type: 'Feature', properties: { layer: p.layer }, geometry: { type: 'Polygon', coordinates: [ring] } }; });
+    return {
+      fc: { type: 'FeatureCollection', features: feats }, crs: best.name, layer: pick.layer, count: feats.length, total: polys.length,
+      dist: best.d, layers: [...new Set(polys.map(p => p.layer))],
+    };
+  },
+  // 결과 안내 문구(두 화면 공통)
+  dxfNote(r, fname) {
+    const far = r.dist !== undefined && r.dist > 20;
+    return `${fname}: 레이어 '${r.layer}'의 닫힌 경계 ${r.count}개(전체 닫힌 도형 ${r.total}개)를 ${r.crs} 좌표로 읽었습니다.`
+      + (far ? ` 지금 지도 위치에서 ${Math.round(r.dist)}km 떨어져 있습니다 — 좌표계가 다르면 위치가 크게 어긋나니 지적도와 겹치는지 확인하세요.` : '')
+      + (/Bessel/.test(r.crs) ? ' 옛 Bessel 좌표는 2097·5174가 약 250m 차이 나므로, 지적선과 한쪽으로 밀려 있으면 CAD에서 좌표계를 확인해 주세요.' : '')
+      + ' 필지 경계와 어긋나면 "그린 구역을 필지에 맞추기"로 맞추세요.';
+  },
+
   // 엑셀·CSV에서 지번 목록 읽기. rows: 2차원 배열
   //  반환 { list, base, skipped, how } — list: 지번(소재지 열이 있으면 '소재지 지번'), base: 소재지 열에서 뽑은 기준 동 주소
   //  - 제목 칸은 띄어쓰기를 무시하고 찾음('지 번'·'소재지번'·'번지'), 제목 줄은 칸이 2개 이상 찬 줄만(표 제목 줄 오인 방지)
