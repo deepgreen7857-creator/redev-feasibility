@@ -89,11 +89,22 @@ td.rc .l3{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden
 .s-main .l3{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .filters button.on{background:var(--fg);color:var(--panel);border-color:var(--fg)}
 @media (max-width:700px){h1{font-size:19px}}
-.idea{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--go);border-radius:10px;padding:10px 14px;margin:0 0 14px}
-.idea>summary{cursor:pointer;font-weight:700;list-style:none}.idea>summary::-webkit-details-marker{display:none}
-.idea .tag{display:inline-block;font-size:12px;font-weight:600;color:var(--go);background:var(--go-bg);border-radius:6px;padding:1px 7px;margin-right:6px}
-.idea .by{font-size:12px;color:var(--muted);font-weight:400;margin-left:6px}
-.idea .sum{margin:8px 0 4px;font-size:14px}.idea h4{margin:10px 0 4px;font-size:14px}.idea ul{margin:0;padding-left:20px;font-size:14px}.idea li{margin:2px 0}
+:root{--note-bg:#fff4a8;--note-fg:#3d3514;--note-tag:#8a6d00;--note-shadow:rgba(0,0,0,.18)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--note-bg:#4a4218;--note-fg:#f3ebc4;--note-tag:#e8cf6a;--note-shadow:rgba(0,0,0,.5)}}
+:root[data-theme="dark"]{--note-bg:#4a4218;--note-fg:#f3ebc4;--note-tag:#e8cf6a;--note-shadow:rgba(0,0,0,.5)}
+/* 착안 노트: 화면 오른쪽 끝에 얇은 포스트잇 띠로 붙여 두고, 누르면 포스트잇처럼 펼쳐짐 */
+#ideas{position:fixed;right:0;top:110px;z-index:50;display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none}
+.idea{pointer-events:auto;background:var(--note-bg);color:var(--note-fg);border-radius:3px 0 0 3px;box-shadow:-2px 3px 8px var(--note-shadow);margin:0;width:34px;max-height:190px;overflow:hidden}
+.idea>summary{cursor:pointer;list-style:none;writing-mode:vertical-rl;padding:10px 8px;font-size:12.5px;font-weight:600;line-height:1.3;max-height:190px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.idea>summary::-webkit-details-marker{display:none}
+.idea .tag{font-weight:700;color:var(--note-tag);margin-bottom:6px}
+.idea .by{display:none}
+.idea[open]{width:min(360px,calc(100vw - 24px));max-height:72vh;overflow:auto;padding:4px 16px 14px;border-radius:3px;margin-right:12px;transform:rotate(-0.8deg)}
+.idea[open]>summary{writing-mode:horizontal-tb;white-space:normal;max-height:none;padding:8px 0 4px;font-size:14px;line-height:1.45}
+.idea[open] .tag{display:inline-block;margin:0 6px 0 0}
+.idea[open] .by{display:inline;font-size:12px;font-weight:400;opacity:.75;margin-left:6px}
+.idea .sum{margin:6px 0 4px;font-size:13.5px}.idea h4{margin:10px 0 3px;font-size:13.5px}.idea ul{margin:0;padding-left:18px;font-size:13px}.idea li{margin:2px 0}
+@media (max-width:700px){#ideas{position:static;align-items:stretch;margin:0 0 12px}.idea{width:auto;max-height:none;border-radius:3px}.idea>summary{writing-mode:horizontal-tb;white-space:normal;padding:8px 12px}.idea .tag{margin:0 6px 0 0}.idea[open]{width:auto;margin-right:0;transform:none}}
 </style>
 </head>
 <body>
@@ -251,7 +262,9 @@ Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../
 <script>
 fetch('ideas.json',{cache:'no-store'}).then(r=>r.json()).then(list=>{const e=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 list.sort((a,b)=>b.date.localeCompare(a.date));
-document.getElementById('ideas').innerHTML=list.map((x,i)=>`<details class="idea"${i===0?' open':''}><summary><span class="tag">오늘의 착안</span>${e(x.date)} · ${e(x.title)}<span class="by">${e(x.by||'정민')} 노트</span></summary><p class="sum">${e(x.summary||'')}</p>${(x.sections||[]).map(s=>`<h4>${e(s.h)}</h4><ul>${s.items.map(i=>`<li>${e(i)}</li>`).join('')}</ul>`).join('')}</details>`).join('')}).catch(()=>{});
+document.getElementById('ideas').innerHTML=list.map((x,i)=>`<details class="idea"><summary title="${e(x.date)} · ${e(x.title)}"><span class="tag">착안</span>${e(String(x.date).slice(5).replace('-','.'))} ${e(x.title)}<span class="by">${e(x.by||'정민')} 노트</span></summary><p class="sum">${e(x.summary||'')}</p>${(x.sections||[]).map(s=>`<h4>${e(s.h)}</h4><ul>${s.items.map(i=>`<li>${e(i)}</li>`).join('')}</ul>`).join('')}</details>`).join('')}).catch(()=>{});
+// 착안 포스트잇: 바깥을 누르면 접힘
+document.addEventListener('click',ev=>{if(!ev.target.closest('#ideas'))document.querySelectorAll('#ideas details[open]').forEach(d=>d.open=false)});
 </script>
 </body>
 </html>
