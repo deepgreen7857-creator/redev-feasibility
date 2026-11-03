@@ -90,15 +90,22 @@ const Tabs = {
       const others = (S.meta.zoningList || []).filter(z => z !== S.meta.zoning);
       $('#zoningListNote').textContent = others.length ? `구역에 ${others.join(', ')}도 걸쳐 있습니다.` : '';
       const fz = FAR_BY_ZONING[S.meta.zoning];
+      // 계획 용적률 자동: 직접 고치지 않았으면 용도지역의 허용 용적률(인천 2030 기본계획, 그 밖은 서울시 조례 참고값)
+      const sugg = (() => {
+        const i = S.criteria.region === 'incheon' && S.meta.zoning && window.Quick ? (Quick.far().by_zone || {})[Quick.zoneKey(S.meta.zoning)] : null;
+        return i ? i.allowed : fz ? fz.seoul : 0;
+      })();
+      if (!S.plan.farManual && sugg && num(S.plan.far) !== sugg) { S.plan.far = sugg; bindInputs($('#tab-overview')); }
+      if ($('#farBadge')) $('#farBadge').hidden = !!S.plan.farManual || !sugg;
       // 인천이면 2030 기본계획(빠른 사업성과 같은 표) 기준·허용·상한, 그 밖은 서울시 조례 참고값
       const inc = S.criteria.region === 'incheon' && S.meta.zoning && window.Quick ? (Quick.far().by_zone || {})[Quick.zoneKey(S.meta.zoning)] : null;
       $('#farHint').innerHTML = inc
-        ? `참고: 인천 2030 기본계획 기준 ${inc.base}% · 허용 ${inc.allowed}% · 상한 ${inc.max}%. 비워 두어도 ★빠른 사업성은 용도지역으로 따로 계산합니다. <button type="button" class="link-btn" data-far="${inc.allowed}">허용 ${inc.allowed}% 넣기</button>`
+        ? `참고: 인천 2030 기본계획(정비사업) 기준 ${inc.base}% · 허용 ${inc.allowed}% · 상한 ${inc.max}%${fz ? ` (법령 상한 ${fz.max}%, 서울 조례 ${fz.seoul}%는 인천에 적용 안 됨)` : ''}. ${S.plan.farManual ? `<button type="button" class="link-btn" data-far="${inc.allowed}">자동(허용 ${inc.allowed}%)으로 되돌리기</button>` : ''}`
         : fz
-        ? `참고: 서울시 조례 ${fz.seoul}%, 법정 상한 ${fz.max}%. 정비계획으로 높아질 수 있습니다. <button type="button" class="link-btn" data-far="${fz.seoul}">${fz.seoul}% 넣기</button>`
+        ? `참고: 서울시 조례 ${fz.seoul}%, 법정 상한 ${fz.max}%. 정비계획으로 높아질 수 있습니다. ${S.plan.farManual ? `<button type="button" class="link-btn" data-far="${fz.seoul}">자동(${fz.seoul}%)으로 되돌리기</button>` : ''}`
         : '';
       const fb = $('#farHint [data-far]');
-      if (fb) fb.onclick = () => { S.plan.far = num(fb.dataset.far); App.update(); };
+      if (fb) fb.onclick = () => { S.plan.far = num(fb.dataset.far); S.plan.farManual = false; App.update(); };
       // 1단계는 계획 조건만. 면적은 2단계(구역계)에서 구역을 정해야 생김
       $('#planStats').innerHTML = `
         <div><span>사업 유형</span><strong>${TYPES[S.meta.type].label}</strong><em>${TYPES[S.meta.type].law}</em></div>
@@ -1019,6 +1026,7 @@ function boot() {
   // 직접 고친 위치·용도지역은 이후 자동 입력으로 덮어쓰지 않음
   $('#locInput').addEventListener('input', () => { S.meta.locationManual = true; });
   $('#zoningSelect').addEventListener('change', () => { S.meta.zoningManual = true; App.update(); });
+  $('#farInput').addEventListener('input', () => { S.plan.farManual = true; });
 
   // 각 단계 아래에 이전/다음 버튼
   const order = Object.keys(Tabs);
