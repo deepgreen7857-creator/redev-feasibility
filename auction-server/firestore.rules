@@ -34,5 +34,9 @@ service cloud.firestore {
     match /courtDocShared/{id}  { allow read: if isAdmin(); allow write: if false; }
     // 자료 보기(jbslab.co.kr/data) — 미니PC 원본 하드 사본(감정평가서·명세서·현황조사서·사진) 열기 주소. 관리자만 읽음, 쓰기는 수집 서버만
     match /dataCases/{id}       { allow read: if isAdmin(); allow write: if false; }
+    // 정비사업 검토 작업 저장(jbslab.co.kr 모든 검토 화면의 [작업 저장·불러오기] → 홈페이지에 저장) — 관리자만 읽고 씀. 토지조서 등이 들어 있을 수 있음
+    match /jbsWork/{id}         { allow read, write: if isAdmin();
+      match /chunks/{n}         { allow read, write: if isAdmin(); }
+    }
   }
 }

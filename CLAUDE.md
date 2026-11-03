@@ -86,6 +86,7 @@
 ## 작업 저장·불러오기 (shared/workfile.js) — 2026-11-02
 - 모든 화면(본 화면·/urban·/traffic·/env·/arch·/landscape) 오른쪽 아래 [작업 저장·불러오기]. 새 페이지에도 `<script src="…/shared/workfile.js">`를 넣을 것
 - 작업 = 이 브라우저의 검토 데이터 전체(localStorage 'jbs-*'·'jbs.*'·'jbsc.project.v1', 캐시·화면 설정·경매·로그인 키 제외). 이 컴퓨터에 이름 붙여 저장(IndexedDB 'jbs-work') / 파일(.jbs.json) 내려받기·불러오기 / 새 작업 시작(사업성 가정값 'jbs-feas-assume-v1'은 남김). 불러오기·새 작업 전 자동 백업(최근 3개)
+- 홈페이지에 저장(2026-11-04, 사용자 요구 '지난 검토를 언제든 불러올 수 있어야'): Firestore 'jbsWork/{id}'(+ chunks 700KB 나눔, 관리자만 — auction-server/firestore.rules). 불러오기·새 작업·주소 바꿔 예전 구역 지울 때 이 컴퓨터+홈페이지 자동 백업(JbsWork.backup). 규칙을 고치면 사용자가 auction-server 폴더에서 `firebase deploy --only firestore:rules`
 - 새 저장 키를 만들 때 이름을 'jbs-' 또는 'jbs.'로 시작하면 자동으로 작업에 포함됨. 다시 받을 수 있는 큰 자료는 키 이름에 'cache'를 넣거나 저장하지 말 것
 - 저장 공간: JbsSite.save는 주변 건물(site.context)을 저장하지 않음(/arch는 창 안에서만 기억). 저장 실패 시 'jbs-storage-full' 이벤트 → 작업 버튼이 빨갛게 바뀜
 

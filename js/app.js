@@ -1020,7 +1020,8 @@ function boot() {
           const inside = turf.booleanPointInPolygon(pt, S.area.geojson.type === 'Feature' ? S.area.geojson : turf.feature(S.area.geojson));
           far = !inside && turf.distance(pt, turf.centroid(S.area.geojson), { units: 'meters' }) > 200;
         } catch (e2) { far = false; }
-        if (far && confirm(`2단계 구역계에 다른 곳의 구역(${S.meta.location || '이전 구역'})이 남아 있습니다.\n지우고 새 주소에서 시작할까요? 토지·건축물 조서도 함께 비웁니다.\n(취소하면 예전 구역을 그대로 둡니다)`)) {
+        if (far && confirm(`2단계 구역계에 다른 곳의 구역(${S.meta.location || '이전 구역'})이 남아 있습니다.\n지우고 새 주소에서 시작할까요? 토지·건축물 조서도 함께 비웁니다.\n(지우기 전에 지금 작업을 홈페이지와 이 컴퓨터에 자동 백업합니다. 취소하면 예전 구역을 그대로 둡니다)`)) {
+          if (window.JbsWork) { msg.textContent = '예전 작업 백업 중…'; await JbsWork.backup('주소 바꾸기 전 자동 백업'); }
           S.area.geojson = null; S.area.drawnArea = 0; S.area.importedKey = ''; S.area.mode = 'ledger';
           S.lands = []; S.buildings = [];
           if (MapView.items) MapView.items.clearLayers();
