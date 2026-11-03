@@ -6,7 +6,7 @@
   function review(C, p) {
     const d = item(C, 'landscape_dev_redev'), b = item(C, 'landscape_building');
     const a = num(p.siteArea), lim = p.urban === '아니오' ? (d.도시지역외_값 || d.값) : d.값;
-    const dev = d.값 === null ? '기준확인필요' : a === null ? '○○' : a >= lim ? '심의 대상' : '대상 아님';
+    const dev = d.값 === null ? '기준확인필요' : p.type === 'improve' ? '대상 아님(주거환경개선사업 제외)' : a === null ? '○○' : a >= lim ? '심의 대상' : '대상 아님';
     const B = b.값 || {}, fl = num(p.floors), gfa = num(p.gfa), sale = p.sale !== '아니오';
     let bld, bldWho = '';
     if (p.keyArea === '예' || p.district === '예') { bld = '심의 대상'; bldWho = p.district === '예' ? '경관지구 건축물' : '중점경관관리구역 건축물(경관계획이 정한 것)'; }

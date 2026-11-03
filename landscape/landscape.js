@@ -119,7 +119,7 @@
       <h2>2. 대상지 현황</h2>
       <table><tr><th style="width:120px">사업 유형</th><td>${t(TYPES[p.type])}</td><th style="width:110px">위치</th><td>${t(p.loc)}</td></tr>
       <tr><th>구역면적</th><td>${fmt(p.siteArea, 1)}㎡</td><th>용도지역</th><td>${t(p.zoning)}</td></tr>
-      <tr><th>주변 평균 / 최고</th><td>${fmt(p.aroundFloors)}층 / ${fmt(p.aroundMax)}층</td><th>주요 가로</th><td>${t(p.street)}</td></tr></table>
+      <tr><th>주변 평균 / 최고</th><td>${fmt(p.aroundFloors, 1)}층 / ${fmt(p.aroundMax)}층</td><th>주요 가로</th><td>${t(p.street)}</td></tr></table>
 
       <h2>3. 경관 관리구역 해당 여부</h2>
       <p>중점경관관리구역 ${t(p.keyArea || '')}, 경관지구 ${t(p.district || '')}</p>
@@ -131,7 +131,7 @@
 
       <h2>5. 높이 계획</h2>
       ${A ? `<table><tr><th style="width:150px">최고 층수·높이</th><td>${A.maxFloors}층 · 약 ${fmt(A.maxHeight, 1)}m</td></tr>
-        <tr><th>주변 대비</th><td>주변 평균 ${fmt(p.aroundFloors)}층의 ${r.h.ratio === null ? '○○' : r.h.ratio}배 ${badge(r.h.result)} <span class="note">(주변 평균 대비 ${r.h.lim}배 이상이면 '변화 큼' — 내부 검토 기준)</span></td></tr>
+        <tr><th>주변 대비</th><td>주변 평균 ${fmt(p.aroundFloors, 1)}층의 ${r.h.ratio === null ? '○○' : r.h.ratio}배 ${badge(r.h.result)} <span class="note">(주변 평균 대비 ${r.h.lim}배 이상이면 '변화 큼' — 내부 검토 기준)</span></td></tr>
         <tr><th>층수 배분</th><td>북쪽 줄을 높게, 남쪽 줄을 낮게(남저북고) — 동별 층수: ${blds.map(b => `${b.id}동 ${b.floors}F`).join(', ')}</td></tr>
         <tr><th>경계부 층수 점감</th><td>${tall.length ? `${badge('검토 필요')} 경계 30m 안 주변 평균 2배 이상: ${tall.join('·')}동` : (h.num(p.aroundFloors) ? badge('해당 없음') : '주변 평균 층수를 넣으면 판정')}</td></tr></table>`
         : `<p>계획 최고 ${fmt(p.floors)}층 · 주변 평균 대비 ${r.h.ratio === null ? '○○' : r.h.ratio}배 ${badge(r.h.result)}</p>`}
