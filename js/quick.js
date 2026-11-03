@@ -59,7 +59,9 @@ const Quick = {
     const A = JbsFeas.get();
     // 용도지역은 개요(주소 검색·구역계로 자동 판정)를 따라감. 이 화면에서 직접 고른 뒤에는 그대로 둠(zoneManual)
     const syncZone = () => { if (!q.zoneManual && S.meta.zoning && q.zoneSrc !== S.meta.zoning) { q.zone = this.zoneKey(S.meta.zoning); q.zoneSrc = S.meta.zoning; } };
-    if (q.init) { if (!q.infraLevel) q.infraLevel = 'avg'; syncZone(); this.FEAS_KEYS.forEach(k => { q[k] = A[k]; }); return q; }
+    // 조합원 수도 처음 연 때 값에 고정되던 것 → 구역·조서(건축물 전유 호수·건물 없는 대지·소유자 수)로 다시 추정. 직접 고치면 유지(membersManual)
+    const syncMembers = () => { if (q.membersManual) return; try { const m = Math.round(num(Assume.defaults().members)); if (m > 0 && m !== num(q.members)) q.members = m; } catch (e) { /* 조서 없음 */ } };
+    if (q.init) { if (!q.infraLevel) q.infraLevel = 'avg'; syncZone(); syncMembers(); this.FEAS_KEYS.forEach(k => { q[k] = A[k]; }); return q; }
     const a = Assume.defaults();
     Object.assign(q, {
       init: true, zone: this.zoneKey(S.meta.zoning), farStep: 'calc', farCustom: 250, infraLevel: 'avg', infraPct: 25,
@@ -569,6 +571,7 @@ Tabs.quick = {
       if ($('#qkToReview')) $('#qkToReview').onclick = () => { const st = Quick.toReview(); if (st) { Quick.reviewLinks(); $('#qkReviewBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } };
       $('#qkZoneFromMeta').onclick = () => { S.quick.zone = Quick.zoneKey(S.meta.zoning); S.quick.zoneSrc = S.meta.zoning; S.quick.zoneManual = false; App.update(true); };
       $('#qk_zone').addEventListener('change', () => { S.quick.zoneManual = true; });
+      if ($('#qk_members')) $('#qk_members').addEventListener('input', () => { S.quick.membersManual = true; });
     }
     this.refresh();
     Quick.reviewLinks();
