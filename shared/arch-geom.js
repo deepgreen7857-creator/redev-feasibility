@@ -155,7 +155,7 @@
     const wingC = R4(L1 - d * 0.62, y0 + w, L1, y0 + w + c);
     let parts = base.parts.concat(wingU.flat(), [wingC]), cores = base.cores.concat([wingC]), units = base.units.concat(wingU);
     if (mirror) { const f = q => q.map(([x, y]) => [L1 - x, y]); parts = parts.map(f); cores = cores.map(f); units = units.map(rs => rs.map(f)); }
-    return { form: 'L', t, n: a + b, a, b, L: L1, D: y0 + L2, parts, cores, divs: [], units };
+    return { form: 'L', t, n: a + b, a, b, mir: !!mirror, L: L1, D: y0 + L2, parts, cores, divs: [], units };
   }
   // ㅁ형(중정형): 한 변 k세대 폭의 정방형 둘레 동, 가운데 중정
   //  k = 한 변 세대 수(6·4), k = 0이면 가장 작은 중정(동 깊이 2배·18m 이상)으로 둘레를 정함
@@ -306,9 +306,16 @@
       return null;
     }
     // 그 자리에 놓았을 때 채광창·정북 일조 등으로 정해지는 최고 층수(놓기 전에 미리 봄)
+    //  층수와 관계없는 값이라 같은 모듈·자리는 한 번만 계산해 둠(세 번 훑기·층수별 반복에서 다시 씀)
+    //  같은 구역(site 객체)·같은 방향·조건이면 층수별 배치(alternatives)끼리도 같이 씀
+    const capKey = [opt.angle || 0, opt.winRatio || 0, opt.southBase ? 1 : 0, opt.parkWidth || 0, opt.lowriseCap || 0, opt.lowriseDist || 0, opt.spacing, A.floorHeight_m, A.groundExtra_m, A.maxFloors, JSON.stringify(opt.edgeW || []), JSON.stringify(opt.sun || {})].join('|');
+    if (!site.__capc || site.__capc.key !== capKey) { try { Object.defineProperty(site, '__capc', { value: { key: capKey, map: new Map() }, configurable: true, writable: true, enumerable: false }); } catch (e) { /* 얼린 객체면 이번 배치에서만 */ } }
+    const CAPC = site.__capc && site.__capc.key === capKey ? site.__capc.map : new Map();
     function capAt(m, x, y) {
-      const poly = hull(m.parts.flat().map(p => rot([x + p[0], y + p[1]], th)));
-      return capFloors({ poly, form: m.form, inner: m.inner || 0 });
+      const k = m.t + m.form + m.n + '|' + (m.a || 0) + (m.b || 0) + (m.mir ? 'm' : '') + '|' + m.L.toFixed(2) + 'x' + m.D.toFixed(2) + '|' + x + '|' + y;
+      let c = CAPC.get(k);
+      if (c === undefined) { const poly = hull(m.parts.flat().map(p => rot([x + p[0], y + p[1]], th))); c = capFloors({ poly, form: m.form, inner: m.inner || 0 }); CAPC.set(k, c); }
+      return c;
     }
     function pack(F) {
       const blds = [], cols = {}; types.forEach(t => { cols[t] = 0; });
@@ -331,8 +338,16 @@
               for (const m0 of MODS[t]) {
                 if (pass === 0 && over(m0)) break;
                 if (!fits(m0, x, y)) continue;
-                const m = flip(m0, x), c = capAt(m, x, y), fl = Math.min(F, c);
-                if (pass < 2 ? c < F : fl < A.minFloors) continue;
+                const m = flip(m0, x);
+                // 가벼운 인동간격 검사를 먼저, 높이 제한 계산은 그다음(느림)
+                if (pass < 2) {
+                  const bx = blocker(m, x, y, blds, F);
+                  if (bx !== null) { if (capAt(m, x, y) >= F) jump = Math.min(jump, bx); continue; } // 높이가 모자라는 모듈은 건너뛰기 거리 계산에서 뺌(예전과 같은 동작)
+                  if (capAt(m, x, y) < F) continue;
+                  pick = m; pf = F; break;
+                }
+                const fl = Math.min(F, capAt(m, x, y));
+                if (fl < A.minFloors) continue;
                 const bx = blocker(m, x, y, blds, fl);
                 if (bx === null) { pick = m; pf = fl; break; }
                 jump = Math.min(jump, bx);
@@ -360,9 +375,15 @@
 
     // 정북 일조·경계부 저층 상한 → 동별 최고 층수
     const E = edges(site.pts);
+    // 이 거리보다 먼 변은 어떤 높이 제한(정북 일조·채광창·저층 인접)에도 걸리지 않음 → 건너뜀(거리는 외접사각형끼리로 어림, 실제 거리보다 짧거나 같음)
+    const Hm = H(A.maxFloors), sr = num0((opt.sun || {}).높이10m초과_높이비, 0.5);
+    const REACH = Math.max(Hm * sr, opt.winRatio ? Hm / opt.winRatio : 0, opt.lowriseCap ? num0(opt.lowriseDist, 0) : 0) + 2;
+    E.forEach(e => { e.bb = [Math.min(e.a[0], e.b[0]), Math.min(e.a[1], e.b[1]), Math.max(e.a[0], e.b[0]), Math.max(e.a[1], e.b[1])]; });
     function capFloors(b) {
       let cap = A.maxFloors;
+      const xs = b.poly.map(p => p[0]), ys = b.poly.map(p => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
       E.forEach((e, i) => {
+        if (Math.max(e.bb[0] - x1, x0 - e.bb[2], 0) ** 2 + Math.max(e.bb[1] - y1, y0 - e.bb[3], 0) ** 2 > REACH * REACH) return;
         const tag = site.tags[i];
         const d = Math.min(...b.poly.map(p => segDist(p, e.a, e.b)));
         // 사이에 도로·공원 등이 있으면 공동주택은 그 중심선을 인접 대지경계선으로 봄(시행령 제86조⑥) → 폭의 절반을 더함
