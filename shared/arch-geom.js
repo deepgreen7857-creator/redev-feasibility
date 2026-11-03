@@ -155,18 +155,20 @@
     const wingC = R4(L1 - d * 0.62, y0 + w, L1, y0 + w + c);
     let parts = base.parts.concat(wingU.flat(), [wingC]), cores = base.cores.concat([wingC]), units = base.units.concat(wingU);
     if (mirror) { const f = q => q.map(([x, y]) => [L1 - x, y]); parts = parts.map(f); cores = cores.map(f); units = units.map(rs => rs.map(f)); }
-    return { form: 'L', t, n: a + b, L: L1, D: y0 + L2, parts, cores, divs: [], units };
+    return { form: 'L', t, n: a + b, a, b, L: L1, D: y0 + L2, parts, cores, divs: [], units };
   }
   // ㅁ형(중정형): 한 변 k세대 폭의 정방형 둘레 동, 가운데 중정
+  //  k = 한 변 세대 수(6·4), k = 0이면 가장 작은 중정(동 깊이 2배·18m 이상)으로 둘레를 정함
   function court(U, c, t, k) {
-    const w = U[t].폭, d = U[t].깊이, S = k * w + (k / 2) * c;
-    if (S - 2 * d < Math.max(2 * d, 18)) return null; // 중정이 너무 좁으면 쓰지 않음
+    const w = U[t].폭, d = U[t].깊이, S = k ? k * w + (k / 2) * c : 2 * d + Math.max(2 * d, 18);
+    if (S - 2 * d < Math.max(2 * d, 18) - 1e-6) return null; // 중정이 너무 좁으면 쓰지 않음
     const n = Math.floor(4 * (S - d) / (w + c / 2) / 2) * 2;
     const parts = [R4(0, 0, S, d), R4(0, S - d, S, S), R4(0, d, d, S - d), R4(S - d, d, S, S - d)];
     const cores = [R4(d * 0.55, d * 0.55, d, d), R4(S - d, d * 0.55, S - d * 0.55, d), R4(S - d, S - d, S - d * 0.55, S - d * 0.55), R4(d * 0.55, S - d, d, S - d * 0.55)];
     const divs = [], m = Math.max(1, Math.round((S - 2 * d) / (w + c / 2)));
     for (let i = 1; i < m; i++) { const z = d + (S - 2 * d) * i / m; divs.push([[z, 0], [z, d]], [[z, S - d], [z, S]], [[0, z], [d, z]], [[S - d, z], [S, z]]); }
-    return { form: 'court', t, n, L: S, D: S, parts, cores, divs };
+    if (n < 4) return null;
+    return { form: 'court', t, n, L: S, D: S, parts, cores, divs, inner: S - 2 * d };
   }
   // 형태별 후보 모듈(큰 것 → 작은 것 순). 혼합은 forms 배열 순서대로 시도
   // 탑상·Y형은 탑상 세대 치수(평면[t].탑상 — 실제 사례 값)가 있으면 그 폭·깊이로 그림(없으면 판상 치수)
@@ -174,8 +176,9 @@
   function modulesFor(U, c, t, form) {
     if (form === 'tower') return [tower(towerU(U, t), c, t)];
     if (form === 'Y') return [yForm(towerU(U, t), c, t)];
-    if (form === 'L') return [lForm(U, c, t, 4, 2, false), lForm(U, c, t, 2, 2, false)];
-    if (form === 'court') return [court(U, c, t, 6), court(U, c, t, 4)].filter(Boolean);
+    // ㄱ형: 판상 4호·2호 + 꺾인 날개 2호·1호(작은 것까지 있어야 큰 평형도 좁은 자리에 들어감)
+    if (form === 'L') return [lForm(U, c, t, 4, 2, false), lForm(U, c, t, 4, 1, false), lForm(U, c, t, 2, 2, false), lForm(U, c, t, 2, 1, false)];
+    if (form === 'court') { const out = []; [6, 4, 0].forEach(k => { const m = court(U, c, t, k); if (m && !out.some(o => Math.abs(o.L - m.L) < 1)) out.push(m); }); return out; }
     return [slab(U, c, t, 4), slab(U, c, t, 6), slab(U, c, t, 2)];
   }
 
@@ -220,7 +223,7 @@
         const last = items[items.length - 1], shift = (e - s - (last.x + last.m.L - s)) / 2; // 가운데 맞춤
         items.forEach(it => {
           let m = it.m; const rx = it.x + shift;
-          if (m.form === 'L' && rx + m.L / 2 < (s + e) / 2) m = lForm(U, A.coreW_m, m.t, m.n - 2, 2, true); // 왼쪽 반은 거울상(날개가 바깥쪽)
+          if (m.form === 'L' && rx + m.L / 2 < (s + e) / 2) m = lForm(U, A.coreW_m, m.t, m.a, m.b, true); // 왼쪽 반은 거울상(날개가 바깥쪽)
           out.push({ m, rx });
         });
       });
@@ -259,7 +262,7 @@
         const W = p => rot([b.rx + p[0], b.ry + p[1]], th), m = b.mod;
         b.parts = m.parts.map(q => q.map(W)); b.cores = m.cores.map(q => q.map(W)); b.divs = m.divs.map(q => q.map(W)); b.units = (m.units || []).map(rs => rs.map(q => q.map(W)));
         b.poly = hull(b.parts.flat()); b.angle = opt.angle || 0; b.center = W([b.L / 2, b.D / 2]);
-        b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); b.local = { L: m.L, D: m.D, parts: m.parts, cores: m.cores, divs: m.divs, units: m.units || [] }; delete b.mod;
+        b.inner = m.inner || 0; b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); b.local = { L: m.L, D: m.D, parts: m.parts, cores: m.cores, divs: m.divs, units: m.units || [] }; delete b.mod;
       });
       return blds;
     }
@@ -287,32 +290,60 @@
       return true;
     }
     // 인동간격·측면 간격 검사. 통과하면 null, 막히면 다음에 시도할 x(막은 동의 오른쪽 끝 너머)
-    function blocker(m, x, y, placed, F) {
-      const gN = opt.spacing * H(F), gS = A.sideGap_m;
+    //  남북으로 겹치는 두 동 사이는 '남쪽 동' 높이 × 배수(각 동의 실제 층수 fl·o.floors 기준)
+    function blocker(m, x, y, placed, fl) {
+      const gNew = opt.spacing * H(fl), gS = A.sideGap_m;
       for (const o of placed) {
-        if (o.ry + o.D + gN <= y) continue; // 충분히 남쪽(이미 지나간 줄)
+        const gO = opt.spacing * H(o.floors), gMax = Math.max(gNew, gO);
+        if (o.ry + o.D + gMax <= y) continue; // 충분히 남쪽(이미 지나간 줄)
         const xo = Math.min(x + m.L, o.rx + o.L) - Math.max(x, o.rx), yo = Math.min(y + m.D, o.ry + o.D) - Math.max(y, o.ry);
-        if (xo > 0) { // 남북으로 겹침: 사이 거리 ≥ 남쪽 동 높이 × 배수
-          if (y >= o.ry ? y - (o.ry + o.D) < gN : o.ry - (y + m.D) < gN) return o.rx + o.L;
-        } else if (yo > -gN * 0.3) { // 옆으로 나란함: 측면 간격
+        if (xo > 0) { // 남북으로 겹침
+          if (y >= o.ry ? y - (o.ry + o.D) < gO : o.ry - (y + m.D) < gNew) return o.rx + o.L;
+        } else if (yo > -gMax * 0.3) { // 옆으로 나란함: 측면 간격
           if (Math.max(o.rx - (x + m.L), x - (o.rx + o.L)) < gS) return o.rx + o.L + gS;
         }
       }
       return null;
+    }
+    // 그 자리에 놓았을 때 채광창·정북 일조 등으로 정해지는 최고 층수(놓기 전에 미리 봄)
+    function capAt(m, x, y) {
+      const poly = hull(m.parts.flat().map(p => rot([x + p[0], y + p[1]], th)));
+      return capFloors({ poly, form: m.form, inner: m.inner || 0 });
     }
     function pack(F) {
       const blds = [], cols = {}; types.forEach(t => { cols[t] = 0; });
       const st = opt.quick ? 3 : GW * GH > 25000 ? 2 : 1; // 큰 구역은 2m 간격(방향 고르기용 빠른 추정은 3m)
       const ordOf = () => { const tot = Object.values(cols).reduce((a, b) => a + b, 0) || 1; return types.slice().sort((a, b) => (cols[a] / tot - want[a]) - (cols[b] / tot - want[b])); };
       let order = ordOf();
-      for (let y = GY0; y <= ymax; y += st) {
-        for (let x = GX0; x <= xmax; x += st) {
-          let pick = null, jump = Infinity;
-          for (const t of order) { for (const m of MODS[t]) { if (!fits(m, x, y)) continue; const bx = blocker(m, x, y, blds, F); if (bx === null) { pick = m; break; } jump = Math.min(jump, bx); } if (pick) break; }
-          if (!pick) { if (isFinite(jump) && jump - st > x) x = Math.ceil(jump) - st; continue; }
-          let m = pick; if (m.form === 'L' && x + m.L / 2 < (xmin + xmax) / 2) m = lForm(U, A.coreW_m, m.t, m.n - 2, 2, true);
-          blds.push({ row: 0, t: m.t, n: m.n, form: m.form, mod: m, floors: F, L: m.L, D: m.D, rx: x, ry: y });
-          cols[m.t] += m.n; order = ordOf(); x = Math.ceil(x + m.L + A.sideGap_m) - st;
+      // 세 번 훑음
+      //  0차: 기준 층수(F)까지 올릴 수 있는 자리에만, 평형 비율이 목표보다 MIX_TOL 넘게 많아지는 모듈은 빼고(큰 평형 자리를 남김)
+      //  1차: 기준 층수까지 올릴 수 있는 남은 자리를 아무 평형으로나
+      //  2차: 채광창·정북 일조로 낮아지는 남은 자리에 낮은 동(그 자리 최고 층수, 최저 층수 이상) — 낮은 동은 인동간격도 낮은 높이로
+      // 예전에는 높이 제한을 보지 않고 놓은 뒤 깎아서, 경계 가까이 낮아진 동이 높은 동 기준 간격을 차지해 땅이 많이 버려졌음
+      const MIX_TOL = 0.06, over = m => { const tot = Object.values(cols).reduce((a, b) => a + b, 0) + m.n; return tot > 12 && (cols[m.t] + m.n) / tot > want[m.t] + MIX_TOL; };
+      const flip = (m, x) => (m.form === 'L' && x + m.L / 2 < (xmin + xmax) / 2 ? lForm(U, A.coreW_m, m.t, m.a, m.b, true) : m);
+      for (let pass = types.length > 1 ? 0 : 1; pass < 3; pass++) {
+        if (pass === 2 && F <= A.minFloors) break;
+        for (let y = GY0; y <= ymax; y += st) {
+          for (let x = GX0; x <= xmax; x += st) {
+            let pick = null, pf = 0, jump = Infinity;
+            for (const t of order) {
+              for (const m0 of MODS[t]) {
+                if (pass === 0 && over(m0)) break;
+                if (!fits(m0, x, y)) continue;
+                const m = flip(m0, x), c = capAt(m, x, y), fl = Math.min(F, c);
+                if (pass < 2 ? c < F : fl < A.minFloors) continue;
+                const bx = blocker(m, x, y, blds, fl);
+                if (bx === null) { pick = m; pf = fl; break; }
+                jump = Math.min(jump, bx);
+              }
+              if (pick) break;
+            }
+            if (!pick) { if (isFinite(jump) && jump - st > x) x = Math.ceil(jump) - st; continue; }
+            const m = pick;
+            blds.push({ row: 0, t: m.t, n: m.n, form: m.form, mod: m, floors: pf, L: m.L, D: m.D, rx: x, ry: y });
+            cols[m.t] += m.n; order = ordOf(); x = Math.ceil(x + m.L + A.sideGap_m) - st;
+          }
         }
       }
       // 줄 번호: 남쪽부터 y가 비슷한 것끼리(동 깊이 안쪽 차이)
@@ -360,6 +391,8 @@
           });
         }
       });
+      // ㅁ형: 중정을 사이에 두고 마주 보는 동 사이도 인동간격(높이 × 배수) 이상 → 중정 폭으로 층수 상한
+      if (b.form === 'court' && b.inner > 0 && opt.spacing > 0) cap = Math.min(cap, Math.floor((b.inner / opt.spacing - A.groundExtra_m) / A.floorHeight_m));
       return Math.max(0, cap);
     }
     // 세대당 지상 연면적: 평면 라이브러리의 공급면적(전용+주거공용). 없으면 전용 × 환산계수
