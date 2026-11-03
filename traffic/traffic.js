@@ -81,7 +81,7 @@ ReviewUI.start({
     <ol>${r.list.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
 
     <h2>8. 종합 의견 및 보완사항</h2>
-    <p>진입도로 ${esc(ar.result)}, 법정 주차대수 ${pk.legal === null ? '○○' : fmt(pk.legal) + '대'}, 교통영향평가 ${esc(ti.result)}로 검토되었다. 본 초안은 공부·공개자료와 기준표에 따른 개략 검토이며, 다음 사항을 보완해야 한다.</p>
+    <p>진입도로 ${esc(ar.result)}, 법정 주차대수 ${pk.legal === null ? '○○' : fmt(pk.legal) + '대'}, 교통영향평가 ${esc(ti.result)}${(c => { const k = c.charCodeAt(0) - 0xAC00; return k >= 0 && k < 11172 && k % 28 && k % 28 !== 8 ? '으로' : '로'; })(String(ti.result).slice(-1))} 검토되었다. 본 초안은 공부·공개자료와 기준표에 따른 개략 검토이며, 다음 사항을 보완해야 한다.</p>
     <ul>${r.need.map(s => `<li>${esc(s)}</li>`).join('')}</ul>`;
     return { html, constraints: r.constraints };
   },

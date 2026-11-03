@@ -26,6 +26,7 @@ t('종합: 미충족이면 확폭 문장과 배치 조건', () => {
   assert.ok(r.list.some(s => /확폭/.test(s)));
   assert.strictEqual(r.constraints.확폭_검토_도로[0].필요_m, 15);
   assert.strictEqual(r.constraints.역_방향_보행축, '숭의역');
+  assert.ok(/해당 없음/.test(X.run(C, T, { type: 'redev', siteArea: 1, units: 10, station: 'a', stationDist: 900 }).constraints.역_방향_보행축));
   assert.ok(r.list.some(s => /교통영향평가서/.test(s)));
 });
 console.log(`\n${n}개 모두 통과`);

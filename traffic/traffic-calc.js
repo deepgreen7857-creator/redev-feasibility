@@ -102,7 +102,7 @@
       확폭_검토_도로: ar.result === '미충족' ? (ar.short || []).map(r => ({ 도로: r.name, 현재_m: r.w, 필요_m: ar.required })) : [],
       법정_주차대수: res.parking.legal,
       교통영향평가: res.tia.result,
-      역_방향_보행축: dist !== null && dist <= 500 ? (p.station || '도시철도역') : null,
+      역_방향_보행축: dist !== null && dist <= 500 ? (p.station || '도시철도역') : dist !== null ? `해당 없음(${p.station || '최근접 역'} ${dist}m — 500m 밖)` : null,
     };
     return { list, need, constraints };
   }
