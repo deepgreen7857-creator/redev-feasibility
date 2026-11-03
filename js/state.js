@@ -210,7 +210,13 @@ function loadState() {
 let __otherTabChanged = false;
 function saveState() {
   if (__otherTabChanged) return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); } catch (e) { /* 무시 */ }
+  const body = JSON.stringify(S);
+  try { localStorage.setItem(STORAGE_KEY, body); }
+  catch (e) {
+    // 저장 공간이 차면 다시 받을 수 있는 캐시(정비계획 조회 캐시)를 비우고 한 번 더 — 예전엔 조용히 실패해 구역이 저장되지 않았음
+    try { localStorage.removeItem('jbs-urban-cache-v1'); localStorage.setItem(STORAGE_KEY, body); }
+    catch (e2) { try { window.dispatchEvent(new Event('jbs-storage-full')); } catch (e3) { /* 무시 */ } alert('브라우저 저장 공간이 꽉 차서 작업이 저장되지 않았습니다. 오른쪽 아래 [작업 저장·불러오기]에서 홈페이지에 저장하거나 파일로 내려받은 뒤 오래된 작업을 정리하세요.'); }
+  }
 }
 if (typeof window !== 'undefined') window.addEventListener('storage', e => {
   if (e.key !== STORAGE_KEY || e.newValue === null) return;

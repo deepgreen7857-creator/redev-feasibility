@@ -3417,10 +3417,11 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
   const qs = new URLSearchParams(location.search);
   if (qs.get('from') === 'main') {
     history.replaceState(null, '', location.pathname + location.hash);
-    if (!loadProject() || !loadProject().area) { toast('사업성 검토 화면에 저장된 구역이 없습니다'); return; }
+    const pj = loadProject();
+    if (!pj || !pj.area || !pj.area.geojson) { alert('사업성 검토 화면(2단계 구역계)에 저장된 구역이 없습니다.\n사업성 검토 화면 2단계에서 구역을 만든 뒤(구역이 지도에 파랗게 보이는 상태) ★빠른 사업성의 ① 버튼을 다시 눌러 주세요.\n지금 보이는 안은 예전 구역입니다.'); return; }
     if (S.source !== 'map') setSource('map');
     // 이미 같은 구역(90% 이상 겹침)을 가져온 안이 있으면 그 안을 다시 씀(묻지 않음)
-    const pg = loadProject().area && loadProject().area.geojson;
+    const pg = pj.area.geojson;
     const same = pg && window.turf ? D.keys.find(k => { const g = D.regions[k].geojson; if (!g) return false; try { const x = turf.intersect(g, pg); return x && turf.area(x) / Math.max(turf.area(g), turf.area(pg)) >= 0.9; } catch (e) { return false; } }) : null;
     let id = same || D.keys.find(k => !D.regions[k].geojson);
     if (!id && D.keys.length < ZONE_IDS.length) { Z.count = D.keys.length + 1; saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); id = D.keys[D.keys.length - 1]; }
