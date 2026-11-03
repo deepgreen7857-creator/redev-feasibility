@@ -90,7 +90,11 @@ const Tabs = {
       const others = (S.meta.zoningList || []).filter(z => z !== S.meta.zoning);
       $('#zoningListNote').textContent = others.length ? `구역에 ${others.join(', ')}도 걸쳐 있습니다.` : '';
       const fz = FAR_BY_ZONING[S.meta.zoning];
-      $('#farHint').innerHTML = fz
+      // 인천이면 2030 기본계획(빠른 사업성과 같은 표) 기준·허용·상한, 그 밖은 서울시 조례 참고값
+      const inc = S.criteria.region === 'incheon' && S.meta.zoning && window.Quick ? (Quick.far().by_zone || {})[Quick.zoneKey(S.meta.zoning)] : null;
+      $('#farHint').innerHTML = inc
+        ? `참고: 인천 2030 기본계획 기준 ${inc.base}% · 허용 ${inc.allowed}% · 상한 ${inc.max}%. 비워 두어도 ★빠른 사업성은 용도지역으로 따로 계산합니다. <button type="button" class="link-btn" data-far="${inc.allowed}">허용 ${inc.allowed}% 넣기</button>`
+        : fz
         ? `참고: 서울시 조례 ${fz.seoul}%, 법정 상한 ${fz.max}%. 정비계획으로 높아질 수 있습니다. <button type="button" class="link-btn" data-far="${fz.seoul}">${fz.seoul}% 넣기</button>`
         : '';
       const fb = $('#farHint [data-far]');
