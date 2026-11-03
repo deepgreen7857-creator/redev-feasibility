@@ -1012,6 +1012,20 @@ function boot() {
       let list = VWorld.enabled ? await MapView.searchVWorld(q).catch(() => []) : [];
       if (!list.length) list = await MapView.searchOSM(q);
       if (!list.length) { msg.textContent = '검색 결과가 없습니다. 지번이나 도로명 주소로 다시 검색해 보세요.'; return; }
+      // 2단계에 다른 곳 구역계가 남아 있으면(새 주소가 구역 밖 200m 넘게) 지우고 새로 시작할지 물음 — 남겨 두면 구역계 탭이 예전 구역으로 열림
+      if (S.area.geojson && window.turf) {
+        const pt = turf.point([list[0].lon, list[0].lat]);
+        let far = false;
+        try {
+          const inside = turf.booleanPointInPolygon(pt, S.area.geojson.type === 'Feature' ? S.area.geojson : turf.feature(S.area.geojson));
+          far = !inside && turf.distance(pt, turf.centroid(S.area.geojson), { units: 'meters' }) > 200;
+        } catch (e2) { far = false; }
+        if (far && confirm(`2단계 구역계에 다른 곳의 구역(${S.meta.location || '이전 구역'})이 남아 있습니다.\n지우고 새 주소에서 시작할까요? 토지·건축물 조서도 함께 비웁니다.\n(취소하면 예전 구역을 그대로 둡니다)`)) {
+          S.area.geojson = null; S.area.drawnArea = 0; S.area.importedKey = ''; S.area.mode = 'ledger';
+          S.lands = []; S.buildings = [];
+          if (MapView.items) MapView.items.clearLayers();
+        }
+      }
       if (MapView.map) MapView.goTo(list[0]);
       // 주소를 새로 검색한 것은 사용자가 위치를 바꾸겠다는 뜻 — 예전에 직접 고친 위치·용도지역 표시를 풀고 새 위치로 다시 채움
       S.meta.locationManual = false; S.meta.zoningManual = false;
