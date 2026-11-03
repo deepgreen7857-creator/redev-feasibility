@@ -59,7 +59,7 @@
   async function saveSlot(name, auto) {
     const snap = snapshot(name), id = auto ? 'auto:' + Date.now() : 'name:' + snap.name;
     await putSlot(Object.assign({ id, auto: !!auto }, snap));
-    if (auto) { const a = (await listSlots()).filter(x => x.auto); for (const x of a.slice(3)) await delSlot(x.id); }
+    if (auto) { const a = (await listSlots()).filter(x => x.auto && !x.ver); for (const x of a.slice(3)) await delSlot(x.id); }
     return snap;
   }
 
@@ -77,8 +77,9 @@
     return FB;
   }
   const cloudId = name => 'w_' + Date.now() + '_' + String(name).replace(/[^0-9A-Za-z가-힣]/g, '').slice(0, 20);
-  async function cloudSave(name, auto, kind) {
-    const { F, db, user } = await fb(), snap = snapshot(name), body = JSON.stringify(snap), id = cloudId(snap.name);
+  async function cloudSave(name, auto, kind) { return cloudPut(snapshot(name), auto, kind); }
+  async function cloudPut(snap, auto, kind) {
+    const { F, db, user } = await fb(), body = JSON.stringify(snap), id = cloudId(snap.name);
     const parts = []; for (let i = 0; i < body.length; i += CHUNK) parts.push(body.slice(i, i + CHUNK));
     for (let i = 0; i < parts.length; i++) await F.setDoc(F.doc(db, 'jbsWork', id, 'chunks', String(i)), { d: parts[i] });
     await F.setDoc(F.doc(db, 'jbsWork', id), { name: snap.name, savedAt: snap.savedAt, summary: summary(snap), size: body.length, n: parts.length, auto: !!auto, kind: kind || (auto ? 'backup' : 'manual'), hash: hashOf(snap), by: user.email, at: F.serverTimestamp() });
@@ -114,9 +115,19 @@
     const snap = snapshot(); if (summary(snap) === '빈 작업') return;
     const h = hashOf(snap); if (h === localStorage.getItem(LAST)) return;
     verBusy = true;
-    try { await cloudSave(snap.name, true, 'version'); localStorage.setItem(LAST, h); setBtn('자동 저장됨 ' + now().slice(11)); }
-    catch (e) { console.warn('자동 버전 저장 실패(' + reason + ')', e); setBtn('자동 저장 실패 — 눌러서 확인'); }
-    finally { verBusy = false; }
+    try {
+      await cloudPut(snap, true, 'version'); localStorage.setItem(LAST, h); setBtn('홈페이지에 자동 저장됨 ' + now().slice(11));
+      await flushPending();
+    } catch (e) {
+      // 홈페이지에 못 올리면(인터넷·권한) 이 컴퓨터에 버전으로 남겨 두고, 다음에 올라가면 함께 올림 — 버전을 잃지 않게
+      console.warn('자동 버전 홈페이지 저장 실패(' + reason + ')', e);
+      try { await putSlot(Object.assign({ id: 'ver:' + Date.now(), auto: true, ver: true, pending: true }, snap)); localStorage.setItem(LAST, h); setBtn('이 컴퓨터에 자동 저장됨 ' + now().slice(11) + ' (홈페이지 대기)'); }
+      catch (e2) { setBtn('자동 저장 실패 — 눌러서 확인'); }
+    } finally { verBusy = false; }
+  }
+  async function flushPending() {
+    const P = (await listSlots()).filter(x => x.pending).sort((a, b) => String(a.savedAt).localeCompare(String(b.savedAt)));
+    for (const x of P) { const snap = { format: x.format, version: x.version, name: x.name, savedAt: x.savedAt, keys: x.keys }; await cloudPut(snap, true, 'version'); await putSlot(Object.assign({}, x, { pending: false })); }
   }
   function setBtn(t) { if (!btn || full) return; btn.textContent = '작업 저장·불러오기 · ' + t; }
   function watch() {
@@ -186,7 +197,7 @@
       <h3 style="margin-top:12px">홈페이지에 저장된 작업 <span class="n">(바뀔 때마다 자동 저장 · 모든 버전 보관)</span></h3><div id="jbsCloudList" class="n">불러오는 중…</div>
       <h3 style="margin-top:12px">이 컴퓨터에 저장된 작업</h3>
       ${slots === null ? '<div class="warn">이 브라우저에서는 저장 목록을 쓸 수 없습니다(사생활 보호 창 등). 파일로 내려받으세요.</div>'
-        : slots.length ? `<ul>${slots.map(s => `<li><b>${esc(s.name)}${s.auto ? ' <span class="n">(자동 백업)</span>' : ''}</b><span class="n">${esc(s.savedAt)} · ${esc(summary(s))}</span>
+        : slots.length ? `<ul>${slots.map(s => `<li><b>${esc(s.name)}${s.ver ? ` <span class="n">(자동 버전${s.pending ? ' · 홈페이지 올리기 대기' : ''})</span>` : s.auto ? ' <span class="n">(자동 백업)</span>' : ''}</b><span class="n">${esc(s.savedAt)} · ${esc(summary(s))}</span>
           <div class="row"><button data-w="open" data-id="${esc(s.id)}">불러오기</button><button data-w="dl" data-id="${esc(s.id)}">파일</button><button data-w="del" data-id="${esc(s.id)}">지우기</button></div></li>`).join('')}</ul>` : '<div class="n">아직 없습니다.</div>'}
       <input type="file" accept=".json,application/json" hidden id="jbsWorkFile">`;
     box.hidden = false;
