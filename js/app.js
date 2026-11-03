@@ -140,7 +140,8 @@ const Tabs = {
       };
       // 구역이 없으면: 1단계에서 검색한 주소 필지로 바로 구역을 만듦(한 주소에 한 번 — 지운 뒤 다시 자동으로 만들지는 않음)
       if (!S.area.geojson) {
-        if (VWorld.enabled && S.meta.parcelAuto !== S.meta.parcel) { make(); return; }
+        // 1단계에서 [이 필지로 구역 만들기]를 누르고 넘어왔으면 바로 만듦(여러 필지 사업은 아래 버튼·지번 목록·그리기로)
+        if (VWorld.enabled && S.meta.parcelMake === S.meta.parcel && S.meta.parcelAuto !== S.meta.parcel) { make(); return; }
         box.hidden = false;
         box.innerHTML = `<div class="addr-parcel" style="border:1px solid #c8322b;border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#fff7f3">
           <b>검색한 주소: ${label}</b>
@@ -1110,8 +1111,18 @@ function boot() {
       S.meta.addrPt = [list[0].lon, list[0].lat]; S.meta.addrZoneOk = ''; S.meta.parcelAutoSaid = false;
       { const r0 = list[0], cand = [r0.sub, r0.label].map(x => String(x || '')).find(x => /\d+(-\d+)?\s*$/.test(x) && /[동리가]\s+(산\s*)?\d/.test(x)); S.meta.parcel = cand || ''; }
       await Auto.location(list[0]);
-      msg.innerHTML = `<b>${esc(list[0].label)}</b>(으)로 설정했습니다. 다음은 <a href="#area" data-goto="area">구역계</a>에서 사업 구역을 그려 주세요.`;
-      $('[data-goto]', msg).onclick = ev => { ev.preventDefault(); App.go('area'); };
+      S.meta.parcelMake = '';
+      const pp = Tabs.area.parcelParts();
+      msg.innerHTML = `<b>${esc(list[0].label)}</b>(으)로 설정했습니다${pp ? ` — 대표 지번 <b>${esc(pp.base)} ${esc(pp.jibun)}</b>` : ''}.
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+          ${pp ? '<button type="button" class="btn small primary" data-zone="one">이 필지로 구역 만들기 →</button>' : ''}
+          <button type="button" class="btn small${pp ? '' : ' primary'}" data-zone="many">${pp ? '여러 필지로 구역 만들기 →' : '구역계에서 구역 만들기 →'}</button>
+        </div>
+        <p class="note" style="margin:4px 0 0">${pp ? '아파트 단지가 이 필지 하나면 왼쪽(2단계에서 바로 구역·조서까지 만듦). 여러 필지면 오른쪽(2단계에서 지번 목록·지도에 그리기).' : '2단계에서 지번 목록을 넣거나 지도에 그려 구역을 만듭니다.'}</p>`;
+      $$('[data-zone]', msg).forEach(b => { b.onclick = () => {
+        if (b.dataset.zone === 'one') { S.meta.parcelMake = S.meta.parcel; S.meta.parcelAuto = ''; S.meta.parcelAutoSaid = false; }
+        App.persist(); App.go('area');
+      }; });
     } catch (err) {
       msg.textContent = '검색에 실패했습니다. 잠시 후 다시 시도해 주세요.';
     }
