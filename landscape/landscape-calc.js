@@ -6,7 +6,7 @@
   function review(C, p) {
     const d = item(C, 'landscape_dev_redev'), b = item(C, 'landscape_building');
     const a = num(p.siteArea), lim = p.urban === '아니오' ? (d.도시지역외_값 || d.값) : d.값;
-    const dev = d.값 === null ? '기준확인필요' : a === null ? '○○' : a >= lim ? '심의 대상' : '대상 아님';
+    const dev = d.값 === null ? '기준확인필요' : p.type === 'improve' ? '대상 아님(주거환경개선사업 제외)' : a === null ? '○○' : a >= lim ? '심의 대상' : '대상 아님';
     const B = b.값 || {}, fl = num(p.floors), gfa = num(p.gfa), sale = p.sale !== '아니오';
     let bld, bldWho = '';
     if (p.keyArea === '예' || p.district === '예') { bld = '심의 대상'; bldWho = p.district === '예' ? '경관지구 건축물' : '중점경관관리구역 건축물(경관계획이 정한 것)'; }
@@ -34,7 +34,7 @@
     if (cons && cons.env && cons.env.국가유산_검토) list.push(T.imp_heritage);
     list.push(T.imp_street);
     const hasArch = !!(cons && cons.arch);
-    const need = [T.need_plan]; if (!hasArch) need.unshift(T.need_layout);
+    const need = (p.keyArea && p.district) ? [] : [T.need_plan]; if (!hasArch) need.unshift(T.need_layout);
     const constraints = {
       층수_점감_검토: res.h.result === '스카이라인 변화 큼' ? `주변 평균 ${p.aroundFloors}층 대비 ${res.h.ratio}배` : null,
       통경축_방향: p.axis || null,
