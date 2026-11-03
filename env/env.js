@@ -44,8 +44,8 @@ ReviewUI.start({
     <tr><th>계획 세대수</th><td>${fmt(p.units)}세대</td><th>최고층수</th><td>${fmt(p.floors)}층</td></tr></table>
 
     <h2>3. 지형·지질</h2>
-    <p>표고 ${fmt(p.elevMin, 1)}m ~ ${fmt(p.elevMax, 1)}m, 평균경사도 ${fmt(p.slope, 1)}%${sl.deg !== null ? `(약 ${fmt(sl.deg, 1)}도)` : ''} — 기준 ${sl.limit}도 미만 ${badge(sl.result)}${chk(sl.unconfirmed)}</p>
-    <p class="note">근거: ${esc(sl.basis)}. ${esc(sl.note || '')} 지질·지반은 사업시행계획 단계 지반조사로 확인.</p>
+    <p>표고 ${fmt(p.elevMin, 1)}m ~ ${fmt(p.elevMax, 1)}m, 평균경사도 ${fmt(p.slope, 1)}%${sl.deg !== null ? `(약 ${fmt(sl.deg, 1)}도)` : ''} (기준 ${sl.limit}도 미만) ${badge(sl.result)}${chk(sl.unconfirmed)}</p>
+    <p class="note">근거: ${esc(sl.basis)}. ${esc(sl.note || '')}. 지질·지반은 사업시행계획 단계 지반조사로 확인.</p>
 
     <h2>4. 토지이용·녹지</h2>
     <p>도시지역 ${t(p.urban)}, 구역 안 녹지지역 ${fmt(p.greenArea)}㎡. 수목·녹지 현황: ${t(p.trees)}</p>
@@ -61,7 +61,7 @@ ReviewUI.start({
     <p class="note">${esc(s.note)}</p>
 
     <h2>7. 문화유산</h2>
-    <p>최근접 국가유산 ${t(hr.name)}(약 ${fmt(hr.dist)}m) ${badge(hr.result)}${chk(hr.unconfirmed)} — 역사문화환경 보존지역 ${hr.radius}m 이내 기준(${esc(hr.basis)}).</p>
+    <p>최근접 국가유산 ${t(hr.name)}${hr.dist !== null ? `(약 ${fmt(hr.dist)}m)` : ''} ${badge(hr.result)}${chk(hr.unconfirmed)} — 역사문화환경 보존지역 ${hr.radius}m 이내 기준(${esc(hr.basis)}).</p>
     <p class="note">${esc(hr.note || '')}</p>
 
     <h2>8. 상위계획 부합성</h2>

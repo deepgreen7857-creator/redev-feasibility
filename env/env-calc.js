@@ -20,7 +20,7 @@
     const h = item(C, 'heritage_radius'), d = num(p.heritageDist), g = h.구분 || {};
     const built = /주거|상업|공업/.test(p.zoning || ''), city = /시지정|시 지정|시도/.test(p.heritageGrade || '');
     const r = built && g.주거상업공업_m ? g.주거상업공업_m : (city && g.녹지등_시지정_m ? g.녹지등_시지정_m : (g.녹지등_국가지정_m || h.값));
-    return { radius: r, dist: d, name: p.heritage || '', basis: h.근거, note: h.비고, unconfirmed: unc(h), result: d === null ? (p.heritage ? '○○' : '해당 정보 없음') : d <= r ? '보존지역 해당 가능' : '범위 밖' };
+    return { radius: r, dist: d, name: p.heritage || '', basis: h.근거, note: h.비고, unconfirmed: unc(h), result: d === null ? (/^없음/.test(p.heritage || '') ? '해당 없음' : p.heritage ? '○○' : '해당 정보 없음') : d <= r ? '보존지역 해당 가능' : '범위 밖' };
   }
   function noise(C, p) {
     const n = item(C, 'noise_outdoor');
