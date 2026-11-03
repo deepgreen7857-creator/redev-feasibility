@@ -188,9 +188,19 @@ const Quick = {
     const q0 = this.ensure(), q = { ...q0, infraLevel: 'custom', infraPct: this.levelPct(q0, q0.infraLevel || 'avg') }, e = this.evaluate(q), p = e.p;
     const n = x => (isFinite(+x) ? String(Math.round(+x * 10) / 10) : '');
     let site = (S.quick.siteId && JbsSite.get(S.quick.siteId)) || null;
-    if (!site) site = { name: S.meta.name || '정비구역', plan: {}, profile: {}, v: {} };
+    // 예전에 넘긴 구역과 지금 구역이 다르면(90% 미만 겹침) 새 구역으로 — 같은 id를 다시 쓰면 교통성·환경성 화면에 예전 구역의 입력이 그대로 뜸
+    if (site && site.geojson && window.turf) {
+      try {
+        const a = turf.area(site.geojson), b = turf.area(S.area.geojson), x = turf.intersect(site.geojson, S.area.geojson);
+        const ov = x ? turf.area(x) / Math.max(a, b) : 0;
+        if (!(ov >= 0.9)) site = null;
+      } catch (er) { site = null; }
+    }
+    const loc = String(S.meta.location || ''), apt = (loc.match(/\(([^)]*)\)/) || [])[1];
+    const autoName = (S.meta.name && S.meta.name !== '새 정비사업') ? S.meta.name : (apt ? apt.split(',').pop().trim() : loc.replace(/^인천광역시\s*|^서울특별시\s*/, '').replace(/\s*일대$/, '')) || '정비구역';
+    if (!site) site = { name: autoName, plan: {}, profile: {}, v: {} };
     site.source = 'main';
-    site.name = S.meta.name || site.name;
+    site.name = autoName;
     site.geojson = S.area.geojson;
     site.profile = site.profile || {}; site.plan = site.plan || {}; site.v = site.v || {};
     if (S.meta.zoning) site.profile.zoning = S.meta.zoning;
@@ -595,6 +605,7 @@ Tabs.quick = {
       ? `산식: 허용 ${f.z.allowed}% + ${f.coef} × 공공시설 제공 ${fmt(f.pa)}㎡ ÷ 획지 ${fmt(f.lot)}㎡ × 기준 ${f.z.base}% = ${fmt(f.raw, 1)}%${f.capped ? ` → 상한 ${f.z.max}%` : ''}`
       : q.farStep === 'base' ? `기준용적률 ${f.z.base}%` : q.farStep === 'allowed' ? `허용용적률 ${f.z.allowed}% (인센티브 다 받는다고 가정)` : `직접 입력(상한 ${f.z.max}% 이내)`;
     const warn = [];
+    if (Tabs.survey && Tabs.survey.stale()) warn.push(MapView.importing || MapView.ledgerBusy ? '구역 안 토지·건축물을 불러오는 중입니다. 끝나면 조합원 수·종전자산이 새 구역 기준으로 바뀝니다.' : '토지·건축물 조서가 지금 구역 기준이 아닙니다(예전 구역). <button type="button" class="btn small" onclick="Tabs.survey.reimport().then(()=>App.update(true))">지금 구역으로 불러오기</button>');
     if (!(r.prior > 0)) warn.push('종전자산이 0입니다. 3탭 토지조서(공시지가)를 채우거나, 아래 <b>평균 공시지가</b>를 넣으면 비례율이 나옵니다.');
     if (!num(q.members)) warn.push('조합원 수가 0입니다. 토지등소유자 수(추정)를 넣으세요.');
     if (p.short) warn.push(`조합원 ${fmt(q.members)}명보다 분양 세대가 ${fmt(p.short)}세대 부족합니다.`);

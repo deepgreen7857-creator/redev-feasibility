@@ -37,7 +37,7 @@
       b.id = 'jbs-gate-out';
       b.title = email + ' 로그아웃';
       b.textContent = '로그아웃';
-      b.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:2147483646;font:12px "Noto Sans KR",sans-serif;padding:5px 10px;border:1px solid #c9d0d8;border-radius:6px;background:rgba(255,255,255,.92);color:#374151;cursor:pointer;opacity:.75';
+      b.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:2147483646;font:12px "Noto Sans KR",sans-serif;padding:5px 10px;border:1px solid #c9d0d8;border-radius:6px;background:rgba(255,255,255,.92);color:#374151;cursor:pointer;opacity:.75';
       b.onclick = function () { window.__jbsGateOut && window.__jbsGateOut(); };
       document.body.appendChild(b);
     };

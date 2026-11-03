@@ -206,9 +206,23 @@ function loadState() {
   return defaultState();
 }
 
+// 같은 브라우저의 다른 창(탭)이 작업을 바꾸면, 이 창의 옛 내용으로 덮어쓰지 않게 저장을 멈추고 새로 불러오게 함
+let __otherTabChanged = false;
 function saveState() {
+  if (__otherTabChanged) return;
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S)); } catch (e) { /* 무시 */ }
 }
+if (typeof window !== 'undefined') window.addEventListener('storage', e => {
+  if (e.key !== STORAGE_KEY || e.newValue === null) return;
+  __otherTabChanged = true;
+  if (document.hidden) { location.reload(); return; }
+  if (document.getElementById('otherTabBar')) return;
+  const bar = document.createElement('div'); bar.id = 'otherTabBar';
+  bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#c8322b;color:#fff;padding:10px 16px;font:14px "Noto Sans KR",sans-serif;text-align:center';
+  bar.innerHTML = '다른 창에서 이 작업이 바뀌었습니다. 이 창은 예전 내용이라 저장을 멈췄습니다. <button style="margin-left:8px;padding:4px 10px" onclick="location.reload()">최신 내용으로 다시 열기</button>';
+  document.body.appendChild(bar);
+});
+document.addEventListener && document.addEventListener('visibilitychange', () => { if (__otherTabChanged && !document.hidden && !document.getElementById('otherTabBar')) location.reload(); });
 
 let S = loadState();
 

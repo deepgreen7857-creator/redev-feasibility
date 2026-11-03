@@ -27,6 +27,8 @@ function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+// 인천광역시 도시계획 조례 제65조①(2026. 7. 13. 시행본, 법제처 원문 2026-11-04 확인) — 정비기본계획 표와 함께 안내용
+const INCHEON_ORD_FAR = { '제1종일반주거지역': '200%', '제2종일반주거지역': '250%', '제3종일반주거지역': '300%', '준주거지역_순수공동주택': '500%, 순수 주거용 공동주택은 300%', '역세권_준주거지역_순수공동주택': '500%, 순수 주거용 공동주택은 300%' };
 // 주소 검색·구역 지정 결과로 개요의 위치·용도지역을 자동 기록
 const Auto = {
   async zoning(lat, lon, bbox) {
@@ -92,15 +94,15 @@ const Tabs = {
       const fz = FAR_BY_ZONING[S.meta.zoning];
       // 계획 용적률 자동: 직접 고치지 않았으면 용도지역의 허용 용적률(인천 2030 기본계획, 그 밖은 서울시 조례 참고값)
       const sugg = (() => {
-        const i = S.criteria.region === 'incheon' && S.meta.zoning && window.Quick ? (Quick.far().by_zone || {})[Quick.zoneKey(S.meta.zoning)] : null;
+        const i = S.criteria.region === 'incheon' && S.meta.zoning && typeof Quick !== 'undefined' ? (Quick.far().by_zone || {})[Quick.zoneKey(S.meta.zoning)] : null;
         return i ? i.allowed : fz ? fz.seoul : 0;
       })();
       if (!S.plan.farManual && sugg && num(S.plan.far) !== sugg) { S.plan.far = sugg; bindInputs($('#tab-overview')); }
       if ($('#farBadge')) $('#farBadge').hidden = !!S.plan.farManual || !sugg;
       // 인천이면 2030 기본계획(빠른 사업성과 같은 표) 기준·허용·상한, 그 밖은 서울시 조례 참고값
-      const inc = S.criteria.region === 'incheon' && S.meta.zoning && window.Quick ? (Quick.far().by_zone || {})[Quick.zoneKey(S.meta.zoning)] : null;
+      const inc = S.criteria.region === 'incheon' && S.meta.zoning && typeof Quick !== 'undefined' ? (Quick.far().by_zone || {})[Quick.zoneKey(S.meta.zoning)] : null;
       $('#farHint').innerHTML = inc
-        ? `참고: 인천 2030 기본계획(정비사업) 기준 ${inc.base}% · 허용 ${inc.allowed}% · 상한 ${inc.max}%${fz ? ` (법령 상한 ${fz.max}%, 서울 조례 ${fz.seoul}%는 인천에 적용 안 됨)` : ''}. ${S.plan.farManual ? `<button type="button" class="link-btn" data-far="${inc.allowed}">자동(허용 ${inc.allowed}%)으로 되돌리기</button>` : ''}`
+        ? `참고: 인천 2030 정비기본계획 기준 ${inc.base}% · 허용 ${inc.allowed}% · 상한 ${inc.max}%${(() => { const o = INCHEON_ORD_FAR[Quick.zoneKey(S.meta.zoning)]; return o ? ` (인천 도시계획 조례 제65조 ${o})` : ''; })()}. 허용 용적률에서 공공시설 제공 등으로 상한까지 올릴 수 있습니다. ${S.plan.farManual ? `<button type="button" class="link-btn" data-far="${inc.allowed}">자동(허용 ${inc.allowed}%)으로 되돌리기</button>` : ''}`
         : fz
         ? `참고: 서울시 조례 ${fz.seoul}%, 법정 상한 ${fz.max}%. 정비계획으로 높아질 수 있습니다. ${S.plan.farManual ? `<button type="button" class="link-btn" data-far="${fz.seoul}">자동(${fz.seoul}%)으로 되돌리기</button>` : ''}`
         : '';
@@ -115,6 +117,30 @@ const Tabs = {
   },
 
   area: {
+    // 검색한 주소의 필지로 바로 구역 만들기(처음 쓰는 사람용) + 기준 동 주소 자동
+    parcelParts() {
+      const pa = String(S.meta.parcel || ''); if (!pa) return null;
+      const m = pa.match(/^(.*?[동리가])\s+((산\s*)?\d+(-\d+)?)\s*$/); if (!m) return null;
+      let base = m[1].trim();
+      if (!/[시도]\s/.test(base)) { const pre = (String(S.meta.location || '').match(/^(\S+[시도]\s+\S+[구군시])/) || [])[1]; if (pre) base = pre + ' ' + base; }
+      return { base, jibun: m[2].replace(/\s+/g, '') };
+    },
+    addrParcel() {
+      const box = $('#addrParcelBox'); if (!box) return;
+      const pp = this.parcelParts();
+      if (pp && $('#jibunBase') && !$('#jibunBase').value) $('#jibunBase').value = pp.base;
+      if (!pp || S.area.geojson) { box.hidden = true; return; }
+      box.hidden = false;
+      box.innerHTML = `<div class="addr-parcel" style="border:1px solid #c8322b;border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#fff7f3">
+        <b>검색한 주소: ${esc(pp.base)} ${esc(pp.jibun)}</b>
+        <p class="note" style="margin:4px 0 8px">아파트 단지는 보통 이 필지 하나(또는 몇 개)입니다. 누르면 이 필지로 구역을 만들고, 이어서 토지·건축물 정보를 불러옵니다. 단지가 여러 필지면 만든 뒤 지도에서 필지를 더하세요.</p>
+        <button class="btn small primary" id="btnAddrParcel">이 필지로 구역 만들기</button></div>`;
+      $('#btnAddrParcel').onclick = async () => {
+        $('#jibunBase').value = pp.base; $('#jibunList').value = pp.jibun;
+        $('#btnAddrParcel').disabled = true; $('#btnAddrParcel').textContent = '만드는 중…';
+        $('#btnJibunZone').click();
+      };
+    },
     render() {
       bindInputs($('#tab-area'));
       MapView.init();
@@ -122,6 +148,7 @@ const Tabs = {
       this.refresh();
     },
     refresh() {
+      this.addrParcel();
       $('#drawnArea').textContent = S.area.drawnArea ? `${fmt(S.area.drawnArea)}㎡` : '(없음)';
       $('#ledgerArea').textContent = S.lands.length ? `${fmt(Calc.landTotal(S), 1)}㎡` : '(조서 없음)';
       this.areaDiff();
@@ -1031,6 +1058,8 @@ function boot() {
       // 주소를 새로 검색한 것은 사용자가 위치를 바꾸겠다는 뜻 — 예전에 직접 고친 위치·용도지역 표시를 풀고 새 위치로 다시 채움
       S.meta.locationManual = false; S.meta.zoningManual = false;
       if (S.quick) { S.quick.zoneManual = false; S.quick.membersManual = false; }
+      // 검색한 주소의 지번(도로명 검색이면 함께 오는 지번 주소) — 2단계에서 [이 필지로 구역 만들기]에 씀
+      { const r0 = list[0], cand = [r0.sub, r0.label].map(x => String(x || '')).find(x => /\d+(-\d+)?\s*$/.test(x) && /[동리가]\s+(산\s*)?\d/.test(x)); S.meta.parcel = cand || ''; }
       await Auto.location(list[0]);
       msg.innerHTML = `<b>${esc(list[0].label)}</b>(으)로 설정했습니다. 다음은 <a href="#area" data-goto="area">구역계</a>에서 사업 구역을 그려 주세요.`;
       $('[data-goto]', msg).onclick = ev => { ev.preventDefault(); App.go('area'); };

@@ -121,8 +121,14 @@ const MapView = {
     if (r) { r.disabled = !this.hist.canRedo(); r.title = this.hist.canRedo() ? `다시 실행: ${this.hist.peekRedo().label} (Ctrl+Y)` : '다시 할 작업 없음'; }
   },
 
+  // 구역 전체가 화면에 보이게(사용자 요구 2026-11-04: 구역이 정해지면 기본으로 구역이 다 보이는 배율). force가 아니면 지금 화면에 다 들어와 있을 때는 그대로
+  fitZone(force) {
+    if (!this.map || !this.items || !this.items.getLayers().length) return;
+    const b = this.items.getBounds(); if (!b.isValid()) return;
+    if (force || !this.map.getBounds().contains(b)) this.map.fitBounds(b, { padding: [30, 30], maxZoom: 19 });
+  },
   init() {
-    if (this.map) { setTimeout(() => this.map.invalidateSize(), 50); return; }
+    if (this.map) { setTimeout(() => { this.map.invalidateSize(); this.fitZone(); }, 60); return; }
     if (!window.L || !L.Control.Draw) {
       $('#map').innerHTML = '<p class="map-error">지도 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.</p>';
       return;
@@ -246,7 +252,7 @@ const MapView = {
       this.remember('구역계 그리기');
       if (this.roughLayer) { this.roughLayer.remove(); this.roughLayer = null; } this.items.clearLayers(); this.items.addLayer(e.layer); this.save();
     });
-    this.map.on(L.Draw.Event.EDITED, () => { this.remember('꼭짓점 고치기'); this.save(); });
+    this.map.on(L.Draw.Event.EDITED, () => { this.remember('꼭짓점 고치기'); this._editing = true; this.save(); this._editing = false; });
     this.map.on(L.Draw.Event.DELETED, () => { this.remember('구역계 지우기'); this.save(); });
     // 그리기 중에는 필지 선택이 끼어들지 않도록
     this.map.on(L.Draw.Event.DRAWSTART, () => { this.drawing = true; });
@@ -263,7 +269,7 @@ const MapView = {
       App.persist();
     });
     this.load();
-    setTimeout(() => this.map.invalidateSize(), 50);
+    setTimeout(() => { this.map.invalidateSize(); this.fitZone(true); }, 60);
   },
 
   load() {
@@ -342,6 +348,10 @@ const MapView = {
 
   save() {
     this.styleZone();
+    if (!this._editing) setTimeout(() => this.fitZone(), 80); // 새 구역(지번·파일·그리기·필지 맞추기)이면 구역이 다 보이게, 꼭짓점 고치는 중엔 그대로
+    // 구역이 바뀌면 3단계로 가지 않아도 토지·건축물(토지대장·건축물대장·전유부)을 바로 다시 불러옴 — 조합원 수·노후도·종전자산이 새 구역 기준이 되게
+    clearTimeout(this._autoImpT);
+    this._autoImpT = setTimeout(() => { try { if (typeof Tabs !== 'undefined' && Tabs.survey && Tabs.survey.stale() && !this.importing) Tabs.survey.autoImport(); } catch (e) { /* 무시 */ } }, 2500);
     const layers = this.items.getLayers();
     if (!layers.length) {
       S.area.geojson = null;
