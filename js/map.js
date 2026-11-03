@@ -349,6 +349,9 @@ const MapView = {
   save() {
     this.styleZone();
     if (!this._editing) setTimeout(() => this.fitZone(), 80); // 새 구역(지번·파일·그리기·필지 맞추기)이면 구역이 다 보이게, 꼭짓점 고치는 중엔 그대로
+    // 구역이 바뀌면 3단계로 가지 않아도 토지·건축물(토지대장·건축물대장·전유부)을 바로 다시 불러옴 — 조합원 수·노후도·종전자산이 새 구역 기준이 되게
+    clearTimeout(this._autoImpT);
+    this._autoImpT = setTimeout(() => { try { if (typeof Tabs !== 'undefined' && Tabs.survey && Tabs.survey.stale() && !this.importing) Tabs.survey.autoImport(); } catch (e) { /* 무시 */ } }, 2500);
     const layers = this.items.getLayers();
     if (!layers.length) {
       S.area.geojson = null;
