@@ -5,9 +5,17 @@
   const item = (C, id) => (C.items || []).find(x => x.id === id) || null;
   function review(C, p) {
     const d = item(C, 'landscape_dev_redev'), b = item(C, 'landscape_building');
-    const a = num(p.siteArea);
-    const dev = d.값 === null ? '기준확인필요' : a === null ? '○○' : a >= d.값 ? '심의 대상' : '대상 아님';
-    return { dev, devBasis: d.근거, when: d.심의시기, bld: b.값 === null ? '기준확인필요' : '검토', bldBasis: b.근거 };
+    const a = num(p.siteArea), lim = p.urban === '아니오' ? (d.도시지역외_값 || d.값) : d.값;
+    const dev = d.값 === null ? '기준확인필요' : a === null ? '○○' : a >= lim ? '심의 대상' : '대상 아님';
+    const B = b.값 || {}, fl = num(p.floors), gfa = num(p.gfa), sale = p.sale !== '아니오';
+    let bld, bldWho = '';
+    if (p.keyArea === '예' || p.district === '예') { bld = '심의 대상'; bldWho = p.district === '예' ? '경관지구 건축물' : '중점경관관리구역 건축물(경관계획이 정한 것)'; }
+    else if (fl === null && gfa === null) bld = '○○';
+    else if (sale && ((fl !== null && fl >= B.시_21층이상) || (gfa !== null && gfa >= B.시_연면적_m2))) { bld = '심의 대상'; bldWho = `시 경관위원회(분양 목적 ${B.시_21층이상}층 이상 또는 연면적 ${(B.시_연면적_m2 || 0).toLocaleString()}㎡ 이상 — 시 건축위원회 심의 건축물)`; }
+    else if (sale && gfa !== null && gfa >= B.구_분양바닥면적_m2) { bld = '심의 대상'; bldWho = `구 경관위원회(분양 바닥면적 ${(B.구_분양바닥면적_m2 || 0).toLocaleString()}㎡ 이상 — 구 건축위원회 심의 건축물)`; }
+    else bld = '대상 아님(조례 기준 미만)';
+    const unc = it => !it || /확인필요/.test(it.상태 || '');
+    return { dev, devLim: lim, devBasis: d.근거, devNote: d.비고, when: d.심의시기, bld, bldWho, bldBasis: b.근거, bldNote: b.비고, keyList: (item(C, 'landscape_plan_key_area') || {}).값, unconfirmed: unc(d) || unc(b) };
   }
   function height(C, p) {
     const fl = num(p.floors), ar = num(p.aroundFloors), lim = (C._내부검토기준 || {}).주변대비_층수배율_주의;
@@ -26,7 +34,7 @@
     if (cons && cons.env && cons.env.국가유산_검토) list.push(T.imp_heritage);
     list.push(T.imp_street);
     const hasArch = !!(cons && cons.arch);
-    const need = [T.need_criteria, T.need_plan]; if (!hasArch) need.unshift(T.need_layout);
+    const need = [T.need_plan]; if (!hasArch) need.unshift(T.need_layout);
     const constraints = {
       층수_점감_검토: res.h.result === '스카이라인 변화 큼' ? `주변 평균 ${p.aroundFloors}층 대비 ${res.h.ratio}배` : null,
       통경축_방향: p.axis || null,

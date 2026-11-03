@@ -47,26 +47,35 @@
     return out;
   }
 
-  // 법정 주차대수 (주택)
+  // 법정 주차대수 (주택) — 조례(인천: 세대당 1대 이상)가 있으면 세대당 최저를 그 값 이상으로
   function parking(C, p) {
-    const it = item(C, 'parking_housing');
-    const a = num(p.area85below), b = num(p.area85above), u = num(p.units), u60 = num(p.units60below) || 0;
-    const out = { basis: it.근거, note: it.비고, unconfirmed: unconfirmed(it) || /확인필요/.test(it.상태 || '') };
-    out.minByUnits = u === null ? null : Math.ceil(u60 * it.세대당_최저.전용60이하 + Math.max(0, u - u60) * it.세대당_최저.일반 - 1e-9);
+    const it = item(C, 'parking_housing'), rt = item(C, 'parking_retail');
+    const a = num(p.area85below), b = num(p.area85above), u = num(p.units), u60 = num(p.units60below) || 0, rg = num(p.retailGFA);
+    const ord = it.조례 && num(it.조례.세대당_최저) !== null ? +it.조례.세대당_최저 : null;
+    const per = Math.max(it.세대당_최저.일반, ord || 0), per60 = Math.max(it.세대당_최저.전용60이하, ord || 0);
+    const out = { basis: it.근거, note: [it.비고, ord ? it.조례.근거 : ''].filter(Boolean).join(' / '), unconfirmed: unconfirmed(it), per, per60, ordinance: ord };
+    out.minByUnits = u === null ? null : Math.ceil(u60 * per60 + Math.max(0, u - u60) * per - 1e-9);
     out.byArea = (a === null && b === null) ? null : Math.ceil((a || 0) / it.비율['85이하'] + (b || 0) / it.비율['85초과'] - 1e-9);
-    out.formula = `전용 85㎡ 이하 합계 ÷ ${it.비율['85이하']} + 85㎡ 초과 합계 ÷ ${it.비율['85초과']} (끝수 1대), 세대당 최저 ${it.세대당_최저.일반}대(전용 60㎡ 이하 ${it.세대당_최저.전용60이하}대)와 비교해 큰 값`;
+    out.formula = `전용 85㎡ 이하 합계 ÷ ${it.비율['85이하']} + 85㎡ 초과 합계 ÷ ${it.비율['85초과']} (끝수 1대), 세대당 최저 ${per}대${per60 !== per ? `(전용 60㎡ 이하 ${per60}대)` : ''}와 비교해 큰 값${ord ? ' — 인천 주차장 조례 [별표 2] 제5호: 세대당 1대 이상' : ''}`;
     const vals = [out.minByUnits, out.byArea].filter(v => v !== null);
-    out.legal = vals.length ? Math.max(...vals) : null;
+    out.housing = vals.length ? Math.max(...vals) : null;
+    out.retail = rt && rg ? Math.ceil(rg / rt.값 - 1e-9) : 0;
+    out.retailBasis = rt ? `${rt.근거} — 시설면적 ${rt.값}㎡당 1대` : '';
+    out.legal = out.housing === null ? null : out.housing + out.retail;
     out.partial = out.byArea === null && out.minByUnits !== null;
     return out;
   }
 
-  // 첨두시 발생교통량 (원단위가 비어 있으면 식만)
+  // 첨두시 발생교통량(승용차, 대/시) — 활동인구 원단위 × 첨두 유출입률 × 승용차 분담률 ÷ 재차인원
   function trips(C, p) {
     const ra = item(C, 'trip_rate_apartment'), rr = item(C, 'trip_rate_retail');
-    const u = num(p.units), r = num(p.retailGFA);
-    const out = { formula: '발생량 = 세대수 × 공동주택 원단위 + (근생 연면적 ÷ 100) × 근생 원단위', basis: ra.근거, unconfirmed: ra.값 === null || (r && rr.값 === null) };
-    out.value = (ra.값 === null || u === null) ? null : Math.round(u * ra.값 + (r && rr.값 !== null ? (r / 100) * rr.값 : 0));
+    const u = num(p.units), r = num(p.retailGFA) || 0;
+    const out = { formula: `발생량(대/시) = 세대수 × ${ra.값 ?? '○○'}(공동주택, 오후 첨두) + (근생 연면적 ÷ 100) × ${rr.값 ?? '○○'}(근생)`, basis: ra.근거, rateNote: ra.비고, parts: ra.구성, retailParts: rr.구성, unconfirmed: !!(unconfirmed(ra) || ra.값 === null || (r && (unconfirmed(rr) || rr.값 === null))) };
+    if (ra.값 === null || u === null) { out.value = null; return out; }
+    const ret = r && rr.값 !== null ? (r / 100) * rr.값 : 0;
+    out.apt = Math.round(u * ra.값); out.aptAm = ra.오전 != null ? Math.round(u * ra.오전) : null; out.retail = Math.round(ret);
+    out.value = Math.round(u * ra.값 + ret);
+    out.am = ra.오전 != null ? Math.round(u * ra.오전 + ret) : null;
     return out;
   }
 

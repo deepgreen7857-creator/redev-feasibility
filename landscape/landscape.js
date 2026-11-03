@@ -73,6 +73,8 @@
         { k: 'keyArea', label: '중점경관관리구역 해당', select: { '': '모름', '예': '예', '아니오': '아니오' } },
         { k: 'district', label: '경관지구 해당', select: { '': '모름', '예': '예', '아니오': '아니오' } },
         { k: 'aroundFloors', label: '주변 평균 층수', num: true },
+        { k: 'gfa', label: '건축 연면적 합계 ㎡', num: true },
+        { k: 'sale', label: '분양 목적 건축물', select: { '': '예', '아니오': '아니오' } },
         { k: 'aroundMax', label: '주변 최고층 건물(층)', num: true },
       ] },
       { title: '조망·통경축', fields: [
@@ -120,11 +122,12 @@
       <tr><th>주변 평균 / 최고</th><td>${fmt(p.aroundFloors)}층 / ${fmt(p.aroundMax)}층</td><th>주요 가로</th><td>${t(p.street)}</td></tr></table>
 
       <h2>3. 경관 관리구역 해당 여부</h2>
-      <p>중점경관관리구역 ${t(p.keyArea || '')}, 경관지구 ${t(p.district || '')} <span class="chk">※ 기준 확인 필요</span></p>
+      <p>중점경관관리구역 ${t(p.keyArea || '')}, 경관지구 ${t(p.district || '')}</p>
+      <p class="note">2040 인천광역시 경관계획(2023. 6. 26. 고시) 중점경관관리구역: ${esc((r.rev.keyList || []).join('·'))}. 필지별 해당 여부는 토지이음 토지이용계획의 지역·지구로 판정.</p>
 
       <h2>4. 경관심의 대상 여부</h2>
-      <table><tr><th style="width:150px">개발사업(정비구역)</th><td>${badge(r.rev.dev)} <span class="chk">※ 기준 확인 필요</span><br><span class="note">${esc(r.rev.devBasis)}. 심의 시기: ${esc(r.rev.when)}</span></td></tr>
-      <tr><th>건축물</th><td>${badge(r.rev.bld)} <span class="chk">※ 기준 확인 필요</span><br><span class="note">${esc(r.rev.bldBasis)}</span></td></tr></table>
+      <table><tr><th style="width:150px">개발사업(정비구역)</th><td>${badge(r.rev.dev)} (기준 ${fmt(r.rev.devLim)}㎡ 이상, 계획 ${fmt(p.siteArea, 1)}㎡)<br><span class="note">${esc(r.rev.devBasis)}. 심의 시기: ${esc(r.rev.when)}. ${esc(r.rev.devNote || '')}</span></td></tr>
+      <tr><th>건축물</th><td>${badge(r.rev.bld)}${r.rev.bldWho ? ' — ' + esc(r.rev.bldWho) : ''}<br><span class="note">${esc(r.rev.bldBasis)}. ${esc(r.rev.bldNote || '')}</span></td></tr></table>
 
       <h2>5. 높이 계획</h2>
       ${A ? `<table><tr><th style="width:150px">최고 층수·높이</th><td>${A.maxFloors}층 · 약 ${fmt(A.maxHeight, 1)}m</td></tr>
