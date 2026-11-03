@@ -133,8 +133,9 @@
     return { form: 'tower', t, n: 4, L, D, parts: U2.flat().concat([sh(core)]), cores: [sh(core)], divs: [], units: U2 };
   }
   // Y형: 육각 코어 + 세 날개(남·북동·북서), 날개마다 1세대(대형) 또는 2세대(소형, 날개 길이 2배)
-  function yForm(U, c, t) {
-    const w = U[t].폭, d = U[t].깊이, per = U[t].전용 <= 60 ? 2 : 1, len = d * per;
+  //  per: 날개당 세대 수(없으면 60㎡ 이하 2, 그 밖 1)
+  function yForm(U, c, t, per0) {
+    const w = U[t].폭, d = U[t].깊이, per = per0 || (U[t].전용 <= 60 ? 2 : 1), len = d * per;
     const a = Math.max(c * 0.8, w / 2 / 1.6), Rh = a / Math.cos(Math.PI / 6);
     const hex = [0, 1, 2, 3, 4, 5].map(i => [Rh * Math.cos(i * Math.PI / 3), Rh * Math.sin(i * Math.PI / 3)]);
     const dirs = [-90, 30, 150].map(x => x * D2R), parts = [hex], divs = [];
@@ -175,7 +176,7 @@
   const towerU = (U, t) => { const tw = U[t] && U[t].탑상; return tw && +tw.폭 > 0 && +tw.깊이 > 0 ? Object.assign({}, U, { [t]: Object.assign({}, U[t], { 폭: +tw.폭, 깊이: +tw.깊이, 베이: +tw.베이 || U[t].베이 }) }) : U; };
   function modulesFor(U, c, t, form) {
     if (form === 'tower') return [tower(towerU(U, t), c, t)];
-    if (form === 'Y') return [yForm(towerU(U, t), c, t)];
+    if (form === 'Y') { const u2 = towerU(U, t), a = yForm(u2, c, t); return a.n > 3 ? [a, yForm(u2, c, t, 1)] : [a]; } // 소형은 날개당 2세대 + 1세대(작은 자리용)
     // ㄱ형: 판상 4호·2호 + 꺾인 날개 2호·1호(작은 것까지 있어야 큰 평형도 좁은 자리에 들어감)
     if (form === 'L') return [lForm(U, c, t, 4, 2, false), lForm(U, c, t, 4, 1, false), lForm(U, c, t, 2, 2, false), lForm(U, c, t, 2, 1, false)];
     if (form === 'court') { const out = []; [6, 4, 0].forEach(k => { const m = court(U, c, t, k); if (m && !out.some(o => Math.abs(o.L - m.L) < 1)) out.push(m); }); return out; }
@@ -241,6 +242,7 @@
         // 다음 줄: 이 줄 동들의 실제 북쪽 끝 + 인동간격
         y0 = y0 + Math.max(...best.items.map(it => it.m.D)) + opt.spacing * H(f); row++;
       }
+      rebalance(blds);
       // 남는 북쪽 여유를 줄 사이·남쪽 마당에 고르게 나눔(남측 개방). 동 꼭짓점·변 중점이 여전히 건축 가능 영역인지 확인하며 최대 이동량을 찾음
       const nRows = row;
       if (nRows > 0 && opt.spread !== false) {
@@ -317,6 +319,35 @@
       if (c === undefined) { const poly = hull(m.parts.flat().map(p => rot([x + p[0], y + p[1]], th))); c = capFloors({ poly, form: m.form, inner: m.inner || 0 }); CAPC.set(k, c); }
       return c;
     }
+    // 평형 맞추기: 다 놓은 뒤, 많아진 평형의 동을 '같은 자리에 들어가는' 모자란 평형 동으로 바꿈
+      //  (건축 가능 영역·그 자리 높이 제한·주변 동과의 인동간격을 다시 확인, 층수는 그대로). 비율 차이(세대 기준)가 줄어들 때만 바꿈
+    function rebalance(blds) {
+      if (types.length < 2 || opt.rebalance === false || !blds.length) return;
+      {
+        const err = () => { const c = {}; let tot = 0; types.forEach(t => { c[t] = 0; }); blds.forEach(b => { c[b.t] += b.n * b.floors; tot += b.n * b.floors; }); return tot ? types.reduce((e, t) => e + Math.abs(c[t] / tot - want[t]), 0) : 0; };
+        for (let it = 0; it < 3; it++) {
+          let changed = false;
+          for (let i = 0; i < blds.length; i++) {
+            const b = blds[i], e0 = err(), others = blds.filter(o => o !== b);
+            let bestM = null, bestE = e0 - 1e-6;
+            for (const t of types) {
+              if (t === b.t) continue;
+              for (const m0 of MODS[t]) {
+                if (m0.form !== b.form || !fits(m0, b.rx, b.ry)) continue;
+                const m = m0.form === 'L' && b.rx + m0.L / 2 < (xmin + xmax) / 2 ? lForm(U, A.coreW_m, m0.t, m0.a, m0.b, true) : m0;
+                if (capAt(m, b.rx, b.ry) < b.floors || blocker(m, b.rx, b.ry, others, b.floors) !== null) continue;
+                const keep = { t: b.t, n: b.n, mod: b.mod, L: b.L, D: b.D };
+                Object.assign(b, { t: m.t, n: m.n, mod: m, L: m.L, D: m.D }); const e1 = err(); Object.assign(b, keep);
+                // 남북·옆 동이 바뀐 동 때문에 막히지 않는지(바뀐 동이 남쪽이면 그 높이 기준 간격)
+                if (e1 < bestE) { const tmp = Object.assign({}, b, { t: m.t, n: m.n, mod: m, L: m.L, D: m.D }); if (others.every(o => blocker(o.mod, o.rx, o.ry, [tmp], o.floors) === null)) { bestE = e1; bestM = m; } }
+              }
+            }
+            if (bestM) { Object.assign(b, { t: bestM.t, n: bestM.n, mod: bestM, L: bestM.L, D: bestM.D }); changed = true; }
+          }
+          if (!changed) break;
+        }
+      }
+    }
     function pack(F) {
       const blds = [], cols = {}; types.forEach(t => { cols[t] = 0; });
       const st = opt.quick ? 3 : GW * GH > 25000 ? 2 : 1; // 큰 구역은 2m 간격(방향 고르기용 빠른 추정은 3m)
@@ -361,6 +392,7 @@
           }
         }
       }
+      rebalance(blds);
       // 줄 번호: 남쪽부터 y가 비슷한 것끼리(동 깊이 안쪽 차이)
       blds.sort((a, b) => a.ry - b.ry); let r = 0, y0 = blds.length ? blds[0].ry : 0;
       blds.forEach(b => { if (b.ry - y0 > b.D) { r++; y0 = b.ry; } b.row = r; });
