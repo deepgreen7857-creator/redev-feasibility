@@ -69,10 +69,13 @@
 - 도구별: `<도구>/<도구>-calc.js`(순수 계산, `node <도구>/test-calc.js`로 테스트) + `<도구>/<도구>.js`(입력 칸·문서)
 - 각 검토서는 배치 조건을 `site.constraints.<도구>`에 저장 → 개략 배치(/arch)와 경관 검토가 이어받음. 흐름: 구역계 → 교통·환경 1차 → 배치 조건 → /arch → 교통 2차·경관
 - 수정 후: `node --check` + `node traffic/test-calc.js && node env/test-calc.js && node landscape/test-calc.js`
-- /arch 개략 건축계획: `shared/arch-geom.js`(배치 엔진·태양 위치·그림자·일조시간, `node arch/test-geom.js`) + `shared/mass3d.js`(three.js r128 3D, /landscape도 씀) + `arch/arch-draw.js`(배치도·표준평면 SVG) + `arch/arch.js`. 기준표 `shared/criteria/arch.json`(인동간격 0.8은 검토 가정값 — 인천 건축조례 확인 필요)
+- /arch 개략 건축계획: `shared/arch-geom.js`(배치 엔진·태양 위치·그림자·일조시간, `node arch/test-geom.js`) + `shared/mass3d.js`(three.js r128 3D, /landscape도 씀) + `arch/arch-draw.js`(배치도·표준평면 SVG) + `arch/arch.js`. 기준표 `shared/criteria/arch.json`(인동간격 0.8 = 인천 건축조례 제32조⑤ 정비사업 기준, 2026-11-03 확인)
   - 경계 변마다 성격(대지경계·도로·간선도로·정북 인접대지·저층 주거 인접)을 지정 → 변별 이격, 정북 일조 층수 상한, 인동간격, 남저북고로 3개 대안(다동형·중간형·소동형) 생성, 주동 방향 자동
   - 평면 라이브러리(2026-11-02, 사용자 결정 '라이브러리 실제 평면으로 그려야'): arch.json '평면_라이브러리'(판상 세대 들임·후면 돌출, 판상·탑상 코어, 탑상 바람개비 4호, '사례'에 실제 입주자모집공고 평면을 쌓을 자리). 동 모듈은 세대 조각(units)·코어로 조립(arch-geom slab·tower·lForm), 배치도·표준평면에 세대 외곽선
-  - 채광창 이격(시행령 제86조③1호·⑥, criteria window_setback): 높이 ≤ 배수(2, 근린상업·준주거 4) × (경계까지 거리 + 도로 폭/공원 폭). 판상·ㄱ형은 앞·뒤 벽면 쪽 변, 탑상·Y·ㅁ형은 모든 변. 도로 폭은 /urban 경계 도로 계획 폭(edgeWidths)
+  - 채광창 이격(시행령 제86조③1호·⑥, criteria window_setback): 높이 ≤ 배수(2, 근린상업·준주거 4) × (벽면 '직각 방향' 경계까지 거리(dirDist) + 도로·공원 폭의 절반). 공동주택은 도로·공원의 중심선이 인접 대지경계선(⑥ 괄호, 2021.11.2 개정) — 건너편 끝까지가 아님. 판상·ㄱ형은 앞·뒤 벽면, 탑상·Y·ㅁ형은 네 벽면. 도로 폭은 변 성격 표시와 관계없이 실제로 닿은 도로(edgeWidths). 정북 일조도 같은 중심선 규칙
+  - 정비사업 완화(criteria window_relief, 2026-11-03 원문 대조): 도정법 제68조④·영 제57조4호 — 재건축·공공재건축·제66조② 역세권 구역만, 7층 이하만 1/2 완화. 재개발 고층은 완화 없음. 인천 건축조례 제32조⑤ 인동간격 정비사업 0.8배(역세권 0.5배, 일반 1배) 확인
+  - 정남 기준(p_sunBase='south', 건축법 제61조③·영 제86조④): 남쪽을 향한 변에 정북과 같은 거리, 정북 변은 빠짐. 구청장 등 고시가 있어야 적용되는 선택 사항
+  - 평면 치수(2026-11-03): arch.json '평면'의 폭·깊이·공급은 '평면_라이브러리'.사례(서울 정비사업 정보몽땅 단위세대 평면도·입주자모집공고 면적표 48건) 중 대표사례 값(발코니 포함 바깥 치수). 101은 치수 사례 없음(가정). '탑상'이 있으면 탑상·Y형은 그 치수. feas.js SUPPLY는 '평면' 공급과 같게 유지할 것
   - [이 안으로 확정] → site.arch.chosen 저장, site.v(세대수·층수·전용면적 합계)를 갱신해 교통·환경·경관 검토에 이어짐
   - 사업성 화면 연동(js/assume.js): `/?arch=<site id>`로 열면 가정값 창이 그 확정안을 세대수 기준으로 골라 엶. 단계 stages[1](1차 개략·초기 사업성)·stages[2](2차·교통·환경 반영) 중 고름(기본 2차), 둘 다 있으면 비례율·총수입·총사업비 비교표. 공사비 연면적은 chosen.ex.totalGfa('개략 건축계획 기준')도 고를 수 있음. stage·ex 없는 예전 안은 1차로 봄
   - 사업성 화면에 구역이 없거나 /arch 구역과 90% 미만 겹치면 물어보고 /arch 구역을 가져와 필지·조서까지 불러옴(Assume.loadSiteZone → MapView.zoneFromTool). 2단계 '다른 도구의 구역'(MapView.toolZones: 공통 구역 + /urban 안)으로도 직접 가져올 수 있음. 구역계 교체는 MapView.setZoneGeo 한 곳(파일 불러오기와 같이 씀)
