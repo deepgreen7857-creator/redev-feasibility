@@ -3420,8 +3420,27 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
     const pj = loadProject();
     if (!pj || !pj.area || !pj.area.geojson) { alert('사업성 검토 화면(2단계 구역계)에 저장된 구역이 없습니다.\n사업성 검토 화면 2단계에서 구역을 만든 뒤(구역이 지도에 파랗게 보이는 상태) ★빠른 사업성의 ① 버튼을 다시 눌러 주세요.\n지금 보이는 안은 예전 구역입니다.'); return; }
     if (S.source !== 'map') setSource('map');
-    // 이미 같은 구역(90% 이상 겹침)을 가져온 안이 있으면 그 안을 다시 씀(묻지 않음)
     const pg = pj.area.geojson;
+    // A~E는 '한 사업'의 여러 안 — 지금 구역과 조금도 겹치지 않는 안은 다른 사업이므로 자동 백업 후 비움(묻지 않음)
+    if (pg && window.turf) {
+      const touch = g => { try { const x = turf.intersect(g, pg); return !!x && turf.area(x) > 1; } catch (e) { return false; } };
+      const filled = ZONE_IDS.filter(k => Z.zones[k] && Z.zones[k].geojson);
+      const mine = filled.filter(k => touch(Z.zones[k].geojson)), other = filled.filter(k => !mine.includes(k));
+      if (other.length) {
+        if (window.JbsWork) { try { await JbsWork.backup(`정비계획 다른 사업(${Z.title || other.join('·') + '안'}) 비우기 전 자동 백업`); } catch (e) { /* 백업 실패해도 진행 */ } }
+        const keep = mine.map(k => Z.zones[k]); Z.zones = {};
+        keep.forEach((z, i) => { Z.zones[ZONE_IDS[i]] = z; });
+        Object.keys(HIST).forEach(k => delete HIST[k]);
+        Z.count = Math.max(1, keep.length);
+        if (!keep.length) Z.title = '';
+        saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); S.region = D.keys[0];
+        syncRegionChips(); renderSourceBar();
+        toast(`다른 사업 구역(${other.length}개 안)은 자동 백업한 뒤 비웠습니다. [작업 저장·불러오기]에서 되돌릴 수 있습니다`);
+      }
+      const nm = pj.meta && pj.meta.name && pj.meta.name !== '새 정비사업' ? pj.meta.name : '';
+      if (nm && !Z.title) { Z.title = nm; saveZ(); syncTitle(); }
+    }
+    // 같은 사업 안 중 지금 구역과 90% 이상 겹치는 안이 있으면 그 안의 구역계·조서를 지금 것으로 바꿈(기반시설 설정은 유지)
     const same = pg && window.turf ? D.keys.find(k => { const g = D.regions[k].geojson; if (!g) return false; try { const x = turf.intersect(g, pg); return x && turf.area(x) / Math.max(turf.area(g), turf.area(pg)) >= 0.9; } catch (e) { return false; } }) : null;
     let id = same || D.keys.find(k => !D.regions[k].geojson);
     if (!id && D.keys.length < ZONE_IDS.length) { Z.count = D.keys.length + 1; saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); id = D.keys[D.keys.length - 1]; }
