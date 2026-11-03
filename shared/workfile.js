@@ -47,7 +47,7 @@
     const st = sites.filter(x => x.arch && x.arch.stages);
     if (sites.length) out.push(`구역 ${sites.length}개`);
     if (st.length) out.push(`확정 배치 ${st.map(x => Object.keys(x.arch.stages).map(n => n + '차').join('·')).join(', ')}`);
-    if (k['jbsc.project.v1']) out.push('사업성 프로젝트');
+    if (k['jbsc.project.v1']) { const p = j('jbsc.project.v1'); const a = p && p.area && (p.area.drawnArea || 0); out.push('사업성 프로젝트' + (a ? ` 구역 ${Math.round(a).toLocaleString()}㎡` : '')); }
     return out.join(' · ') || '빈 작업';
   }
 
@@ -133,7 +133,7 @@
   const LAST = 'jbsw:lastCloudHash';   // 작업 키(jbs-·jbs.)가 아니라 작업에 안 들어감
   let verTimer = null, verBusy = false, lastSeen = '';
   async function autoVersion(reason) {
-    if (verBusy) return;
+    if (verBusy) { setTimeout(() => autoVersion(reason), 3000); return; }
     const snap = snapshot(); if (summary(snap) === '빈 작업') return;
     const h = hashOf(snap); if (h === localStorage.getItem(LAST)) return;
     verBusy = true;
@@ -152,11 +152,29 @@
     for (const x of P) { const snap = { format: x.format, version: x.version, name: x.name, savedAt: x.savedAt, keys: x.keys }; await cloudPut(snap, true, 'version'); await putSlot(Object.assign({}, x, { pending: false })); }
   }
   function setBtn(t) { if (!btn || full) return; btn.textContent = '작업 저장·불러오기 · ' + t; }
+  // 구역계 지문: 사업성 구역(jbsc.project.v1 area.geojson)·정비계획 안(A~E geojson)·공통 구역 도형만 모음
+  //  사용자 요구(2026-11-04): '구역은 조금이라도 바뀔 때마다 다른 버전으로 저장' → 구역이 바뀌면 1분 기다리지 않고 바로(3초 묶음) 새 버전
+  function zoneHash() {
+    const j = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
+    const p = j('jbsc.project.v1'), z = j('jbs-urban-zones-v1'), st = j('jbs.sites.v1'), parts = [];
+    if (p && p.area && p.area.geojson) parts.push('main=' + JSON.stringify(p.area.geojson));
+    if (z && z.zones) Object.keys(z.zones).sort().forEach(k => { if (z.zones[k] && z.zones[k].geojson) parts.push(k + '=' + JSON.stringify(z.zones[k].geojson)); });
+    if (st && st.sites) Object.keys(st.sites).sort().forEach(k => { const g = st.sites[k] && (st.sites[k].geojson || st.sites[k].geo); if (g) parts.push('s' + k + '=' + JSON.stringify(g)); });
+    const str = parts.join('|'); let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0).toString(36) + ':' + str.length;
+  }
+  let lastZone = null, zoneTimer = null;
   function watch() {
     setInterval(() => {
-      let h = ''; try { h = hashOf(snapshot()); } catch (e) { return; }
+      let h = '', zh = ''; try { h = hashOf(snapshot()); zh = zoneHash(); } catch (e) { return; }
+      if (lastZone === null) lastZone = zh;
+      if (zh !== lastZone) { // 구역이 바뀜 → 바로 새 버전
+        lastZone = zh; lastSeen = h; clearTimeout(verTimer); clearTimeout(zoneTimer);
+        zoneTimer = setTimeout(() => autoVersion('구역 변경'), 3000); setBtn('구역 변경 — 저장 중');
+        return;
+      }
       if (h !== lastSeen) { lastSeen = h; clearTimeout(verTimer); verTimer = setTimeout(() => autoVersion('변경 후 1분'), 60000); if (h !== localStorage.getItem(LAST)) setBtn('저장 대기'); }
-    }, 5000);
+    }, 2000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autoVersion('창 숨김'); });
     setTimeout(() => { flushPending().then(() => autoVersion('열 때')).catch(() => { /* 다음에 */ }); }, 8000); // 못 올린 버전이 있으면 열 때 올림
   }
