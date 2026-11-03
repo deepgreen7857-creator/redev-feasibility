@@ -188,9 +188,19 @@ const Quick = {
     const q0 = this.ensure(), q = { ...q0, infraLevel: 'custom', infraPct: this.levelPct(q0, q0.infraLevel || 'avg') }, e = this.evaluate(q), p = e.p;
     const n = x => (isFinite(+x) ? String(Math.round(+x * 10) / 10) : '');
     let site = (S.quick.siteId && JbsSite.get(S.quick.siteId)) || null;
-    if (!site) site = { name: S.meta.name || '정비구역', plan: {}, profile: {}, v: {} };
+    // 예전에 넘긴 구역과 지금 구역이 다르면(90% 미만 겹침) 새 구역으로 — 같은 id를 다시 쓰면 교통성·환경성 화면에 예전 구역의 입력이 그대로 뜸
+    if (site && site.geojson && window.turf) {
+      try {
+        const a = turf.area(site.geojson), b = turf.area(S.area.geojson), x = turf.intersect(site.geojson, S.area.geojson);
+        const ov = x ? turf.area(x) / Math.max(a, b) : 0;
+        if (!(ov >= 0.9)) site = null;
+      } catch (er) { site = null; }
+    }
+    const loc = String(S.meta.location || ''), apt = (loc.match(/\(([^)]*)\)/) || [])[1];
+    const autoName = (S.meta.name && S.meta.name !== '새 정비사업') ? S.meta.name : (apt ? apt.split(',').pop().trim() : loc.replace(/^인천광역시\s*|^서울특별시\s*/, '').replace(/\s*일대$/, '')) || '정비구역';
+    if (!site) site = { name: autoName, plan: {}, profile: {}, v: {} };
     site.source = 'main';
-    site.name = S.meta.name || site.name;
+    site.name = autoName;
     site.geojson = S.area.geojson;
     site.profile = site.profile || {}; site.plan = site.plan || {}; site.v = site.v || {};
     if (S.meta.zoning) site.profile.zoning = S.meta.zoning;

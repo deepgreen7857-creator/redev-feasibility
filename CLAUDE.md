@@ -91,7 +91,7 @@
 - 저장 공간: JbsSite.save는 주변 건물(site.context)을 저장하지 않음(/arch는 창 안에서만 기억). 저장 실패 시 'jbs-storage-full' 이벤트 → 작업 버튼이 빨갛게 바뀜
 
 ## 1차 재검토 넘기기 (js/quick.js Quick.toReview·reviewLinks) — 2026-11-02
-- ★빠른 사업성 맨 아래 [1차 재검토로 넘기기]: 본 화면 구역계 + 1회차 값(세대수·용적률·평형별 세대·연면적)을 공통 구역(JbsSite, source 'main', id는 S.quick.siteId로 재사용)에 저장
+- ★빠른 사업성 맨 아래 [1차 재검토로 넘기기]: 본 화면 구역계 + 1회차 값(세대수·용적률·평형별 세대·연면적)을 공통 구역(JbsSite, source 'main', id는 S.quick.siteId로 재사용 — 단 예전 넘긴 구역과 90% 미만 겹치면 새 구역(새 id)으로, 이름은 위치의 단지명)에 저장
 - 순서 버튼: ① /urban?from=main(사업성 구역·조서를 빈 안으로 가져와 정비계획 탭) ② /traffic ③ /env ④ /arch ⑤ /landscape (?site=id) ⑥ /?arch=id 2차 사업성 — 각 단계 완료 여부는 site.constraints·site.arch.chosen으로 표시
 - /urban을 거치면 4탭에서 'urban:안' 구역이 따로 생김 → ⑥은 main·urban 구역 중 /arch 확정안이 있는 최근 것을 씀
 
