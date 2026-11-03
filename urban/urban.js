@@ -3408,7 +3408,7 @@ function legalPark(pl) {
   const minByUnits = Math.ceil(u60 * per60 + Math.max(0, u - u60) * per - 1e-9), byArea = Math.ceil(a85 / it.비율['85이하'] + a85u / it.비율['85초과'] - 1e-9);
   return { legal: Math.max(minByUnits, byArea), minByUnits, byArea, u60, per60, per, basis: it.근거 || '' };
 }
-fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) applyJson(j); }).catch(() => {}).finally(() => {
+fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) applyJson(j); }).catch(() => {}).finally(async () => {
   loadData();
   const first = D.map && D.keys.find(k => D.regions[k].geojson);
   if (first) { S.region = first; syncRegionChips(); renderSourceBar(); fitZone(first); }
@@ -3417,12 +3417,19 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
   const qs = new URLSearchParams(location.search);
   if (qs.get('from') === 'main') {
     history.replaceState(null, '', location.pathname + location.hash);
-    if (!loadProject()) { toast('사업성 검토 화면에 저장된 구역이 없습니다'); return; }
+    if (!loadProject() || !loadProject().area) { toast('사업성 검토 화면에 저장된 구역이 없습니다'); return; }
     if (S.source !== 'map') setSource('map');
-    let id = D.keys.find(k => !D.regions[k].geojson);
+    // 이미 같은 구역(90% 이상 겹침)을 가져온 안이 있으면 그 안을 다시 씀(묻지 않음)
+    const pg = loadProject().area && loadProject().area.geojson;
+    const same = pg && window.turf ? D.keys.find(k => { const g = D.regions[k].geojson; if (!g) return false; try { const x = turf.intersect(g, pg); return x && turf.area(x) / Math.max(turf.area(g), turf.area(pg)) >= 0.9; } catch (e) { return false; } }) : null;
+    let id = same || D.keys.find(k => !D.regions[k].geojson);
     if (!id && D.keys.length < ZONE_IDS.length) { Z.count = D.keys.length + 1; saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); id = D.keys[D.keys.length - 1]; }
-    if (!id && confirm(`빈 안이 없습니다. ${S.region}안 구역계를 사업성 검토 구역으로 바꿀까요?`)) id = S.region;
-    if (!id) return;
+    if (!id) {
+      const pick = S.region || D.keys[0];
+      if (!confirm(`정비계획 안(A~E)이 모두 차 있습니다. 지금 보고 있는 ${pick}안을 사업성 검토 구역으로 바꿀까요?\n바꾸기 전 ${pick}안은 홈페이지에 자동 저장되어 오른쪽 아래 [작업 저장·불러오기]에서 언제든 되돌릴 수 있습니다.`)) return;
+      if (window.JbsWork) await JbsWork.backup(pick + '안 바꾸기 전 자동 백업');
+      id = pick;
+    }
     importProject(id).then(() => { const b = document.querySelector('nav.steps button[data-tab="plan"]'); if (b) b.click(); toast(`${id}안으로 사업성 검토 구역을 가져왔습니다. 정비기반시설을 정한 뒤 4탭 개략 건축계획에서 검토서 도구로 넘기세요`); });
   }
 });
