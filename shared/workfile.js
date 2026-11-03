@@ -33,7 +33,10 @@
     const j = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
     const z = j('jbs-urban-zones-v1'), p = j('jbsc.project.v1'), s = j('jbs.sites.v1'), cur = localStorage.getItem('jbs.sites.current');
     const site = s && s.sites && cur && s.sites[cur];
-    return (z && z.title) || (p && p.meta && p.meta.name !== '새 정비사업' && p.meta.name) || (site && site.name) || '이름 없는 작업';
+    // 주소만 넣은 사업성 작업은 위치(괄호 안 단지 이름 우선)로 이름 붙임
+    const loc = p && p.meta && p.meta.location ? String(p.meta.location) : '', apt = (loc.match(/\(([^)]*)\)/) || [])[1];
+    const locName = apt ? apt.split(',').pop().trim() : loc.replace(/^인천광역시\s*|^서울특별시\s*/, '').replace(/\s*일대$/, '');
+    return (z && z.title) || (p && p.meta && p.meta.name !== '새 정비사업' && p.meta.name) || locName || (site && site.name !== '새 정비사업' && site.name) || '이름 없는 작업';
   }
   function summary(snap) {
     const k = snap.keys || {}, j = x => { try { return JSON.parse(k[x] || 'null'); } catch (e) { return null; } };
@@ -155,6 +158,7 @@
       if (h !== lastSeen) { lastSeen = h; clearTimeout(verTimer); verTimer = setTimeout(() => autoVersion('변경 후 1분'), 60000); if (h !== localStorage.getItem(LAST)) setBtn('저장 대기'); }
     }, 5000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autoVersion('창 숨김'); });
+    setTimeout(() => { flushPending().then(() => autoVersion('열 때')).catch(() => { /* 다음에 */ }); }, 8000); // 못 올린 버전이 있으면 열 때 올림
   }
 
   // 지우기 전 자동 백업: 이 컴퓨터 + 온라인(실패해도 이 컴퓨터 백업은 남음)
@@ -261,7 +265,7 @@
   // 저장 공간이 꽉 차서 저장 실패했다는 알림(site-store 등이 보냄)
   g.addEventListener && g.addEventListener('jbs-storage-full', () => { full = true; if (btn) { btn.classList.add('full'); btn.textContent = '저장 공간 꽉 참 — 작업 보관'; } });
 
-  g.JbsWork = { snapshot, summary, autoVersion, hashOf, cloudSave, cloudList, cloudGet, backup, apply, clearWork, listSlots, saveSlot, delSlot, download, used, isWorkKey, open: () => { ui(); open(); } };
+  g.JbsWork = { snapshot, summary, autoVersion, flushPending, guessName, hashOf, cloudSave, cloudList, cloudGet, backup, apply, clearWork, listSlots, saveSlot, delSlot, download, used, isWorkKey, open: () => { ui(); open(); } };
   const start = () => { ui(); watch(); };
   if (typeof document !== 'undefined') { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start(); }
 })(typeof window !== 'undefined' ? window : globalThis);
