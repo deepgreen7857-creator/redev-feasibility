@@ -78,27 +78,46 @@
   }
   const cloudId = name => 'w_' + Date.now() + '_' + String(name).replace(/[^0-9A-Za-z가-힣]/g, '').slice(0, 20);
   async function cloudSave(name, auto, kind) { return cloudPut(snapshot(name), auto, kind); }
+  // 저장 위치: 'jbsWork' 컬렉션(전용 규칙). 규칙이 아직 배포 안 됐으면(권한 없음) 관리자 전용 'adminAlerts'에
+  //  'jbsw_' 이름으로 임시 보관(resolved 필드가 없어 경매 화면 알림 목록에는 안 나옴). 목록·불러오기는 두 곳을 합쳐 보여 줌
+  let MODE = null;
+  async function mode() {
+    if (MODE) return MODE;
+    const { F, db } = await fb();
+    try { await F.getDocs(F.query(F.collection(db, 'jbsWork'), F.limit(1))); MODE = 'main'; }
+    catch (e) { MODE = /permission/i.test(e.message || e.code || '') ? 'alt' : 'main'; }
+    return MODE;
+  }
+  const ALT = 'adminAlerts';
   async function cloudPut(snap, auto, kind) {
-    const { F, db, user } = await fb(), body = JSON.stringify(snap), id = cloudId(snap.name);
+    const { F, db, user } = await fb(), M = await mode(), body = JSON.stringify(snap), id = cloudId(snap.name);
     const parts = []; for (let i = 0; i < body.length; i += CHUNK) parts.push(body.slice(i, i + CHUNK));
-    for (let i = 0; i < parts.length; i++) await F.setDoc(F.doc(db, 'jbsWork', id, 'chunks', String(i)), { d: parts[i] });
-    await F.setDoc(F.doc(db, 'jbsWork', id), { name: snap.name, savedAt: snap.savedAt, summary: summary(snap), size: body.length, n: parts.length, auto: !!auto, kind: kind || (auto ? 'backup' : 'manual'), hash: hashOf(snap), by: user.email, at: F.serverTimestamp() });
+    const meta = { name: snap.name, savedAt: snap.savedAt, summary: summary(snap), size: body.length, n: parts.length, auto: !!auto, kind: kind || (auto ? 'backup' : 'manual'), hash: hashOf(snap), by: user.email, at: F.serverTimestamp() };
+    if (M === 'main') {
+      for (let i = 0; i < parts.length; i++) await F.setDoc(F.doc(db, 'jbsWork', id, 'chunks', String(i)), { d: parts[i] });
+      await F.setDoc(F.doc(db, 'jbsWork', id), meta);
+    } else {
+      for (let i = 0; i < parts.length; i++) await F.setDoc(F.doc(db, ALT, `jbsw_${id}_c${i}`), { jbsWorkChunk: true, d: parts[i] });
+      await F.setDoc(F.doc(db, ALT, `jbsw_${id}`), Object.assign({ jbsWork: true }, meta));
+    }
     return snap;
   }
   async function cloudList() {
-    const { F, db } = await fb();
-    const q = await F.getDocs(F.query(F.collection(db, 'jbsWork'), F.orderBy('savedAt', 'desc'), F.limit(400)));
-    return q.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    const { F, db } = await fb(), out = [];
+    try { (await F.getDocs(F.query(F.collection(db, 'jbsWork'), F.orderBy('savedAt', 'desc'), F.limit(400)))).docs.forEach(d => out.push(Object.assign({ id: d.id }, d.data()))); } catch (e) { /* 규칙 배포 전 */ }
+    try { (await F.getDocs(F.query(F.collection(db, ALT), F.where('jbsWork', '==', true)))).docs.forEach(d => out.push(Object.assign({ id: 'alt:' + d.id.slice(5) }, d.data()))); } catch (e) { /* 무시 */ }
+    return out.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
   }
+  const ref = (F, db, id, i) => id.startsWith('alt:') ? F.doc(db, ALT, 'jbsw_' + id.slice(4) + (i === undefined ? '' : '_c' + i)) : (i === undefined ? F.doc(db, 'jbsWork', id) : F.doc(db, 'jbsWork', id, 'chunks', String(i)));
   async function cloudGet(id) {
-    const { F, db } = await fb(), m = (await F.getDoc(F.doc(db, 'jbsWork', id))).data(); if (!m) throw new Error('없는 작업입니다');
-    let body = ''; for (let i = 0; i < m.n; i++) body += (await F.getDoc(F.doc(db, 'jbsWork', id, 'chunks', String(i)))).data().d;
+    const { F, db } = await fb(), m = (await F.getDoc(ref(F, db, id))).data(); if (!m) throw new Error('없는 작업입니다');
+    let body = ''; for (let i = 0; i < m.n; i++) body += (await F.getDoc(ref(F, db, id, i))).data().d;
     return check(JSON.parse(body));
   }
   async function cloudDel(id) {
-    const { F, db } = await fb(), m = (await F.getDoc(F.doc(db, 'jbsWork', id))).data();
-    for (let i = 0; i < ((m && m.n) || 0); i++) await F.deleteDoc(F.doc(db, 'jbsWork', id, 'chunks', String(i)));
-    await F.deleteDoc(F.doc(db, 'jbsWork', id));
+    const { F, db } = await fb(), m = (await F.getDoc(ref(F, db, id))).data();
+    for (let i = 0; i < ((m && m.n) || 0); i++) await F.deleteDoc(ref(F, db, id, i));
+    await F.deleteDoc(ref(F, db, id));
   }
   // 내용 지문(이름·저장 시각 제외) — 바뀐 게 있을 때만 자동 버전을 남김
   function hashOf(snap) {
