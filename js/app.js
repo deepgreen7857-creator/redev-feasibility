@@ -1002,6 +1002,9 @@ function boot() {
       if (!list.length) list = await MapView.searchOSM(q);
       if (!list.length) { msg.textContent = '검색 결과가 없습니다. 지번이나 도로명 주소로 다시 검색해 보세요.'; return; }
       if (MapView.map) MapView.goTo(list[0]);
+      // 주소를 새로 검색한 것은 사용자가 위치를 바꾸겠다는 뜻 — 예전에 직접 고친 위치·용도지역 표시를 풀고 새 위치로 다시 채움
+      S.meta.locationManual = false; S.meta.zoningManual = false;
+      if (S.quick) S.quick.zoneManual = false;
       await Auto.location(list[0]);
       msg.innerHTML = `<b>${esc(list[0].label)}</b>(으)로 설정했습니다. 다음은 <a href="#area" data-goto="area">구역계</a>에서 사업 구역을 그려 주세요.`;
       $('[data-goto]', msg).onclick = ev => { ev.preventDefault(); App.go('area'); };
