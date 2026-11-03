@@ -57,7 +57,9 @@ const Quick = {
   ensure() {
     const q = S.quick || (S.quick = {});
     const A = JbsFeas.get();
-    if (q.init) { if (!q.infraLevel) q.infraLevel = 'avg'; this.FEAS_KEYS.forEach(k => { q[k] = A[k]; }); return q; }
+    // 용도지역은 개요(주소 검색·구역계로 자동 판정)를 따라감. 이 화면에서 직접 고른 뒤에는 그대로 둠(zoneManual)
+    const syncZone = () => { if (!q.zoneManual && S.meta.zoning && q.zoneSrc !== S.meta.zoning) { q.zone = this.zoneKey(S.meta.zoning); q.zoneSrc = S.meta.zoning; } };
+    if (q.init) { if (!q.infraLevel) q.infraLevel = 'avg'; syncZone(); this.FEAS_KEYS.forEach(k => { q[k] = A[k]; }); return q; }
     const a = Assume.defaults();
     Object.assign(q, {
       init: true, zone: this.zoneKey(S.meta.zoning), farStep: 'calc', farCustom: 250, infraLevel: 'avg', infraPct: 25,
@@ -65,6 +67,7 @@ const Quick = {
       generalPrice: a.generalPrice, memberRatio: a.memberRatio, conPrice: a.conPrice, etcPct: a.etcPct,
       priorMul: a.priorMul, gfaFactor: a.gfaFactor, resRatio: a.resRatio, rentPrice: a.rentPrice, shopPrice: a.shopPrice, target: 100,
     });
+    q.zoneSrc = S.meta.zoning || '';
     this.FEAS_KEYS.forEach(k => { q[k] = A[k]; });
     return q;
   },
@@ -564,7 +567,8 @@ Tabs.quick = {
       if ($('#qkReportStaff')) $('#qkReportStaff').onclick = () => Quick.report('staff');
       $('#qkReset').onclick = () => Quick.reset();
       if ($('#qkToReview')) $('#qkToReview').onclick = () => { const st = Quick.toReview(); if (st) { Quick.reviewLinks(); $('#qkReviewBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } };
-      $('#qkZoneFromMeta').onclick = () => { S.quick.zone = Quick.zoneKey(S.meta.zoning); App.update(true); };
+      $('#qkZoneFromMeta').onclick = () => { S.quick.zone = Quick.zoneKey(S.meta.zoning); S.quick.zoneSrc = S.meta.zoning; S.quick.zoneManual = false; App.update(true); };
+      $('#qk_zone').addEventListener('change', () => { S.quick.zoneManual = true; });
     }
     this.refresh();
     Quick.reviewLinks();
