@@ -27,6 +27,8 @@ function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+// 인천광역시 도시계획 조례 제65조①(2026. 7. 13. 시행본, 법제처 원문 2026-11-04 확인) — 정비기본계획 표와 함께 안내용
+const INCHEON_ORD_FAR = { '제1종일반주거지역': '200%', '제2종일반주거지역': '250%', '제3종일반주거지역': '300%', '준주거지역_순수공동주택': '500%, 순수 주거용 공동주택은 300%', '역세권_준주거지역_순수공동주택': '500%, 순수 주거용 공동주택은 300%' };
 // 주소 검색·구역 지정 결과로 개요의 위치·용도지역을 자동 기록
 const Auto = {
   async zoning(lat, lon, bbox) {
@@ -100,7 +102,7 @@ const Tabs = {
       // 인천이면 2030 기본계획(빠른 사업성과 같은 표) 기준·허용·상한, 그 밖은 서울시 조례 참고값
       const inc = S.criteria.region === 'incheon' && S.meta.zoning && typeof Quick !== 'undefined' ? (Quick.far().by_zone || {})[Quick.zoneKey(S.meta.zoning)] : null;
       $('#farHint').innerHTML = inc
-        ? `참고: 인천 2030 기본계획(정비사업) 기준 ${inc.base}% · 허용 ${inc.allowed}% · 상한 ${inc.max}%${fz ? ` (법령 상한 ${fz.max}%, 서울 조례 ${fz.seoul}%는 인천에 적용 안 됨)` : ''}. ${S.plan.farManual ? `<button type="button" class="link-btn" data-far="${inc.allowed}">자동(허용 ${inc.allowed}%)으로 되돌리기</button>` : ''}`
+        ? `참고: 인천 2030 정비기본계획 기준 ${inc.base}% · 허용 ${inc.allowed}% · 상한 ${inc.max}%${(() => { const o = INCHEON_ORD_FAR[Quick.zoneKey(S.meta.zoning)]; return o ? ` (인천 도시계획 조례 제65조 ${o})` : ''; })()}. 허용 용적률에서 공공시설 제공 등으로 상한까지 올릴 수 있습니다. ${S.plan.farManual ? `<button type="button" class="link-btn" data-far="${inc.allowed}">자동(허용 ${inc.allowed}%)으로 되돌리기</button>` : ''}`
         : fz
         ? `참고: 서울시 조례 ${fz.seoul}%, 법정 상한 ${fz.max}%. 정비계획으로 높아질 수 있습니다. ${S.plan.farManual ? `<button type="button" class="link-btn" data-far="${fz.seoul}">자동(${fz.seoul}%)으로 되돌리기</button>` : ''}`
         : '';
