@@ -555,7 +555,7 @@
       <tr><td colspan="6" class="note">전용 60㎡ 이하 ${fmt(groups(A.byType).u60)}세대(${fmt(groups(A.byType).u60 / (A.units || 1) * 100, 1)}%) · 85㎡ 이하 ${fmt(Object.entries(A.byType).filter(([t]) => +t <= 85).reduce((a, [, k]) => a + k, 0) / (A.units || 1) * 100, 1)}% — 주택규모별 건설비율(재개발 국민주택규모 비율·임대 비율 등)은 사업 유형별 고시·조례 확인 필요. 가로주택정비사업 등 소규모주택정비사업은 별도 기준.</td></tr></table>
       <h3>동별 개요</h3>
       <table><tr><th>동</th><th>형태</th><th>평형</th><th>층당 세대</th><th>층수</th><th>세대수</th><th>높이</th><th>층수 상한(일조·경계)</th></tr>
-      ${A.buildings.map(b => `<tr><td>${b.id}</td><td>${esc(G.FORM_NAME[b.form] || '판상형')}</td><td>${b.t}㎡</td><td>${b.n}</td><td>${b.floors}</td><td>${b.n * b.floors}</td><td>${fmt(A.H(b.floors), 1)}m</td><td>${b.cap >= +I.p.maxFloors ? '-' : b.cap + '층'}</td></tr>`).join('')}</table>
+      ${A.buildings.map(b => `<tr><td>${b.id}</td><td>${esc(G.FORM_NAME[b.form] || '판상형')}</td><td>${b.t}㎡${b.vname ? `<br><span class="note">${esc(b.vname)} 평면</span>` : ''}</td><td>${b.n}</td><td>${b.floors}</td><td>${b.n * b.floors}</td><td>${fmt(A.H(b.floors), 1)}m</td><td>${b.cap >= +I.p.maxFloors ? '-' : b.cap + '층'}</td></tr>`).join('')}</table>
       <h3>적용 기준</h3>
       <table><tr><th style="width:160px">인동간격</th><td>앞 동 높이 × ${I.p.spacing}${/확인필요/.test(sp.상태) ? ' <span class="chk">※ 기준 확인 필요</span>' : ''}<br><span class="note">${esc(sp.근거)} — ${esc(sp.상태)}</span></td></tr>
       ${(() => { const w = crit('window_setback'); return w ? `<tr><th>채광창 이격</th><td>채광창 벽면에서 인접 대지경계선까지 높이의 1/${winRatio()} 이상(도로·공원이 사이에 있으면 그 중심선까지 — 공동주택, 판상형 앞·뒤 벽면 · 탑상형 모든 벽면)<br><span class="note">${esc(w.근거)} — ${esc(w.상태)}</span></td></tr>` : ''; })()}
@@ -567,7 +567,7 @@
   }
   function renderUnits() {
     const A = alts[cur], U = C.평면, types = Object.keys(A.byType).filter(t => A.byType[t]);
-    const reps = []; A.buildings.forEach(b => { if (!reps.find(r => r.t === b.t && r.n === b.n && r.form === b.form)) reps.push(b); });
+    const reps = []; A.buildings.forEach(b => { if (!reps.find(r => r.t === b.t && r.n === b.n && r.form === b.form && (r.v || '') === (b.v || ''))) reps.push(b); });
     $('#plans').innerHTML = types.map(t => `<div>${D.unitPlan(t, U[t])}</div>`).join('') + reps.map(b => `<div>${D.floorPlan(b, U, C.가정.coreW_m)}</div>`).join('');
   }
 
@@ -623,7 +623,7 @@
       chosen: { label: A.label, angle: A.angle, units: A.units, byType: A.byType, far: A.far,
         supply: Object.fromEntries(Object.keys(A.byType).map(t => [t, +U[t].공급 > 0 ? +U[t].공급 : Math.round(U[t].전용 * (+I.p.sf || C.가정.supplyFactor) * 10) / 10])),
         exclusive: Object.fromEntries(Object.keys(A.byType).map(t => [t, U[t].전용])), bcr: A.bcr, gfa: A.gfa, lot: I.lot, maxFloors: A.maxFloors, maxHeight: A.maxHeight,
-        form: A.form, buildings: A.buildings.map(b => ({ id: b.id, t: b.t, n: b.n, form: b.form, floors: b.floors, H: A.H(b.floors), poly: b.poly.map(pr.back), parts: (b.parts || [b.poly]).map(q => q.map(pr.back)) })) },
+        form: A.form, buildings: A.buildings.map(b => ({ id: b.id, t: b.t, n: b.n, v: b.v || '', form: b.form, floors: b.floors, H: A.H(b.floors), poly: b.poly.map(pr.back), parts: (b.parts || [b.poly]).map(q => q.map(pr.back)) })) },
     });
     const stg = stageNow(), X = extras(A, I);
     Object.assign(site.arch.chosen, { stage: stg, stageName: STAGE_NAME[stg], at: site.arch.at, ex: { legal: X.legal, plan: X.plan, ugArea: Math.round(X.ugArea), ugFloors: X.ugFloors, comm: Math.round(X.comm), mgmt: Math.round(X.mgmt), totalGfa: Math.round(X.totalGfa) } });

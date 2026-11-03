@@ -153,7 +153,7 @@
       (lc.units || []).forEach(rs => { unitOutline(rs).forEach(q => { s += `<polygon points="${q.map(P).join(' ')}" fill="none" stroke="#1d2a33" stroke-width="1"/>`; }); const all = rs.flat(), cx = all.reduce((a, p) => a + p[0], 0) / all.length, cy = all.reduce((a, p) => a + p[1], 0) / all.length; s += `<text x="${(cx * S).toFixed(1)}" y="${((lc.D - cy) * S + 3).toFixed(1)}" text-anchor="middle" font-size="8.5">${b.t}㎡</text>`; });
       lc.divs.forEach(l => { s += `<line x1="${P(l[0]).split(',')[0]}" y1="${P(l[0]).split(',')[1]}" x2="${P(l[1]).split(',')[0]}" y2="${P(l[1]).split(',')[1]}" stroke="#1d2a33" stroke-width=".8"/>`; });
       lc.cores.forEach(q => { const c = q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length], [0, 0]); s += `<polygon points="${q.map(P).join(' ')}" fill="#fff" stroke="#1d2a33"/><text x="${(c[0] * S).toFixed(1)}" y="${((lc.D - c[1]) * S + 3).toFixed(1)}" text-anchor="middle" font-size="7.5">코어</text>`; });
-      s += `<text x="0" y="-6" font-size="10" font-weight="700">${FN[b.form] || ''} ${b.t}㎡ ${b.n}호 조합(평면 라이브러리) · ${lc.L.toFixed(1)}m × ${lc.D.toFixed(1)}m · 위 북 / 아래 남</text>`;
+      s += `<text x="0" y="-6" font-size="10" font-weight="700">${FN[b.form] || ''} ${b.t}㎡ ${b.n}호 조합(평면 라이브러리${b.vname ? ' · ' + esc(b.vname) + ' 평면' : ''}) · ${lc.L.toFixed(1)}m × ${lc.D.toFixed(1)}m · 위 북 / 아래 남</text>`;
       return s + '</g></svg>';
     }
     const t = U[b.t], S = 7, unitW = t.폭 * S, cw = coreW * S, D = t.깊이 * S, n = b.n, pad = 16;
