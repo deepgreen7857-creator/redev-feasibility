@@ -90,11 +90,22 @@ const Tabs = {
       const others = (S.meta.zoningList || []).filter(z => z !== S.meta.zoning);
       $('#zoningListNote').textContent = others.length ? `구역에 ${others.join(', ')}도 걸쳐 있습니다.` : '';
       const fz = FAR_BY_ZONING[S.meta.zoning];
-      $('#farHint').innerHTML = fz
-        ? `참고: 서울시 조례 ${fz.seoul}%, 법정 상한 ${fz.max}%. 정비계획으로 높아질 수 있습니다. <button type="button" class="link-btn" data-far="${fz.seoul}">${fz.seoul}% 넣기</button>`
+      // 계획 용적률 자동: 직접 고치지 않았으면 용도지역의 허용 용적률(인천 2030 기본계획, 그 밖은 서울시 조례 참고값)
+      const sugg = (() => {
+        const i = S.criteria.region === 'incheon' && S.meta.zoning && window.Quick ? (Quick.far().by_zone || {})[Quick.zoneKey(S.meta.zoning)] : null;
+        return i ? i.allowed : fz ? fz.seoul : 0;
+      })();
+      if (!S.plan.farManual && sugg && num(S.plan.far) !== sugg) { S.plan.far = sugg; bindInputs($('#tab-overview')); }
+      if ($('#farBadge')) $('#farBadge').hidden = !!S.plan.farManual || !sugg;
+      // 인천이면 2030 기본계획(빠른 사업성과 같은 표) 기준·허용·상한, 그 밖은 서울시 조례 참고값
+      const inc = S.criteria.region === 'incheon' && S.meta.zoning && window.Quick ? (Quick.far().by_zone || {})[Quick.zoneKey(S.meta.zoning)] : null;
+      $('#farHint').innerHTML = inc
+        ? `참고: 인천 2030 기본계획(정비사업) 기준 ${inc.base}% · 허용 ${inc.allowed}% · 상한 ${inc.max}%${fz ? ` (법령 상한 ${fz.max}%, 서울 조례 ${fz.seoul}%는 인천에 적용 안 됨)` : ''}. ${S.plan.farManual ? `<button type="button" class="link-btn" data-far="${inc.allowed}">자동(허용 ${inc.allowed}%)으로 되돌리기</button>` : ''}`
+        : fz
+        ? `참고: 서울시 조례 ${fz.seoul}%, 법정 상한 ${fz.max}%. 정비계획으로 높아질 수 있습니다. ${S.plan.farManual ? `<button type="button" class="link-btn" data-far="${fz.seoul}">자동(${fz.seoul}%)으로 되돌리기</button>` : ''}`
         : '';
       const fb = $('#farHint [data-far]');
-      if (fb) fb.onclick = () => { S.plan.far = num(fb.dataset.far); App.update(); };
+      if (fb) fb.onclick = () => { S.plan.far = num(fb.dataset.far); S.plan.farManual = false; App.update(); };
       // 1단계는 계획 조건만. 면적은 2단계(구역계)에서 구역을 정해야 생김
       $('#planStats').innerHTML = `
         <div><span>사업 유형</span><strong>${TYPES[S.meta.type].label}</strong><em>${TYPES[S.meta.type].law}</em></div>
@@ -1001,7 +1012,25 @@ function boot() {
       let list = VWorld.enabled ? await MapView.searchVWorld(q).catch(() => []) : [];
       if (!list.length) list = await MapView.searchOSM(q);
       if (!list.length) { msg.textContent = '검색 결과가 없습니다. 지번이나 도로명 주소로 다시 검색해 보세요.'; return; }
+      // 2단계에 다른 곳 구역계가 남아 있으면(새 주소가 구역 밖 200m 넘게) 지우고 새로 시작할지 물음 — 남겨 두면 구역계 탭이 예전 구역으로 열림
+      if (S.area.geojson && window.turf) {
+        const pt = turf.point([list[0].lon, list[0].lat]);
+        let far = false;
+        try {
+          const inside = turf.booleanPointInPolygon(pt, S.area.geojson.type === 'Feature' ? S.area.geojson : turf.feature(S.area.geojson));
+          far = !inside && turf.distance(pt, turf.centroid(S.area.geojson), { units: 'meters' }) > 200;
+        } catch (e2) { far = false; }
+        if (far && confirm(`2단계 구역계에 다른 곳의 구역(${S.meta.location || '이전 구역'})이 남아 있습니다.\n지우고 새 주소에서 시작할까요? 토지·건축물 조서도 함께 비웁니다.\n(지우기 전에 지금 작업을 홈페이지와 이 컴퓨터에 자동 백업합니다. 취소하면 예전 구역을 그대로 둡니다)`)) {
+          if (window.JbsWork) { msg.textContent = '예전 작업 백업 중…'; await JbsWork.backup('주소 바꾸기 전 자동 백업'); }
+          S.area.geojson = null; S.area.drawnArea = 0; S.area.importedKey = ''; S.area.mode = 'ledger';
+          S.lands = []; S.buildings = [];
+          if (MapView.items) MapView.items.clearLayers();
+        }
+      }
       if (MapView.map) MapView.goTo(list[0]);
+      // 주소를 새로 검색한 것은 사용자가 위치를 바꾸겠다는 뜻 — 예전에 직접 고친 위치·용도지역 표시를 풀고 새 위치로 다시 채움
+      S.meta.locationManual = false; S.meta.zoningManual = false;
+      if (S.quick) S.quick.zoneManual = false;
       await Auto.location(list[0]);
       msg.innerHTML = `<b>${esc(list[0].label)}</b>(으)로 설정했습니다. 다음은 <a href="#area" data-goto="area">구역계</a>에서 사업 구역을 그려 주세요.`;
       $('[data-goto]', msg).onclick = ev => { ev.preventDefault(); App.go('area'); };
@@ -1012,6 +1041,7 @@ function boot() {
   // 직접 고친 위치·용도지역은 이후 자동 입력으로 덮어쓰지 않음
   $('#locInput').addEventListener('input', () => { S.meta.locationManual = true; });
   $('#zoningSelect').addEventListener('change', () => { S.meta.zoningManual = true; App.update(); });
+  $('#farInput').addEventListener('input', () => { S.plan.farManual = true; });
 
   // 각 단계 아래에 이전/다음 버튼
   const order = Object.keys(Tabs);

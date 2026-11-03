@@ -12,8 +12,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=100">
-<link rel="stylesheet" href="css/zonekit.css?v=100">
+<link rel="stylesheet" href="css/style.css?v=109">
+<link rel="stylesheet" href="css/zonekit.css?v=109">
 </head>
 <body>
 
@@ -166,9 +166,9 @@
 
   <h3 class="step-h"><span>3</span> 건축 계획 <small>대략적인 값이어도 됩니다</small></h3>
   <div class="form-grid three">
-    <label>계획 용적률 (%)
-      <small>대지면적 대비 지상층 바닥면적 합계 비율. 높을수록 많이 지을 수 있습니다.</small>
-      <input data-bind="plan.far" data-type="number" inputmode="decimal">
+    <label>계획 용적률 (%) <span class="auto-badge" id="farBadge">자동</span>
+      <small>모르면 그대로 두세요 — 용도지역에 맞는 허용 용적률이 자동으로 들어갑니다. 정비계획 값을 알면 고쳐 넣으세요.</small>
+      <input data-bind="plan.far" data-type="number" inputmode="decimal" id="farInput">
       <small id="farHint" class="far-hint"></small></label>
     <label>전체 연면적 배율
       <small>지하주차장·공용시설까지 합친 전체 연면적이 지상 연면적의 몇 배인지. 보통 1.4~1.6입니다.</small>
@@ -562,27 +562,27 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=100"></script>
-<script src="js/util.js?v=100"></script>
-<script src="js/state.js?v=100"></script>
-<script src="js/calc.js?v=100"></script>
-<script src="js/zonekit.js?v=100"></script>
-<script src="js/map.js?v=100"></script>
-<script src="js/ledger.js?v=100"></script>
-<script src="js/pdfsave.js?v=100"></script>
-<script src="js/overlay.js?v=100"></script>
-<script src="js/export.js?v=100"></script>
-<script src="js/roadcut.js?v=100"></script>
-<script src="shared/site-store.js?v=100"></script>
-<script src="shared/feas.js?v=100"></script>
-<script src="shared/cases.js?v=100"></script>
-<script src="js/assume.js?v=100"></script>
-<script src="js/app.js?v=100"></script>
-<script src="js/quick.js?v=100"></script>
-<script src="js/forms.js?v=100"></script>
-<script src="js/hwpx.js?v=100"></script>
-<script src="js/surveymaps.js?v=100"></script>
-<script src="js/review.js?v=100"></script>
-<script src="shared/workfile.js?v=100"></script>
+<script src="js/config.js?v=109"></script>
+<script src="js/util.js?v=109"></script>
+<script src="js/state.js?v=109"></script>
+<script src="js/calc.js?v=109"></script>
+<script src="js/zonekit.js?v=109"></script>
+<script src="js/map.js?v=109"></script>
+<script src="js/ledger.js?v=109"></script>
+<script src="js/pdfsave.js?v=109"></script>
+<script src="js/overlay.js?v=109"></script>
+<script src="js/export.js?v=109"></script>
+<script src="js/roadcut.js?v=109"></script>
+<script src="shared/site-store.js?v=109"></script>
+<script src="shared/feas.js?v=109"></script>
+<script src="shared/cases.js?v=109"></script>
+<script src="js/assume.js?v=109"></script>
+<script src="js/app.js?v=109"></script>
+<script src="js/quick.js?v=109"></script>
+<script src="js/forms.js?v=109"></script>
+<script src="js/hwpx.js?v=109"></script>
+<script src="js/surveymaps.js?v=109"></script>
+<script src="js/review.js?v=109"></script>
+<script src="shared/workfile.js?v=109"></script>
 </body>
 </html>

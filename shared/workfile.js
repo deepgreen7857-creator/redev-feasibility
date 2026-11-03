@@ -4,7 +4,8 @@
 //  · 이 컴퓨터에 이름 붙여 저장(IndexedDB, 용량 제한 거의 없음) / 파일(.jbs.json)로 내려받기
 //  · 불러오기 전·새 작업 시작 전에는 지금 상태를 '자동 백업'으로 먼저 저장(최근 3개)
 //  · 다시 받을 수 있는 자료(브이월드 조회 캐시·주변 건물)는 넣지 않음
-//  · 서버로 보내지 않음. 파일에 토지조서가 들어 있을 수 있으니 외부로 보내지 말 것
+//  · 온라인 저장(2026-11-04): 관리자 로그인(gate.js와 같은 Firebase 프로젝트)으로 Firestore 'jbsWork'(관리자만 읽고 씀)에 이름 붙여 저장 → 어느 컴퓨터에서나 불러오기
+//    큰 작업은 700KB씩 나눠 'jbsWork/{id}/chunks'에. 파일·온라인 모두 토지조서가 들어 있을 수 있으니 외부로 보내지 말 것
 (function (g) {
   if (g.JbsWork) return;
   const FORMAT = 'jbs-work', VERSION = 1, DB = 'jbs-work', STORE = 'slots';
@@ -58,8 +59,109 @@
   async function saveSlot(name, auto) {
     const snap = snapshot(name), id = auto ? 'auto:' + Date.now() : 'name:' + snap.name;
     await putSlot(Object.assign({ id, auto: !!auto }, snap));
-    if (auto) { const a = (await listSlots()).filter(x => x.auto); for (const x of a.slice(3)) await delSlot(x.id); }
+    if (auto) { const a = (await listSlots()).filter(x => x.auto && !x.ver); for (const x of a.slice(3)) await delSlot(x.id); }
     return snap;
+  }
+
+  /* ---------- 온라인 저장(Firestore, 관리자 전용) ---------- */
+  const FBV = '10.12.2', CFG = { apiKey: 'AIzaSyAaqAP7371502cfR3OpnYC33tTfE7EeqtI', authDomain: 'jbslab-auction.firebaseapp.com', projectId: 'jbslab-auction', appId: '1:780407673324:web:0506b356fb74a8c68a30c9' };
+  const CHUNK = 700000;
+  let FB = null;
+  async function fb() {
+    if (FB) return FB;
+    const [A, U, F] = await Promise.all(['app', 'auth', 'firestore'].map(m => import(`https://www.gstatic.com/firebasejs/${FBV}/firebase-${m}.js`)));
+    const app = A.getApps().length ? A.getApp() : A.initializeApp(CFG), auth = U.getAuth(app);
+    if (!auth.currentUser) await new Promise(res => { const off = U.onAuthStateChanged(auth, () => { off(); res(); }); setTimeout(res, 4000); });
+    if (!auth.currentUser) throw new Error('관리자로 로그인해야 온라인 저장을 쓸 수 있습니다');
+    FB = { F, db: F.getFirestore(app), user: auth.currentUser };
+    return FB;
+  }
+  const cloudId = name => 'w_' + Date.now() + '_' + String(name).replace(/[^0-9A-Za-z가-힣]/g, '').slice(0, 20);
+  async function cloudSave(name, auto, kind) { return cloudPut(snapshot(name), auto, kind); }
+  // 저장 위치: 'jbsWork' 컬렉션(전용 규칙). 규칙이 아직 배포 안 됐으면(권한 없음) 관리자 전용 'adminAlerts'에
+  //  'jbsw_' 이름으로 임시 보관(resolved 필드가 없어 경매 화면 알림 목록에는 안 나옴). 목록·불러오기는 두 곳을 합쳐 보여 줌
+  let MODE = null;
+  async function mode() {
+    if (MODE) return MODE;
+    const { F, db } = await fb();
+    try { await F.getDocs(F.query(F.collection(db, 'jbsWork'), F.limit(1))); MODE = 'main'; }
+    catch (e) { MODE = /permission/i.test(e.message || e.code || '') ? 'alt' : 'main'; }
+    return MODE;
+  }
+  const ALT = 'adminAlerts';
+  async function cloudPut(snap, auto, kind) {
+    const { F, db, user } = await fb(), M = await mode(), body = JSON.stringify(snap), id = cloudId(snap.name);
+    const parts = []; for (let i = 0; i < body.length; i += CHUNK) parts.push(body.slice(i, i + CHUNK));
+    const meta = { name: snap.name, savedAt: snap.savedAt, summary: summary(snap), size: body.length, n: parts.length, auto: !!auto, kind: kind || (auto ? 'backup' : 'manual'), hash: hashOf(snap), by: user.email, at: F.serverTimestamp() };
+    if (M === 'main') {
+      for (let i = 0; i < parts.length; i++) await F.setDoc(F.doc(db, 'jbsWork', id, 'chunks', String(i)), { d: parts[i] });
+      await F.setDoc(F.doc(db, 'jbsWork', id), meta);
+    } else {
+      for (let i = 0; i < parts.length; i++) await F.setDoc(F.doc(db, ALT, `jbsw_${id}_c${i}`), { jbsWorkChunk: true, d: parts[i] });
+      await F.setDoc(F.doc(db, ALT, `jbsw_${id}`), Object.assign({ jbsWork: true }, meta));
+    }
+    return snap;
+  }
+  async function cloudList() {
+    const { F, db } = await fb(), out = [];
+    try { (await F.getDocs(F.query(F.collection(db, 'jbsWork'), F.orderBy('savedAt', 'desc'), F.limit(400)))).docs.forEach(d => out.push(Object.assign({ id: d.id }, d.data()))); } catch (e) { /* 규칙 배포 전 */ }
+    try { (await F.getDocs(F.query(F.collection(db, ALT), F.where('jbsWork', '==', true)))).docs.forEach(d => out.push(Object.assign({ id: 'alt:' + d.id.slice(5) }, d.data()))); } catch (e) { /* 무시 */ }
+    return out.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+  }
+  const ref = (F, db, id, i) => id.startsWith('alt:') ? F.doc(db, ALT, 'jbsw_' + id.slice(4) + (i === undefined ? '' : '_c' + i)) : (i === undefined ? F.doc(db, 'jbsWork', id) : F.doc(db, 'jbsWork', id, 'chunks', String(i)));
+  async function cloudGet(id) {
+    const { F, db } = await fb(), m = (await F.getDoc(ref(F, db, id))).data(); if (!m) throw new Error('없는 작업입니다');
+    let body = ''; for (let i = 0; i < m.n; i++) body += (await F.getDoc(ref(F, db, id, i))).data().d;
+    return check(JSON.parse(body));
+  }
+  async function cloudDel(id) {
+    const { F, db } = await fb(), m = (await F.getDoc(ref(F, db, id))).data();
+    for (let i = 0; i < ((m && m.n) || 0); i++) await F.deleteDoc(ref(F, db, id, i));
+    await F.deleteDoc(ref(F, db, id));
+  }
+  // 내용 지문(이름·저장 시각 제외) — 바뀐 게 있을 때만 자동 버전을 남김
+  function hashOf(snap) {
+    const k = snap.keys || {}, str = Object.keys(k).sort().map(x => x + '=' + k[x]).join('\n');
+    let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0).toString(36) + ':' + str.length;
+  }
+  /* ---------- 자동 버전(사용자 요구 2026-11-04: '항상 모든 버전을 홈페이지에 저장') ----------
+     작업 내용이 바뀌면 1분 동안 더 바뀌지 않을 때(또는 창을 닫거나 다른 탭으로 갈 때) 홈페이지에 새 버전으로 저장. 지우지 않고 모두 쌓음 */
+  const LAST = 'jbsw:lastCloudHash';   // 작업 키(jbs-·jbs.)가 아니라 작업에 안 들어감
+  let verTimer = null, verBusy = false, lastSeen = '';
+  async function autoVersion(reason) {
+    if (verBusy) return;
+    const snap = snapshot(); if (summary(snap) === '빈 작업') return;
+    const h = hashOf(snap); if (h === localStorage.getItem(LAST)) return;
+    verBusy = true;
+    try {
+      await cloudPut(snap, true, 'version'); localStorage.setItem(LAST, h); setBtn('홈페이지에 자동 저장됨 ' + now().slice(11));
+      await flushPending();
+    } catch (e) {
+      // 홈페이지에 못 올리면(인터넷·권한) 이 컴퓨터에 버전으로 남겨 두고, 다음에 올라가면 함께 올림 — 버전을 잃지 않게
+      console.warn('자동 버전 홈페이지 저장 실패(' + reason + ')', e);
+      try { await putSlot(Object.assign({ id: 'ver:' + Date.now(), auto: true, ver: true, pending: true }, snap)); localStorage.setItem(LAST, h); setBtn('이 컴퓨터에 자동 저장됨 ' + now().slice(11) + ' (홈페이지 대기)'); }
+      catch (e2) { setBtn('자동 저장 실패 — 눌러서 확인'); }
+    } finally { verBusy = false; }
+  }
+  async function flushPending() {
+    const P = (await listSlots()).filter(x => x.pending).sort((a, b) => String(a.savedAt).localeCompare(String(b.savedAt)));
+    for (const x of P) { const snap = { format: x.format, version: x.version, name: x.name, savedAt: x.savedAt, keys: x.keys }; await cloudPut(snap, true, 'version'); await putSlot(Object.assign({}, x, { pending: false })); }
+  }
+  function setBtn(t) { if (!btn || full) return; btn.textContent = '작업 저장·불러오기 · ' + t; }
+  function watch() {
+    setInterval(() => {
+      let h = ''; try { h = hashOf(snapshot()); } catch (e) { return; }
+      if (h !== lastSeen) { lastSeen = h; clearTimeout(verTimer); verTimer = setTimeout(() => autoVersion('변경 후 1분'), 60000); if (h !== localStorage.getItem(LAST)) setBtn('저장 대기'); }
+    }, 5000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autoVersion('창 숨김'); });
+  }
+
+  // 지우기 전 자동 백업: 이 컴퓨터 + 온라인(실패해도 이 컴퓨터 백업은 남음)
+  async function backup(label) {
+    const name = guessName() + ' (' + label + ')';
+    try { await saveSlot(name, true); } catch (e) { /* 무시 */ }
+    try { await cloudSave(name, true); return true; } catch (e) { console.warn('온라인 백업 실패', e); return false; }
   }
 
   /* ---------- 되돌려 놓기 ---------- */
@@ -109,14 +211,22 @@
       <div class="n">${esc(summary(cur))} · 브라우저 저장 공간 ${kb(u)} / 약 5MB${u > 4.2e6 ? ' <span class="warn">— 거의 찼습니다. 저장한 뒤 정리하세요</span>' : ''}</div>
       ${full ? '<div class="warn">브라우저 저장 공간이 꽉 차서 방금 내용이 저장되지 못했습니다. 아래 [파일로 내려받기]로 먼저 보관하세요.</div>' : ''}
       ${note ? `<div class="n" style="margin-top:6px;color:#0f6b3a">${esc(note)}</div>` : ''}
-      <div class="row"><button class="p" data-w="save">이 컴퓨터에 저장</button><button data-w="file">파일로 내려받기</button><button data-w="load">파일에서 불러오기</button><button data-w="new">새 작업 시작</button></div>
-      <div class="n">저장하면 이름별로 아래 목록에 남고, 불러오면 모든 화면(정비계획·검토서·개략 건축계획·사업성)이 그 상태로 돌아갑니다. 다른 컴퓨터에서는 파일로 옮기세요. 배치안 목록·일조 결과는 [배치안 만들기]·[일조 계산]을 다시 누르면 나옵니다.</div>
+      <div class="row"><button class="p" data-w="csave">홈페이지에 저장(온라인)</button><button data-w="save">이 컴퓨터에 저장</button><button data-w="file">파일로 내려받기</button><button data-w="load">파일에서 불러오기</button><button data-w="new">새 작업 시작</button></div>
+      <div class="n">저장하면 이름별로 아래 목록에 남고, 불러오면 모든 화면(정비계획·검토서·개략 건축계획·사업성)이 그 상태로 돌아갑니다. <b>홈페이지에 저장</b>한 작업은 어느 컴퓨터에서나(관리자 로그인) 불러올 수 있습니다. 배치안 목록·일조 결과는 [배치안 만들기]·[일조 계산]을 다시 누르면 나옵니다.</div>
+      <h3 style="margin-top:12px">홈페이지에 저장된 작업 <span class="n">(바뀔 때마다 자동 저장 · 모든 버전 보관)</span></h3><div id="jbsCloudList" class="n">불러오는 중…</div>
       <h3 style="margin-top:12px">이 컴퓨터에 저장된 작업</h3>
       ${slots === null ? '<div class="warn">이 브라우저에서는 저장 목록을 쓸 수 없습니다(사생활 보호 창 등). 파일로 내려받으세요.</div>'
-        : slots.length ? `<ul>${slots.map(s => `<li><b>${esc(s.name)}${s.auto ? ' <span class="n">(자동 백업)</span>' : ''}</b><span class="n">${esc(s.savedAt)} · ${esc(summary(s))}</span>
+        : slots.length ? `<ul>${slots.map(s => `<li><b>${esc(s.name)}${s.ver ? ` <span class="n">(자동 버전${s.pending ? ' · 홈페이지 올리기 대기' : ''})</span>` : s.auto ? ' <span class="n">(자동 백업)</span>' : ''}</b><span class="n">${esc(s.savedAt)} · ${esc(summary(s))}</span>
           <div class="row"><button data-w="open" data-id="${esc(s.id)}">불러오기</button><button data-w="dl" data-id="${esc(s.id)}">파일</button><button data-w="del" data-id="${esc(s.id)}">지우기</button></div></li>`).join('')}</ul>` : '<div class="n">아직 없습니다.</div>'}
       <input type="file" accept=".json,application/json" hidden id="jbsWorkFile">`;
     box.hidden = false;
+    cloudList().then(L => {
+      const el = box.querySelector('#jbsCloudList'); if (!el) return;
+      const item = s => `<li><b>${esc(s.savedAt)}${s.kind === 'version' ? '' : s.auto ? ' <span class="n">(지우기 전 백업)</span>' : ' <span class="n">(직접 저장)</span>'}</b><span class="n">${esc(s.summary || '')} · ${kb(s.size || 0)}</span>
+        <div class="row"><button data-w="copen" data-id="${esc(s.id)}">이 버전 불러오기</button><button data-w="cdl" data-id="${esc(s.id)}">파일</button><button data-w="cdel" data-id="${esc(s.id)}">지우기</button></div></li>`;
+      const base = n => String(n || '').replace(/ \((불러오기 전|새 작업 전|주소 바꾸기 전) 자동 백업\)$/, ''); const groups = {}; L.forEach(s => { (groups[base(s.name)] = groups[base(s.name)] || []).push(s); });
+      el.outerHTML = L.length ? Object.entries(groups).map(([nm, vs], i) => `<details ${i === 0 ? 'open' : ''} style="margin:6px 0"><summary><b>${esc(nm.replace(/ \((불러오기 전|새 작업 전|주소 바꾸기 전) 자동 백업\)$/, ''))}</b> <span class="n">버전 ${vs.length}개 · 마지막 ${esc(vs[0].savedAt)}</span></summary><ul>${vs.map(item).join('')}</ul></details>`).join('') : '<div class="n">아직 없습니다. 작업을 하면 바뀔 때마다 자동으로 저장됩니다.</div>';
+    }).catch(er => { const el = box.querySelector('#jbsCloudList'); if (el) el.innerHTML = `<span class="warn">온라인 목록을 불러오지 못했습니다: ${esc(er.message)}</span>`; });
     box.querySelector('#jbsWorkFile').onchange = async e => {
       const f = e.target.files[0]; if (!f) return;
       try { const snap = check(JSON.parse(await f.text())); await restore(snap, `파일 '${f.name}'`); } catch (er) { open('불러오지 못했습니다: ' + er.message); }
@@ -124,7 +234,7 @@
   }
   async function restore(snap, label) {
     if (!confirm(`${label} — '${snap.name}'(${snap.savedAt}) 상태로 바꿉니다.\n지금 작업은 '자동 백업'으로 먼저 저장해 둡니다. 계속할까요?`)) return;
-    try { await saveSlot('불러오기 전 자동 백업', true); } catch (e) { /* 백업 실패해도 진행 전 확인 */ }
+    await backup('불러오기 전 자동 백업');
     apply(snap);
     location.reload();
   }
@@ -132,12 +242,16 @@
     const b = e.target.closest('button[data-w]'); if (!b) return;
     const w = b.dataset.w, id = b.dataset.id;
     try {
-      if (w === 'save') { const name = prompt('작업 이름', guessName()); if (name === null) return; const s = await saveSlot(name.trim() || guessName(), false); full = false; btn.classList.remove('full'); open(`'${s.name}'으로 저장했습니다(${s.savedAt}).`); }
+      if (w === 'csave') { const name = prompt('작업 이름(홈페이지에 저장)', guessName()); if (name === null) return; b.disabled = true; b.textContent = '저장 중…'; const s = await cloudSave(name.trim() || guessName(), false); open(`'${s.name}'을 홈페이지에 저장했습니다(${s.savedAt}). 다른 컴퓨터에서도 불러올 수 있습니다.`); }
+      else if (w === 'copen') { b.disabled = true; b.textContent = '받는 중…'; const s = await cloudGet(id); await restore(s, '홈페이지에 저장된 작업'); b.disabled = false; b.textContent = '불러오기'; }
+      else if (w === 'cdl') { download(await cloudGet(id)); }
+      else if (w === 'cdel') { if (confirm('이 작업을 홈페이지에서 지울까요? 되돌릴 수 없습니다.')) { await cloudDel(id); open('홈페이지에서 지웠습니다.'); } }
+      else if (w === 'save') { const name = prompt('작업 이름', guessName()); if (name === null) return; const s = await saveSlot(name.trim() || guessName(), false); full = false; btn.classList.remove('full'); open(`'${s.name}'으로 저장했습니다(${s.savedAt}).`); }
       else if (w === 'file') { const name = prompt('파일에 붙일 작업 이름', guessName()); if (name === null) return; download(snapshot(name.trim() || guessName())); open('파일을 내려받았습니다. 토지조서가 들어 있을 수 있으니 외부로 보내지 마세요.'); }
       else if (w === 'load') box.querySelector('#jbsWorkFile').click();
       else if (w === 'new') {
         if (!confirm('새 작업을 시작합니다. 정비계획 안·구역·배치·검토서·사업성 프로젝트가 비워집니다(사업성 가정값은 남김).\n지금 작업은 자동 백업으로 먼저 저장합니다. 계속할까요?')) return;
-        await saveSlot(guessName() + ' (새 작업 전 자동 백업)', true); clearWork(); location.reload();
+        await backup('새 작업 전 자동 백업'); clearWork(); location.reload();
       }
       else if (w === 'open') { const s = (await listSlots()).find(x => x.id === id); if (s) await restore(s, '저장된 작업'); }
       else if (w === 'dl') { const s = (await listSlots()).find(x => x.id === id); if (s) download(s); }
@@ -147,6 +261,7 @@
   // 저장 공간이 꽉 차서 저장 실패했다는 알림(site-store 등이 보냄)
   g.addEventListener && g.addEventListener('jbs-storage-full', () => { full = true; if (btn) { btn.classList.add('full'); btn.textContent = '저장 공간 꽉 참 — 작업 보관'; } });
 
-  g.JbsWork = { snapshot, summary, apply, clearWork, listSlots, saveSlot, delSlot, download, used, isWorkKey, open: () => { ui(); open(); } };
-  if (typeof document !== 'undefined') { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ui); else ui(); }
+  g.JbsWork = { snapshot, summary, autoVersion, hashOf, cloudSave, cloudList, cloudGet, backup, apply, clearWork, listSlots, saveSlot, delSlot, download, used, isWorkKey, open: () => { ui(); open(); } };
+  const start = () => { ui(); watch(); };
+  if (typeof document !== 'undefined') { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start(); }
 })(typeof window !== 'undefined' ? window : globalThis);
