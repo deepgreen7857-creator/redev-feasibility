@@ -34,7 +34,7 @@
     if (cons && cons.env && cons.env.국가유산_검토) list.push(T.imp_heritage);
     list.push(T.imp_street);
     const hasArch = !!(cons && cons.arch);
-    const need = [T.need_plan]; if (!hasArch) need.unshift(T.need_layout);
+    const need = (p.keyArea && p.district) ? [] : [T.need_plan]; if (!hasArch) need.unshift(T.need_layout);
     const constraints = {
       층수_점감_검토: res.h.result === '스카이라인 변화 큼' ? `주변 평균 ${p.aroundFloors}층 대비 ${res.h.ratio}배` : null,
       통경축_방향: p.axis || null,

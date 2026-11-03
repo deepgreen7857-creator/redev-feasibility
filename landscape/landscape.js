@@ -150,7 +150,7 @@
 
       <h2>10. 높이·경관 관리 방향 및 종합 의견</h2>
       <ol>${r.list.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
-      <p>보완 필요사항:</p><ul>${r.need.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+      ${r.need.length ? `<p>보완 필요사항:</p><ul>${r.need.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}`;
       return { html, constraints: r.constraints };
     },
   });
