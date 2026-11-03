@@ -159,7 +159,7 @@ async function readListPage(page, court) {
  * @returns {AsyncGenerator<{caseNo, itemNo, court, usage, address, appraisal, minBid, failCount, bidEnd, status, open: () => Promise<void>}>}
  *   open(): 그 물건의 상세 화면으로 이동하는 함수(목록에서 클릭)
  */
-export async function* listCourt(page, court, pace) {
+export async function* listCourt(page, court, pace, opts = {}) {
   // 1) 첫 화면
   await pace.beforePage();
   await page.goto(HOME, { waitUntil: 'domcontentloaded' });
@@ -186,8 +186,11 @@ export async function* listCourt(page, court, pace) {
   const pages = Math.ceil(total / 10);
 
   // 4) 쪽마다 행을 읽고, 다음 쪽으로 넘긴다
-  for (let p = 1; p <= pages; p++) {
+  //  opts.startPage: 같은 날 이미 읽은 쪽은 건너뛰고 멈춘 쪽부터(2026-11-03 — 쉬었다 다시 열 때 1쪽부터 다시 넘기던 낭비 제거)
+  const from = Math.min(Math.max(1, Number(opts.startPage) || 1), pages);
+  for (let p = from; p <= pages; p++) {
     if (p > 1) await goToPage(page, p, pace);
+    if (opts.onPage) opts.onPage(p);
     const rows = await readListPage(page, court);
     for (const row of rows) {
       yield {

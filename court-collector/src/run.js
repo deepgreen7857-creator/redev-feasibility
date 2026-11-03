@@ -336,12 +336,14 @@ async function main() {
     const pubOk = (row) => scopeRules.some((r) => r.pub && r.re.test(String(row.usage || ''))) ? pv(row) === 'ok' : true;
     // 매각(종료)되면 대법원 서류가 내려가므로, 매각기일이 가까운 검토 범위 물건부터 상세를 연다(2026-10-31)
     //  1단계 '급한 것': 집중 지역 + 검토 범위 중 매각기일 urgentDays(기본 6일) 안 → 2단계 '검토 범위': 나머지 검토 범위 → 3단계: 그 밖(목록만)
-    const urgentDays = cfg.focus?.urgentDays || 6;
+    // 2026-11-03: 6일 → 14일(목록 기본 기간 2주 전체), 공시가 '1억 이하 확인'이 아니어도 '1억 초과 확인'만 아니면 연다
+    //  (예전 조건은 사이트에 공시가가 붙은 물건만 열어 하루 상세가 몇 건뿐이었음 — 목록 1,660·상세 4)
+    const urgentDays = cfg.focus?.urgentDays || 14;
     const daysLeft = (row) => { const m = String(row.bidEnd || '').match(/(\d{4})\.(\d{2})\.(\d{2})/); if (!m) return 99; return Math.floor((Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(...kstDay().split('-').map((x, i) => (i === 1 ? +x - 1 : +x)))) / 86400e3); };
-    const urgentRe = { test: (s, row) => (focusRe && focusRe.test(s)) || (inScope(row) && pubOk(row) && daysLeft(row) <= urgentDays) };
+    const urgentRe = { test: (s, row) => (focusRe && focusRe.test(s)) || (inScope(row) && daysLeft(row) <= urgentDays) };
     const phases = focus
+      // 2026-11-03: '검토 범위' 단계 삭제 — '급한 것'이 이제 검토 범위 전체(14일)를 덮는데, 같은 법원 목록을 한 번 더 넘기느라 화면 수만 씀
       ? [{ name: '급한 것', list: focus.courts, key: 'court', re: urgentRe },
-        ...(scopeRules.length ? [{ name: '검토 범위', list: focus.courts, key: 'scopeCourt', re: { test: (s, row) => (focusRe && focusRe.test(s)) || inScope(row) } }] : []),
         { name: '나머지', list: cfg.courts.filter((c) => !focus.courts.includes(c)), key: 'restCourt', re: null }]
       : [{ name: '전체', list: cfg.courts, key: 'court', re: null }];
     let phaseAt = 0; // 화면 오류로 다시 열어도 끝난 단계는 다시 돌지 않음
@@ -356,9 +358,15 @@ async function main() {
       const courts = [...courtList.slice(start), ...courtList.slice(0, start)];
       outer: for (let ci = 0; ci < courts.length; ci++) {
         const court = courts[ci];
+        // 2026-11-03: 오늘 끝까지 다 본 법원은 다음 회차에 다시 넘기지 않는다(목록 넘기기에 하루 화면 한도를 다 쓰던 문제)
+        progress.done ||= {}; progress.pageAt ||= {};
+        const dk = `${ph.key}:${court}`;
+        if (progress.done[dk] === kstDay()) { log(`법원: ${court} — 오늘 이미 끝까지 봄, 건너뜀`); continue; }
         progress[ph.key] = court; saveProgress();
-        log(`법원: ${court}`);
-        for await (const row of listCourt(page, court, pace)) {
+        const pa = progress.pageAt[dk];
+        const startPage = pa && pa.day === kstDay() ? pa.p : 1;
+        log(`법원: ${court}${startPage > 1 ? ` (${startPage}쪽부터 이어서)` : ''}`);
+        for await (const row of listCourt(page, court, pace, { startPage, onPage: (p) => { progress.pageAt[dk] = { day: kstDay(), p }; saveProgress(); } })) {
           // 한동안 봤으면 끊고 쉰다: 올릴 것 올리고, 브라우저 닫고, 쉬었다가 같은 법원 처음부터 다시(이미 본 물건은 상세를 안 엶)
           if (!DRY && pace.sessionOver()) {
             await flush(); await browser.close(); browser = null;
@@ -373,7 +381,10 @@ async function main() {
           let stale = !prev || prev.v !== DETAIL_V || prev.minBid !== row.minBid || prev.status !== row.status || Date.now() - (prev.at || 0) > cfg.refreshDetailAfterDays * 86400e3;
           let detail = null;
           // 같은 물건에서 화면 오류가 두 번 나면 오늘은 건너뛴다(한 물건 때문에 회차가 계속 같은 자리에서 멈추던 문제 대비)
-          if (stale && ph.re && !ph.re.test(`${row.address || ''} ${row.title || ''}`, row)) stale = false; // 이 단계 대상이 아니면 목록 정보만(다음 단계에서 엶)
+          const isTarget = !ph.re || ph.re.test(`${row.address || ''} ${row.title || ''}`, row);
+          if (isTarget) stats.targets = (stats.targets || 0) + 1;
+          if (isTarget && !stale) stats.targetsFresh = (stats.targetsFresh || 0) + 1; // 대상인데 이미 최근에 읽어 둔 것
+          if (stale && !isTarget) stale = false; // 이 단계 대상이 아니면 목록 정보만
           if (stale && (badRows[key]?.n || 0) >= 2 && Date.now() - badRows[key].at < 86400e3) { stale = false; log(`건너뜀(화면 오류 반복): ${row.caseNo}`); }
           if (stale) {
             if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
@@ -431,7 +442,8 @@ async function main() {
           if (stats.detailed >= LIMIT) { stats.stoppedBy = 'test-limit'; break outer; }
           if (!pace.canContinue()) { stats.stoppedBy = 'limit'; break outer; }
         }
-        progress[ph.key] = courtList[(courtList.indexOf(court) + 1) % courtList.length]; saveProgress();
+        progress[ph.key] = courtList[(courtList.indexOf(court) + 1) % courtList.length];
+        progress.done[dk] = kstDay(); delete progress.pageAt[dk]; saveProgress();
       }
       // break outer(한도·시간대 끝)로 나왔으면 다음 단계로 넘어가지 않음
       if (stats.stoppedBy) return;
