@@ -174,13 +174,66 @@
   // 형태별 후보 모듈(큰 것 → 작은 것 순). 혼합은 forms 배열 순서대로 시도
   // 탑상·Y형은 탑상 세대 치수(평면[t].탑상 — 실제 사례 값)가 있으면 그 폭·깊이로 그림(없으면 판상 치수)
   const towerU = (U, t) => { const tw = U[t] && U[t].탑상; return tw && +tw.폭 > 0 && +tw.깊이 > 0 ? Object.assign({}, U, { [t]: Object.assign({}, U[t], { 폭: +tw.폭, 깊이: +tw.깊이, 베이: +tw.베이 || U[t].베이 }) }) : U; };
-  function modulesFor(U, c, t, form) {
-    if (form === 'tower') return [tower(towerU(U, t), c, t)];
-    if (form === 'Y') { const u2 = towerU(U, t), a = yForm(u2, c, t); return a.n > 3 ? [a, yForm(u2, c, t, 1)] : [a]; } // 소형은 날개당 2세대 + 1세대(작은 자리용)
+  /* ---------- 평면 변형(라이브러리 사례) ----------
+     평형마다 대표 평면(평면[t]) 말고도 '평면_라이브러리'.사례 중 그 평형에 해당하는 실제 평면을 베이 수·폭별로 골라 변형으로 씀.
+     자리가 대표 평면에 조금 모자랄 때 폭이 좁은 변형(예: 84 4베이 14.6m → 3베이 12.4m)으로 들어가게 해 배치를 최적화함.
+     사례 묶기: 평형 키(39·49·59·74·84·101·114)와 전용면적 차이 6㎡ 이내, 폭·깊이 있음, 형식(판상/탑상)별, 베이별로 중간값에 가장 가까운 1건.
+     신뢰도 '낮음'은 같은 묶음에 다른 사례가 없을 때만. 판상 깊이가 평형에 비해 너무 얕은(발코니 빠진 것으로 보이는) 사례는 뺌 */
+  let VARC = { lib: null, map: {} };
+  function variantsOf(U, t, kind) {
+    if (VARC.lib !== LIB || VARC.U !== U) VARC = { lib: LIB, U, map: {} };
+    const key = t + kind; if (VARC.map[key]) return VARC.map[key];
+    const keys = Object.keys(U).filter(k => isFinite(+k)).map(Number), tN = +t, ex = +U[t].전용 || tN;
+    const near = e => keys.reduce((b, k) => (Math.abs(k - e) < Math.abs(b - e) ? k : b), keys[0]);
+    const tw = kind === 'tower';
+    const rep = tw ? (U[t].탑상 && +U[t].탑상.폭 > 0 ? { id: U[t].탑상.대표사례 || 'rep-tower', 폭: +U[t].탑상.폭, 깊이: +U[t].탑상.깊이, 베이: +U[t].탑상.베이 || 2, rep: 1 } : null)
+      : { id: U[t].대표사례 || 'rep', 폭: +U[t].폭, 깊이: +U[t].깊이, 베이: +U[t].베이 || 3, rep: 1 };
+    const minD = tw ? 8.5 : ex >= 55 ? 8.3 : 7.5; // 4베이 59형은 8.5m 안팎도 있음(발코니 포함)
+    const cs = ((LIB.사례 || [])).filter(c => +c.폭 > 0 && +c.깊이 > 0 && near(+c.전용) === tN && Math.abs(+c.전용 - ex) <= 6
+      && (tw ? c.형식 === '탑상' : c.형식 !== '탑상') && +c.깊이 >= minD && +c.폭 >= 4);
+    const out = rep ? [rep] : [];
+    const byBay = {}; cs.forEach(c => { const b = +c.베이 || 0; (byBay[b] = byBay[b] || []).push(c); });
+    // 베이 묶음마다 중간값에 가까운 것 + 가장 좁은 것 + 가장 얕은 것(좁은·얕은 자리용)
+    Object.keys(byBay).forEach(b => {
+      let g = byBay[b]; const good = g.filter(c => c.신뢰도 !== '낮음'); if (good.length) g = good;
+      const med = a => { const v = a.slice().sort((x, y) => x - y); return v[Math.floor(v.length / 2)]; };
+      const mw = med(g.map(c => +c.폭)), md = med(g.map(c => +c.깊이));
+      const picks = [g.reduce((m, x) => (Math.hypot(+x.폭 - mw, +x.깊이 - md) < Math.hypot(+m.폭 - mw, +m.깊이 - md) ? x : m), g[0]),
+        g.reduce((m, x) => (+x.폭 < +m.폭 ? x : m), g[0]), g.reduce((m, x) => (+x.깊이 < +m.깊이 ? x : m), g[0])];
+      picks.forEach(c => {
+        if (out.some(o => Math.abs(o.폭 - +c.폭) < 0.6 && Math.abs(o.깊이 - +c.깊이) < 0.6)) return; // 이미 있는 것과 거의 같은 치수
+        out.push({ id: c.id, 폭: +c.폭, 깊이: +c.깊이, 베이: +c.베이 || (+c.폭 > 13 ? 4 : +c.폭 > 9 ? 3 : 2), 단지: c.단지, 타입: c.타입 });
+      });
+    });
+    // 대표 먼저, 나머지는 대표가 못 들어가는 자리용이므로 대표보다 작은 것만(판상은 폭이 좁은 것, 탑상은 폭+깊이가 작은 것) — 큰 변형은 같은 세대수에 땅만 더 씀
+    //  폭 넓은 것 → 좁은 것 순, 최대 4개
+    const r0 = out[0], smaller = v => !r0 || tw || v.폭 < r0.폭 - 0.3 || v.깊이 < r0.깊이 - 0.5; // 판상은 대표보다 좁거나 얕은 것만. 탑상은 동 모듈 크기로 modulesFor에서 거름
+    const res = out.slice(0, 1).concat(out.slice(1).filter(smaller).sort((a, b) => b.폭 - a.폭)).slice(0, 5);
+    VARC.map[key] = res; return res;
+  }
+  const withV = (U, t, v, tw) => Object.assign({}, U, { [t]: Object.assign({}, U[t], { 폭: v.폭, 깊이: v.깊이, 베이: v.베이 }, tw ? { 탑상: null } : {}) });
+  const tagV = (m, v, Uv) => { if (m) { m.v = v.id; m.vrep = !!v.rep; m.vname = v.rep ? '' : (v.단지 ? v.단지.replace(/\(.*\)/, '').trim() + ' ' + (v.타입 || '') : v.id); m.U = Uv; } return m; };
+  function modulesFor(U, c, t, form, opt2) {
+    const many = !opt2 || opt2.variants !== false;
+    const VS = many ? variantsOf(U, t, 'slab') : variantsOf(U, t, 'slab').slice(0, 1);
+    const VT = (many ? variantsOf(U, t, 'tower') : variantsOf(U, t, 'tower').slice(0, 1));
+    const slabV = (fn) => { const out = []; VS.forEach(v => { const Uv = withV(U, t, v); fn(Uv).forEach(m => m && out.push(tagV(m, v, Uv))); }); return out; };
+    if (form === 'tower') {
+      if (!VT.length) return [tower(U, c, t)];
+      const ms = VT.map(v => { const Uv = withV(U, t, v, true); return tagV(tower(Uv, c, t), v, Uv); });
+      return ms.filter((m, i) => i === 0 || Math.max(m.L, m.D) < Math.max(ms[0].L, ms[0].D) - 0.3); // 대표보다 작은 동만
+    }
+    if (form === 'Y') {
+      const list = VT.length ? VT : [null], out = [];
+      list.forEach(v => { const Uv = v ? withV(U, t, v, true) : U, a = yForm(Uv, c, t); out.push(v ? tagV(a, v, Uv) : a); if (a.n > 3) { const b = yForm(Uv, c, t, 1); out.push(v ? tagV(b, v, Uv) : b); } });
+      return out;
+    }
     // ㄱ형: 판상 4호·2호 + 꺾인 날개 2호·1호(작은 것까지 있어야 큰 평형도 좁은 자리에 들어감)
-    if (form === 'L') return [lForm(U, c, t, 4, 2, false), lForm(U, c, t, 4, 1, false), lForm(U, c, t, 2, 2, false), lForm(U, c, t, 2, 1, false)];
-    if (form === 'court') { const out = []; [6, 4, 0].forEach(k => { const m = court(U, c, t, k); if (m && !out.some(o => Math.abs(o.L - m.L) < 1)) out.push(m); }); return out; }
-    return [slab(U, c, t, 4), slab(U, c, t, 6), slab(U, c, t, 2)];
+    if (form === 'L') { const out = []; [[4, 2], [4, 1], [2, 2], [2, 1]].forEach(([a, b]) => VS.forEach(v => { const Uv = withV(U, t, v); out.push(tagV(lForm(Uv, c, t, a, b, false), v, Uv)); })); return out; }
+    if (form === 'court') { const out = []; [6, 4, 0].forEach(k => VS.forEach(v => { const Uv = withV(U, t, v), m = court(Uv, c, t, k); if (m && !out.some(o => Math.abs(o.L - m.L) < 1)) out.push(tagV(m, v, Uv)); })); return out; }
+    // 판상: 4호(변형 모두) → 6호 → 2호 순. 같은 호수 안에서는 대표 평면 먼저, 그다음 폭 넓은 변형부터
+    const out = []; [4, 6, 2].forEach(n => VS.forEach(v => { const Uv = withV(U, t, v); out.push(tagV(slab(Uv, c, t, n), v, Uv)); }));
+    return out;
   }
 
   function layout(site, opt) {
@@ -201,8 +254,12 @@
     const want = {}; const sumMix = types.reduce((s, t) => s + mix[t], 0); types.forEach(t => { want[t] = mix[t] / sumMix; });
     // opt.form: slab 판상 / tower 탑상 / Y / L ㄱ형 / court ㅁ형 / mix 판상+탑상 혼합(긴 구간은 판상, 남는 짧은 구간은 탑상)
     const form = FORM_NAME[opt.form] ? opt.form : 'slab';
-    const MODS = {}; types.forEach(t => { MODS[t] = form === 'mix' ? modulesFor(U, A.coreW_m, t, 'slab').slice(0, 2).concat(modulesFor(U, A.coreW_m, t, 'tower')) : modulesFor(U, A.coreW_m, t, form); });
-    const Dmax = Math.max(...types.flatMap(t => MODS[t].map(m => m.D)));
+    const MODS_ALL = {}; types.forEach(t => { MODS_ALL[t] = form === 'mix' ? modulesFor(U, A.coreW_m, t, 'slab', opt).filter(m => m.n >= 4).concat(modulesFor(U, A.coreW_m, t, 'tower', opt)) : modulesFor(U, A.coreW_m, t, form, opt); });
+    // 대표 평면만 쓴 모듈(MODS_REP)과 변형까지 쓴 모듈(MODS_ALL) — 자유 배치는 둘 다 해 보고 연면적이 큰 쪽(앞자리를 무엇이 먼저 차지하느냐에 따라 결과가 달라짐)
+    const MODS_REP = {}; types.forEach(t => { MODS_REP[t] = MODS_ALL[t].filter(m => !m.v || m.vrep); if (!MODS_REP[t].length) MODS_REP[t] = MODS_ALL[t]; });
+    const hasVar = types.some(t => MODS_ALL[t].length > MODS_REP[t].length);
+    let MODS = MODS_REP;
+    const Dmax = Math.max(...types.flatMap(t => MODS_REP[t].map(m => m.D)));
 
     // 한 줄 채우기: 형태 그룹 fm(같은 형태의 모듈들)으로 [y0, y0+D] 띠를 채움. cols는 복사본에 반영
     function fillRow(y0, cols0) {
@@ -224,7 +281,7 @@
         const last = items[items.length - 1], shift = (e - s - (last.x + last.m.L - s)) / 2; // 가운데 맞춤
         items.forEach(it => {
           let m = it.m; const rx = it.x + shift;
-          if (m.form === 'L' && rx + m.L / 2 < (s + e) / 2) m = lForm(U, A.coreW_m, m.t, m.a, m.b, true); // 왼쪽 반은 거울상(날개가 바깥쪽)
+          if (m.form === 'L' && rx + m.L / 2 < (s + e) / 2) m = tagV(lForm(m.U || U, A.coreW_m, m.t, m.a, m.b, true), { id: m.v, rep: m.vrep, 단지: null }, m.U || U); // 왼쪽 반은 거울상(날개가 바깥쪽)
           out.push({ m, rx });
         });
       });
@@ -264,7 +321,7 @@
         const W = p => rot([b.rx + p[0], b.ry + p[1]], th), m = b.mod;
         b.parts = m.parts.map(q => q.map(W)); b.cores = m.cores.map(q => q.map(W)); b.divs = m.divs.map(q => q.map(W)); b.units = (m.units || []).map(rs => rs.map(q => q.map(W)));
         b.poly = hull(b.parts.flat()); b.angle = opt.angle || 0; b.center = W([b.L / 2, b.D / 2]);
-        b.inner = m.inner || 0; b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); b.local = { L: m.L, D: m.D, parts: m.parts, cores: m.cores, divs: m.divs, units: m.units || [] }; delete b.mod;
+        b.inner = m.inner || 0; b.v = m.v || ''; b.vname = m.vname || ''; b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); b.local = { L: m.L, D: m.D, parts: m.parts, cores: m.cores, divs: m.divs, units: m.units || [] }; delete b.mod;
       });
       return blds;
     }
@@ -314,7 +371,7 @@
     if (!site.__capc || site.__capc.key !== capKey) { try { Object.defineProperty(site, '__capc', { value: { key: capKey, map: new Map() }, configurable: true, writable: true, enumerable: false }); } catch (e) { /* 얼린 객체면 이번 배치에서만 */ } }
     const CAPC = site.__capc && site.__capc.key === capKey ? site.__capc.map : new Map();
     function capAt(m, x, y) {
-      const k = m.t + m.form + m.n + '|' + (m.a || 0) + (m.b || 0) + (m.mir ? 'm' : '') + '|' + m.L.toFixed(2) + 'x' + m.D.toFixed(2) + '|' + x + '|' + y;
+      const k = m.t + m.form + m.n + '|' + (m.v || '') + '|' + (m.a || 0) + (m.b || 0) + (m.mir ? 'm' : '') + '|' + m.L.toFixed(2) + 'x' + m.D.toFixed(2) + '|' + x + '|' + y;
       let c = CAPC.get(k);
       if (c === undefined) { const poly = hull(m.parts.flat().map(p => rot([x + p[0], y + p[1]], th))); c = capFloors({ poly, form: m.form, inner: m.inner || 0 }); CAPC.set(k, c); }
       return c;
@@ -334,7 +391,7 @@
               if (t === b.t) continue;
               for (const m0 of MODS[t]) {
                 if (m0.form !== b.form || !fits(m0, b.rx, b.ry)) continue;
-                const m = m0.form === 'L' && b.rx + m0.L / 2 < (xmin + xmax) / 2 ? lForm(U, A.coreW_m, m0.t, m0.a, m0.b, true) : m0;
+                const m = m0.form === 'L' && b.rx + m0.L / 2 < (xmin + xmax) / 2 ? tagV(lForm(m0.U || U, A.coreW_m, m0.t, m0.a, m0.b, true), { id: m0.v, rep: m0.vrep }, m0.U || U) : m0;
                 if (capAt(m, b.rx, b.ry) < b.floors || blocker(m, b.rx, b.ry, others, b.floors) !== null) continue;
                 const keep = { t: b.t, n: b.n, mod: b.mod, L: b.L, D: b.D };
                 Object.assign(b, { t: m.t, n: m.n, mod: m, L: m.L, D: m.D }); const e1 = err(); Object.assign(b, keep);
@@ -359,7 +416,7 @@
       //  2차: 채광창·정북 일조로 낮아지는 남은 자리에 낮은 동(그 자리 최고 층수, 최저 층수 이상) — 낮은 동은 인동간격도 낮은 높이로
       // 예전에는 높이 제한을 보지 않고 놓은 뒤 깎아서, 경계 가까이 낮아진 동이 높은 동 기준 간격을 차지해 땅이 많이 버려졌음
       const MIX_TOL = 0.06, over = m => { const tot = Object.values(cols).reduce((a, b) => a + b, 0) + m.n; return tot > 12 && (cols[m.t] + m.n) / tot > want[m.t] + MIX_TOL; };
-      const flip = (m, x) => (m.form === 'L' && x + m.L / 2 < (xmin + xmax) / 2 ? lForm(U, A.coreW_m, m.t, m.a, m.b, true) : m);
+      const flip = (m, x) => (m.form === 'L' && x + m.L / 2 < (xmin + xmax) / 2 ? tagV(lForm(m.U || U, A.coreW_m, m.t, m.a, m.b, true), { id: m.v, rep: m.vrep, 단지: null }, m.U || U) : m);
       for (let pass = types.length > 1 ? 0 : 1; pass < 3; pass++) {
         if (pass === 2 && F <= A.minFloors) break;
         for (let y = GY0; y <= ymax; y += st) {
@@ -400,9 +457,12 @@
     }
     // 줄 배치와 자유 배치 중 연면적이 큰 쪽
     function placeBest(F) {
-      if (opt.quick) return finish(pack(F));
-      const a = finish(place(() => F)), b = finish(pack(F));
-      return gfaOf(b) > gfaOf(a) * 1.001 ? b : a;
+      const packV = () => { MODS = MODS_ALL; try { return finish(pack(F)); } finally { MODS = MODS_REP; } };
+      if (opt.quick) { const b = finish(pack(F)); if (!hasVar) return b; const v = packV(); return gfaOf(v) > gfaOf(b) * 1.001 ? v : b; }
+      let best = finish(place(() => F));
+      const b = finish(pack(F)); if (gfaOf(b) > gfaOf(best) * 1.001) best = b;
+      if (hasVar) { const v = packV(); if (gfaOf(v) > gfaOf(best) * 1.001) best = v; }
+      return best;
     }
 
     // 정북 일조·경계부 저층 상한 → 동별 최고 층수

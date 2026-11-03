@@ -23,6 +23,7 @@ ReviewUI.start({
     { title: '문화유산·상위계획', fields: [
       { k: 'heritage', label: '최근접 국가유산', ph: '예: ○○향교' },
       { k: 'heritageDist', label: '국가유산까지 거리 m', num: true },
+      { k: 'heritageGrade', label: '국가유산 지정 구분', select: { '': '국가지정', '시지정': '시지정' } },
       { k: 'upper', label: '상위계획(도시기본계획·정비기본계획) 관련 사항', ph: '예: 생활권 공원 확충 방향' },
     ] },
   ],
@@ -43,8 +44,8 @@ ReviewUI.start({
     <tr><th>계획 세대수</th><td>${fmt(p.units)}세대</td><th>최고층수</th><td>${fmt(p.floors)}층</td></tr></table>
 
     <h2>3. 지형·지질</h2>
-    <p>표고 ${fmt(p.elevMin, 1)}m ~ ${fmt(p.elevMax, 1)}m, 평균경사도 ${fmt(p.slope, 1)}% ${badge(sl.result)}${chk(sl.unconfirmed)}</p>
-    <p class="note">근거: ${esc(sl.basis)}. 지질·지반은 사업시행계획 단계 지반조사로 확인.</p>
+    <p>표고 ${fmt(p.elevMin, 1)}m ~ ${fmt(p.elevMax, 1)}m, 평균경사도 ${fmt(p.slope, 1)}%${sl.deg !== null ? `(약 ${fmt(sl.deg, 1)}도)` : ''} (기준 ${sl.limit}도 미만) ${badge(sl.result)}${chk(sl.unconfirmed)}</p>
+    <p class="note">근거: ${esc(sl.basis)}. ${esc(sl.note || '')}. 지질·지반은 사업시행계획 단계 지반조사로 확인.</p>
 
     <h2>4. 토지이용·녹지</h2>
     <p>도시지역 ${t(p.urban)}, 구역 안 녹지지역 ${fmt(p.greenArea)}㎡. 수목·녹지 현황: ${t(p.trees)}</p>
@@ -54,13 +55,14 @@ ReviewUI.start({
     <p class="note">공사 중 비산먼지와 입주 후 교통량 증가에 따른 영향은 7장 저감방안으로 관리.</p>
 
     <h2>6. 소음·일조</h2>
-    <p><b>가. 소음</b> ${badge(n.result)}${chk(n.unconfirmed)} — 공동주택 실외소음도 ${n.db}dB 미만 기준(${esc(n.basis)}). ${n.roads.length ? `검토 대상: ${esc(n.roads.map(x => `${x.name || '간선도로'}(${x.level})`).join(', '))}` : ''}</p>
+    <p><b>가. 소음</b> ${badge(n.result)}${chk(n.unconfirmed)} — 공동주택 실외소음도 ${n.db}dB 미만 기준(${esc(n.basis)}). 도시지역은 6층 이상 부분에 창호를 닫은 실내소음도 ${n.indoor}dB 이하·환기설비를 모두 갖추면 실외 기준을 적용하지 않음. ${n.roads.length ? `검토 대상: ${esc(n.roads.map(x => `${x.name || '간선도로'}(${x.level})`).join(', '))}` : ''}</p>
     <p><b>나. 일조</b> ${badge(s.result)} — 정북방향 인접대지경계선으로부터 높이 10m 이하 부분 ${s.a}m 이상, 10m 초과 부분은 그 높이의 2분의 1 이상 이격(${esc(s.basis)}).
     ${s.apply && s.H !== null ? `최고 ${fmt(p.floors)}층(층고 ${s.fh}m 가정, 높이 약 ${fmt(s.H, 1)}m) 기준 최상부 이격 약 ${fmt(s.need, 1)}m.` : ''}</p>
     <p class="note">${esc(s.note)}</p>
 
     <h2>7. 문화유산</h2>
-    <p>최근접 국가유산 ${t(hr.name)}(약 ${fmt(hr.dist)}m) ${badge(hr.result)}${chk(hr.unconfirmed)} — 역사문화환경 보존지역 ${hr.radius}m 이내 기준(${esc(hr.basis)}).</p>
+    <p>최근접 국가유산 ${t(hr.name)}${hr.dist !== null ? `(약 ${fmt(hr.dist)}m)` : ''} ${badge(hr.result)}${chk(hr.unconfirmed)} — 역사문화환경 보존지역 ${hr.radius}m 이내 기준(${esc(hr.basis)}).</p>
+    <p class="note">${esc(hr.note || '')}</p>
 
     <h2>8. 상위계획 부합성</h2>
     <p>${t(p.upper)}</p>

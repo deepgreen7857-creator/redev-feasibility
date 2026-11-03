@@ -8,7 +8,10 @@ t('59,999㎡ 대상 아님', () => assert.strictEqual(X.eia(C, { siteArea: 59999
 t('녹지 1만㎡ 포함 시 소규모', () => assert.strictEqual(X.eia(C, { siteArea: 30000, greenArea: 10000, urban: '예' }).result, '소규모 환경영향평가 대상'));
 t('30만㎡ 정비구역 지정은 전략환경영향평가', () => assert.strictEqual(X.eia(C, { siteArea: 300000 }).strategic.result, '전략환경영향평가 대상(정비구역 지정)'));
 t('4만㎡는 전략 대상 아님', () => assert.strictEqual(X.eia(C, { siteArea: 41739, urban: '예' }).strategic.result, '대상 아님'));
-t('국가유산 400m 해당 가능', () => assert.strictEqual(X.heritage(C, { heritage: 'A', heritageDist: 400 }).result, '보존지역 해당 가능'));
+t('국가유산 400m(녹지 등) 해당 가능', () => assert.strictEqual(X.heritage(C, { heritage: 'A', heritageDist: 400 }).result, '보존지역 해당 가능'));
+t('국가유산 주거지역 250m는 범위 밖(인천 200m)', () => assert.strictEqual(X.heritage(C, { heritage: 'A', heritageDist: 250, zoning: '제2종일반주거지역' }).result, '범위 밖'));
+t('경사도 25%(14.0도) 도시지역 17도 이내', () => { const r = X.slope(C, { slope: 25, urban: '예' }); assert.strictEqual(r.deg, 14); assert.strictEqual(r.result, '기준 이내'); });
+t('경사도 35%(19.3도) 초과', () => assert.ok(/초과/.test(X.slope(C, { slope: 35 }).result)));
 t('일조: 3층(9m) 1.5m', () => assert.strictEqual(X.sunlight(C, { floors: 3, northRes: '예' }).need, 1.5));
 t('일조: 20층(60m) 30m', () => assert.strictEqual(X.sunlight(C, { floors: 20, northRes: '예' }).need, 30));
 t('간선도로면 소음 검토', () => assert.strictEqual(X.noise(C, { roads: [{ name: '인천대로', level: '간선도로' }] }).result, '소음 검토 필요'));

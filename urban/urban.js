@@ -3404,7 +3404,7 @@ function legalPark(pl) {
   const it = CRIT.traffic && CRIT.traffic.parking_housing; if (!it || !pl || !pl.byType) return null;
   let u = 0, u60 = 0, a85 = 0, a85u = 0;
   Object.entries(pl.byType).forEach(([t, c]) => { const ex = num(t), k = num(c); u += k; if (ex <= 60) u60 += k; if (ex <= 85) a85 += k * ex; else a85u += k * ex; });
-  const per60 = it.세대당_최저.전용60이하, per = it.세대당_최저.일반;
+  const ord = it.조례 && +it.조례.세대당_최저 || 0, per60 = Math.max(it.세대당_최저.전용60이하, ord), per = Math.max(it.세대당_최저.일반, ord);
   const minByUnits = Math.ceil(u60 * per60 + Math.max(0, u - u60) * per - 1e-9), byArea = Math.ceil(a85 / it.비율['85이하'] + a85u / it.비율['85초과'] - 1e-9);
   return { legal: Math.max(minByUnits, byArea), minByUnits, byArea, u60, per60, per, basis: it.근거 || '' };
 }

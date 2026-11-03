@@ -52,8 +52,13 @@ ReviewUI.start({
 
     <h2>4. 장래 교통수요</h2>
     <p>${esc(tr.formula)}</p>
-    <p>첨두시 발생교통량: ${tr.value === null ? '○○' : fmt(tr.value) + '통행/시'}${chk(tr.unconfirmed)}</p>
-    <p class="note">원단위 근거: ${esc(tr.basis)}. 방향별 분포·배정은 개략 배치 확정 후 진출입구 위치 기준으로 2차 검토한다.</p>
+    <p>첨두시 발생교통량(승용차, 유입+유출): 오후 ${tr.value === null ? '○○' : fmt(tr.value) + '대/시'}${tr.am != null ? `, 오전 ${fmt(tr.am)}대/시` : ''}${tr.retail ? ` (근생 ${fmt(tr.retail)}대/시 포함)` : ''}${chk(tr.unconfirmed)}</p>
+    ${tr.parts ? `<table><tr><th>구성</th><th>값</th><th>출처</th></tr>
+    <tr><td>상주 활동인구 원단위</td><td>${tr.parts.상주_활동인구_인per세대.값}인/세대 (${esc(tr.parts.상주_활동인구_인per세대.범위)})</td><td rowspan="2">국토교통부 교통영향평가정보 공공데이터(2015년 이후 아파트 조사 집계)</td></tr>
+    <tr><td>첨두 유출입률</td><td>오전 ${(tr.parts.첨두_유출입률.오전 * 100).toFixed(1)}% · 오후 ${(tr.parts.첨두_유출입률.오후 * 100).toFixed(1)}%</td></tr>
+    <tr><td>승용차 분담률</td><td>${(tr.parts.승용차_수단분담률.값 * 100).toFixed(1)}%</td><td>${esc(tr.parts.승용차_수단분담률.출처)}</td></tr>
+    <tr><td>재차인원</td><td>${tr.parts.재차인원.값}인/대</td><td>${esc(tr.parts.재차인원.출처)}</td></tr></table>` : ''}
+    <p class="note">원단위 근거: ${esc(tr.basis)}. ${esc(tr.rateNote || '')} 방향별 분포·배정은 개략 배치 확정 후 진출입구 위치 기준으로 2차 검토한다.</p>
 
     <h2>5. 교통영향 분석</h2>
     <p><b>가. 진입도로 폭</b> ${badge(ar.result)}</p>
@@ -61,6 +66,7 @@ ReviewUI.start({
     <tr><th>현황·계획</th><td>${ar.roads.some(r => r.planned) ? '정비계획 확폭 반영 후 ' : ''}최대 접도 폭 ${ar.maxW ?? '○○'}m${ar.sum2 !== null && ar.sum2 !== undefined ? `, 상위 2개 합계 ${fmt(ar.sum2, 1)}m` : ''}</td></tr>
     <tr><th>근거</th><td>${esc(ar.basis)}, ${esc(ar.basisDual || '')}<br><span class="note">${esc(ar.noteDual || '')}</span></td></tr></table>
     <p><b>나. 주차</b> 법정 주차대수 ${pk.legal === null ? '○○' : fmt(pk.legal) + '대'}${pk.partial ? ' (전용면적 합계 미입력 — 세대당 최저 기준만 적용)' : ''}, 계획 ${fmt(p.parkPlan)}대 ${badge(parkJudge)}${chk(pk.unconfirmed)}</p>
+    ${pk.retail ? `<p class="note">주택 ${fmt(pk.housing)}대 + 근린생활시설 ${fmt(pk.retail)}대(${esc(pk.retailBasis)})</p>` : ''}
     <p class="note">산식: ${esc(pk.formula)}<br>근거: ${esc(pk.basis)}. ${esc(pk.note)}</p>
 
     <h2>6. 교통영향평가 대상 여부</h2>
@@ -69,13 +75,13 @@ ReviewUI.start({
     <tr><th>계획 규모</th><td>${esc(ti.unit)} ${fmt(ti.value, 1)}㎡</td></tr>
     <tr><th>근거</th><td>${esc(ti.basis)}</td></tr>
     ${ti.result === '대상' ? `<tr><th>제출 시기</th><td>${esc(ti.when)}</td></tr>` : ''}</table>
-    <p class="note">시·도 조례로 별표 1 규모의 100분의 50 이상 범위에서 대상을 달리 정할 수 있으므로(같은 법 제15조제4항, 시행령 제13조의2제7항) 인천광역시 조례를 확인한다.</p>
+    <p class="note">시·도 조례로 별표 1 규모의 100분의 50 이상 범위에서 대상을 달리 정할 수 있으나(같은 법 제15조제4항, 시행령 제13조의2제7항) 인천광역시는 대상 규모를 따로 정한 조례가 없어 별표 1 규모를 그대로 적용한다.</p>
 
     <h2>7. 교통처리계획 및 개선방안</h2>
     <ol>${r.list.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
 
     <h2>8. 종합 의견 및 보완사항</h2>
-    <p>진입도로 ${esc(ar.result)}, 법정 주차대수 ${pk.legal === null ? '○○' : fmt(pk.legal) + '대'}, 교통영향평가 ${esc(ti.result)}로 검토되었다. 본 초안은 공부·공개자료와 기준표에 따른 개략 검토이며, 다음 사항을 보완해야 한다.</p>
+    <p>진입도로 ${esc(ar.result)}, 법정 주차대수 ${pk.legal === null ? '○○' : fmt(pk.legal) + '대'}, 교통영향평가 ${esc(ti.result)}${(c => { const k = c.charCodeAt(0) - 0xAC00; return k >= 0 && k < 11172 && k % 28 && k % 28 !== 8 ? '으로' : '로'; })(String(ti.result).slice(-1))} 검토되었다. 본 초안은 공부·공개자료와 기준표에 따른 개략 검토이며, 다음 사항을 보완해야 한다.</p>
     <ul>${r.need.map(s => `<li>${esc(s)}</li>`).join('')}</ul>`;
     return { html, constraints: r.constraints };
   },

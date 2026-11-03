@@ -188,7 +188,7 @@
       JbsSite.save(site); fillSel();
       const today = new Date().toLocaleDateString('ko-KR');
       const cons = site.constraints || {};
-      const consHtml = Object.keys(cons).length ? `<h2>부록. 개략 배치(/arch)에 넘기는 배치 조건</h2><div class="cons">${Object.entries(cons).map(([tool, o]) => `<p><b>${esc((TOOLS.find(t => t[0] === tool) || [tool, tool])[1])}</b> (${esc(o.at || '')})</p><ul>${Object.entries(o).filter(([k]) => k !== 'at').map(([k, x]) => `<li>${esc(k.replace(/_/g, ' '))}: ${esc(Array.isArray(x) ? (x.length ? x.map(y => typeof y === 'object' ? Object.values(y).join(' ') : y).join(', ') : '없음') : (x === null || x === '' ? '○○' : x))}</li>`).join('')}</ul>`).join('')}</div>` : '';
+      const consHtml = Object.keys(cons).length ? `<h2>부록. 개략 배치(/arch)에 넘기는 배치 조건</h2><div class="cons">${Object.entries(cons).map(([tool, o]) => `<p><b>${esc((TOOLS.find(t => t[0] === tool) || [tool, tool])[1])}</b> (${esc(o.at || '')})</p><ul>${Object.entries(o).filter(([k]) => k !== 'at').map(([k, x]) => `<li>${esc(k.replace(/_/g, ' '))}: ${esc(Array.isArray(x) ? (x.length ? x.map(y => typeof y === 'object' ? Object.values(y).join(' ') : y).join(', ') : '없음') : (x === null || x === '' ? '해당 없음' : x))}</li>`).join('')}</ul>`).join('')}</div>` : '';
       $('#report').innerHTML = `<div class="rbar"><button id="dlDoc">워드(.doc)로 내려받기</button><button id="prt">인쇄 · PDF 저장</button></div>
         <article class="doc" id="docBody"><h1>${T(site.name)} ${esc(cfg.title)}(초안)</h1>
         <div class="sub">작성일 ${esc(today)} · jbslab /${cfg.tool} 자동 작성 초안 — 검토자 확인 후 사용</div>${out.html}${consHtml}</article>`;

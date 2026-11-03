@@ -17,13 +17,15 @@
     return out;
   }
   function heritage(C, p) {
-    const h = item(C, 'heritage_radius'), d = num(p.heritageDist);
-    return { radius: h.값, dist: d, name: p.heritage || '', basis: h.근거, unconfirmed: unc(h), result: d === null ? (p.heritage ? '○○' : '해당 정보 없음') : d <= h.값 ? '보존지역 해당 가능' : '범위 밖' };
+    const h = item(C, 'heritage_radius'), d = num(p.heritageDist), g = h.구분 || {};
+    const built = /주거|상업|공업/.test(p.zoning || ''), city = /시지정|시 지정|시도/.test(p.heritageGrade || '');
+    const r = built && g.주거상업공업_m ? g.주거상업공업_m : (city && g.녹지등_시지정_m ? g.녹지등_시지정_m : (g.녹지등_국가지정_m || h.값));
+    return { radius: r, dist: d, name: p.heritage || '', basis: h.근거, note: h.비고, unconfirmed: unc(h), result: d === null ? (/^없음/.test(p.heritage || '') ? '해당 없음' : p.heritage ? '○○' : '해당 정보 없음') : d <= r ? '보존지역 해당 가능' : '범위 밖' };
   }
   function noise(C, p) {
     const n = item(C, 'noise_outdoor');
     const roads = (p.roads || []).filter(r => /간선/.test(r.level || ''));
-    return { db: n.값, roads, basis: n.근거, unconfirmed: unc(n), result: roads.length ? '소음 검토 필요' : ((p.roads || []).some(r => !r.level) ? '○○' : '주요 소음원 없음') };
+    return { db: n.값, indoor: n.실내_db, note: n.비고, roads, basis: n.근거, unconfirmed: unc(n), result: roads.length ? '소음 검토 필요' : ((p.roads || []).some(r => !r.level) ? '○○' : '주요 소음원 없음') };
   }
   // 정북방향 이격: 높이 H → H≤10이면 1.5m, 초과면 H×0.5 (층고는 가정값)
   function sunlight(C, p) {
@@ -32,9 +34,12 @@
     const need = H === null ? null : (H <= 10 ? s.이격.높이10m이하_m : Math.round(H * s.이격.높이10m초과_높이비 * 10) / 10);
     return { H, fh, need, a: s.이격.높이10m이하_m, b: s.이격.높이10m초과_높이비, basis: s.근거, note: s.비고, apply: p.northRes === '예', result: p.northRes === '예' ? '높이 제한 반영 필요' : p.northRes === '아니오' ? '해당 없음' : '○○' };
   }
+  // 평균경사도: 입력은 %, 기준은 도 → 도 = atan(%/100)
   function slope(C, p) {
-    const s = item(C, 'slope_limit'), v = num(p.slope);
-    return { value: v, limit: s.값, basis: s.근거, unconfirmed: unc(s), result: v === null ? '○○' : (s.값 === null ? '기준확인필요' : '검토') };
+    const s = item(C, 'slope_limit'), v = num(p.slope), g = s.구분 || {};
+    const lim = p.urban === '아니오' ? (g.관리농림자연환경보전_도 || s.값) : (g.도시지역_도 || s.값);
+    const deg = v === null ? null : Math.round(Math.atan(v / 100) * 180 / Math.PI * 10) / 10;
+    return { value: v, deg, limit: lim, elev: s.표고_m, basis: s.근거, note: s.비고, unconfirmed: unc(s), result: v === null ? '○○' : (lim == null ? '기준확인필요' : deg < lim ? '기준 이내' : '기준 초과(도시계획위원회 심의)') };
   }
   function run(C, T, p) {
     const res = { eia: eia(C, p), heritage: heritage(C, p), noise: noise(C, p), sun: sunlight(C, p), slope: slope(C, p) };
@@ -45,7 +50,7 @@
     if (res.heritage.result === '보존지역 해당 가능') list.push(f(T.imp_heritage, { name: res.heritage.name || '국가유산', dist: res.heritage.dist, r: res.heritage.radius }));
     if (res.slope.value !== null && res.slope.value >= 10) list.push(f(T.imp_slope, { slope: res.slope.value }));
     list.push(T.imp_green, T.imp_construction);
-    const need = [T.need_tree, T.need_noise, T.need_strategic, T.need_ordinance, T.need_layout];
+    const need = [T.need_tree, T.need_noise, T.need_strategic, T.need_layout];
     const constraints = {
       소음_검토_도로: res.noise.roads.map(r => r.name || '간선도로'),
       북측_일조_높이제한: res.sun.apply ? `높이 10m 이하 ${res.sun.a}m, 초과 부분 높이의 1/2 이상 이격` : null,
