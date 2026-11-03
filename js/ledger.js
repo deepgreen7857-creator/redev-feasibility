@@ -29,7 +29,8 @@ const Ledger = {
   // 전유부: 집합건물의 호별 전유면적 (전유공용면적 중 '전유'만). 여러 쪽이면 모두 받음
   async unitsOf(pnu) {
     const p = String(pnu), all = [];
-    for (let page = 1; page <= 20; page++) {
+    // 포털이 한 쪽에 100건까지만 주는 경우가 있어(numOfRows 500을 넣어도) totalCount까지 쪽을 넘김 — 예전엔 20쪽에서 끊겨 큰 아파트 단지 호수가 모자랐음
+    for (let page = 1; page <= 400; page++) {
       await this.throttle();
       const params = new URLSearchParams({
         serviceKey: DATA_GO_KR_KEY.trim(), sigunguCd: p.slice(0, 5), bjdongCd: p.slice(5, 10),

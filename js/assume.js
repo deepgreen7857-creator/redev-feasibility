@@ -9,7 +9,8 @@ const Assume = {
     const sv = Calc.survey(S);
     // 조합원 수 추정: 건축물의 호(전유부 호 수·세대수, 없으면 1) + 건물 없는 대지 필지
     const withBldg = new Set(S.buildings.map(b => b.pnu).filter(Boolean));
-    const est = S.buildings.reduce((a, b) => a + (num(b.hoCount) || num(b.units) || 1), 0)
+    // 공동주택은 대장 세대수와 전유부 호수 중 큰 값(전유부가 덜 받혔을 때 대비), 그 밖은 호수 → 세대수 → 1
+    const est = S.buildings.reduce((a, b) => a + (Math.max(num(b.hoCount), num(b.units)) || 1), 0)
       + S.lands.filter(l => l.jimok === '대' && l.pnu && !withBldg.has(l.pnu)).length;
     // 시장 값은 공통 가정값(shared/feas.js — /urban 사업성 탭과 같은 값)
     const A = JbsFeas.get();
