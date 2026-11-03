@@ -129,17 +129,54 @@ const Tabs = {
       const box = $('#addrParcelBox'); if (!box) return;
       const pp = this.parcelParts();
       if (pp && $('#jibunBase') && !$('#jibunBase').value) $('#jibunBase').value = pp.base;
-      if (!pp || S.area.geojson) { box.hidden = true; return; }
-      box.hidden = false;
-      box.innerHTML = `<div class="addr-parcel" style="border:1px solid #c8322b;border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#fff7f3">
-        <b>검색한 주소: ${esc(pp.base)} ${esc(pp.jibun)}</b>
-        <p class="note" style="margin:4px 0 8px">아파트 단지는 보통 이 필지 하나(또는 몇 개)입니다. 누르면 이 필지로 구역을 만들고, 이어서 토지·건축물 정보를 불러옵니다. 단지가 여러 필지면 만든 뒤 지도에서 필지를 더하세요.</p>
-        <button class="btn small primary" id="btnAddrParcel">이 필지로 구역 만들기</button></div>`;
-      $('#btnAddrParcel').onclick = async () => {
+      if (!pp) { box.hidden = true; return; }
+      const label = `${esc(pp.base)} ${esc(pp.jibun)}`;
+      const make = () => {
+        S.meta.parcelAuto = S.meta.parcel;
         $('#jibunBase').value = pp.base; $('#jibunList').value = pp.jibun;
-        $('#btnAddrParcel').disabled = true; $('#btnAddrParcel').textContent = '만드는 중…';
+        box.hidden = false;
+        box.innerHTML = `<div class="addr-parcel" style="border:1px solid #c8322b;border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#fff7f3"><b>검색한 주소(${label}) 필지로 구역을 만드는 중…</b></div>`;
         $('#btnJibunZone').click();
       };
+      // 구역이 없으면: 1단계에서 검색한 주소 필지로 바로 구역을 만듦(한 주소에 한 번 — 지운 뒤 다시 자동으로 만들지는 않음)
+      if (!S.area.geojson) {
+        if (VWorld.enabled && S.meta.parcelAuto !== S.meta.parcel) { make(); return; }
+        box.hidden = false;
+        box.innerHTML = `<div class="addr-parcel" style="border:1px solid #c8322b;border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#fff7f3">
+          <b>검색한 주소: ${label}</b>
+          <p class="note" style="margin:4px 0 8px">아파트 단지는 보통 이 필지 하나(또는 몇 개)입니다. 누르면 이 필지로 구역을 만들고, 이어서 토지·건축물 정보를 불러옵니다.</p>
+          <button class="btn small primary" id="btnAddrParcel">이 필지로 구역 만들기</button></div>`;
+        $('#btnAddrParcel').onclick = make;
+        return;
+      }
+      // 구역은 있는데 검색한 주소가 그 안에 없으면(예전 구역이 남은 것) 어떻게 할지 물음
+      let outside = false;
+      const pt = S.meta.addrPt;
+      if (pt && window.turf) { try { outside = !turf.booleanPointInPolygon(turf.point(pt), S.area.geojson.type === 'Feature' ? S.area.geojson : turf.feature(S.area.geojson)); } catch (e) { outside = false; } }
+      if (!outside || S.meta.addrZoneOk === S.meta.parcel) {
+        if (S.meta.parcelAuto === S.meta.parcel && !S.meta.parcelAutoSaid) {
+          S.meta.parcelAutoSaid = true;
+          box.hidden = false;
+          box.innerHTML = `<div class="addr-parcel" style="border:1px solid #2e7d32;border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#f3faf3"><b>검색한 주소(${label}) 필지로 구역을 만들었습니다.</b> 토지·건축물 정보를 이어서 불러옵니다. 단지가 여러 필지면 지도에서 필지를 눌러 더하세요.</div>`;
+        } else if (!S.meta.parcelAutoSaid || S.meta.parcelAuto !== S.meta.parcel) box.hidden = true;
+        return;
+      }
+      box.hidden = false;
+      box.innerHTML = `<div class="addr-parcel" style="border:2px solid #c8322b;border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#fff7f3">
+        <b>지금 지도의 구역은 1단계에서 검색한 주소(${label})가 아닌 다른 곳의 구역입니다.</b>
+        <p class="note" style="margin:4px 0 8px">새 주소로 구역을 만들면 예전 구역과 토지·건축물 조서는 지워집니다(지우기 전 자동 백업 — [작업 저장·불러오기]에서 되돌림).</p>
+        <button class="btn small primary" id="btnAddrNew">예전 구역 지우고 이 주소 필지로 새로 만들기</button>
+        <button class="btn small" id="btnAddrKeep">지금 구역 그대로 쓰기</button></div>`;
+      $('#btnAddrNew').onclick = async () => {
+        $('#btnAddrNew').disabled = true; $('#btnAddrNew').textContent = '예전 작업 백업 중…';
+        if (window.JbsWork) { try { await JbsWork.backup('주소 바꾸기 전 자동 백업'); } catch (e) { /* 백업 실패해도 진행 */ } }
+        S.area.geojson = null; S.area.drawnArea = 0; S.area.importedKey = ''; S.area.mode = 'ledger';
+        S.lands = []; S.buildings = [];
+        if (MapView.items) MapView.items.clearLayers();
+        App.persist();
+        make();
+      };
+      $('#btnAddrKeep').onclick = () => { S.meta.addrZoneOk = S.meta.parcel; box.hidden = true; App.persist(); };
     },
     render() {
       bindInputs($('#tab-area'));
@@ -1056,7 +1093,7 @@ function boot() {
         let far = false;
         try {
           const inside = turf.booleanPointInPolygon(pt, S.area.geojson.type === 'Feature' ? S.area.geojson : turf.feature(S.area.geojson));
-          far = !inside && turf.distance(pt, turf.centroid(S.area.geojson), { units: 'meters' }) > 200;
+          far = !inside;   // 새 주소가 지금 구역 밖이면 다른 곳 구역 — 거리와 관계없이 물음
         } catch (e2) { far = false; }
         if (far && confirm(`2단계 구역계에 다른 곳의 구역(${S.meta.location || '이전 구역'})이 남아 있습니다.\n지우고 새 주소에서 시작할까요? 토지·건축물 조서도 함께 비웁니다.\n(지우기 전에 지금 작업을 홈페이지와 이 컴퓨터에 자동 백업합니다. 취소하면 예전 구역을 그대로 둡니다)`)) {
           if (window.JbsWork) { msg.textContent = '예전 작업 백업 중…'; await JbsWork.backup('주소 바꾸기 전 자동 백업'); }
@@ -1070,6 +1107,7 @@ function boot() {
       S.meta.locationManual = false; S.meta.zoningManual = false;
       if (S.quick) { S.quick.zoneManual = false; S.quick.membersManual = false; }
       // 검색한 주소의 지번(도로명 검색이면 함께 오는 지번 주소) — 2단계에서 [이 필지로 구역 만들기]에 씀
+      S.meta.addrPt = [list[0].lon, list[0].lat]; S.meta.addrZoneOk = ''; S.meta.parcelAutoSaid = false;
       { const r0 = list[0], cand = [r0.sub, r0.label].map(x => String(x || '')).find(x => /\d+(-\d+)?\s*$/.test(x) && /[동리가]\s+(산\s*)?\d/.test(x)); S.meta.parcel = cand || ''; }
       await Auto.location(list[0]);
       msg.innerHTML = `<b>${esc(list[0].label)}</b>(으)로 설정했습니다. 다음은 <a href="#area" data-goto="area">구역계</a>에서 사업 구역을 그려 주세요.`;
