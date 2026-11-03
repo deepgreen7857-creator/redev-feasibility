@@ -188,23 +188,27 @@
     const tw = kind === 'tower';
     const rep = tw ? (U[t].탑상 && +U[t].탑상.폭 > 0 ? { id: U[t].탑상.대표사례 || 'rep-tower', 폭: +U[t].탑상.폭, 깊이: +U[t].탑상.깊이, 베이: +U[t].탑상.베이 || 2, rep: 1 } : null)
       : { id: U[t].대표사례 || 'rep', 폭: +U[t].폭, 깊이: +U[t].깊이, 베이: +U[t].베이 || 3, rep: 1 };
-    const minD = tw ? 8.5 : ex >= 55 ? 8.8 : 7.5;
+    const minD = tw ? 8.5 : ex >= 55 ? 8.3 : 7.5; // 4베이 59형은 8.5m 안팎도 있음(발코니 포함)
     const cs = ((LIB.사례 || [])).filter(c => +c.폭 > 0 && +c.깊이 > 0 && near(+c.전용) === tN && Math.abs(+c.전용 - ex) <= 6
       && (tw ? c.형식 === '탑상' : c.형식 !== '탑상') && +c.깊이 >= minD && +c.폭 >= 4);
     const out = rep ? [rep] : [];
     const byBay = {}; cs.forEach(c => { const b = +c.베이 || 0; (byBay[b] = byBay[b] || []).push(c); });
+    // 베이 묶음마다 중간값에 가까운 것 + 가장 좁은 것 + 가장 얕은 것(좁은·얕은 자리용)
     Object.keys(byBay).forEach(b => {
       let g = byBay[b]; const good = g.filter(c => c.신뢰도 !== '낮음'); if (good.length) g = good;
       const med = a => { const v = a.slice().sort((x, y) => x - y); return v[Math.floor(v.length / 2)]; };
       const mw = med(g.map(c => +c.폭)), md = med(g.map(c => +c.깊이));
-      const c = g.reduce((m, x) => (Math.hypot(+x.폭 - mw, +x.깊이 - md) < Math.hypot(+m.폭 - mw, +m.깊이 - md) ? x : m), g[0]);
-      if (out.some(o => Math.abs(o.폭 - +c.폭) < 0.6 && Math.abs(o.깊이 - +c.깊이) < 0.6)) return; // 대표와 거의 같은 치수
-      out.push({ id: c.id, 폭: +c.폭, 깊이: +c.깊이, 베이: +c.베이 || (+c.폭 > 13 ? 4 : +c.폭 > 9 ? 3 : 2), 단지: c.단지, 타입: c.타입 });
+      const picks = [g.reduce((m, x) => (Math.hypot(+x.폭 - mw, +x.깊이 - md) < Math.hypot(+m.폭 - mw, +m.깊이 - md) ? x : m), g[0]),
+        g.reduce((m, x) => (+x.폭 < +m.폭 ? x : m), g[0]), g.reduce((m, x) => (+x.깊이 < +m.깊이 ? x : m), g[0])];
+      picks.forEach(c => {
+        if (out.some(o => Math.abs(o.폭 - +c.폭) < 0.6 && Math.abs(o.깊이 - +c.깊이) < 0.6)) return; // 이미 있는 것과 거의 같은 치수
+        out.push({ id: c.id, 폭: +c.폭, 깊이: +c.깊이, 베이: +c.베이 || (+c.폭 > 13 ? 4 : +c.폭 > 9 ? 3 : 2), 단지: c.단지, 타입: c.타입 });
+      });
     });
     // 대표 먼저, 나머지는 대표가 못 들어가는 자리용이므로 대표보다 작은 것만(판상은 폭이 좁은 것, 탑상은 폭+깊이가 작은 것) — 큰 변형은 같은 세대수에 땅만 더 씀
     //  폭 넓은 것 → 좁은 것 순, 최대 4개
-    const r0 = out[0], smaller = v => !r0 || tw || v.폭 < r0.폭 - 0.3; // 탑상은 동 모듈 크기로 modulesFor에서 거름
-    const res = out.slice(0, 1).concat(out.slice(1).filter(smaller).sort((a, b) => b.폭 - a.폭)).slice(0, 4);
+    const r0 = out[0], smaller = v => !r0 || tw || v.폭 < r0.폭 - 0.3 || v.깊이 < r0.깊이 - 0.5; // 판상은 대표보다 좁거나 얕은 것만. 탑상은 동 모듈 크기로 modulesFor에서 거름
+    const res = out.slice(0, 1).concat(out.slice(1).filter(smaller).sort((a, b) => b.폭 - a.폭)).slice(0, 5);
     VARC.map[key] = res; return res;
   }
   const withV = (U, t, v, tw) => Object.assign({}, U, { [t]: Object.assign({}, U[t], { 폭: v.폭, 깊이: v.깊이, 베이: v.베이 }, tw ? { 탑상: null } : {}) });
