@@ -239,6 +239,7 @@ const Tabs = {
       if (!VWorld.enabled || MapView.importing || MapView.ledgerBusy) return;
       if (!this.stale()) {
         if (S.lands.some(l => l.pnu && l.areaSrc === '연속지적' && !l.ledgerFail)) await this.refetchLedger();
+        await this.bldgLedger();
         return;
       }
       const key = zoneKey(S.area.geojson);
@@ -258,6 +259,16 @@ const Tabs = {
       this.sync();   // 불러오는 중 표시
       await p;
       this.sync();
+      await this.bldgLedger();
+    },
+    // 건축물대장(표제부·전유부)을 아직 조회하지 않은 필지가 있으면 이어서 자동 조회 — 아파트 세대수·호수(조합원 수 추정)·사용승인일이 여기서 채워짐
+    async bldgLedger() {
+      if (!Ledger.enabled || this._ledgerRun) return;
+      const need = S.lands.some(l => /^\d{19}$/.test(String(l.pnu || '')) && l.ledgerEmpty !== true && !S.buildings.some(b => b.ledger && b.pnu === l.pnu));
+      if (!need) return;
+      this._ledgerRun = true;
+      try { await Ledger.fill(); } catch (e) { console.warn('건축물대장 자동 조회 실패', e); } finally { this._ledgerRun = false; }
+      App.update(true);
     },
 
     // 상단 상태 줄
