@@ -12,8 +12,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=125">
-<link rel="stylesheet" href="css/zonekit.css?v=125">
+<link rel="stylesheet" href="css/style.css?v=126">
+<link rel="stylesheet" href="css/zonekit.css?v=126">
 </head>
 <body>
 
@@ -151,13 +151,16 @@
     </label>
   </div>
 
-  <h3 class="step-h"><span>2</span> 위치 정하기: 대표 지번 설정</h3>
+  <h3 class="step-h"><span>2</span> 구역명</h3>
+  <div class="form-grid"><label>구역명 <input data-bind="meta.name" placeholder="예: 용현동 유원아파트 재건축정비구역"><small>화면 맨 위 사업명과 같은 칸입니다. 저장·버전 목록에 이 이름이 쓰입니다.</small></label></div>
+  <h3 class="step-h"><span>3</span> 위치 정하기: 대표 지번 설정</h3>
   <p class="hint">사업지 대표 주소(지번이나 도로명)를 검색한 뒤 찾은 위치에서 <b>[대표 지번으로 설정]</b>을 누르면 위치·용도지역이 채워지고, 구역계 탭에서 그 지번으로 구역을 만듭니다.</p>
   <form class="search" id="ovSearchForm">
     <input id="ovSearchInput" placeholder="예: 성북구 장위동 233-42">
     <button class="btn primary" type="submit">주소 검색</button>
   </form>
   <p class="note" id="ovSearchMsg" aria-live="polite"></p>
+  <div id="repInfo" class="rep-info" hidden></div>
   <div class="form-grid">
     <label>대표 지번 <input data-bind="meta.parcel" readonly placeholder="[대표 지번으로 설정]을 누르면 채워집니다" style="background:#f6f6f4"></label>
     <label>위치 (주소) <span class="auto-badge" id="locBadge">자동</span><input data-bind="meta.location" id="locInput" placeholder="주소를 검색하면 자동으로 채워집니다"></label>
@@ -165,16 +168,18 @@
       <small id="zoningListNote"></small></label>
   </div>
 
-  <h3 class="step-h"><span>3</span> 건축 계획 <small>대략적인 값이어도 됩니다</small></h3>
+  <h3 class="step-h"><span>4</span> 계획 용적률 <small>용도지역에 맞춰 자동으로 들어갑니다</small></h3>
   <div class="form-grid three">
     <label>계획 용적률 (%) <span class="auto-badge" id="farBadge">자동</span>
       <small>모르면 그대로 두세요 — 용도지역에 맞는 허용 용적률이 자동으로 들어갑니다. 정비계획 값을 알면 고쳐 넣으세요.</small>
       <input data-bind="plan.far" data-type="number" inputmode="decimal" id="farInput">
       <small id="farHint" class="far-hint"></small></label>
-    <label>전체 연면적 배율
-      <small>지하주차장·공용시설까지 합친 전체 연면적이 지상 연면적의 몇 배인지. 보통 1.4~1.6입니다.</small>
-      <input data-bind="plan.gfaFactor" data-type="number" inputmode="decimal"></label>
   </div>
+  <details class="adv"><summary>더 보기: 전체 연면적 배율 (보통 그대로 두세요)</summary>
+    <div class="form-grid three"><label>전체 연면적 배율
+      <small>지하주차장·공용시설까지 합친 전체 연면적이 지상 연면적의 몇 배인지. 보통 1.4~1.6입니다.</small>
+      <input data-bind="plan.gfaFactor" data-type="number" inputmode="decimal"></label></div>
+  </details>
   <div class="stat-row" id="planStats"></div>
   <p class="note">면적(구역면적·건축 대지면적·계획 연면적)은 <b>2단계(구역계)</b>에서 구역을 정하면 계산됩니다.</p>
 
@@ -564,27 +569,27 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=125"></script>
-<script src="js/util.js?v=125"></script>
-<script src="js/state.js?v=125"></script>
-<script src="js/calc.js?v=125"></script>
-<script src="js/zonekit.js?v=125"></script>
-<script src="js/map.js?v=125"></script>
-<script src="js/ledger.js?v=125"></script>
-<script src="js/pdfsave.js?v=125"></script>
-<script src="js/overlay.js?v=125"></script>
-<script src="js/export.js?v=125"></script>
-<script src="js/roadcut.js?v=125"></script>
-<script src="shared/site-store.js?v=125"></script>
-<script src="shared/feas.js?v=125"></script>
-<script src="shared/cases.js?v=125"></script>
-<script src="js/assume.js?v=125"></script>
-<script src="js/app.js?v=125"></script>
-<script src="js/quick.js?v=125"></script>
-<script src="js/forms.js?v=125"></script>
-<script src="js/hwpx.js?v=125"></script>
-<script src="js/surveymaps.js?v=125"></script>
-<script src="js/review.js?v=125"></script>
-<script src="shared/workfile.js?v=125"></script>
+<script src="js/config.js?v=126"></script>
+<script src="js/util.js?v=126"></script>
+<script src="js/state.js?v=126"></script>
+<script src="js/calc.js?v=126"></script>
+<script src="js/zonekit.js?v=126"></script>
+<script src="js/map.js?v=126"></script>
+<script src="js/ledger.js?v=126"></script>
+<script src="js/pdfsave.js?v=126"></script>
+<script src="js/overlay.js?v=126"></script>
+<script src="js/export.js?v=126"></script>
+<script src="js/roadcut.js?v=126"></script>
+<script src="shared/site-store.js?v=126"></script>
+<script src="shared/feas.js?v=126"></script>
+<script src="shared/cases.js?v=126"></script>
+<script src="js/assume.js?v=126"></script>
+<script src="js/app.js?v=126"></script>
+<script src="js/quick.js?v=126"></script>
+<script src="js/forms.js?v=126"></script>
+<script src="js/hwpx.js?v=126"></script>
+<script src="js/surveymaps.js?v=126"></script>
+<script src="js/review.js?v=126"></script>
+<script src="shared/workfile.js?v=126"></script>
 </body>
 </html>

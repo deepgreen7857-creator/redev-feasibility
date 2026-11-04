@@ -77,7 +77,35 @@ const Tabs = {
     render() {
       this.refresh();
     },
+    // 대표 지번의 토지이용계획(지목·면적·공시지가 + 용도지역·지구·구역)을 불러와 개요에 살짝 띄움
+    async loadRep(r) {
+      if (!VWorld.enabled) return;
+      const key = S.meta.parcel;
+      try {
+        const f = await VWorld.parcelAt(r.lat, r.lon);
+        const pnu = f && f.properties && f.properties.pnu;
+        if (!pnu || S.meta.parcel !== key) return;
+        const [lc, uses] = await Promise.all([VWorld.landChar(pnu).catch(() => null), VWorld.landUse(pnu)]);
+        if (S.meta.parcel !== key) return;
+        S.meta.repInfo = { pnu, parcel: key, jimok: lc ? lc.ledgerJimok : '', area: lc ? lc.ledgerArea : 0, jiga: lc ? lc.jiga : 0, year: lc ? lc.baseYear : '', zoning: lc ? lc.zoning : '', uses };
+        App.persist(); this.repInfo();
+      } catch (e) { console.warn('대표 지번 토지이용계획 조회 실패', e); }
+    },
+    repInfo() {
+      const box = $('#repInfo'); if (!box) return;
+      const ri = S.meta.repInfo;
+      if (!ri || ri.parcel !== S.meta.parcel) { box.hidden = true; return; }
+      const rel = { '포함': 0, '저촉': 1, '접함': 2 };
+      const uses = (ri.uses || []).slice().sort((a, b) => (rel[a.rel] ?? 3) - (rel[b.rel] ?? 3));
+      box.hidden = false;
+      box.innerHTML = `<div style="border:1px solid #d9dee3;border-radius:8px;padding:10px 12px;margin:8px 0 12px;background:#f8fafb">
+        <b>대표 지번 토지이용계획</b> <small class="note">(브이월드·토지이음 자료${ri.year ? `, 공시지가 ${esc(ri.year)}년` : ''})</small>
+        <div style="margin:6px 0">${[ri.jimok && `지목 <b>${esc(ri.jimok)}</b>`, ri.area && `면적 <b>${fmt(ri.area, 1)}㎡</b>`, ri.jiga && `공시지가 <b>${fmt(ri.jiga)}원/㎡</b>`].filter(Boolean).join(' · ') || '토지특성 정보 없음'}</div>
+        ${uses.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${uses.map(u => `<span style="border:1px solid ${u.rel === '포함' ? '#9db4c8' : '#e3c08d'};background:${u.rel === '포함' ? '#eef4f9' : '#fdf6ea'};border-radius:12px;padding:1px 8px;font-size:13px">${esc(u.name)}${u.rel && u.rel !== '포함' ? ` <small>(${esc(u.rel)})</small>` : ''}</span>`).join('')}</div>` : `<div class="note">${ri.zoning ? `용도지역: ${esc(ri.zoning)}` : '지역·지구 정보를 받지 못했습니다'}</div>`}
+      </div>`;
+    },
     refresh() {
+      this.repInfo();
       // 용도지역 목록에 없는 값(자동으로 받은 세부 용도지역 등)도 고를 수 있게
       const sel = $('#zoningSelect');
       const opts = ['', ...ZONINGS];
@@ -1148,7 +1176,9 @@ function boot() {
       S.meta.parcel = [r.sub, r.label].map(x => String(x || '')).find(x => /\d+(-\d+)?\s*$/.test(x) && /[동리가]\s+(산\s*)?\d/.test(x)) || '';
       await Auto.location(r);
       const pp = Tabs.area.parcelParts();
+      S.meta.repInfo = null;
       App.update(); App.persist();
+      Tabs.overview.loadRep(r);
       msg.innerHTML = `${pp ? `대표 지번을 <b>${esc(pp.base)} ${esc(pp.jibun)}</b>(${esc(r.label)})(으)로 설정했습니다` : `<b>${esc(r.label)}</b>을(를) 대표 위치로 설정했습니다(지번을 찾지 못함 — 지번으로 다시 검색하면 좋습니다)`}. 다음은 <a href="#area" data-goto="area">구역계</a>에서 이 지번으로 구역을 만듭니다.`;
       $('[data-goto]', msg).onclick = ev => { ev.preventDefault(); App.go('area'); };
     } catch (err) {

@@ -82,6 +82,16 @@ const VWorld = {
     return [...new Set(fs.map(f => f.properties && f.properties.uname).filter(Boolean))];
   },
 
+  // 토지이용계획(토지이음 '지역·지구등' — 용도지역·지구·구역, 포함/저촉/접함) 한 필지. 실패하면 []
+  async landUse(pnu, timeout = 15000) {
+    try {
+      const d = await jsonp('https://api.vworld.kr/ned/data/getLandUseAttr', { pnu, key: this.key, domain: this.domain, format: 'json', numOfRows: 100, pageNo: 1 }, timeout);
+      const rows = (d && d.landUses && d.landUses.field) || [];
+      const seen = new Set();
+      return rows.map(r => ({ name: r.prposAreaDstrcCodeNm || '', rel: r.cnflcAtNm || '' }))
+        .filter(r => r.name && !seen.has(r.name + r.rel) && seen.add(r.name + r.rel));
+    } catch (e) { return []; }
+  },
   // 토지특성(토지대장 면적·지목·공시지가·용도지역) 한 필지. 올해 자료가 없으면 전년도, 둘 다 없으면 null
   //  설정 모드(조서)와 검토 모드가 같이 씀
   async landChar(pnu, timeout = 15000) {
