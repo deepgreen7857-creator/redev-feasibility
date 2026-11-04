@@ -31,8 +31,26 @@
     const box = $('#mixBox'); if (!box || box.dataset.ok) return; box.dataset.ok = 1;
     box.innerHTML = TYPES().map(t => `<label>${t}㎡형<input id="p_m${t}" inputmode="decimal" placeholder="0"></label>`).join('') + '<div id="mixSum" class="note" style="grid-column:1/-1"></div>';
     TYPES().forEach(t => { FIELDS['m' + t] = 'p_m' + t; $('#p_m' + t).addEventListener('input', mixSum); $('#p_m' + t).addEventListener('change', () => { saveState(); invalidate(); }); });
-    const pre = C.평형구성_예시 || {};
-    $('#mixPresets').innerHTML = Object.keys(pre).map(k => `<button type="button" data-mixpre="${esc(k)}">${esc(k)}</button>`).join('');
+    renderPresets();
+  }
+  // 재건축: 사업성 화면이 받은 건축물대장 전유부(기존 세대 전용면적)로 평형 비율을 만듦 — 기존 세대마다 '그 면적 이상인 가장 작은 평형'(5% 여유)으로 셈
+  //  사업성 화면 구역이 이 구역과 절반 이상 겹칠 때만(다른 사업의 대장을 쓰지 않게)
+  function existingMix() {
+    let pj = null; try { pj = JSON.parse(localStorage.getItem('jbsc.project.v1') || 'null'); } catch (e) { pj = null; }
+    const st = pj && (pj.state || pj); if (!st || !Array.isArray(st.exposUnits) || !st.exposUnits.length || !st.area || !st.area.geojson || !site || !site.geojson) return null;
+    try { const a = st.area.geojson, b = site.geojson, x = turf.intersect(a.type === 'Feature' ? a : turf.feature(a), b.type === 'Feature' ? b : turf.feature(b)); if (!x || turf.area(x) < 0.5 * Math.min(turf.area(a), turf.area(b))) return null; } catch (e) { return null; }
+    const types = TYPES().map(Number).sort((a, b) => a - b), cnt = {}; let n = 0;
+    st.exposUnits.filter(u => +u.area > 15 && !/상가|근린|업무|판매|창고|주차|기계/.test(String(u.purpose || ''))).forEach(u => {
+      const t = types.find(t2 => t2 >= +u.area * 0.95) || types[types.length - 1]; cnt[t] = (cnt[t] || 0) + 1; n++;
+    });
+    if (n < 5) return null;
+    const out = {}; Object.entries(cnt).forEach(([t, c]) => { out[t] = Math.round(c / n * 100); });
+    return { mix: out, n, recon: st.meta && st.meta.type === 'reconstruction' };
+  }
+  function renderPresets() {
+    const pre = C.평형구성_예시 || {}, ex = existingMix();
+    $('#mixPresets').innerHTML = (ex ? `<button type="button" data-mixex="1" title="사업성 화면에서 받은 건축물대장 전유부 기존 세대 ${fmt(ex.n)}호의 전용면적으로 만든 비율(세대마다 그 면적 이상인 가장 작은 평형)">재건축 — 기존 세대 평형(${fmt(ex.n)}호)</button>` : '')
+      + Object.keys(pre).map(k => `<button type="button" data-mixpre="${esc(k)}">${esc(k)}</button>`).join('');
   }
   function mixSum() {
     const v = TYPES().map(t => +($('#p_m' + t).value || 0)), sum = v.reduce((a, b) => a + b, 0);
@@ -42,7 +60,11 @@
   function defaultMix() {
     let U = {}; try { U = JSON.parse(localStorage.getItem('jbs-urban-plan') || '{}'); } catch (e) { U = {}; }
     const o = {}; TYPES().forEach(t => { o['m' + t] = ''; });
-    const base = (C.평형구성_예시 || {})['재개발 일반'] || { 59: 40, 84: 50, 114: 10 };
+    // 사업성 화면·/urban 4탭과 같은 공통 평형 비율(jbs-feas-assume-v1의 mixNN)이 있으면 그것을, 없으면 '재개발 일반'
+    let F = {}; try { F = JSON.parse(localStorage.getItem('jbs-feas-assume-v1') || '{}'); } catch (e) { F = {}; }
+    const fm = {}; Object.keys(F).forEach(k => { const m = /^mix(\d+)$/.exec(k); if (m && +F[k] > 0 && TYPES().includes(m[1])) fm[m[1]] = +F[k]; });
+    if (Object.keys(fm).length && fm[84] == null && F.mix59 != null && TYPES().includes('84')) fm[84] = Math.max(0, 100 - (+F.mix59 || 0) - (+F.mix114 || 0));
+    const base = Object.keys(fm).length ? fm : (C.평형구성_예시 || {})['재개발 일반'] || { 59: 40, 84: 50, 114: 10 };
     Object.entries(base).forEach(([t, v]) => { o['m' + t] = v; });
     return o;
   }
@@ -282,7 +304,18 @@
   }
   function drawExclude() {
     lyrEx.clearLayers();
-    exclude.forEach((ex, i) => lyrEx.addLayer(L.polygon(ex.map(p => pr.back(p).slice().reverse()), { color: '#5d7f5a', kind: exKinds[i] || '직접 그림' }).bindTooltip(exKinds[i] || '건축 불가 영역')));
+    exclude.forEach((ex, i) => { const k = exKinds[i] || '직접 그림', park = /공원|녹지/.test(k), road = /도로/.test(k);
+      lyrEx.addLayer(L.polygon(ex.map(p => pr.back(p).slice().reverse()), { color: park ? '#2f7d4a' : road ? '#6b7280' : '#5d7f5a', weight: 2, fillColor: park ? '#6fbf7e' : road ? '#b9bec4' : '#9fb59b', fillOpacity: 0.55, kind: k }).bindTooltip(`${k} ${fmt(Math.abs(G.area(ex)))}㎡ — 건축 불가`, { sticky: true })); });
+    exInfo();
+  }
+  // 오른쪽 계획 조건에 '건축 불가(기반시설)'를 한 줄로, 기반시설 비율 칸은 제외 영역이 있으면 잠금
+  function exInfo() {
+    const el = $('#exInfo'), inp = $('#p_infra'); if (!el) return;
+    if (!exclude.length) { el.innerHTML = ''; if (inp) inp.disabled = false; return; }
+    const sum = {}; exclude.forEach((ex, i) => { const k = exKinds[i] || '직접 그림'; sum[k] = (sum[k] || 0) + Math.abs(G.area(ex)); });
+    const tot = Object.values(sum).reduce((a, b) => a + b, 0), siteA = pts ? Math.abs(G.area(pts)) : 0;
+    el.innerHTML = `<b>건축 불가(정비기반시설) 반영됨</b>${exFrom.startsWith('urban:') ? ' — /urban 정비계획에서' : ''}: ${Object.entries(sum).map(([k, v]) => `${esc(k)} ${fmt(v)}㎡`).join(' · ')} · 합 ${fmt(tot)}㎡${siteA ? ` → 획지 약 ${fmt(siteA - tot)}㎡` : ''}. 지도의 초록(공원)·회색(도로) 부분에는 동을 놓지 않습니다.`;
+    if (inp) inp.disabled = true;
   }
   function importInfra(auto) {
     const inf = site && site.urbanInfra;
@@ -694,6 +727,7 @@
     else if (t.id === 'dlSvg') download(svgBlob(D.sitePlan(planOpts())), fname('개략배치도.svg'));
     else if (t.id === 'dlPng') { const u = await svgToPng(D.sitePlan(planOpts())); const a = document.createElement('a'); a.href = u; a.download = fname('개략배치도.png'); a.click(); }
     else if (t.id === 'dlDoc') exportDoc();
+    else if (t.dataset.mixex) { const ex = existingMix(); if (ex) { TYPES().forEach(k => { $('#p_m' + k).value = ex.mix[k] ?? ''; }); mixSum(); saveState(); invalidate(); msg(`기존 세대 ${fmt(ex.n)}호의 전용면적으로 평형 비율을 넣었습니다: ${Object.entries(ex.mix).map(([k, v]) => `${k}㎡형 ${v}%`).join(' · ')}. 일반분양 몫을 늘리려면 비율을 고치세요.`); } }
     else if (t.dataset.mixpre) { const pre = (C.평형구성_예시 || {})[t.dataset.mixpre] || {}; TYPES().forEach(k => { $('#p_m' + k).value = pre[k] ?? ''; }); mixSum(); saveState(); invalidate(); }
   });
   $('#sunT').addEventListener('input', () => { if (alts.length) renderSun(); });

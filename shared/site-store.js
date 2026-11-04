@@ -56,6 +56,8 @@
       try { const inf = JSON.parse(localStorage.getItem('jbs-urban-infra-v1') || '{}')[key]; if (inf) site.urbanInfra = inf; } catch (e) { /* 무시 */ }
       site.plan = site.plan || {};
       if (P.zone && !site.profile.zoning) site.profile.zoning = P.zone;
+      // 사업 유형: 사업성 화면에서 넘어온 구역이면 그 화면의 사업 유형(재건축·재개발·가로주택)을 따름
+      if (it.zone.from === 'project') { try { const pj = JSON.parse(localStorage.getItem('jbsc.project.v1') || 'null'), st = pj && (pj.state || pj), t = st && st.meta && st.meta.type; if (t) site.plan.type = t === 'reconstruction' ? 'recon' : t === 'garo' ? 'garo' : 'redev'; } catch (e) { /* 무시 */ } }
       if (!site.plan.type) site.plan.type = 'redev';
       return this.save(site);
     },
