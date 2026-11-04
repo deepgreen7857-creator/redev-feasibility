@@ -2373,6 +2373,22 @@ function render() {
   }
   ({ zone: renderZone, req: renderReq, plan: renderPlan, arch: renderArch, biz: renderBiz })[S.tab](a);
   if (JOB.active && JOB.zone === S.region) side.insertAdjacentHTML('afterbegin', jobHtml());
+  stepNav();
+}
+// 각 탭 맨 아래 '다음 단계' 버튼(2026-11-04 사용자 요구: 기반시설을 정한 뒤 다음으로 넘어가는 버튼). 지금 정한 값은 저장된 상태로 넘어감
+function stepNav() {
+  const ORDER = [['zone', '1 구역계·현황'], ['req', '2 요건판정'], ['plan', '3 정비계획(기반시설)'], ['arch', '4 개략 건축계획'], ['biz', '5 사업성']];
+  const i = ORDER.findIndex(([k]) => k === S.tab); if (i < 0) return;
+  const prev = ORDER[i - 1], next = ORDER[i + 1];
+  const nextLabel = S.tab === 'plan' ? '기반시설 확정 → 다음: 4 개략 건축계획' : next ? `다음: ${next[1]} →` : '';
+  side.insertAdjacentHTML('beforeend', `<div class="stepnav" style="display:flex;justify-content:space-between;gap:8px;margin:18px 0 6px;padding-top:12px;border-top:1px solid var(--line)">
+    ${prev ? `<button type="button" class="btn ghost" data-stepgo="${prev[0]}">← ${prev[1]}</button>` : '<span></span>'}
+    ${next ? `<button type="button" class="btn" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-stepgo="${next[0]}">${nextLabel}</button>` : S.tab === 'biz' ? `<a class="btn" style="background:var(--ink);color:var(--paper);text-decoration:none" data-tool="arch" href="${toolHref('arch')}">다음: 자세한 배치(/arch) →</a>` : ''}</div>`);
+  side.querySelectorAll('[data-stepgo]').forEach(b => b.onclick = () => {
+    saveZ(); try { saveP(); } catch (e) { /* 무시 */ }
+    const t = document.querySelector(`nav.steps button[data-tab="${b.dataset.stepgo}"]`); if (t) t.click();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
 }
 const kpi = (l, v, f) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="f">${f || ''}</div></div>`;
 // 화면 제목·내보내기에 구역명(있으면)을 붙임: "용현1구역 · A안"
@@ -2960,6 +2976,10 @@ function renderArch(a) {
   side.innerHTML = `<h2>${regName()} 개략 건축계획</h2>
   <p style="margin:0 0 8px"><a class="btn" style="display:inline-block;text-decoration:none" data-tool="arch" href="${toolHref('arch')}">자세한 배치·일조·3D와 교통성 검토서로 → (/arch)</a></p>
   <p class="hint">여기 개략 배치는 규모 확인용입니다. 배치 확정과 교통성·환경성·경관 검토서는 /arch에서 이 안(${esc(S.region)}안)을 불러와 이어 합니다.</p>
+  ${(() => { const inf = pl.infra; if (P.infraMode === 'manual') return `<p class="note" style="background:#f7f9fb;border:1px solid var(--line);border-radius:6px;padding:8px 10px">3탭에서 <b>비율 직접 입력(${fmt(P.infraRatio)}%)</b>을 골라 그 비율로 계산 중입니다 — 지도에 그린 공원 모양은 쓰지 않습니다. 그린 모양을 쓰려면 3탭에서 '제안값 사용'을 고르세요. 획지 ${fmt(pl.site)}㎡</p>`;
+    if (!inf) return '';
+    const park = num(inf.parkArea);
+    return `<p class="note" style="background:#f7f9fb;border:1px solid var(--line);border-radius:6px;padding:8px 10px">3탭에서 정한 정비기반시설 반영: 구역 ${fmt(a.area)}㎡ − 기반시설 ${fmt(a.area * inf.ratio)}㎡(${(inf.ratio * 100).toFixed(1)}%${park ? `, 공원·녹지 ${fmt(park)}㎡` : ''}) = <b>획지 ${fmt(pl.site)}㎡</b></p>`; })()}
   <div class="form">
     ${field('bcr', '건폐율(계획)', P.bcr, '% · 예시 가정')}
     ${field('coreUnits', '주동 1개 층 세대수', P.coreUnits, '세대/층')}
