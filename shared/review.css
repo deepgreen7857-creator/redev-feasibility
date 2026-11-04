@@ -61,3 +61,6 @@ nav.tools a[aria-current="page"]{background:var(--ink);color:var(--paper);border
 .doc table{margin:6px 0 10px}
 .doc td,.doc th{border:1px solid var(--line)}
 .doc .cons{background:var(--accent-soft);border-radius:6px;padding:10px 14px}
+
+/* 사이트 길잡이(sitenav.js)가 있으면 머리줄의 '정비계획 검토로' 링크는 숨김 */
+body.has-plansteps header.top > a{display:none}

@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
 <script src="/shared/gate.js"></script>
+<script src="/shared/sitenav.js?v=1"></script>
 <meta name="robots" content="noindex, nofollow">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,8 +13,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=137">
-<link rel="stylesheet" href="css/zonekit.css?v=137">
+<link rel="stylesheet" href="css/style.css?v=138">
+<link rel="stylesheet" href="css/zonekit.css?v=138">
 </head>
 <body>
 
@@ -22,9 +23,6 @@
   <div class="brand"><span class="logo" aria-hidden="true">▦</span><span>정비사업 사업성 검토</span></div>
   <input class="proj-name" data-bind="meta.name" aria-label="사업명" placeholder="사업명">
   <div class="top-actions">
-    <a class="btn ghost" style="text-decoration:none;display:inline-flex;align-items:center;color:inherit" href="auction/" title="경매·공매·파산 물건을 정비구역·실거래와 연계해 판정하는 분석 도구">정비경매 리포트</a>
-    <a class="btn ghost" style="text-decoration:none;display:inline-flex;align-items:center;color:inherit" href="safety/" title="건설공사 안전관리계획서·유해위험방지계획서 작성·변경 도구(시험판)">안전관리계획서(시험판)</a>
-    <a class="btn ghost" style="text-decoration:none;display:inline-flex;align-items:center;color:inherit" href="urban/" title="이 구역계로 입안대상지역 요건판정·정비계획·개략 건축계획·사업성 보기(시험판)">정비계획 검토(시험판)</a>
     <button class="btn ghost" id="btnAssume" title="용적률·분양가·공사비 등 가정값을 넣고 비례율·분담금을 바로 보는 창을 엽니다">가정값 창 열기</button>
     <button class="btn ghost" id="btnSample">예시 불러오기</button>
     <button class="btn ghost" id="btnOpen" title="이 사이트에서 저장한 PDF(또는 예전 JSON)를 불러옵니다">파일 열기</button>
@@ -110,12 +108,12 @@
 <nav class="tabs" id="tabs" aria-label="검토 단계">
   <a href="#overview" data-tab="overview"><b>1</b>사업 개요</a>
   <a href="#area" data-tab="area"><b>2</b>구역계</a>
-  <a href="#quick" data-tab="quick"><b>★</b>빠른 사업성</a>
-  <a href="#survey" data-tab="survey"><b>3</b>조서·요건</a>
-  <a href="#revenue" data-tab="revenue"><b>4</b>분양수입</a>
-  <a href="#cost" data-tab="cost"><b>5</b>사업비</a>
-  <a href="#result" data-tab="result"><b>6</b>비례율·분담금</a>
-  <a href="#sensitivity" data-tab="sensitivity"><b>7</b>민감도</a>
+  <a href="#quick" data-tab="quick"><b>3</b>빠른 사업성</a>
+  <a href="#survey" data-tab="survey"><b>4</b>조서·요건</a>
+  <a href="#revenue" data-tab="revenue"><b>5</b>분양수입</a>
+  <a href="#cost" data-tab="cost"><b>6</b>사업비</a>
+  <a href="#result" data-tab="result"><b>7</b>비례율·분담금</a>
+  <a href="#sensitivity" data-tab="sensitivity"><b>8</b>민감도</a>
 </nav>
 
 <main>
@@ -569,28 +567,28 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=137"></script>
-<script src="js/util.js?v=137"></script>
-<script src="js/state.js?v=137"></script>
-<script src="js/calc.js?v=137"></script>
-<script src="js/zonekit.js?v=137"></script>
-<script src="js/map.js?v=137"></script>
-<script src="js/ledger.js?v=137"></script>
-<script src="js/pdfsave.js?v=137"></script>
-<script src="js/overlay.js?v=137"></script>
-<script src="js/export.js?v=137"></script>
-<script src="js/roadcut.js?v=137"></script>
-<script src="shared/site-store.js?v=137"></script>
-<script src="shared/feas.js?v=137"></script>
-<script src="shared/cases.js?v=137"></script>
-<script src="js/assume.js?v=137"></script>
-<script src="js/app.js?v=137"></script>
-<script src="js/quick.js?v=137"></script>
-<script src="js/forms.js?v=137"></script>
-<script src="js/hwpx.js?v=137"></script>
-<script src="js/surveymaps.js?v=137"></script>
-<script src="js/review.js?v=137"></script>
-<script src="shared/workfile.js?v=137"></script>
-<script src="shared/sticky-top.js?v=1"></script>
+<script src="js/config.js?v=138"></script>
+<script src="js/util.js?v=138"></script>
+<script src="js/state.js?v=138"></script>
+<script src="js/calc.js?v=138"></script>
+<script src="js/zonekit.js?v=138"></script>
+<script src="js/map.js?v=138"></script>
+<script src="js/ledger.js?v=138"></script>
+<script src="js/pdfsave.js?v=138"></script>
+<script src="js/overlay.js?v=138"></script>
+<script src="js/export.js?v=138"></script>
+<script src="js/roadcut.js?v=138"></script>
+<script src="shared/site-store.js?v=138"></script>
+<script src="shared/feas.js?v=138"></script>
+<script src="shared/cases.js?v=138"></script>
+<script src="js/assume.js?v=138"></script>
+<script src="js/app.js?v=138"></script>
+<script src="js/quick.js?v=138"></script>
+<script src="js/forms.js?v=138"></script>
+<script src="js/hwpx.js?v=138"></script>
+<script src="js/surveymaps.js?v=138"></script>
+<script src="js/review.js?v=138"></script>
+<script src="shared/workfile.js?v=138"></script>
+<script src="shared/sticky-top.js?v=2"></script>
 </body>
 </html>

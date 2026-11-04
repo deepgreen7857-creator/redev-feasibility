@@ -3488,6 +3488,10 @@ const CUT = {
 
 /* ===== 이벤트 ===== */
 function syncMode() { document.querySelectorAll('[data-mode]').forEach(x => x.setAttribute('aria-pressed', x.dataset.mode === S.mode)); }
+// 사이트 길잡이(shared/sitenav.js) 2단 '정비계획 순서'에 지금 탭 표시(4탭 = 1 주출입구 설정, 3탭 = 2 정비기반시설 지정)
+const navMark = () => { try { if (window.JbsNav) JbsNav.mark(S.tab); } catch (e) { /* 무시 */ } };
+setTimeout(navMark, 50);
+document.querySelectorAll('nav.steps button').forEach(b => b.addEventListener('click', () => setTimeout(navMark, 0)));
 document.querySelectorAll('nav.steps button').forEach(b => b.onclick = () => {
   S.tab = b.dataset.tab;
   document.querySelectorAll('nav.steps button').forEach(x => x.setAttribute('aria-selected', x === b));

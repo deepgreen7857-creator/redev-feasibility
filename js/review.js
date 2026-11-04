@@ -172,7 +172,7 @@ const Review = (() => {
     const nav = document.getElementById('tabs'), main = document.querySelector('main');
     if (!nav || !main) return;
     const a = document.createElement('a');
-    a.href = '#review'; a.dataset.tab = 'review'; a.innerHTML = '<b>8</b>검토 모드';
+    a.href = '#review'; a.dataset.tab = 'review'; a.innerHTML = '<b>9</b>검토 모드';
     a.addEventListener('click', e => { e.preventDefault(); App.go('review'); });
     nav.appendChild(a);
     const sec = document.createElement('section');
