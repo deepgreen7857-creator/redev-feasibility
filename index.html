@@ -12,8 +12,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=124">
-<link rel="stylesheet" href="css/zonekit.css?v=124">
+<link rel="stylesheet" href="css/style.css?v=125">
+<link rel="stylesheet" href="css/zonekit.css?v=125">
 </head>
 <body>
 
@@ -151,14 +151,15 @@
     </label>
   </div>
 
-  <h3 class="step-h"><span>2</span> 위치 찾기</h3>
-  <p class="hint">사업지 대표 주소(지번이나 도로명)를 검색하면 <b>위치와 용도지역이 자동으로 채워지고</b>, 구역계 지도도 그 위치로 열립니다.</p>
+  <h3 class="step-h"><span>2</span> 위치 정하기: 대표 지번 설정</h3>
+  <p class="hint">사업지 대표 주소(지번이나 도로명)를 검색한 뒤 찾은 위치에서 <b>[대표 지번으로 설정]</b>을 누르면 위치·용도지역이 채워지고, 구역계 탭에서 그 지번으로 구역을 만듭니다.</p>
   <form class="search" id="ovSearchForm">
     <input id="ovSearchInput" placeholder="예: 성북구 장위동 233-42">
     <button class="btn primary" type="submit">주소 검색</button>
   </form>
   <p class="note" id="ovSearchMsg" aria-live="polite"></p>
   <div class="form-grid">
+    <label>대표 지번 <input data-bind="meta.parcel" readonly placeholder="[대표 지번으로 설정]을 누르면 채워집니다" style="background:#f6f6f4"></label>
     <label>위치 (주소) <span class="auto-badge" id="locBadge">자동</span><input data-bind="meta.location" id="locInput" placeholder="주소를 검색하면 자동으로 채워집니다"></label>
     <label>용도지역 <span class="auto-badge" id="zoningBadge">자동</span><select data-bind="meta.zoning" id="zoningSelect"></select>
       <small id="zoningListNote"></small></label>
@@ -563,27 +564,27 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/config.js?v=124"></script>
-<script src="js/util.js?v=124"></script>
-<script src="js/state.js?v=124"></script>
-<script src="js/calc.js?v=124"></script>
-<script src="js/zonekit.js?v=124"></script>
-<script src="js/map.js?v=124"></script>
-<script src="js/ledger.js?v=124"></script>
-<script src="js/pdfsave.js?v=124"></script>
-<script src="js/overlay.js?v=124"></script>
-<script src="js/export.js?v=124"></script>
-<script src="js/roadcut.js?v=124"></script>
-<script src="shared/site-store.js?v=124"></script>
-<script src="shared/feas.js?v=124"></script>
-<script src="shared/cases.js?v=124"></script>
-<script src="js/assume.js?v=124"></script>
-<script src="js/app.js?v=124"></script>
-<script src="js/quick.js?v=124"></script>
-<script src="js/forms.js?v=124"></script>
-<script src="js/hwpx.js?v=124"></script>
-<script src="js/surveymaps.js?v=124"></script>
-<script src="js/review.js?v=124"></script>
-<script src="shared/workfile.js?v=124"></script>
+<script src="js/config.js?v=125"></script>
+<script src="js/util.js?v=125"></script>
+<script src="js/state.js?v=125"></script>
+<script src="js/calc.js?v=125"></script>
+<script src="js/zonekit.js?v=125"></script>
+<script src="js/map.js?v=125"></script>
+<script src="js/ledger.js?v=125"></script>
+<script src="js/pdfsave.js?v=125"></script>
+<script src="js/overlay.js?v=125"></script>
+<script src="js/export.js?v=125"></script>
+<script src="js/roadcut.js?v=125"></script>
+<script src="shared/site-store.js?v=125"></script>
+<script src="shared/feas.js?v=125"></script>
+<script src="shared/cases.js?v=125"></script>
+<script src="js/assume.js?v=125"></script>
+<script src="js/app.js?v=125"></script>
+<script src="js/quick.js?v=125"></script>
+<script src="js/forms.js?v=125"></script>
+<script src="js/hwpx.js?v=125"></script>
+<script src="js/surveymaps.js?v=125"></script>
+<script src="js/review.js?v=125"></script>
+<script src="shared/workfile.js?v=125"></script>
 </body>
 </html>

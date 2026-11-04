@@ -1108,9 +1108,25 @@ function boot() {
       let list = VWorld.enabled ? await MapView.searchVWorld(q).catch(() => []) : [];
       if (!list.length) list = await MapView.searchOSM(q);
       if (!list.length) { msg.textContent = '검색 결과가 없습니다. 지번이나 도로명 주소로 다시 검색해 보세요.'; return; }
+      // 찾은 위치를 보여 주고, 사용자가 [대표 지번으로 설정]을 눌러야 설정함
+      const parcelOf = r => [r.sub, r.label].map(x => String(x || '')).find(x => /\d+(-\d+)?\s*$/.test(x) && /[동리가]\s+(산\s*)?\d/.test(x)) || '';
+      const rows = list.slice(0, 5);
+      msg.innerHTML = `<b>찾은 위치 ${rows.length}곳</b> — 사업지 대표 지번을 골라 [대표 지번으로 설정]을 누르세요.
+        <ul class="rep-list" style="list-style:none;padding:0;margin:6px 0 0">${rows.map((r, i) => `<li style="display:flex;gap:8px;align-items:center;padding:4px 0;border-top:1px solid #eee">
+          <span style="flex:1"><b>${esc(r.label)}</b>${parcelOf(r) && parcelOf(r) !== r.label ? `<br><small>지번: ${esc(parcelOf(r))}</small>` : ''}</span>
+          <button type="button" class="btn small${i ? '' : ' primary'}" data-rep="${i}">대표 지번으로 설정</button></li>`).join('')}</ul>`;
+      if (MapView.map) MapView.goTo(rows[0]);
+      $$('[data-rep]', msg).forEach(btn => { btn.onclick = () => setRep(rows[+btn.dataset.rep]); });
+    } catch (err) {
+      msg.textContent = '검색에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+    }
+  };
+  const setRep = async r => {
+    const msg = $('#ovSearchMsg');
+    try {
       // 2단계에 다른 곳 구역계가 남아 있으면(새 주소가 구역 밖 200m 넘게) 지우고 새로 시작할지 물음 — 남겨 두면 구역계 탭이 예전 구역으로 열림
       if (S.area.geojson && window.turf) {
-        const pt = turf.point([list[0].lon, list[0].lat]);
+        const pt = turf.point([r.lon, r.lat]);
         let far = false;
         try {
           const inside = turf.booleanPointInPolygon(pt, S.area.geojson.type === 'Feature' ? S.area.geojson : turf.feature(S.area.geojson));
@@ -1123,19 +1139,20 @@ function boot() {
           if (MapView.items) MapView.items.clearLayers();
         }
       }
-      if (MapView.map) MapView.goTo(list[0]);
+      if (MapView.map) MapView.goTo(r);
       // 주소를 새로 검색한 것은 사용자가 위치를 바꾸겠다는 뜻 — 예전에 직접 고친 위치·용도지역 표시를 풀고 새 위치로 다시 채움
       S.meta.locationManual = false; S.meta.zoningManual = false;
       if (S.quick) { S.quick.zoneManual = false; S.quick.membersManual = false; }
       // 검색한 주소의 지번(도로명 검색이면 함께 오는 지번 주소) — 2단계에서 [이 필지로 구역 만들기]에 씀
-      S.meta.addrPt = [list[0].lon, list[0].lat]; S.meta.addrZoneOk = '';
-      { const r0 = list[0], cand = [r0.sub, r0.label].map(x => String(x || '')).find(x => /\d+(-\d+)?\s*$/.test(x) && /[동리가]\s+(산\s*)?\d/.test(x)); S.meta.parcel = cand || ''; }
-      await Auto.location(list[0]);
+      S.meta.addrPt = [r.lon, r.lat]; S.meta.addrZoneOk = '';
+      S.meta.parcel = [r.sub, r.label].map(x => String(x || '')).find(x => /\d+(-\d+)?\s*$/.test(x) && /[동리가]\s+(산\s*)?\d/.test(x)) || '';
+      await Auto.location(r);
       const pp = Tabs.area.parcelParts();
-      msg.innerHTML = `<b>${esc(list[0].label)}</b>(으)로 설정했습니다${pp ? ` — 대표 지번 <b>${esc(pp.base)} ${esc(pp.jibun)}</b>` : ''}. 다음은 <a href="#area" data-goto="area">구역계</a>에서 이 지번으로 구역을 만듭니다.`;
+      App.update(); App.persist();
+      msg.innerHTML = `${pp ? `대표 지번을 <b>${esc(pp.base)} ${esc(pp.jibun)}</b>(${esc(r.label)})(으)로 설정했습니다` : `<b>${esc(r.label)}</b>을(를) 대표 위치로 설정했습니다(지번을 찾지 못함 — 지번으로 다시 검색하면 좋습니다)`}. 다음은 <a href="#area" data-goto="area">구역계</a>에서 이 지번으로 구역을 만듭니다.`;
       $('[data-goto]', msg).onclick = ev => { ev.preventDefault(); App.go('area'); };
     } catch (err) {
-      msg.textContent = '검색에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+      msg.textContent = '대표 지번 설정에 실패했습니다. 다시 눌러 주세요.';
     }
   };
   // 직접 고친 위치·용도지역은 이후 자동 입력으로 덮어쓰지 않음
