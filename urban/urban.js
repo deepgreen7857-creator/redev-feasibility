@@ -1958,8 +1958,9 @@ const GATE = {
       const isE2 = !!(e.mode === 3 && e.e2 && e.e2.pnu === o.r.pnu);
       out.push({ kind, pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, pt: b.pt, dIx: b.dIx, dm: b.dm, sc: b.sc, same, isE2, front: o.n * 4 });
     });
-    if (kind === 'sub') return out.sort((x, y) => (y.isE2 - x.isE2) || (x.same - y.same) || (y.sc - x.sc));
-    return out.sort((x, y) => ((x.w < 6) - (y.w < 6)) || ((x.dIx < 30) - (y.dIx < 30)) || (x.same - y.same) || (y.sc - x.sc));
+    const big = c => c.w >= 25 ? 1 : 0;   // 대로급은 뒤로(주출입구와 같은 이유, 참고)
+    if (kind === 'sub') return out.sort((x, y) => (y.isE2 - x.isE2) || (big(x) - big(y)) || (x.same - y.same) || (y.sc - x.sc));
+    return out.sort((x, y) => ((x.w < 6) - (y.w < 6)) || (big(x) - big(y)) || ((x.dIx < 30) - (y.dIx < 30)) || (x.same - y.same) || (y.sc - x.sc));
   },
   put(z, kind, latlng) {
     const pt = this.snap(z, latlng);
