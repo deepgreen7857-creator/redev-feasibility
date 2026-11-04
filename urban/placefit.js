@@ -108,6 +108,11 @@
     const free = D(zone, U(occupied.map(F)));
     if (!free || !sk) return { geom: null, area: 0, ok: false, msg: '구역 안에 남은 빈 땅이 없습니다' };
     let shape = F(sk);
+    // 열린 선(양 끝이 그은 길이의 25% 넘게 떨어짐)은 '나누는 선'
+    if (shape.geometry.type === 'LineString') {
+      const c = shape.geometry.coordinates, len = T.length(shape, { units: 'meters' }), gap = c.length > 1 ? T.distance(T.point(c[0]), T.point(c[c.length - 1]), { units: 'meters' }) : 0;
+      if (c.length >= 2 && len > 0 && gap > len * 0.25) return cutBy({ free, line: shape, target, keepSize });
+    }
     if (shape.geometry.type === 'LineString') { const c = shape.geometry.coordinates; if (c.length < 3) return { geom: null, area: 0, ok: false, msg: '그린 선이 너무 짧습니다' }; shape = T.polygon([[...c, c[0]]]); }
     // 손으로 그어 선이 꼬였을 때만 살짝 부풀려 바로잡음(반듯하게 찍은 모양은 그대로 — 부풀리면 모서리가 둥글어짐)
     let kinked = false; try { kinked = T.kinks(shape).features.length > 0; } catch (er) { kinked = true; }
@@ -154,6 +159,66 @@
     return { svg, meta };
   }
 
+  // 잉크 점들이 한 방향으로 길쭉하면(주축 길이 ÷ 폭 ≥ 7) 그 가운데 선을 꺾은선으로 돌려줌
+  function strokeLine(ink, W, H, meta) {
+    let n = 0, mx = 0, my = 0;
+    const step = Math.max(1, Math.round(Math.sqrt(W * H) / 700));
+    for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) if (ink[y * W + x]) { n++; mx += x; my += y; }
+    if (n < 20) return null;
+    mx /= n; my /= n;
+    let sxx = 0, syy = 0, sxy = 0;
+    for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) if (ink[y * W + x]) { const dx = x - mx, dy = y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+    sxx /= n; syy /= n; sxy /= n;
+    const tr = sxx + syy, det = sxx * syy - sxy * sxy, l1 = tr / 2 + Math.sqrt(Math.max(0, tr * tr / 4 - det)), l2 = Math.max(1e-6, tr - l1);
+    if (Math.sqrt(l1 / l2) < 7) return null;
+    const ang = Math.atan2(l1 - sxx, sxy || 1e-9), ux = Math.cos(ang), uy = Math.sin(ang);
+    // 주축 방향 구간마다 수직 방향 평균 → 가운데 선
+    const bins = new Map(); let tMin = Infinity, tMax = -Infinity;
+    for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) if (ink[y * W + x]) { const t = (x - mx) * ux + (y - my) * uy; tMin = Math.min(tMin, t); tMax = Math.max(tMax, t); }
+    const nb = 30, bw = (tMax - tMin) / nb || 1;
+    for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) if (ink[y * W + x]) {
+      const t = (x - mx) * ux + (y - my) * uy, v = -(x - mx) * uy + (y - my) * ux, k = Math.min(nb - 1, Math.floor((t - tMin) / bw));
+      const b = bins.get(k) || { t: 0, v: 0, c: 0 }; b.t += t; b.v += v; b.c++; bins.set(k, b);
+    }
+    const [x0, y0, x1, y1] = meta.bbox, toLL = (x, y) => [x0 + (x / W) * (x1 - x0), y1 - (y / H) * (y1 - y0)];
+    const pts = [...bins.entries()].sort((a, b) => a[0] - b[0]).map(([, b]) => { const t = b.t / b.c, v = b.v / b.c; return toLL(mx + t * ux - v * uy, my + t * uy + v * ux); });
+    if (pts.length < 2) return null;
+    return { shapes: [], lines: [T.lineString(pts)], msg: '구역을 가르는 선 1개를 읽었습니다 — 선 바깥쪽(작은 쪽)을 시설로 씁니다' };
+  }
+
+  // 나누는 선: 선 양 끝을 구역 밖까지 늘려 빈 땅을 둘로 가르고, 작은 쪽을 시설로. 필요 면적이 있으면 선을 평행으로 옮겨 맞춤
+  function cutBy({ free, line, target, keepSize }) {
+    const c = line.geometry.coordinates, ext = 2000;   // m
+    const far = (a, b) => T.destination(T.point(b), ext / 1000, T.bearing(T.point(a), T.point(b))).geometry.coordinates;
+    const full = T.lineString([far(c[1], c[0]), ...c, far(c[c.length - 2], c[c.length - 1])]);
+    const s0 = c[0], s1 = c[c.length - 1], dirB = T.bearing(T.point(s0), T.point(s1));
+    const side = (pt, off) => { const a = T.destination(T.point(s0), off / 1000, dirB + 90).geometry.coordinates, b = T.destination(T.point(s1), off / 1000, dirB + 90).geometry.coordinates; return Math.sign((b[0] - a[0]) * (pt[1] - a[1]) - (b[1] - a[1]) * (pt[0] - a[0])); };
+    const pieces = off => {
+      const ln = Math.abs(off) < 1e-6 ? full : T.transformTranslate(full, off, dirB + 90, { units: 'meters' });
+      let parts; try { parts = T.flatten(D(free, T.buffer(ln, 0.05, { units: 'meters' }))).features; } catch (er) { return null; }
+      const g = { 1: [], '-1': [] };
+      parts.forEach(p => { const k = String(side(T.pointOnFeature(p).geometry.coordinates, off) || 1); g[k].push(p); });
+      return g;
+    };
+    const g0 = pieces(0); if (!g0) return { geom: null, area: 0, ok: false, msg: '선으로 구역을 가르지 못했습니다' };
+    const aOf = l => l.reduce((a, p) => a + A(p), 0);
+    if (!g0[1].length || !g0['-1'].length) return { geom: null, area: 0, ok: false, msg: '그린 선이 구역을 끝에서 끝까지 가르지 않습니다 — 구역 경계를 넘어가게 그어 주세요' };
+    const key = aOf(g0[1]) <= aOf(g0['-1']) ? '1' : '-1';   // 작은 쪽 = 시설
+    const areaAt = off => { const g = pieces(off); return g ? aOf(g[key]) : 0; };
+    const geomAt = off => { const g = pieces(off); return g && g[key].length ? U(g[key]) : null; };
+    const a0 = areaAt(0);
+    if (keepSize || !(target > 0)) { const g = geomAt(0); return { geom: g, area: A(g), ok: !!g, msg: `선 바깥쪽 ${fmt(A(g))}㎡(선대로)` }; }
+    // 선을 평행으로 옮길 거리 이분 탐색: 한쪽 끝(구역 지름만큼)은 시설이 0, 반대쪽 끝은 빈 땅 전체
+    const Rm = Math.max(50, Math.sqrt(A(free)) * 3);
+    let big = -Rm, small = Rm;
+    if (areaAt(big) < areaAt(small)) { big = Rm; small = -Rm; }
+    if (areaAt(big) < target * 0.995) { const g = geomAt(big); return { geom: g, area: A(g), ok: false, msg: `빈 땅이 ${fmt(target - A(g))}㎡ 부족합니다` }; }
+    for (let i = 0; i < 50; i++) { const mid = (big + small) / 2; if (areaAt(mid) >= target) big = mid; else small = mid; if (Math.abs(big - small) < 0.05) break; }
+    const lo = big;
+    const g = geomAt(lo);
+    return { geom: g, area: A(g), ok: true, msg: `그은 선 바깥쪽 ${fmt(a0)}㎡ → 선을 ${Math.abs(lo) < 0.5 ? '거의 그대로' : `${A(g) > a0 ? '안' : '바깥'}쪽으로 ${Math.abs(lo).toFixed(1)}m 평행 이동해`} 필요 면적에 맞춤(${fmt(A(g))}㎡)` };
+  }
+
   // ── 손그림 읽기: img = { width, height, data(RGBA) } (브라우저는 canvas.getImageData) ──
   function readSheet(img, meta, { minAreaM2 = 50 } = {}) {
     const { width: W, height: H, data } = img, N = W * H;
@@ -184,6 +249,8 @@
       let inner = 0, th = 0;
       for (let i = 0; i < N; i++) { if (!out[i] && !thick[i]) inner++; if (thick[i]) th++; }
       if (inner > th * 0.5 || R > W * 0.06) break;
+      // 처음 굵기에서 안쪽이 안 생기고 잉크가 길쭉한 한 줄이면: 구역을 가르는 '나누는 선'으로 읽음(그 선 바깥쪽 끝을 시설로)
+      if (R === Math.max(2, Math.round(W * 0.004))) { const ln = strokeLine(ink, W, H, meta); if (ln) return ln; }
       R = Math.round(R * 1.6);
     }
     const [x0, y0, x1, y1] = meta.bbox, toLL = (x, y) => [x0 + (x / W) * (x1 - x0), y1 - (y / H) * (y1 - y0)];

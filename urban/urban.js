@@ -1720,12 +1720,12 @@ const FITUI = {
           <button type="button" class="btn ghost sm" data-fitdraw="${k}">손으로 그리기</button>
           ${o.sketch ? `<button type="button" class="btn ghost sm" data-fitclear="${k}">그린 모양 지우기</button>` : ''}
           <label class="zk-opts" style="display:inline"><input type="checkbox" data-fitkeep="${k}" ${o.keepSize ? 'checked' : ''}> 그린 크기 그대로(면적 맞추지 않음)</label></div>
-          <span class="u"><b>꼭짓점 찍어 그리기</b>: 지도에서 모서리를 차례로 누르고, 첫 점을 다시 누르거나 두 번 눌러 끝냅니다(되돌리기 Backspace, 취소 Esc). 직선으로 이어져 반듯한 모양이 됩니다. <b>손으로 그리기</b>: 누른 채 한 바퀴. 구역 밖·도로·다른 시설에 걸린 부분은 잘라 내고, 모양은 그대로 둔 채 같은 비율로 키우거나 줄여 필요 면적에 맞춥니다.</span>`;
+          <span class="u"><b>꼭짓점 찍어 그리기</b>: 지도에서 모서리를 차례로 누르고, 첫 점을 다시 누르거나 두 번 눌러 끝냅니다(되돌리기 Backspace, 취소 Esc). 직선으로 이어져 반듯한 모양이 됩니다. <b>손으로 그리기</b>: 누른 채 한 바퀴(또는 구역을 가로지르는 선 한 줄 — 선 바깥쪽 작은 쪽이 시설). 구역 밖·도로·다른 시설에 걸린 부분은 잘라 내고, 모양은 그대로 둔 채 같은 비율로 키우거나 줄여 필요 면적에 맞춥니다.</span>`;
       } else if (m === 'upload') {
         sub = `<div style="margin-top:6px"><button type="button" class="btn ghost sm" data-fitsheet="${k}">① 스케치 용지 내려받기</button>
           <label class="btn ghost sm" style="cursor:pointer">② 그린 그림 올리기<input type="file" accept="image/*" data-fitupload="${k}" hidden></label>
           <label class="zk-opts" style="display:inline"><input type="checkbox" data-fitkeep="${k}" ${o.keepSize ? 'checked' : ''}> 그린 크기 그대로</label></div>
-          <span class="u">용지(구역·시설이 회색으로 그려진 그림)를 그림판·휴대폰·태블릿에서 열어 빨강·파랑 같은 색 펜으로 원하는 자리를 그린 뒤 그대로 올리세요. 끝이 덜 닫혀도 됩니다. 자르거나 돌리면 위치가 맞지 않습니다. 종이에 출력해 그린 사진은 아직 안 되고 스캔본은 됩니다. 올린 그림은 모양만 읽고 저장하지 않습니다.${o.sheet ? '' : ' <b>먼저 ①로 용지를 내려받으세요.</b>'}</span>`;
+          <span class="u">용지(구역·시설이 회색으로 그려진 그림)를 그림판·휴대폰·태블릿에서 열어 빨강·파랑 같은 색 펜으로 원하는 자리를 그린 뒤 그대로 올리세요. 끝이 덜 닫혀도 됩니다. <b>구역을 가로지르는 선 한 줄</b>만 그으면 그 선 바깥쪽(작은 쪽)을 시설로 씁니다(면적을 맞출 때는 선을 평행으로 옮김, 선 자리 그대로 쓰려면 '그린 크기 그대로'). 자르거나 돌리면 위치가 맞지 않습니다. 종이에 출력해 그린 사진은 아직 안 되고 스캔본은 됩니다. 올린 그림은 모양만 읽고 저장하지 않습니다.${o.sheet ? '' : ' <b>먼저 ①로 용지를 내려받으세요.</b>'}</span>`;
       }
       const msg = m !== 'auto' && fm ? `<div class="${fm.ok ? '' : 'warn'}" style="margin-top:6px"><b>${fm.ok ? '배치 결과' : '확인 필요'}</b> ${esc(fm.msg)}</div>`
         : (m === 'sketch' && !o.sketch) || (m === 'upload' && !o.sketch) ? '<div class="u" style="margin-top:6px">아직 그린 모양이 없어 자동 배치로 보이고 있습니다.</div>' : '';
@@ -1832,6 +1832,7 @@ const FITUI = {
       const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h); cx.drawImage(img, 0, 0, w, h);
       URL.revokeObjectURL(url);
       let r; try { r = PlaceFit.readSheet(cx.getImageData(0, 0, w, h), o.sheet); } catch (er) { r = { shapes: [], msg: '그림을 읽지 못했습니다' }; }
+      if (!r.shapes.length && r.lines && r.lines.length) { this.set(kind, oo => { oo.mode = 'upload'; oo.sketch = r.lines[0].geometry; }); toast(r.msg, 5000); return; }
       if (!r.shapes.length) { toast(r.msg, 5000); return; }
       this.set(kind, oo => { oo.mode = 'upload'; oo.sketch = r.shapes[0].geometry; });
       toast(r.shapes.length > 1 ? `그린 모양 ${r.shapes.length}개 중 가장 큰 것을 썼습니다` : '그린 모양을 읽어 배치했습니다', 4000);

@@ -45,6 +45,23 @@ const readOk = Math.abs(drawnA - expect) < expect * 0.15;
 if (!readOk) fail++;
 console.log(`${readOk ? '통과' : '실패'} 손그림 읽기 ${Math.round(drawnA)}㎡(그린 타원 약 ${Math.round(expect)}㎡) | ${rd.msg}`);
 chk('손그림', PF.run({ mode: 'sketch', sketch: rd.shapes[0] }, { zone, anchorGeom: church, occupied: occ, target: T }));
+// 구역을 가로지르는 선 하나(사용자 사례: 뾰족한 끝을 잘라 공원으로) — 선 바깥쪽(작은 쪽)이 시설, 북쪽 끝에 '남는 획지'가 없어야 함
+{ const tip = 2500, cutLine = L([[40, 200], [150, 215], [270, 205]]);
+  const r = PF.run({ mode: 'sketch', sketch: cutLine.geometry }, { zone, occupied: [], target: tip });
+  const ok = r.geom && Math.abs(r.area - tip) < tip * 0.01 && turf.booleanPointInPolygon(turf.point([O[0] + 230 * mx, O[1] + 320 * my]), r.geom);
+  if (!ok) fail++; console.log(`${ok ? '통과' : '실패'} 나누는선 ${Math.round(r.area)}㎡(필요 ${tip}) 북쪽 끝 포함 ${!!ok} | ${r.msg}`);
+  // 같은 선을 용지에 초록 펜으로 그어 올리기
+  const D2 = new Uint8ClampedArray(W * H * 4).fill(255);
+  const [ax, ay] = toPx([40, 200]), [bx, by] = toPx([150, 215]), [qx, qy] = toPx([270, 205]);
+  for (const [[sx, sy], [tx, ty]] of [[[ax, ay], [bx, by]], [[bx, by], [qx, qy]]]) for (let t = 0; t <= 1; t += 0.002) {
+    const x = Math.round(sx + (tx - sx) * t), y = Math.round(sy + (ty - sy) * t);
+    for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) { const i = ((y + dy) * W + (x + dx)) * 4; D2[i] = 30; D2[i + 1] = 180; D2[i + 2] = 60; }
+  }
+  const rl = PF.readSheet({ width: W, height: H, data: D2 }, meta);
+  const lineOk = rl.lines && rl.lines.length === 1 && !rl.shapes.length;
+  if (!lineOk) fail++; console.log(`${lineOk ? '통과' : '실패'} 선 읽기 | ${rl.msg}`);
+  if (lineOk) { const r2 = PF.run({ mode: 'upload', sketch: rl.lines[0].geometry }, { zone, occupied: [], target: tip });
+    const ok2 = r2.geom && Math.abs(r2.area - tip) < tip * 0.01; if (!ok2) fail++; console.log(`${ok2 ? '통과' : '실패'} 올린 선   ${Math.round(r2.area)}㎡ | ${r2.msg}`); } }
 // 면적 부족은 실패로 알려야 함
 const big = PF.run({ mode: 'wrap', dir: 'N' }, { zone, anchorGeom: church, occupied: occ, target: 60000 });
 if (big.ok) fail++;
