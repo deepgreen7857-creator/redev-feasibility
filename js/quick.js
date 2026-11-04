@@ -587,9 +587,27 @@ Tabs.quick = {
     Quick.reviewLinks();
     Quick.caseUi();
   },
+  // 조합원 수가 무엇으로 셈한 값인지(대장 조회 전이면 건물 동 수라 작게 나옴) 칸 아래에 보여 줌
+  memSrc(q) {
+    const el = $('#qk_memSrc'); if (!el) return;
+    if (q.membersManual) { el.innerHTML = '직접 넣은 값 <button type="button" class="link-btn" id="qkMemAuto">자동 추정으로 되돌리기</button>'; }
+    else if (!S.buildings.length && !S.lands.length) el.textContent = '조서가 아직 없습니다 — 구역을 만들면 토지·건축물대장을 불러와 셉니다';
+    else if (Tabs.survey._ledgerRun || MapView.importing) el.innerHTML = '<b class="warn">건축물대장(세대·호수) 불러오는 중… 끝나면 자동으로 바뀝니다.</b> 큰 아파트 단지는 1~2분 걸립니다';
+    else {
+      const led = S.buildings.filter(b => b.ledger), noLed = S.buildings.filter(b => !b.ledger);
+      const units = S.buildings.reduce((a, b) => a + (Math.max(num(b.hoCount), num(b.units)) || 1), 0);
+      const withB = new Set(S.buildings.map(b => b.pnu).filter(Boolean));
+      const bare = S.lands.filter(l => l.jimok === '대' && l.pnu && !withB.has(l.pnu)).length;
+      el.innerHTML = `셈: 건축물 ${fmt(S.buildings.length)}동의 세대·호 ${fmt(units)}${bare ? ` + 건물 없는 대지 ${fmt(bare)}필지` : ''}`
+        + (noLed.length ? ` · <b class="warn">건축물대장 미조회 ${fmt(noLed.length)}동(1동 = 1명으로 셈)</b> <button type="button" class="link-btn" id="qkMemLedger">건축물대장 불러오기</button>` : led.length ? ' (건축물대장 기준)' : '');
+    }
+    const a = $('#qkMemAuto'); if (a) a.onclick = () => { S.quick.membersManual = false; App.update(true); };
+    const l = $('#qkMemLedger'); if (l) l.onclick = async () => { l.disabled = true; l.textContent = '불러오는 중…'; this.memSrc(S.quick); await Tabs.survey.bldgLedger(true); App.update(true); };
+  },
   refresh() {
     const q0 = Quick.ensure();
     bindInputs($('#tab-quick'));
+    this.memSrc(q0);
     // 고른 단계(최소·평균·보수)를 실제 비율로 바꿔 아래 계산·손잡이·표에 씀
     const q = { ...q0, infraLevel: 'custom', infraPct: Quick.levelPct(q0, q0.infraLevel || 'avg') };
     const pin = $('#qk_infraPct'); if (pin) pin.disabled = (q0.infraLevel || 'avg') !== 'custom';

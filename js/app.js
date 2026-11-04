@@ -348,11 +348,12 @@ const Tabs = {
       await this.bldgLedger();
     },
     // 건축물대장(표제부·전유부)을 아직 조회하지 않은 필지가 있으면 이어서 자동 조회 — 아파트 세대수·호수(조합원 수 추정)·사용승인일이 여기서 채워짐
-    async bldgLedger() {
+    async bldgLedger(force) {
       if (!Ledger.enabled || this._ledgerRun) return;
-      const need = S.lands.some(l => /^\d{19}$/.test(String(l.pnu || '')) && l.ledgerEmpty !== true && !S.buildings.some(b => b.ledger && b.pnu === l.pnu));
+      const need = S.lands.some(l => /^\d{19}$/.test(String(l.pnu || '')) && (force ? true : l.ledgerEmpty !== true) && !S.buildings.some(b => b.ledger && b.pnu === l.pnu));
       if (!need) return;
       this._ledgerRun = true;
+      if (typeof Quick !== 'undefined' && $('#qk_memSrc')) Quick.memSrc(S.quick || {});
       try { await Ledger.fill(); } catch (e) { console.warn('건축물대장 자동 조회 실패', e); } finally { this._ledgerRun = false; }
       App.update(true);
     },

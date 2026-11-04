@@ -351,7 +351,7 @@ const MapView = {
     if (!this._editing) setTimeout(() => this.fitZone(), 80); // 새 구역(지번·파일·그리기·필지 맞추기)이면 구역이 다 보이게, 꼭짓점 고치는 중엔 그대로
     // 구역이 바뀌면 3단계로 가지 않아도 토지·건축물(토지대장·건축물대장·전유부)을 바로 다시 불러옴 — 조합원 수·노후도·종전자산이 새 구역 기준이 되게
     clearTimeout(this._autoImpT);
-    this._autoImpT = setTimeout(() => { try { if (typeof Tabs !== 'undefined' && Tabs.survey && Tabs.survey.stale() && !this.importing) Tabs.survey.autoImport(); } catch (e) { /* 무시 */ } }, 2500);
+    this._autoImpT = setTimeout(() => { try { if (typeof Tabs !== 'undefined' && Tabs.survey && !this.importing) Tabs.survey.autoImport(); } catch (e) { /* 무시 */ } }, 2500);
     const layers = this.items.getLayers();
     if (!layers.length) {
       S.area.geojson = null;
@@ -568,6 +568,9 @@ const MapView = {
       }
       this.drawParcels();
       App.update(true);
+      // 필지를 하나씩 넣은 뒤에도 건축물대장(세대·호수)을 이어서 받음 — 여러 번 누르면 마지막에 한 번
+      clearTimeout(this._autoImpT);
+      this._autoImpT = setTimeout(() => { try { if (typeof Tabs !== 'undefined' && Tabs.survey && !this.importing) Tabs.survey.autoImport(); } catch (e) { /* 무시 */ } }, 3000);
     } catch (e) {
       msg.textContent = '필지 조회에 실패했습니다: ' + e.message + ' (인증키와 등록한 서비스 URL을 확인하세요)';
     }
