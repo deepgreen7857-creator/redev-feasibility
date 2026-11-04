@@ -1,7 +1,7 @@
 /* 사업성 첫 화면(★빠른 사업성) '배치 확인' 일꾼 — 구역계가 정해지면 /arch와 같은 엔진(arch-geom.js)으로 한 번 개략 배치해
    목표 연면적(획지 × 용적률)이 실제 땅 모양·정북 일조·인동간격·채광창 이격으로 다 들어가는지 확인. 화면이 멈추지 않게 따로 계산
    받는 것: { id, ring:[[lng,lat]…], lot, far, mix:{59:40,…}, zoning } → { id, r: { units, gfa, far, maxFloors, n, target, angle } | null, err } */
-importScripts('arch-geom.js?v=15');
+importScripts('arch-geom.js?v=20');
 let C = null;
 self.onmessage = async e => {
   const { id, ring, lot, far, mix, zoning } = e.data, G = self.ArchGeom;
@@ -22,7 +22,7 @@ self.onmessage = async e => {
     let bestA = null, top = -1;
     cand.forEach(ang => { try { const r = G.layout({ pts, tags, setbacks: sb }, Object.assign({}, opt, { angle: ang, fixedF: F, quick: true })); if (r.units && r.gfa > top) { top = r.gfa; bestA = ang; } } catch (er) { /* 건너뜀 */ } });
     if (bestA == null) { self.postMessage({ id, r: null, err: '동이 들어가지 않습니다' }); return; }
-    const r = G.layout({ pts, tags, setbacks: sb }, Object.assign({}, opt, { angle: bestA }));
+    const r = G.layout({ pts, tags, setbacks: sb }, Object.assign({}, opt, { angle: bestA, quick: true }));   // 참고값이라 빠른 방식
     self.postMessage({ id, r: r.units ? { units: r.units, gfa: r.gfa, far: r.far, maxFloors: r.maxFloors, n: r.buildings.length, target: r.target || lot * far / 100, angle: bestA } : null });
   } catch (er) { self.postMessage({ id, r: null, err: String(er && er.message || er) }); }
 };

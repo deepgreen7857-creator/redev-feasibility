@@ -190,7 +190,7 @@
       : { id: U[t].대표사례 || 'rep', 폭: +U[t].폭, 깊이: +U[t].깊이, 베이: +U[t].베이 || 3, rep: 1 };
     const minD = tw ? 8.5 : ex >= 55 ? 8.3 : 7.5; // 4베이 59형은 8.5m 안팎도 있음(발코니 포함)
     const cs = ((LIB.사례 || [])).filter(c => +c.폭 > 0 && +c.깊이 > 0 && near(+c.전용) === tN && Math.abs(+c.전용 - ex) <= 6
-      && (tw ? c.형식 === '탑상' : c.형식 !== '탑상') && +c.깊이 >= minD && +c.폭 >= 4);
+      && (tw ? c.형식 === '탑상' : c.형식 !== '탑상' && c.형식 !== '복층') && +c.깊이 >= minD && +c.폭 >= 4 && !c.특수형);
     const out = rep ? [rep] : [];
     const byBay = {}; cs.forEach(c => { const b = +c.베이 || 0; (byBay[b] = byBay[b] || []).push(c); });
     // 베이 묶음마다 중간값에 가까운 것 + 가장 좁은 것 + 가장 얕은 것(좁은·얕은 자리용)
@@ -212,7 +212,10 @@
     VARC.map[key] = res; return res;
   }
   const withV = (U, t, v, tw) => Object.assign({}, U, { [t]: Object.assign({}, U[t], { 폭: v.폭, 깊이: v.깊이, 베이: v.베이 }, tw ? { 탑상: null } : {}) });
-  const tagV = (m, v, Uv) => { if (m) { m.v = v.id; m.vrep = !!v.rep; m.vname = v.rep ? '' : (v.단지 ? v.단지.replace(/\(.*\)/, '').trim() + ' ' + (v.타입 || '') : v.id); m.U = Uv; } return m; };
+  // 쓴 평면이 어디 평면인지(사용자 요구 2026-11-04 '그 평면이 어디 평면인지 써 달라'): 대표 평면도 사례 id로 단지·타입을 찾아 이름을 붙임
+  const caseOf = id => ((LIB && LIB.사례) || []).find(c => c.id === id) || null;
+  const srcName = (id, 단지, 타입) => { const c = 단지 ? { 단지, 타입 } : caseOf(id); return c && c.단지 ? c.단지.replace(/\(.*\)/, '').trim() + ' ' + (c.타입 || '') : (id && !/^rep/.test(id) ? id : '가정 평면'); };
+  const tagV = (m, v, Uv) => { if (m) { m.v = v.id; m.vrep = !!v.rep; m.vname = srcName(v.id, v.단지, v.타입); m.U = Uv; } return m; };
   function modulesFor(U, c, t, form, opt2) {
     const many = !opt2 || opt2.variants !== false;
     const VS = many ? variantsOf(U, t, 'slab') : variantsOf(U, t, 'slab').slice(0, 1);
@@ -405,7 +408,10 @@
         }
       }
     }
-    function pack(F) {
+    // mode: 기본 = 세 번 훑기(평형 비율 한도), 'single' = '그 자리 최고 층수'로 한 번에 채움(부족한 평형부터),
+    //  'legacy' = 예전 방식(층당 세대로 세고 0차만 한도 — 평형은 쏠려도 용적률이 가장 큰 경우가 있어 후보로 남김). placeBest가 모두 해 보고 고름
+    function pack(F, mode) {
+      const single = mode === 'single', legacy = mode === 'legacy';
       const blds = [], cols = {}; types.forEach(t => { cols[t] = 0; });
       const st = opt.quick ? 3 : GW * GH > 25000 ? 2 : 1; // 큰 구역은 2m 간격(방향 고르기용 빠른 추정은 3m)
       const ordOf = () => { const tot = Object.values(cols).reduce((a, b) => a + b, 0) || 1; return types.slice().sort((a, b) => (cols[a] / tot - want[a]) - (cols[b] / tot - want[b])); };
@@ -415,16 +421,21 @@
       //  1차: 기준 층수까지 올릴 수 있는 남은 자리를 아무 평형으로나
       //  2차: 채광창·정북 일조로 낮아지는 남은 자리에 낮은 동(그 자리 최고 층수, 최저 층수 이상) — 낮은 동은 인동간격도 낮은 높이로
       // 예전에는 높이 제한을 보지 않고 놓은 뒤 깎아서, 경계 가까이 낮아진 동이 높은 동 기준 간격을 차지해 땅이 많이 버려졌음
-      const MIX_TOL = 0.06, over = m => { const tot = Object.values(cols).reduce((a, b) => a + b, 0) + m.n; return tot > 12 && (cols[m.t] + m.n) / tot > want[m.t] + MIX_TOL; };
+      // 평형 비율은 '세대 수'(층당 세대 × 층수)로 셈. 예전엔 층당 세대만 세서 높은 동 하나가 낮은 동 하나와 같게 쳐졌고 한도가 거의 안 걸려
+      //  작은 평형이 좋은 자리를 먼저 가져갔음(숭의 A구역 74·114형 0세대). 한도: 0차 목표+6%p, 1차 +15%p,
+      //  2차는 +15%p를 먼저 지키되 그 자리에 들어갈 다른 평형이 없으면 한도 없이(용적률 유지)
+      const MIX_TOL = [0.06, 0.15, 0.15], over = (m, fl, ps) => { if (legacy) { const t0 = Object.values(cols).reduce((a, b) => a + b, 0) + m.n; return ps === 0 && t0 > 12 && (cols[m.t] + m.n) / t0 > want[m.t] + 0.06; } const add = m.n * fl, tot = Object.values(cols).reduce((a, b) => a + b, 0) + add; return tot > 12 * F && (cols[m.t] + add) / tot > want[m.t] + MIX_TOL[ps]; };
       const flip = (m, x) => (m.form === 'L' && x + m.L / 2 < (xmin + xmax) / 2 ? tagV(lForm(m.U || U, A.coreW_m, m.t, m.a, m.b, true), { id: m.v, rep: m.vrep, 단지: null }, m.U || U) : m);
-      for (let pass = types.length > 1 ? 0 : 1; pass < 3; pass++) {
-        if (pass === 2 && F <= A.minFloors) break;
+      for (let pass = single ? 2 : types.length > 1 ? 0 : 1; pass < 3; pass++) {
+        if (pass === 2 && F <= A.minFloors && !single) break;
         for (let y = GY0; y <= ymax; y += st) {
           for (let x = GX0; x <= xmax; x += st) {
             let pick = null, pf = 0, jump = Infinity;
+            for (const strict of (types.length < 2 ? [false] : legacy ? [pass === 0] : pass < 2 ? [true] : [true, false])) {
+            if (pick) break;
             for (const t of order) {
               for (const m0 of MODS[t]) {
-                if (pass === 0 && over(m0)) break;
+                if (strict && over(m0, F, pass)) break;
                 if (!fits(m0, x, y)) continue;
                 const m = flip(m0, x);
                 // 가벼운 인동간격 검사를 먼저, 높이 제한 계산은 그다음(느림)
@@ -442,10 +453,11 @@
               }
               if (pick) break;
             }
+            }
             if (!pick) { if (isFinite(jump) && jump - st > x) x = Math.ceil(jump) - st; continue; }
             const m = pick;
             blds.push({ row: 0, t: m.t, n: m.n, form: m.form, mod: m, floors: pf, L: m.L, D: m.D, rx: x, ry: y });
-            cols[m.t] += m.n; order = ordOf(); x = Math.ceil(x + m.L + A.sideGap_m) - st;
+            cols[m.t] += m.n * (legacy ? 1 : pf); order = ordOf(); x = Math.ceil(x + m.L + A.sideGap_m) - st;
           }
         }
       }
@@ -456,12 +468,22 @@
       return toWorld(blds);
     }
     // 줄 배치와 자유 배치 중 연면적이 큰 쪽
+    // 평형 비율 차이(세대 기준, 목표와의 차이 합)
+    const mixErr = blds => { const c = {}; let tot = 0; blds.forEach(b => { c[b.t] = (c[b.t] || 0) + b.n * b.floors; tot += b.n * b.floors; }); return tot ? types.reduce((e, t) => e + Math.abs((c[t] || 0) / tot - want[t]), 0) : 9; };
+    // 후보(줄 배치, 자유 배치 세 번 훑기·한 번에 채우기, 평면 변형) 중 연면적이 가장 큰 것의 99% 이상인 것들에서 평형 비율이 가장 잘 맞는 것
     function placeBest(F) {
-      const packV = () => { MODS = MODS_ALL; try { return finish(pack(F)); } finally { MODS = MODS_REP; } };
-      if (opt.quick) { const b = finish(pack(F)); if (!hasVar) return b; const v = packV(); return gfaOf(v) > gfaOf(b) * 1.001 ? v : b; }
-      let best = finish(place(() => F));
-      const b = finish(pack(F)); if (gfaOf(b) > gfaOf(best) * 1.001) best = b;
-      if (hasVar) { const v = packV(); if (gfaOf(v) > gfaOf(best) * 1.001) best = v; }
+      const packV = md => { MODS = MODS_ALL; try { return finish(pack(F, md)); } finally { MODS = MODS_REP; } };
+      const multi = types.length > 1, cands = [];
+      const add = (k, b) => { b.__k = k; cands.push(b); };
+      if (!opt.quick) add('row', finish(place(() => F)));
+      add('pack', finish(pack(F)));
+      if (multi && !opt.quick) { add('single', finish(pack(F, 'single'))); add('legacy', finish(pack(F, 'legacy'))); }
+      if (hasVar) { add('packV', packV()); if (multi && !opt.quick) { add('singleV', packV('single')); add('legacyV', packV('legacy')); } }
+      // 연면적이 가장 큰 후보의 97% 이상인 것 중 평형 비율이 가장 잘 맞는 것(같으면 연면적 큰 것)
+      //  목표 연면적을 넘는 부분은 나중에 동을 빼서 맞추므로 비교에서는 목표까지만 셈
+      const gv = c => Math.min(gfaOf(c), target > 0 ? target : Infinity), top = Math.max(...cands.map(gv));
+      const best = cands.filter(c => gv(c) >= top * 0.97).sort((a, b) => mixErr(a) - mixErr(b) || gfaOf(b) - gfaOf(a))[0];
+      if (typeof process !== 'undefined' && process.env && process.env.LOGW) console.error('F', F, cands.map(c => c.__k + ':' + Math.round(gv(c)) + '/' + mixErr(c).toFixed(2)).join(' '), '->', best.__k);
       return best;
     }
 
@@ -627,6 +649,6 @@
     });
   }
 
-  const api = { FORM_NAME, modulesFor, projector, rot, area, ccw, openRing, inside, segDist, dirDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
+  const api = { FORM_NAME, caseOf: id => caseOf(id), modulesFor, projector, rot, area, ccw, openRing, inside, segDist, dirDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.ArchGeom = api;
 })(typeof window !== 'undefined' ? window : globalThis);

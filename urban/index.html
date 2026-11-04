@@ -249,6 +249,8 @@ td .u{font-size:11px;color:var(--ink-2);font-family:var(--f-mono)}
 a.back{color:var(--accent);font-size:13px;text-decoration:none}
 a.back:hover{text-decoration:underline}
 header.top a.back{display:none}
+@keyframes gatePulse{0%{stroke-opacity:1;stroke-width:4}100%{stroke-opacity:0;stroke-width:1}}
+.gate-pulse{animation:gatePulse 1.2s ease-out infinite}
 nav.steps button .n{display:none}
 </style>
 </head>
@@ -272,8 +274,8 @@ nav.steps button .n{display:none}
   <nav class="steps" role="tablist" aria-label="검토 단계">
     <button role="tab" data-tab="zone" aria-selected="true"><span class="n">1</span>구역계·현황</button><span class="arrow">›</span>
     <button role="tab" data-tab="req" aria-selected="false"><span class="n">2</span>요건판정</button><span class="arrow">›</span>
-    <button role="tab" data-tab="plan" aria-selected="false"><span class="n">3</span>정비기반시설</button><span class="arrow">›</span>
-    <button role="tab" data-tab="arch" aria-selected="false"><span class="n">4</span>출입구·개략 배치</button><span class="arrow">›</span>
+    <button role="tab" data-tab="arch" aria-selected="false"><span class="n">3</span>출입구·개략 배치</button><span class="arrow">›</span>
+    <button role="tab" data-tab="plan" aria-selected="false"><span class="n">4</span>정비기반시설</button><span class="arrow">›</span>
     <button role="tab" data-tab="biz" aria-selected="false"><span class="n">5</span>사업성</button><span class="arrow">·</span>
     <button role="tab" data-tab="rules" aria-selected="false"><span class="n">≡</span>적용 기준</button>
   </nav>
@@ -373,12 +375,13 @@ nav.steps button .n{display:none}
 <script src="../js/config.js?v=68"></script>
 <script src="../js/zonekit.js?v=96"></script>
 <script src="placefit.js?v=68"></script>
-<script src="../shared/arch-geom.js?v=15"></script>
+<script src="../shared/arch-geom.js?v=20"></script>
 <script src="../shared/feas.js?v=88"></script>
 <script src="../shared/site-store.js?v=8"></script>
 <script src="../js/overlay.js?v=95"></script>
 <script src="../shared/cases.js?v=95"></script>
-<script src="urban.js?v=114"></script>
+<script src="../traffic/traffic-calc.js?v=2"></script>
+<script src="urban.js?v=129"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>
 </body>

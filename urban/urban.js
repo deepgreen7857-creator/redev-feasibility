@@ -1858,13 +1858,112 @@ const GATE = {
   list(z) { return ((z && z.infra && z.infra.gates) || []); },
   // 다각형 테두리를 LineString 여러 개로(구멍·여러 덩어리 포함) — pointToLineDistance·nearestPointOnLine은 LineString만 받음
   lines(f) { try { return turf.flatten(turf.polygonToLine(f)).features.filter(l => l.geometry.type === 'LineString'); } catch (er) { return []; } },
-  put(z, kind, latlng) {
-    const zone = z.geojson; let pt = [latlng.lat, latlng.lng];
-    // 구역(획지) 경계에 붙임
+  // 구역(획지) 경계에 붙임 — 찍기·끌어 옮기기 같이 씀
+  snap(z, latlng) {
+    let pt = [latlng.lat, latlng.lng];
     try {
-      let best = null; this.lines(zone).forEach(f => { const n = turf.nearestPointOnLine(f, turf.point([latlng.lng, latlng.lat]), { units: 'meters' }); if (!best || n.properties.dist < best.properties.dist) best = n; });
+      let best = null; this.lines(z.geojson).forEach(f => { const n = turf.nearestPointOnLine(f, turf.point([latlng.lng, latlng.lat]), { units: 'meters' }); if (!best || n.properties.dist < best.properties.dist) best = n; });
       if (best) pt = [best.geometry.coordinates[1], best.geometry.coordinates[0]];
     } catch (er) { /* 그대로 */ }
+    return pt;
+  },
+  // 지도에서 끌어 옮긴 출입구 — 경계에 다시 붙이고, 주출입구면 진입도로도 다시 정함
+  move(z, i, latlng) {
+    const g = (z.infra.gates || [])[i]; if (!g) return;
+    g.pt = this.snap(z, latlng); delete g.auto;
+    let msg = '';
+    if (g.kind === 'main') {
+      const r = this.roadAt(z, g.pt);
+      if (r) { const ch = z.infra.entryPnu !== r.pnu; z.infra.entryPnu = r.pnu; msg = ch ? ` — 진입도로를 ${r.jibun} 도로(현황 약 ${r.w}m)로 바꿨습니다` : ` — 진입도로는 그대로 ${r.jibun} 도로`; }
+      else { delete z.infra.entryPnu; msg = ' — 경계 도로에 닿지 않은 자리라 진입도로가 비었습니다'; }
+    }
+    this.last = { i, t: Date.now() };
+    saveZ(); INFRA.memo = {}; render();
+    toast(`${this.KIND[g.kind]}를 옮겼습니다${msg}`, msg ? 5000 : 2500);
+  },
+  // 주출입구 추천(찍기 전에): 구역 경계를 4m마다 훑어 닿은 경계 도로별로 묶고, 도로마다 교차로에서 가장 먼 경계 지점을 후보 자리로
+  //  순위 = 병목(짧게 닿음) 아닌 것 → 제25조① 폭까지 확폭 면적(닿은 길이×모자라는 폭) 적은 것 → 현황 폭 넓은 것. 일방통행·4m 미만·10m 미만 닿은 도로는 뺌
+  // 공원·녹지·학교·종교·공공청사 등 획지가 아닌 땅(경계 도로 확폭은 빼고) — 출입구는 공동주택 획지에 닿은 경계에만
+  facOf(inf) {
+    if (!inf) return null;
+    if (inf._facB !== undefined) return inf._facB;
+    const gs = [inf.parkGeom, inf.schoolGeom, inf.relGeom, inf.pubB && inf.pubB.geom, inf.other && inf.other.geom, inf.green && inf.green.geom].filter(Boolean);
+    let b = null; try { b = gs.length ? safeUnion(gs.map(g => turf.buffer(g.type === 'Feature' ? g : { type: 'Feature', properties: {}, geometry: g }, 3, { units: 'meters' }))) : null; } catch (er) { b = null; }
+    inf._facB = b; return b;
+  },
+  onFac(inf, pt) { const b = this.facOf(inf); if (!b) return false; try { return turf.booleanPointInPolygon(turf.point([pt[1], pt[0]]), b); } catch (er) { return false; } },
+  // 경계를 4m마다 훑은 지점을 닿은 도로별로 묶음(획지 아닌 땅의 경계는 뺌) — 주·부·주차장 출입구 추천이 같이 씀
+  samples(z, inf) {
+    const e = inf && inf.entry;
+    if (!z || !z.roads || !z.geojson || !e) return null;
+    const key = [z.roads.at, e.W, inf.relArea || 0, inf.parkArea || 0, JSON.stringify(((z.infra || {}).fit) || {}), JSON.stringify(z.geojson.geometry || z.geojson).length, JSON.stringify(((z.infra || {}).edgeOpt) || {})].join('|');
+    if (this._smp && this._smp.k === key && this._smp.z === z) return this._smp.v;
+    const ix = this.ixOf(z), eo = ((z.infra || {}).edgeOpt) || {}, by = new Map();
+    this.lines(z.geojson).forEach(l => {
+      let len = 0; try { len = turf.length(l, { units: 'meters' }); } catch (er) { len = 0; }
+      for (let d = 2; d < len; d += 4) {
+        const c = turf.along(l, d, { units: 'meters' }).geometry.coordinates, pt = [c[1], c[0]], r = this.roadAt(z, pt, 3);
+        if (!r || this.onFac(inf, pt)) continue;
+        const dIx = ix.length ? Math.min(...ix.map(x => turf.distance(turf.point(c), turf.point([x.pt[1], x.pt[0]]), { units: 'meters' }))) : 999;
+        const o = by.get(r.pnu) || { r, s: [] }; o.s.push({ pt, dIx }); by.set(r.pnu, o);
+      }
+    });
+    by.forEach(o => { o.n = o.s.length; o.s.forEach((q, k) => { q.end = Math.min(k, o.n - 1 - k) * 4 + 2; }); });
+    this._smp = { k: key, z, v: by }; return by;
+  },
+  // 주출입구 추천: 병목 아님 → 제25조① 확폭 면적 적음 → 현황 넓음. 자리 = min(교차로 거리, 구간 끝 거리) 최대
+  suggest(z, inf) {
+    const by = this.samples(z, inf); if (!by) return [];
+    const e = inf.entry, eo = ((z.infra || {}).edgeOpt) || {};
+    return [...by.values()].filter(o => o.s.length).map(o => {
+      const b = o.s.reduce((m, q) => { const sc = Math.min(q.dIx, q.end); return !m || sc > m.sc ? { ...q, sc } : m; }, null);
+      const q = e.per[o.r.pnu] || {}, front = q.front || o.n * 4, lack = Math.max(0, e.W - o.r.w);
+      return { kind: 'main', pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, pt: b.pt, dIx: b.dIx, front, lack, area: front * lack, partial: !!q.partial, oneway: !!(eo[o.r.pnu] || {}).oneway };
+    }).filter(c => !c.oneway && c.w >= 4 && c.front >= 10)
+      // 25m 이상(대로급) 도로는 뒤로 — 간선도로에 단지 주출입구를 바로 내면 교차로 간격·가감속 차로 문제가 생겨 보통 그 아래 도로에 둠(참고, 2026-11-04)
+      .map(c => Object.assign(c, { big: c.w >= 25 }))
+      .sort((x, y) => (x.partial - y.partial) || (x.big - y.big) || (x.area - y.area) || (y.w - x.w));
+  },
+  // 다음에 정할 출입구: 주출입구가 없거나 획지 아닌 땅·도로 없는 자리면 주출입구 → 부출입구 → 주차장 출입구 → 없음
+  nextKind(z, inf) {
+    const gl = this.list(z), main = gl.find(g => g.kind === 'main');
+    if (!main || this.onFac(inf, main.pt) || !this.roadAt(z, main.pt)) return 'main';
+    if (!gl.some(g => g.kind === 'sub')) return 'sub';
+    if (!gl.some(g => g.kind === 'park')) return 'park';
+    return null;
+  },
+  // 부출입구·주차장 출입구 추천(주출입구를 정한 뒤)
+  //  부출입구: 제25조③(진입도로 2개)으로 계산 중이면 두 번째 진입도로 우선 → 주출입구와 다른 도로 → 주출입구에서 먼 자리(최대 150m까지 셈). 폭 4m 이상
+  //  주차장 출입구: 차량 동선을 주출입구(보행·주 진입)와 나눔 — 주출입구에서 30m 이상, 교차로에서 먼 자리(30m 이상 우선), 폭 6m 이상(양방향) 우선, 주출입구와 다른 도로 우선, 부출입구와 20m 이상
+  suggestFor(z, inf, kind) {
+    if (kind === 'main') return this.suggest(z, inf);
+    const by = this.samples(z, inf); if (!by) return [];
+    const gl = this.list(z), main = gl.find(g => g.kind === 'main'); if (!main) return [];
+    const e = inf.entry, eo = ((z.infra || {}).edgeOpt) || {}, mr = this.roadAt(z, main.pt);
+    const dist = (a, b) => turf.distance(turf.point([a[1], a[0]]), turf.point([b[1], b[0]]), { units: 'meters' });
+    const subs = gl.filter(g => g.kind === 'sub');
+    const out = [];
+    by.forEach(o => {
+      if ((eo[o.r.pnu] || {}).oneway || o.r.w < 4 || o.n * 4 < 10) return;
+      const same = !!(mr && mr.pnu === o.r.pnu);
+      let b = null;
+      o.s.forEach(q => {
+        const dm = dist(q.pt, main.pt), ds = subs.length ? Math.min(...subs.map(g => dist(q.pt, g.pt))) : 999;
+        let sc;
+        if (kind === 'sub') sc = Math.min(Math.min(dm, 150), q.end * 2, q.dIx * 2);
+        else { if (dm < 30 || ds < 20) return; sc = Math.min(q.dIx, q.end, dm); }
+        if (!b || sc > b.sc) b = { ...q, sc, dm };
+      });
+      if (!b) return;
+      const isE2 = !!(e.mode === 3 && e.e2 && e.e2.pnu === o.r.pnu);
+      out.push({ kind, pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, pt: b.pt, dIx: b.dIx, dm: b.dm, sc: b.sc, same, isE2, front: o.n * 4 });
+    });
+    const big = c => c.w >= 25 ? 1 : 0;   // 대로급은 뒤로(주출입구와 같은 이유, 참고)
+    if (kind === 'sub') return out.sort((x, y) => (y.isE2 - x.isE2) || (big(x) - big(y)) || (x.same - y.same) || (y.sc - x.sc));
+    return out.sort((x, y) => ((x.w < 6) - (y.w < 6)) || (big(x) - big(y)) || ((x.dIx < 30) - (y.dIx < 30)) || (x.same - y.same) || (y.sc - x.sc));
+  },
+  put(z, kind, latlng) {
+    const pt = this.snap(z, latlng);
     z.infra.gates = this.list(z).filter(g => kind === 'sub' || kind === 'park' || g.kind !== kind);   // 주출입구는 하나만
     z.infra.gates.push({ kind, pt });
     // 주출입구가 닿은 경계 도로 = 진입도로(제25조) → 3탭 진입도로·확폭이 이 도로 기준으로 다시 계산되고 교통성 검토로도 넘어감
@@ -1874,17 +1973,12 @@ const GATE = {
       if (r) { z.infra.entryPnu = r.pnu; roadMsg = ` — 닿은 ${r.jibun} 도로(현황 약 ${r.w}m)를 진입도로로 정했습니다. 3탭 진입도로 확폭이 이 도로 기준으로 바뀝니다`; }
       else roadMsg = ' — 경계 도로에 닿지 않은 자리입니다. 진입도로는 도로에 닿은 경계에 찍어야 정해집니다';
     }
+    this.last = { i: z.infra.gates.length - 1, t: Date.now() };
     saveZ(); INFRA.memo = {};
     S.placing = null; $id('lmap').classList.remove('picking');
-    toast(`${this.KIND[kind]}를 구역 경계에 놓았습니다${roadMsg}`, roadMsg ? 6000 : 2500); render();
-  },
-  // 점에서 15m 안의 경계 도로(z.roads.edge) 중 가장 가까운 것
-  roadAt(z, pt) {
-    const p = turf.point([pt[1], pt[0]]); let best = null;
-    ((z.roads && z.roads.edge) || []).forEach(r => { if (!r.geom) return; let d = Infinity;
-      try { const f = { type: 'Feature', properties: {}, geometry: r.geom }; d = turf.booleanPointInPolygon(p, f) ? 0 : Math.min(...this.lines(f).map(l => turf.pointToLineDistance(p, l, { units: 'meters' }))); } catch (er) { d = Infinity; }
-      if (d <= 15 && (!best || d < best.d)) best = { d, pnu: r.pnu, jibun: r.jibun, w: r.w }; });
-    return best;
+    toast(`${this.KIND[kind]}를 구역 경계에 놓았습니다${roadMsg}`, roadMsg ? 6000 : 3000); render();
+    try { if (LM) LM.panTo([pt[0], pt[1]]); } catch (e) { /* 무시 */ }
+    setTimeout(() => { const g = document.getElementById('gateBox'); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 200);
   },
   // 경계 도로끼리 맞닿은 곳 = 교차로(개략). 도로 필지가 닿는 곳의 가운데
   ixOf(z) {
@@ -1899,12 +1993,13 @@ const GATE = {
     }
     this._ix = { k, z, v }; return v;
   },
-  roadAt(z, pt) {
+  // 점에서 max m(기본 15m) 안의 경계 도로(z.roads.edge) 중 가장 가까운 것
+  roadAt(z, pt, max = 15) {
     let best = null;
     ((z.roads && z.roads.edge) || []).forEach(r => {
       let d = 99;
       try { const f = { type: 'Feature', properties: {}, geometry: r.geom }, p = turf.point([pt[1], pt[0]]); d = turf.booleanPointInPolygon(p, f) ? 0 : Math.min(99, ...this.lines(f).map(l => turf.pointToLineDistance(p, l, { units: 'meters' }))); } catch (er) { d = 99; }
-      if (d <= 15 && (!best || d < best.d)) best = { r, d };
+      if (d <= max && (!best || d < best.d)) best = { r, d };
     });
     return best && best.r;
   },
@@ -1921,6 +2016,7 @@ const GATE = {
       return { ...g, i, r, oneway: !!(r && (eo[r.pnu] || {}).oneway), dIx };
     });
     const main = gates.filter(g => g.kind === 'main'), sub = gates.filter(g => g.kind === 'sub'), pk = gates.filter(g => g.kind === 'park');
+    gates.filter(g => this.onFac(inf, g.pt)).forEach(g => add(this.KIND[g.kind] + ' 위치', 'ng', '공원·녹지·종교용지·학교 등 공동주택 획지가 아닌 땅의 경계에 있습니다. 아파트 획지에 닿은 경계로 끌어 옮기세요.', '획지 출입(개략 판단)', false));
     // 주출입구
     if (!main.length) add('주출입구', 'warn', '아직 정하지 않았습니다. 아래 버튼을 누르고 지도에서 구역 경계를 누르세요.', '주택건설기준 등에 관한 규정 제25조①', true);
     main.forEach(g => {
@@ -1959,12 +2055,32 @@ const GATE = {
     add('일반국도 연결', 'info', '출입구가 닿는 도로가 일반국도이면 연결허가 금지구간(곡선·종단기울기 6%·교차로 금지구간 등)과 변속차로(폭 3.25m 이상) 검토. 시도·구도는 교통 협의에서 참고', '도로와 다른 시설의 연결에 관한 규칙 제3조·제6조·제8조(별표 4 미반영)', false);
     return { rows, gates, nPark };
   },
-  draw(layer, a) {
+  draw(layer, a, pl) {
     const z = Z.zones[a.key]; if (!z) return;
     const col = { main: '#c92a2a', sub: '#e67700', park: '#1971c2' };
+    // 주출입구가 아직 없으면 추천 자리를 점선 원으로 — 누르면 그 자리에 주출입구를 놓음
+    const nk = pl && pl.infra && pl.infra.entry ? this.nextKind(z, pl.infra) : null, sg = nk ? this.suggestFor(z, pl.infra, nk)[0] : null;
+    if (sg) {
+      const cc = col[nk];
+      L.circleMarker(sg.pt, { radius: 14, color: cc, weight: 2.5, dashArray: '4 3', fillColor: '#fff', fillOpacity: 0.6 })
+        .bindTooltip(`추천 ${this.KIND[nk]} — ${sg.jibun} 도로(현황 약 ${sg.w}m) · 누르면 여기에 ${this.KIND[nk]}를 놓음`, { sticky: true })
+        .on('click', ev => { L.DomEvent.stop(ev); this.put(z, nk, { lat: sg.pt[0], lng: sg.pt[1] }); }).addTo(layer);
+      L.marker(sg.pt, { interactive: false, icon: L.divIcon({ className: 'gate-lbl', html: `<span style="background:#fff;color:${cc};border:1.5px dashed ${cc};padding:1px 6px;border-radius:4px;font-size:12px;font-weight:700;white-space:nowrap">추천 ${this.KIND[nk]}</span>`, iconSize: null, iconAnchor: [-16, 10] }) }).addTo(layer);
+    }
     this.list(z).forEach((g, i) => {
-      L.circleMarker(g.pt, { radius: 8, color: '#fff', weight: 2, fillColor: col[g.kind], fillOpacity: 1 }).bindTooltip(`${this.KIND[g.kind]} — 누르면 지움`, { sticky: true }).on('click', ev => { L.DomEvent.stop(ev); z.infra.gates.splice(i, 1); saveZ(); render(); }).addTo(layer);
-      L.marker(g.pt, { interactive: false, icon: L.divIcon({ className: 'gate-lbl', html: `<span style="background:${col[g.kind]};color:#fff;padding:1px 5px;border-radius:3px;font-size:11px;white-space:nowrap">${{ main: '주', sub: '부', park: 'P' }[g.kind]}</span>`, iconSize: null, iconAnchor: [-8, 8] }) }).addTo(layer);
+      const r = g.kind === 'main' || g.kind === 'park' ? this.roadAt(z, g.pt) : null;
+      const just = this.last && this.last.i === i && Date.now() - this.last.t < 8000;
+      if (just) L.circleMarker(g.pt, { radius: 22, color: col[g.kind], weight: 3, fill: false, className: 'gate-pulse', interactive: false }).addTo(layer);
+      // 끌어 옮길 수 있는 점(놓으면 경계에 다시 붙음). 누르면 지움
+      const dot = L.divIcon({ className: 'gate-dot', html: `<span style="display:block;width:20px;height:20px;border-radius:50%;background:${col[g.kind]};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);box-sizing:border-box;cursor:grab"></span>`, iconSize: [20, 20], iconAnchor: [10, 10] });
+      const mk = L.marker(g.pt, { icon: dot, draggable: true, autoPan: true, zIndexOffset: 1000 })
+        .bindTooltip(`${this.KIND[g.kind]}${r ? ` — ${r.jibun} 도로(현황 약 ${r.w}m)` : ''} · 끌어서 옮기기 · 누르면 지움`, { sticky: true });
+      let dragged = false;
+      mk.on('dragstart', () => { dragged = true; mk.closeTooltip(); });
+      mk.on('dragend', () => { this.move(z, i, mk.getLatLng()); setTimeout(() => { dragged = false; }, 50); });
+      mk.on('click', ev => { L.DomEvent.stop(ev); if (dragged) return; const gg = z.infra.gates.splice(i, 1)[0]; if (gg && gg.kind === 'main') delete z.infra.entryPnu; this.last = null; saveZ(); INFRA.memo = {}; render(); });
+      mk.addTo(layer);
+      L.marker(g.pt, { interactive: false, icon: L.divIcon({ className: 'gate-lbl', html: `<span style="background:${col[g.kind]};color:#fff;padding:2px 7px;border-radius:4px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.35)">${g.auto ? '추천 ' : ''}${this.KIND[g.kind]}${r && g.kind === 'main' ? ` · 진입도로 ${esc(r.jibun)}` : ''}</span>`, iconSize: null, iconAnchor: [-12, 10] }) }).addTo(layer);
     });
   },
 };
@@ -2184,11 +2300,14 @@ function drawLeaflet() {
   });
   if (ZK.rough[S.region]) L.geoJSON(ZK.rough[S.region], { style: { color: cssVar('--ink-2'), weight: 2, dashArray: '6 6', fill: false }, interactive: false }).addTo(layZ);
   S.placed = null; S.placedIn = null; S.placedNeed = null; S.placedFloors = null; S.placedFloorsCalc = null;
-  if (S.mode === 'arch' && R && R.geojson) { const a = analyze(S.region); if (a) { const pl = plan(a); drawInfraLite(pl); if (!ARCHLAY.draw(a, pl)) drawTowersMap(R.geojson, pl); GATE.draw(layT, a); } if (R.fetched && !INFRA.ready(S.region)) INFRA.fetchRoads(S.region); }
+  if (S.mode === 'arch' && R && R.geojson) { const a = analyze(S.region); if (a) { const pl = plan(a); drawInfraLite(pl); if (!ARCHLAY.draw(a, pl)) drawTowersMap(R.geojson, pl); GATE.draw(layT, a, pl); } if (R.fetched && !INFRA.ready(S.region)) INFRA.fetchRoads(S.region); }
   if (S.mode === 'infra' && R && R.geojson && R.fetched) {
     if (!INFRA.ready(S.region)) INFRA.fetchRoads(S.region);
     const a = analyze(S.region); if (a) INFRA.draw(layT, a);
   }
+  if (S.source === 'map' && R && R.geojson && R.fetched) AUTO.roads(S.region);
+  // 출입구(추천 포함)는 출입구 탭이 아니어도 지도에 보임 — 구역계를 정하면 추천 출입구가 바로 눈에 띄게
+  if (S.mode !== 'arch' && S.source === 'map' && R && R.geojson && R.fetched && INFRA.ready(S.region)) { const z = Z.zones[S.region]; if (GATE.list(z).length) { const a = analyze(S.region); if (a) GATE.draw(layT, a, null); } }
   drawLegend();
 }
 // 개략 주동 배치: 구역계를 미터 좌표로 펴서 격자로 놓은 뒤 다시 경위도로
@@ -2199,7 +2318,7 @@ function drawLeaflet() {
  - 계산은 화면을 그린 뒤 따로(setTimeout) 하고 결과를 기억(같은 조건이면 다시 계산 안 함) */
 const ARCHLAY = {
   memo: {}, busy: '',
-  key(a, pl) { const z = Z.zones[a.key] || {}; return [a.key, Math.round(pl.site), Math.round(pl.farUse), JSON.stringify(JbsFeas.mixOf(JbsFeas.get())), JSON.stringify((z.infra || {}).fit || {}), JSON.stringify(((pl.infra || {}).lots || []).map(l => Math.round(l.area || 0))), P.infraMode, z.roads && z.roads.at].join('|'); },
+  key(a, pl) { const z = Z.zones[a.key] || {}; return [a.key, Math.round(pl.site), Math.round(pl.farUse), JSON.stringify(JbsFeas.mixOf(JbsFeas.get())), JSON.stringify((z.infra || {}).fit || {}), JSON.stringify(((pl.infra || {}).lots || []).map(l => Math.round(l.area || 0))), Math.round((pl.infra || {}).relArea || 0), P.infraMode, z.roads && z.roads.at].join('|'); },
   input(a, pl) {
     const C = ARCHC, G = window.ArchGeom, z = Z.zones[a.key];
     if (!C || !G || !C.평면 || !C.가정 || !z || !z.geojson) return null;
@@ -2216,7 +2335,7 @@ const ARCHLAY = {
     });
     const A0 = C.가정, sb = tags.map(t => t === 'road' ? A0.roadSetback_m : t === 'arterial' ? A0.arterialSetback_m : A0.boundarySetback_m);
     const inf = pl.infra || {}, exclude = [];
-    [inf.parkGeom, inf.roadGeom, inf.schoolGeom, inf.pubB && inf.pubB.geom, inf.other && inf.other.geom, inf.green && inf.green.geom].forEach(gm => ringsOf(gm).forEach(rg => { const q = G.openRing(rg).map(pr.to); if (q.length >= 3) exclude.push(q); }));
+    [inf.parkGeom, inf.roadGeom, inf.schoolGeom, inf.relGeom, inf.pubB && inf.pubB.geom, inf.other && inf.other.geom, inf.green && inf.green.geom].forEach(gm => ringsOf(gm).forEach(rg => { const q = G.openRing(rg).map(pr.to); if (q.length >= 3) exclude.push(q); }));
     (inf.lots || []).filter(l => l.small && l.geom).forEach(l => ringsOf(l.geom).forEach(rg => exclude.push(G.openRing(rg).map(pr.to))));
     const zoning = String(a.zone || P.zone || '');
     const win = (C.items || []).find(i => i.id === 'window_setback'), sun = ((C.items || []).find(i => i.id === 'sunlight_north') || {}).이격;
@@ -2234,9 +2353,11 @@ const ARCHLAY = {
   solve(I, done) {
     const c = this.cands(I);
     try {
-      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=1'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
+      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=6'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
       const id = (this.seq = (this.seq || 0) + 1); this.cb[id] = done;
       this.wk.postMessage({ id, site: I.site, opt: I.opt, cand: c.cand, F: c.F });
+      // 90초가 넘으면 일꾼을 멈추고 예전 네모 그림으로(화면에 '계산 중'이 계속 남지 않게)
+      setTimeout(() => { if (this.cb[id]) { const f = this.cb[id]; delete this.cb[id]; try { this.wk.terminate(); } catch (e) { /* 무시 */ } this.wk = null; Object.values(this.cb).forEach(g => g(null)); this.cb = {}; f(null); } }, 90000);
     } catch (e) { done(null); }
   },
   // 결과가 있으면 그리고 true. 없으면 계산을 걸어 두고 false(그동안은 예전 네모 그림)
@@ -2277,6 +2398,7 @@ function drawInfraLite(pl) {
   add(inf.roadGeom, { color: '#7a7f86', fillColor: '#b9bec4' }, `도로(확폭 포함) ${fmt(inf.roadArea || 0)}㎡`);
   add(inf.parkGeom, { color: '#2f7d4a', fillColor: '#6fbf7e' }, `공원·녹지 ${fmt(inf.parkArea || 0)}㎡ — 주동을 놓지 않음`);
   add(inf.schoolGeom, { color: '#7a5aa6', fillColor: '#b9a3d6' }, `학교용지 ${fmt(inf.schoolArea || 0)}㎡`);
+  add(inf.relGeom, { color: '#7b2cbf', fillColor: '#c9a7e8' }, `종교용지${inf.relC ? '(대체부지)' : '(현 위치 존치)'} ${fmt(inf.relArea || 0)}㎡ — 주동을 놓지 않음`);
   (Array.isArray(inf.lots) ? inf.lots : []).forEach((l, i) => add(l.geom, { color: '#1f2933', weight: 2, dashArray: '6 4', fill: false }, `공동주택 획지${inf.lots.length > 1 ? ' ' + (i + 1) : ''} ${fmt(l.area || turf.area(l.geom))}㎡${l.small ? ' (작아서 배치 제외)' : ''}`));
 }
 function drawTowersMap(gj, pl) {
@@ -2473,19 +2595,23 @@ function render() {
       <p>안을 여러 개(A·B·C…) 그려 같은 기준으로 비교할 수 있습니다. 사업성 검토 화면에 그린 구역이 있으면 위의 <b>사업성 검토 구역 가져오기</b>로, 경위도(WGS84) GeoJSON 파일은 <b>GeoJSON 불러오기</b>로 넣을 수 있습니다.</p></div>`;
     return;
   }
+  if (D.map && AUTO.ensure(a)) drawMap();   // 구역계·도로가 들어오면 추천 출입구 자동 배치 → 지도 다시
   ({ zone: renderZone, req: renderReq, plan: renderPlan, arch: renderArch, biz: renderBiz })[S.tab](a);
+  if (D.map && S.tab !== 'biz') { const h2 = side.querySelector('h2'), h = AUTO.card(a); if (h2 && h) { h2.insertAdjacentHTML('afterend', h); AUTO.wire(); } }
   if (JOB.active && JOB.zone === S.region) side.insertAdjacentHTML('afterbegin', jobHtml());
   stepNav();
 }
 // 각 탭 맨 아래 '다음 단계' 버튼(2026-11-04 사용자 요구: 기반시설을 정한 뒤 다음으로 넘어가는 버튼). 지금 정한 값은 저장된 상태로 넘어감
 function stepNav() {
-  const ORDER = [['zone', '1 구역계·현황'], ['req', '2 요건판정'], ['plan', '3 정비계획(기반시설)'], ['arch', '4 개략 건축계획'], ['biz', '5 사업성']];
+  // 화면 탭 순서 = 위 '정비계획 순서'(주출입구 → 정비기반시설 → 교통성 …)와 같게: 출입구·개략 배치가 정비기반시설보다 앞
+  const ORDER = [['zone', '구역계·현황'], ['req', '요건판정'], ['arch', '출입구·개략 배치'], ['plan', '정비기반시설'], ['biz', '사업성']];
   const i = ORDER.findIndex(([k]) => k === S.tab); if (i < 0) return;
   const prev = ORDER[i - 1], next = ORDER[i + 1];
-  const nextLabel = S.tab === 'plan' ? '기반시설 확정 → 다음: 4 개략 건축계획(교통성·환경성 검토로)' : next ? `다음: ${next[1]} →` : '';
+  const nextLabel = S.tab === 'arch' ? '출입구 정함 → 다음: 정비기반시설(도로 확폭·공원)' : next ? `다음: ${next[1]} →` : '';
   side.insertAdjacentHTML('beforeend', `<div class="stepnav" style="display:flex;justify-content:space-between;gap:8px;margin:18px 0 6px;padding-top:12px;border-top:1px solid var(--line)">
     ${prev ? `<button type="button" class="btn ghost" data-stepgo="${prev[0]}">← ${prev[1]}</button>` : '<span></span>'}
-    ${next ? `<button type="button" class="btn" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-stepgo="${next[0]}">${nextLabel}</button>` : S.tab === 'biz' ? `<a class="btn" style="background:var(--ink);color:var(--paper);text-decoration:none" data-tool="arch" href="${toolHref('arch')}">다음: 자세한 배치(/arch) →</a>` : ''}</div>`);
+    ${S.tab === 'plan' ? `<button type="button" class="btn" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-handoffnav="traffic" ${handoffReady() ? '' : 'disabled'}>기반시설 확정 → 다음: 3 교통성 검토(계획값을 넘김)</button>` : next ? `<button type="button" class="btn" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-stepgo="${next[0]}">${nextLabel}</button>` : S.tab === 'biz' ? `<a class="btn" style="background:var(--ink);color:var(--paper);text-decoration:none" data-tool="arch" href="${toolHref('arch')}">다음: 자세한 배치(/arch) →</a>` : ''}</div>`);
+  side.querySelectorAll('[data-handoffnav]').forEach(b => b.onclick = () => { const a = analyze(S.region); if (a) handoff(a, b.dataset.handoffnav); });
   side.querySelectorAll('[data-stepgo]').forEach(b => b.onclick = () => {
     saveZ(); try { saveP(); } catch (e) { /* 무시 */ }
     const t = document.querySelector(`nav.steps button[data-tab="${b.dataset.stepgo}"]`); if (t) t.click();
@@ -3101,7 +3227,10 @@ function handoffSection() {
 }
 function renderArch(a) {
   const pl = plan(a);
-  side.innerHTML = `<h2>${regName()} 개략 건축계획</h2>
+  // 출입구가 이 탭의 첫 할 일(정비계획 순서 1) — 맨 위에. 그 아래 개략 규모·평형·배치
+  side.innerHTML = `<h2>${regName()} 출입구·개략 배치</h2>
+  ${D.map ? gateSection(a, pl) : ''}
+  <h3 style="margin-top:18px">개략 건축계획</h3>
   <p style="margin:0 0 8px"><a class="btn" style="display:inline-block;text-decoration:none" data-tool="arch" href="${toolHref('arch')}">자세한 배치·일조·3D와 교통성 검토서로 → (/arch)</a></p>
   <p class="hint">여기 개략 배치는 규모 확인용입니다. 배치 확정과 교통성·환경성·경관 검토서는 /arch에서 이 안(${esc(S.region)}안)을 불러와 이어 합니다.</p>
   ${(() => { const inf = pl.infra; if (P.infraMode === 'manual') return `<p class="note" style="background:#f7f9fb;border:1px solid var(--line);border-radius:6px;padding:8px 10px">3탭에서 <b>비율 직접 입력(${fmt(P.infraRatio)}%)</b>을 골라 그 비율로 계산 중입니다 — 지도에 그린 공원 모양은 쓰지 않습니다. 그린 모양을 쓰려면 3탭에서 '제안값 사용'을 고르세요. 획지 ${fmt(pl.site)}㎡</p>`;
@@ -3131,21 +3260,212 @@ function renderArch(a) {
     <tr><td>일반분양</td><td class="r">${fmt(pl.general)}</td></tr>
     <tr><td>임대주택</td><td class="r">${fmt(pl.rental)}</td></tr>
   </tbody></table></div>
-  ${D.map ? gateSection(a, pl) : ''}
   <p class="note">도면의 <b>개략 배치</b>는 주동을 ${S.placedIn === 'lots' ? '정비기반시설(도로·공원·학교·종교용지 등)을 뺀 <b>공동주택 획지</b>' : '구역계'} 안에 격자로 놓아 봅니다(인동간격 높이×0.8 개략, 배치된 주동 ${S.placed ?? '–'}개동${S.placed != null && S.placedNeed && S.placed < S.placedNeed ? ` — 땅 모양 때문에 계산상 ${S.placedNeed}개동(${S.placedFloorsCalc}층)이 다 들어가지 않아 ${S.placed}개동 × ${S.placedFloors}층으로 세대수를 맞췄습니다. 오른쪽 개략 규모도 이 값입니다` : ''}). 일조·높이·학교예정부지·문화재 위치는 /arch 단계에서 다룹니다.</p>
-  ${S.archLay && S.archLay.n ? `<p class="note" style="background:#f7f9fb;border:1px solid var(--line);border-radius:6px;padding:8px 10px">지도 개략 배치(실제 평면·정북 일조·인동간격 0.8·기반시설 이격 반영, 판상 ${S.archLay.angle}°): <b>${S.archLay.n}개동 · ${fmt(S.archLay.units)}세대 · 최고 ${S.archLay.maxF}층</b> · 용적률 ${S.archLay.far.toFixed(1)}% · 건폐율 ${S.archLay.bcr.toFixed(1)}%. 위 세대수(개략 계산)와 다를 수 있으며, 형태 비교·확정은 /arch에서 합니다.</p>` : S.archLay && S.archLay.busy ? '<p class="note">지도 개략 배치를 실제 평면으로 계산하는 중입니다… (몇 초)</p>' : ''}
+  ${S.archLay && S.archLay.n ? `<p class="note" style="background:#f7f9fb;border:1px solid var(--line);border-radius:6px;padding:8px 10px">지도 개략 배치(실제 평면·정북 일조·인동간격 0.8·기반시설 이격 반영, 판상 ${S.archLay.angle}°): <b>${S.archLay.n}개동 · ${fmt(S.archLay.units)}세대 · 최고 ${S.archLay.maxF}층</b> · 용적률 ${S.archLay.far.toFixed(1)}% · 건폐율 ${S.archLay.bcr.toFixed(1)}%. 위 세대수(개략 계산)와 다를 수 있으며, 형태 비교·확정은 /arch에서 합니다.</p>` : S.archLay && S.archLay.busy ? '<p class="note">지도 개략 배치를 실제 평면으로 계산하는 중입니다… (큰 구역은 1분 안팎)</p>' : S.archLay && S.archLay.fail ? '<p class="note">실제 평면 배치를 시간 안에 끝내지 못해 지도는 간단한 네모 배치로 보여 줍니다. 자세한 배치는 6 건축계획 수립(/arch)에서 하세요.</p>' : ''}
   ${handoffSection()}`;
   bindNum(['bcr', 'coreUnits', 'parkCount']);
   side.querySelectorAll('[data-mixpreset]').forEach(b => b.onclick = () => { const pr = ((ARCHC || {})['평형구성_예시'] || {})[b.dataset.mixpreset] || {}, patch = {}; unitTypes().forEach(t => { patch['mix' + t] = num(pr[t]); }); JbsFeas.set(patch); render(); });
   side.querySelectorAll('[data-handoff]').forEach(b => b.onclick = () => handoff(a, b.dataset.handoff));
   side.querySelectorAll('[data-feas]').forEach(e => e.addEventListener('change', () => { const v = parseFloat(e.value); JbsFeas.set({ [e.dataset.feas]: isNaN(v) ? 0 : v }); render(); }));
-  side.querySelectorAll('[data-gate]').forEach(b => b.onclick = () => { S.placing = 'gate:' + b.dataset.gate; $id('lmap').classList.add('picking'); toast(`지도에서 ${GATE.KIND[b.dataset.gate]}를 둘 구역 경계를 누르세요`); });
+  side.querySelectorAll('[data-gatedel]').forEach(b => b.onclick = () => { const z = Z.zones[S.region]; if (!z || !z.infra || !z.infra.gates) return; const g = z.infra.gates.splice(+b.dataset.gatedel, 1)[0]; if (g && g.kind === 'main') delete z.infra.entryPnu; GATE.last = null; saveZ(); INFRA.memo = {}; render(); toast(`${g ? GATE.KIND[g.kind] : '출입구'}를 지웠습니다${g && g.kind === 'main' ? ' — 진입도로는 다시 자동(확폭 적은 쪽)으로' : ''}`, 3000); });
+  side.querySelectorAll('[data-gatemove]').forEach(b => b.onclick = () => {
+    const z = Z.zones[S.region]; if (!z || !z.infra || !z.infra.gates) return; const g = z.infra.gates[+b.dataset.gatemove]; if (!g) return;
+    if (g.kind !== 'main') { z.infra.gates.splice(+b.dataset.gatemove, 1); saveZ(); }   // 주출입구는 새로 찍으면 저절로 바뀜
+    S.placing = 'gate:' + g.kind; $id('lmap').classList.add('picking');
+    b.style.cssText = 'background:#c92a2a;color:#fff;border-color:#c92a2a'; b.textContent = '지도에서 새 자리를 누르세요';
+    toast(`지도에서 ${GATE.KIND[g.kind]}의 새 자리(구역 경계)를 누르세요`, 4000);
+  });
+  side.querySelectorAll('[data-gatesug]').forEach(b => b.onclick = () => {
+    const [kind, idx] = b.dataset.gatesug.split(':'), z = Z.zones[S.region], pl = plan(analyze(S.region)), c = GATE.suggestFor(z, pl.infra, kind)[+idx];
+    if (c) GATE.put(z, kind, { lat: c.pt[0], lng: c.pt[1] });
+  });
+  side.querySelectorAll('[data-gate]').forEach(b => b.onclick = () => {
+    S.placing = 'gate:' + b.dataset.gate; $id('lmap').classList.add('picking');
+    side.querySelectorAll('[data-gate]').forEach(x => { x.classList.remove('on'); x.style.cssText = ''; });
+    b.classList.add('on'); b.style.cssText = 'background:#c92a2a;color:#fff;border-color:#c92a2a';
+    b.textContent = `지도에서 구역 경계를 누르세요 — ${GATE.KIND[b.dataset.gate]}`;
+    toast(`지도에서 ${GATE.KIND[b.dataset.gate]}를 둘 구역 경계를 누르세요(도로에 닿은 경계)`, 4000);
+  });
   const gc = document.getElementById('gateClear'); if (gc) gc.onclick = () => { const z = Z.zones[S.region]; if (z && z.infra) { delete z.infra.gates; saveZ(); render(); } };
 }
 // 단지 출입구 검토(배치 탭) — 위치는 '가정', 교통영향평가·경찰 협의 뒤 확정
+// 주출입구를 정하면서 바로 판단하도록: 진입도로 기준 폭·확폭·병목, 다른 경계 도로에 두면 어떤지(개략)
+// 주출입구 추천 상자 — 찍기 전에 단지 상황(경계 도로 폭·닿은 길이·병목·교차로 거리)으로 순위
+function gateSugHtml(a, pl, zz, gl) {
+  const inf = pl.infra, e = inf && inf.entry; if (!e || !zz.roads) return '';
+  const col = { main: '#c92a2a', sub: '#e67700', park: '#1971c2' };
+  const main = gl.find(g => g.kind === 'main'), mr = main ? GATE.roadAt(zz, main.pt) : null;
+  const descMain = x => `${esc(x.jibun)} 도로(현황 약 ${x.w}m, 닿은 길이 약 ${fmt(x.front)}m) — ${x.lack >= 0.3 ? `제25조① ${e.W}m까지 확폭 ${fmt(x.lack, 1)}m·약 ${fmt(x.area)}㎡` : '확폭 필요 없음'}${x.partial ? ' · 병목 주의' : ''}${x.dIx < 30 ? ` · 교차로에서 ${fmt(x.dIx)}m` : ''}`;
+  const descSub = x => `${esc(x.jibun)} 도로(현황 약 ${x.w}m) — 주출입구에서 약 ${fmt(x.dm)}m${x.isE2 ? ' · <b>두 번째 진입도로(제25조③)</b>' : x.same ? ' · 주출입구와 같은 도로' : ' · 주출입구와 다른 도로'}${x.dIx < 30 ? ` · 교차로에서 ${fmt(x.dIx)}m` : ''}`;
+  const descPark = x => `${esc(x.jibun)} 도로(현황 약 ${x.w}m${x.w < 6 ? ', 6m 미만이라 양방향 진출입 어려움' : ''}) — 주출입구에서 약 ${fmt(x.dm)}m · 교차로에서 약 ${fmt(x.dIx)}m${x.same ? ' · 주출입구와 같은 도로' : ' · 주출입구와 다른 도로(차량·보행 동선 분리)'}`;
+  const BASIS = {
+    main: '병목이 아닌 도로 → 진입도로 확폭 면적이 적은 도로 → 현황이 넓은 도로, 그 도로에 닿은 경계 중 교차로·모퉁이에서 가장 먼 자리.',
+    sub: '진입도로 2개(제25조③)로 계산 중이면 두 번째 진입도로 → 주출입구와 다른 도로 → 주출입구에서 먼 자리(비상·보행 동선 분산).',
+    park: '폭 6m 이상(양방향) 도로 → 교차로에서 30m 이상 → 주출입구와 다른 도로, 주출입구에서 30m·부출입구에서 20m 이상 떨어진 자리(차량·보행 동선 분리). 횡단보도·학교 출입구 위치는 지도 자료가 없어 빠져 있습니다.',
+  };
+  const box = (kind, c, desc, moving) => {
+    if (!c.length) return `<div class="note" style="margin:6px 0">추천할 ${GATE.KIND[kind]} 자리가 없습니다(조건에 맞는 경계 도로 없음). 지도를 보고 직접 찍으세요.</div>`;
+    return `<div style="background:#fff;border:1.5px dashed ${col[kind]};border-radius:6px;padding:8px 10px;margin:6px 0">
+    <b style="color:${col[kind]}">추천 ${GATE.KIND[kind]}</b> — ${desc(c[0])}
+    <div style="margin:5px 0"><button type="button" class="btn sm" style="background:${col[kind]};color:#fff;border-color:${col[kind]}" data-gatesug="${kind}:0">${moving ? `추천 자리로 ${GATE.KIND[kind]} 옮기기` : `추천 자리에 ${GATE.KIND[kind]} 놓기`}</button></div>
+    ${c.length > 1 ? `<div class="note">다른 후보: ${c.slice(1, 3).map((x, i) => `<button type="button" class="btn ghost sm" data-gatesug="${kind}:${i + 1}">${i + 2}순위</button> ${desc(x)}`).join('<br>')}</div>` : ''}
+    <div class="u" style="margin-top:3px">추천 기준: ${BASIS[kind]} 공원·녹지·종교용지·학교 등 획지가 아닌 땅의 경계와 일방통행·4m 미만 도로는 뺐습니다. 버스·보행 동선과 주변 단지 출입구는 반영하지 않았으니 지도를 보고 판단하세요.</div>
+  </div>`;
+  };
+  const nk = GATE.nextKind(zz, inf);
+  let h = '';
+  if (nk === 'main') h += box('main', GATE.suggest(zz, inf), descMain, !!main);
+  else {
+    // 주출입구는 적정 — 추천과 다른 도로면 한 줄로만 알림
+    const c = GATE.suggest(zz, inf);
+    if (c.length && mr && mr.pnu !== c[0].pnu) h += `<div class="note" style="margin:6px 0">주출입구 추천 1순위는 ${descMain(c[0])}입니다. <button type="button" class="btn ghost sm" data-gatesug="main:0">추천 자리로 옮기기</button></div>`;
+    if (nk === 'sub') h += box('sub', GATE.suggestFor(zz, inf, 'sub'), descSub, false);
+    else if (nk === 'park') h += box('park', GATE.suggestFor(zz, inf, 'park'), descPark, false);
+    else h += '<div class="note" style="margin:6px 0">✔ 주출입구·부출입구·주차장 출입구를 모두 정했습니다. 아래 검사표를 확인하고 다음 단계(정비기반시설)로 넘어가세요.</div>';
+  }
+  return h;
+}
+function gateEntryHtml(a, pl, zz, gl) {
+  const inf = pl.infra, e = inf && inf.entry; if (!e || !zz.roads) return '';
+  const main = gl.find(g => g.kind === 'main'); if (!main) return '';
+  const r = GATE.roadAt(zz, main.pt); if (!r) return '';
+  const p = e.per[r.pnu] || {}, isE1 = e.e1 && e.e1.pnu === r.pnu;
+  const std = e.mode === 3 && isE1 && e.e2 ? `제25조③ 진입도로 2개 폭 합 ${e.W2}m 이상(${esc(e.e2.jibun)} ${e.e2.w}m와 합산)` : `제25조① ${e.W}m 이상`;
+  const add = p.add || 0;
+  let line = `<b>진입도로 판단</b> — 계획 ${fmt(pl.units)}세대 → ${std}. ${esc(r.jibun)} 도로 현황 약 ${r.w}m → 계획 약 ${p.pw || r.w}m`;
+  line += add >= 0.3 ? ` · <b>구역 쪽 확폭 ${fmt(add, 1)}m, 약 ${fmt(p.area)}㎡</b>(기반시설에 들어감)` : ' · <b>확폭 필요 없음</b>';
+  if (p.front) line += ` · 구역에 닿은 길이 약 ${fmt(p.front)}m`;
+  if (!isE1) line += ' <span class="warn">— 정비기반시설 탭의 진입도로와 다름(정비기반시설 탭에서 확인)</span>';
+  const warns = [];
+  if (p.partial) warns.push('구역에 짧게 닿은 도로라 이 구간만 넓히면 앞뒤가 좁은 병목이 됩니다. 도로 전체 확폭(도시계획도로 결정)이 함께 필요한지 교통성 검토에서 확인하세요');
+  if (r.w < 4) warns.push('현황 4m 미만 — 진입도로로 쓰기 어렵습니다');
+  if ((((zz.infra || {}).edgeOpt || {})[r.pnu] || {}).oneway) warns.push('일방통행으로 표시된 도로입니다');
+  // 다른 경계 도로에 두면(개략): 구역에 10m 이상 닿은 도로만, 확폭 면적 ≈ 닿은 길이 × 모자라는 폭
+  const others = (zz.roads.edge || []).filter(x => x.pnu !== r.pnu).map(x => { const q = e.per[x.pnu] || {}; const lack = Math.max(0, e.W - x.w); return { x, q, lack, area: (q.front || 0) * lack }; })
+    .filter(o => (o.q.front || 0) >= 10).sort((m, n) => m.area - n.area).slice(0, 4);
+  const cur = add >= 0.3 ? (p.area || 0) : 0;
+  const oth = others.length ? `<div class="note" style="margin-top:4px">다른 경계 도로에 주출입구를 두면(제25조① ${e.W}m 기준, 개략): ${others.map(o => `${esc(o.x.jibun)}(현황 ${o.x.w}m) ${o.lack >= 0.3 ? `확폭 ${fmt(o.lack, 1)}m·약 ${fmt(o.area)}㎡` : '확폭 없음'}${o.q.partial ? '·병목 주의' : ''}${o.area < cur - 50 ? ' <b>← 지금보다 적음</b>' : ''}`).join(' / ')}. 점을 그 도로 쪽 경계로 끌어 옮기면 바로 다시 계산됩니다.</div>` : '';
+  return `<div style="background:#fff8e6;border:1px solid #f0d58c;border-radius:6px;padding:8px 10px;margin:6px 0">${line}${warns.map(w => `<div class="warn" style="margin-top:3px">⚠ ${w}</div>`).join('')}${oth}<div class="u" style="margin-top:3px">현황 폭은 필지 모양으로 추정한 값입니다. 교통성 검토에서 확정합니다.</div></div>`;
+}
+// ===== 추천안 자동 진행 (2026-11-04 사용자 요구) =====
+// "일반인은 출입구를 어디 둘지 모른다 — 구역계만 정하면 추천안이 그냥 떠야 하고, 그 추천에 따라 기반시설 → 교통성 검토로 이어져야 한다.
+//  구역계만 정하고 아무것도 없으면 돌아가지 않고 어렵게 느낀다"
+//  ① 구역계·필지를 불러오면 주변 도로를 자동으로 불러옴(탭과 관계없이)
+//  ② 사용자가 아직 출입구를 정하지 않았으면 추천 주출입구 → 부출입구 → 주차장 출입구를 자동으로 놓음(g.auto — 지도에 '추천' 표시)
+//     주출입구 → 진입도로(entryPnu) → 3탭 정비기반시설(제안값)이 그 기준으로 다시 계산됨
+//  ③ 교통성 1차(진입도로 폭·법정 주차·첨두 교통량·교통영향평가 대상)를 /traffic과 같은 계산(TrafficCalc)으로 바로 보여 줌
+//  사용자가 출입구를 하나라도 직접 놓거나 옮기면 그 뒤로 자동으로 바꾸지 않음. 같은 구역계에서 추천 출입구를 지웠으면 다시 넣지 않음
+//  구역계가 바뀌면(추천 출입구만 있을 때) 새 구역계로 다시 추천
+const AUTO = {
+  tried: {},
+  key(z) { try { return JSON.stringify(turf.bbox(z.geojson)); } catch (e) { return ''; } },
+  // 구역계·필지를 불러왔는데 주변 도로가 없으면 불러오기(구역계마다 한 번 — 실패해도 되풀이하지 않음)
+  roads(id) {
+    const z = Z.zones[id], R = D.regions[id];
+    if (!z || !z.geojson || !R || !R.fetched || INFRA.ready(id) || INFRA.loading[id] || !VWorld.enabled) return;
+    const k = id + '|' + this.key(z); if (this.tried[k]) return;
+    this.tried[k] = true; INFRA.fetchRoads(id);
+  },
+  place(z, kind, pt) {
+    z.infra.gates = GATE.list(z).filter(g => kind !== 'main' || g.kind !== 'main');
+    z.infra.gates.push({ kind, pt: pt.slice(), auto: true });
+    if (kind === 'main') { const r = GATE.roadAt(z, pt); if (r) z.infra.entryPnu = r.pnu; }
+  },
+  // 추천 출입구 자동 배치. 바꾼 게 있으면 true
+  ensure(a) {
+    const z = Z.zones[a.key]; if (!z || !z.geojson || !INFRA.ready(a.key)) return false;
+    z.infra = z.infra || {};
+    const k = this.key(z), gl = GATE.list(z);
+    if (gl.some(g => !g.auto)) return false;            // 사용자가 직접 정한 출입구가 있음
+    if (z.infra.gateAuto === k) return false;           // 이 구역계에서 이미 추천함(지운 것도 존중)
+    z.infra.gates = []; if (gl.length) delete z.infra.entryPnu;
+    INFRA.memo = {};
+    let pl = plan(a);
+    const main = pl.infra && pl.infra.entry ? GATE.suggest(z, pl.infra)[0] : null;
+    z.infra.gateAuto = k;
+    if (!main) { saveZ(); return true; }
+    this.place(z, 'main', main.pt);
+    for (const kind of ['sub', 'park']) {
+      INFRA.memo = {}; pl = plan(a);
+      const c = pl.infra && GATE.suggestFor(z, pl.infra, kind)[0];
+      if (c) this.place(z, kind, c.pt);
+    }
+    INFRA.memo = {}; saveZ();
+    toast(`추천 출입구를 놓았습니다 — 주출입구 ${main.jibun} 도로(현황 약 ${main.w}m). 정비기반시설·교통성 1차가 이 기준으로 계산됩니다`, 6000);
+    return true;
+  },
+  reset(id) {
+    const z = Z.zones[id]; if (!z || !z.infra) return;
+    z.infra.gates = []; delete z.infra.entryPnu; delete z.infra.gateAuto;
+    GATE.last = null; INFRA.memo = {}; saveZ();
+  },
+  // 교통성 1차 — /traffic 도구와 같은 계산(traffic/traffic-calc.js)·같은 기준표
+  traffic(a, pl) {
+    if (!window.TrafficCalc || !CRIT.raw || !CRIT.raw.traffic || !CRIT.tplTraffic) return null;
+    const z = Z.zones[a.key] || {}, e = pl.infra && pl.infra.entry;
+    const role = r => e && e.e1 && r.pnu === e.e1.pnu ? '진입도로' : e && e.mode === 3 && e.e2 && r.pnu === e.e2.pnu ? '두 번째 진입도로' : '주변 도로';
+    const roads = ((z.roads && z.roads.edge) || []).map(r => { const q = (e && e.per[r.pnu]) || {}; return { name: `${r.jibun} 도로`, w: r.w, pw: q.pw || r.w, role: role(r) }; });
+    let u60 = 0, a85 = 0, a85u = 0;
+    Object.entries(pl.byType || {}).forEach(([t, c]) => { const ex = num(t), n = num(c); if (ex <= 60) u60 += n; if (ex <= 85) a85 += n * ex; else a85u += n * ex; });
+    const retail = pl.gfa - num(pl.U && pl.U.resArea);
+    const p = { type: 'redev', siteArea: a.area, units: pl.units, units60below: u60, area85below: a85, area85above: a85u, retailGFA: retail > 1 ? retail : 0, roads };
+    try { return { p, r: TrafficCalc.run(CRIT.raw.traffic, CRIT.tplTraffic, p) }; } catch (er) { console.warn('교통성 1차 계산 실패', er); return null; }
+  },
+  // 각 탭 위 '추천안 흐름' 카드 — 결과·주요 숫자만(설명은 검토자 화면·검토서에)
+  card(a) {
+    const z = Z.zones[a.key] || {}, R = D.regions[a.key] || {};
+    const box = (inner, open) => `<details class="autoflow" ${open ? 'open' : ''} style="background:#f4f8ff;border:1px solid #bcd0ee;border-radius:8px;padding:8px 12px;margin:6px 0 12px">${inner}</details>`;
+    if (!R.fetched) return '';
+    if (!INFRA.ready(a.key)) return box(`<summary style="cursor:pointer;font-weight:700">추천안 만드는 중…</summary><p class="note" style="margin:6px 0 0">주변 도로를 불러오고 있습니다. 끝나면 <b>추천 출입구 → 정비기반시설 → 교통성 1차</b>가 자동으로 채워집니다.</p>`, true);
+    const pl = plan(a), gl = GATE.list(z), main = gl.find(g => g.kind === 'main');
+    const allAuto = gl.length && gl.every(g => g.auto);
+    const row = (n, t, body, btn) => `<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:1px dashed #cfdcef"><b style="min-width:20px;color:#1c4f9c">${n}</b><div style="flex:1;min-width:0"><b>${t}</b> ${body}</div>${btn || ''}</div>`;
+    const go = (tab, label) => S.tab === tab ? '' : `<button type="button" class="btn ghost sm" data-autogo="${tab}">${label}</button>`;
+    // ① 출입구
+    let g1;
+    if (!main) g1 = gl.length || z.infra && z.infra.gateAuto ? '<span class="warn">주출입구가 없습니다</span> — 출입구 탭에서 정하세요' : '<span class="warn">추천할 자리가 없습니다</span>(폭 4m 이상·10m 이상 닿은 경계 도로 없음) — 지도에서 직접 찍으세요';
+    else {
+      const r = GATE.roadAt(z, main.pt), sub = gl.find(g => g.kind === 'sub'), pk = gl.find(g => g.kind === 'park');
+      const rs = g => { const q = GATE.roadAt(z, g.pt); return q ? `${esc(q.jibun)} 도로` : '경계'; };
+      g1 = `주출입구 ${r ? `<b>${esc(r.jibun)} 도로</b>(현황 약 ${r.w}m) → 진입도로` : '<span class="warn">도로에 닿지 않음</span>'}${sub ? ` · 부출입구 ${rs(sub)}` : ''}${pk ? ` · 주차장 출입구 ${rs(pk)}` : ''} <span class="pill ${allAuto ? 'warn' : 'ok'}">${allAuto ? '추천안' : '직접 정함'}</span>`;
+    }
+    // ② 정비기반시설
+    const inf = pl.infra;
+    const g2 = P.infraMode === 'manual' ? `비율 직접 입력 ${fmt(P.infraRatio)}% · 획지 ${fmt(pl.site)}㎡`
+      : inf ? `기반시설 <b>${(inf.ratio * 100).toFixed(1)}%</b>(${fmt(a.area * inf.ratio)}㎡${num(inf.parkArea) ? ` · 공원·녹지 ${fmt(inf.parkArea)}㎡` : ''}${inf.entry && inf.entry.W ? ` · 진입도로 ${inf.entry.mode === 3 ? `2개 합 ${inf.entry.W2}` : inf.entry.W}m 기준` : ''}) · 획지 ${fmt(pl.site)}㎡` : '계산 대기';
+    // ③ 교통성 1차
+    const T = this.traffic(a, pl);
+    let g3 = '기준표 불러오는 중…';
+    if (T) {
+      const r = T.r, ar = r.access, ok = /충족/.test(ar.result) && !/미충족/.test(ar.result);
+      g3 = `진입도로 ${ar.required ?? '○○'}m 이상 — <span class="pill ${ok ? 'ok' : ar.result === '미충족' ? 'bad' : 'warn'}">${esc(ar.result)}</span>${ar.roads.some(x => x.planned) ? ' (확폭 계획 반영)' : ''} · 법정 주차 ${r.parking.legal != null ? fmt(r.parking.legal) + '대' : '○○'} · 첨두 ${r.trips.value != null ? fmt(r.trips.value) + '대/시' : '○○'} · 교통영향평가 <b>${esc(r.tia.result)}</b>`;
+    }
+    // ④ 사업성
+    let g4 = '';
+    try { const b = biz(a, pl); g4 = `${fmt(pl.units)}세대 · 용적률 ${fmt(pl.farUse)}% · 비례율 <b>${(b.ratio * 100).toFixed(1)}%</b>`; } catch (er) { g4 = `${fmt(pl.units)}세대`; }
+    const ok = S.tab === 'zone' || S.tab === 'req';
+    return box(`<summary style="cursor:pointer;font-weight:700">추천안 흐름 — 구역계만 정하면 아래까지 자동으로 채워집니다 ${main ? '' : '<span class="pill warn">출입구 확인</span>'}</summary>
+      ${row('①', '출입구', g1, go('arch', '바꾸기'))}
+      ${row('②', '정비기반시설', g2, go('plan', '바꾸기'))}
+      ${row('③', '교통성 1차', g3, handoffReady() ? '<button type="button" class="btn ghost sm" data-handoff="traffic">검토서로</button>' : '')}
+      ${row('④', '사업성', g4, go('biz', '보기'))}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><span class="note" style="flex:1">추천안입니다. 인허가 및 심의 과정에서 변동될 수 있습니다.</span><button type="button" class="btn ghost sm" data-autoreset="1">추천안 다시 받기</button></div>`, ok);
+  },
+  wire() {
+    side.querySelectorAll('[data-autogo]').forEach(b => b.onclick = () => { saveZ(); const t = document.querySelector(`nav.steps button[data-tab="${b.dataset.autogo}"]`); if (t) t.click(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    side.querySelectorAll('.autoflow [data-handoff]').forEach(b => b.onclick = () => { const a = analyze(S.region); if (a) handoff(a, b.dataset.handoff); });
+    side.querySelectorAll('[data-autoreset]').forEach(b => b.onclick = () => {
+      const z = Z.zones[S.region]; if (z && GATE.list(z).some(g => !g.auto) && !confirm('직접 정한 출입구를 지우고 추천안으로 다시 놓을까요?')) return;
+      AUTO.reset(S.region); render();
+    });
+  },
+};
 function gateSection(a, pl) {
   const ck = GATE.check(a, pl), cls = { ok: 'ok', ng: 'bad', warn: 'warn', info: '' }, lab = { ok: '맞음', ng: '안 맞음', warn: '확인', info: '참고' };
+  const zz = Z.zones[a.key] || {}, gl = GATE.list(zz);
+  const sumHtml = gl.length ? `<div style="background:#f3faf3;border:1px solid #b7dcb9;border-radius:6px;padding:8px 10px;margin:6px 0">${gl.map((g, i) => { const r = GATE.roadAt(zz, g.pt); return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:2px 0"><span style="flex:1;min-width:220px">✔ <b>${GATE.KIND[g.kind]}</b> ${r ? `— ${esc(r.jibun)} 도로(현황 약 ${r.w}m)에 닿음${g.kind === 'main' ? ' → <b>진입도로로 정함</b>' : ''}` : '— <span class="warn">도로에 닿지 않은 경계</span>'}</span><button type="button" class="btn ghost sm" data-gatemove="${i}">다시 찍기(옮기기)</button><button type="button" class="btn ghost sm" data-gatedel="${i}">지우기</button></div>`; }).join('')}<div class="note" style="margin-top:4px">잘못 찍었으면 지도 위 점을 <b>끌어서 옮기거나</b>, [다시 찍기]를 누르고 새 자리를 누르세요(놓은 자리는 구역 경계에 붙습니다). 지도 위 점을 한 번 누르면 지워집니다.</div></div>` : '<p class="note" style="margin:6px 0">아직 정한 출입구가 없습니다. 아래 [주출입구 찍기]부터 누르세요.</p>';
   return `<h3 id="gateBox">단지 출입구 (가정 — 교통 검토 후 확정)</h3>
+  ${gateSugHtml(a, pl, zz, gl)}${sumHtml}${gateEntryHtml(a, pl, zz, gl)}
   <p class="hint">주출입구·부출입구·주차장 출입구를 지도에서 구역 경계에 찍으면 기준을 검사합니다. 점을 누르면 지워집니다. <b>주출입구를 찍으면 그 자리에 닿은 경계 도로가 진입도로로 정해져</b> 3탭 진입도로 확폭(주택건설기준 제25조)과 교통성 검토가 그 도로 기준으로 바뀝니다. '법정'은 공동주택(부설주차장)에 바로 적용되는 조항, '참고'는 노외주차장 기준·협의 관행입니다.</p>
   ${ck.gates.some(g => g.kind === 'main') ? '<p style="margin:4px 0"><button type="button" class="btn sm" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-stepgo="plan">출입구 정함 → 다음: 3 정비기반시설(도로 확폭·공원)</button></p>' : ''}
   <div class="zk-btns"><button type="button" class="btn ghost sm" data-gate="main">주출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="sub">부출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="park">주차장 출입구 찍기</button>${ck.gates.length ? '<button type="button" class="btn ghost sm" id="gateClear">모두 지우기</button>' : ''}</div>
@@ -3597,7 +3917,8 @@ $id('searchForm').onsubmit = async e => {
 
 // 교통·환경 검토서 기준표(숫자는 shared/criteria에서만) — 요건판정 탭의 '관련 평가 대상(개략)'에 씀
 const CRIT = {};
-['traffic', 'environment'].forEach(k => fetch(`../shared/criteria/${k}.json`, { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) { CRIT[k] = {}; (j.items || []).forEach(it => { CRIT[k][it.id] = it; }); if (S.tab === 'req' || S.tab === 'arch') render(); } }).catch(() => {}));
+fetch('../shared/templates/traffic_ko.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) { CRIT.tplTraffic = j; if (D.map && S.tab !== 'rules') render(); } }).catch(() => {});
+['traffic', 'environment'].forEach(k => fetch(`../shared/criteria/${k}.json`, { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) { CRIT.raw = CRIT.raw || {}; CRIT.raw[k] = j; CRIT[k] = {}; (j.items || []).forEach(it => { CRIT[k][it.id] = it; }); if (S.tab === 'req' || S.tab === 'arch' || (D.map && S.tab !== 'rules')) render(); } }).catch(() => {}));
 // 평형 목록·평형 구성 예시(개략 건축계획 탭) — shared/criteria/arch.json의 '평면'(숫자 키)·'평형구성_예시'. /arch와 같은 표
 let ARCHC = null;
 fetch('../shared/criteria/arch.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j) { ARCHC = j; if (S.tab === 'arch') render(); } }).catch(() => {});
