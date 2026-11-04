@@ -233,15 +233,20 @@ const Quick = {
     const archSite = [site, ...JbsSite.list().filter(x => /^urban:/.test(x.source || ''))].filter(x => x.arch && x.arch.chosen)
       .sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')))[0];
     box.innerHTML = `<p class="note">넘긴 구역: <b>${esc(site.name)}</b> (${esc(site.updated || '')}) — 1회차 ${fmt(site.quick ? site.quick.units : 0)}세대 · 용적률 ${fmt(site.quick ? site.quick.far : 0, 1)}%. 아래 순서로 열면 각 도구가 이 구역과 1회차 값을 그대로 이어받습니다.</p>
+      <p style="margin:8px 0 2px"><b>1회차</b> — 기반시설 → 개략 배치 → 사업성 (교통·환경·경관은 건너뜀)</p>
       <ol class="rv-steps">
-        <li><a class="btn small" href="urban/?from=main" target="_blank" rel="noopener">① 정비기반시설 (/urban)</a> 구역·조서를 빈 안으로 가져와 도로·공원 배치, 진입도로·경계 도로 폭</li>
-        <li><a class="btn small" href="${u('traffic/')}" target="_blank" rel="noopener">② 교통성 검토</a> ${done('traffic')}</li>
-        <li><a class="btn small" href="${u('env/')}" target="_blank" rel="noopener">③ 환경성 검토</a> ${done('env')}</li>
-        <li><a class="btn small" href="${u('arch/')}" target="_blank" rel="noopener">④ 개략 배치 (/arch)</a> 교통·환경 조건 반영 → [이 안으로 확정] ${archDone}</li>
-        <li><a class="btn small" href="${u('landscape/')}" target="_blank" rel="noopener">⑤ 높이·경관 검토</a> ${done('landscape')}</li>
-        <li>${archSite ? `<a class="btn small primary" href="./?arch=${encodeURIComponent(archSite.id)}">⑥ 2차 사업성 (1회차와 비교)</a> ${esc(archSite.name)} 확정안 기준` : '<span class="btn small" aria-disabled="true" style="opacity:.5">⑥ 2차 사업성 (1회차와 비교)</span> ④ 개략 배치를 확정하면 눌러집니다'}</li>
+        <li><a class="btn small" href="urban/?from=main" target="_blank" rel="noopener">① 정비기반시설 (/urban)</a> 공원·녹지 위치와 면적(사업성 단계는 비율로 잡아도 됨)</li>
+        <li><a class="btn small" href="${u('arch/')}" target="_blank" rel="noopener">② 개략 배치 (/arch)</a> [정비계획 기반시설 불러오기] → 형태 비교 → [이 안으로 확정] ${archDone}</li>
+        <li>${archSite ? `<a class="btn small primary" href="./?arch=${encodeURIComponent(archSite.id)}">③ 2차 사업성 (1회차와 비교)</a> ${esc(archSite.name)} 확정안 기준` : '<span class="btn small" aria-disabled="true" style="opacity:.5">③ 2차 사업성 (1회차와 비교)</span> ② 개략 배치를 확정하면 눌러집니다'}</li>
       </ol>
-      <p class="note">①에서 기반시설을 정했으면 /urban 4탭 개략 건축계획 아래 '교통성 검토서로 →'·'환경성 검토서로 →'·'높이·경관계획으로 →' 버튼으로 ②~⑤를 이어 가세요(도로 폭·기반시설이 함께 넘어갑니다). 기반시설을 건너뛰면 ②부터 바로 여기 버튼으로 엽니다.</p>
+      <p style="margin:10px 0 2px"><b>2회차</b> — 검토서로 조건을 받아 기반시설·배치를 고친 뒤 사업성 다시 계산</p>
+      <ol class="rv-steps">
+        <li><a class="btn small" href="${u('traffic/')}" target="_blank" rel="noopener">교통성 검토</a> ${done('traffic')} — 진입도로·확폭 도로·출입구</li>
+        <li><a class="btn small" href="${u('env/')}" target="_blank" rel="noopener">환경성 검토</a> ${done('env')} — 소음 도로·북측 일조</li>
+        <li><a class="btn small" href="${u('landscape/')}" target="_blank" rel="noopener">높이·경관 검토</a> ${done('landscape')}</li>
+        <li>그 결과로 ① 기반시설(도로 확폭) → ② 개략 배치(확정 다시) → ③ 2차 사업성을 다시 누르면 회차가 비교됩니다</li>
+      </ol>
+      <p class="note">1회차에서 교통성 검토서를 미리 만들어 보고 싶으면 기본값 그대로 [검토서 만들기]만 눌러도 됩니다(모르는 칸은 '○○'로 남음). 정식 검토는 2회차에서.</p>
       <p class="note">구역계나 1회차 값을 바꿨으면 [1차 재검토로 넘기기]를 다시 누르세요. 같은 구역으로 갱신되고, 이미 만든 검토 결과(배치 조건)는 남습니다.</p>`;
   },
 
