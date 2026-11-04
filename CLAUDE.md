@@ -60,6 +60,7 @@
 
 ## 주의
 - 사이트 전체 관리자 잠금(2026-11-02, 사용자 결정 — 아직 공개 전): 모든 페이지 <head> 맨 앞에 `<script src="/shared/gate.js"></script>` + robots noindex. 새 페이지를 만들면 반드시 넣을 것(/data는 자체 잠금). 관리자 = deepgreen7857@gmail.com, 로그인은 /data·/auction과 공유(jbslab-auction). 화면 잠금일 뿐 저장소가 공개라 코드·json은 GitHub·직접 주소로 보임 — 개인정보는 여전히 커밋 금지. 공개 시점에 gate.js 태그를 빼면 됨
+- 사이트 공통 길잡이(2026-11-04, 사용자 결정 '탭이 물 흐르듯이'): `shared/sitenav.js`가 body 맨 위에 1단 페이지 줄(#siteNav: 정비사업 사업성 검토 / 정비계획 검토 / 정비경매 리포트 / 주식 모의투자 / 안전관리계획서)과, 정비계획 쪽 화면(/urban·/traffic·/env·/landscape·/arch)에는 2단 '정비계획 순서'(#planSteps: 1 주출입구 설정(/urban 4탭 gate) → 2 정비기반시설 지정(/urban 3탭) → 3 교통성 → 4 환경성 → 5 경관성 → 6 건축계획 수립(/arch) → 사업성으로)를 넣음. /urban은 탭을 바꿀 때 JbsNav.mark(S.tab). 새 페이지에도 gate.js 다음에 넣을 것(/auction은 빌드 앱이라 아직 안 들어감). 사업성 화면 탭은 1 사업 개요 ~ 3 빠른 사업성 ~ 9 검토 모드
 - 머리줄·단계 탭 고정(2026-11-04, 사용자 요구): `shared/sticky-top.js`가 .topbar → #kpis(창 850px 이상만) → #tabs, header.top → nav.steps/nav.tools를 차례로 sticky로 붙이고 높이 합을 --sticky-h로 남김. 새 페이지에도 workfile.js 다음에 넣을 것
 - `_비공개/` 폴더(명부 등 개인정보)는 절대 커밋 금지 (`.gitignore`에 있음)
 - 브이월드 키는 `www.jbslab.co.kr` 도메인 전용. 로컬에서 시험할 때는 콘솔에서 `VWorld.domain`을 `'www.jbslab.co.kr'`로 바꿔야 지적도·토지특성이 조회됨
@@ -89,7 +90,7 @@
 ## 작업 저장·불러오기 (shared/workfile.js) — 2026-11-02
 - 모든 화면(본 화면·/urban·/traffic·/env·/arch·/landscape) 오른쪽 아래 [작업 저장·불러오기]. 새 페이지에도 `<script src="…/shared/workfile.js">`를 넣을 것
 - 작업 = 이 브라우저의 검토 데이터 전체(localStorage 'jbs-*'·'jbs.*'·'jbsc.project.v1', 캐시·화면 설정·경매·로그인 키 제외). 이 컴퓨터에 이름 붙여 저장(IndexedDB 'jbs-work') / 파일(.jbs.json) 내려받기·불러오기 / 새 작업 시작(사업성 가정값 'jbs-feas-assume-v1'은 남김). 불러오기·새 작업 전 자동 백업(최근 3개)
-- 홈페이지에 저장(2026-11-04, 사용자 요구 '지난 검토를 언제든 불러올 수 있어야'): Firestore 'jbsWork/{id}'(+ chunks 700KB 나눔, 관리자만 — auction-server/firestore.rules). 불러오기·새 작업·주소 바꿔 예전 구역 지울 때 이 컴퓨터+홈페이지 자동 백업(JbsWork.backup). 자동 버전: 작업 내용(hashOf)이 바뀌고 1분 조용하면·창을 숨길 때 홈페이지에 kind 'version'으로 새 버전 저장, 지우지 않고 모두 쌓음(사용자 요구 '항상 모든 버전을 홈페이지에'). 홈페이지에 못 올리면 이 컴퓨터 IndexedDB에 'ver:' 슬롯(pending)으로 남기고 다음 성공 때 flushPending으로 올림. 목록은 작업 이름별로 묶어 버전마다 불러오기. 구역 도형(zoneHash: 사업성 area.geojson·정비계획 안·공통 구역)이 바뀌면 1분 기다리지 않고 3초 뒤 바로 새 버전(사용자 요구 '구역은 조금이라도 바뀔 때마다 다른 버전'). 규칙 배포 전(권한 없음)에는 관리자 전용 'adminAlerts'에 'jbsw_' 문서로 임시 보관(resolved 필드 없음 → 경매 알림 목록에 안 나옴), 목록은 두 곳을 합침. 규칙을 고치면 사용자가 auction-server 폴더에서 `firebase deploy --only firestore:rules`
+- 홈페이지에 저장(2026-11-04, 사용자 요구 '지난 검토를 언제든 불러올 수 있어야'): Firestore 'jbsWork/{id}'(+ chunks 700KB 나눔, 관리자만 — auction-server/firestore.rules). 불러오기·새 작업·주소 바꿔 예전 구역 지울 때 이 컴퓨터+홈페이지 자동 백업(JbsWork.backup). 자동 버전: 작업 내용(hashOf)이 바뀌고 1분 조용하면·창을 숨길 때 홈페이지에 kind 'version'으로 새 버전 저장, 지우지 않고 모두 쌓음(사용자 요구 '항상 모든 버전을 홈페이지에'). 홈페이지에 못 올리면 이 컴퓨터 IndexedDB에 'ver:' 슬롯(pending)으로 남기고 다음 성공 때 flushPending으로 올림. 목록은 작업 이름별로 묶어 버전마다 불러오기. 구역 도형(zoneHash: 사업성 area.geojson·정비계획 안·공통 구역)이 바뀌면 1분 기다리지 않고 3초 뒤 바로 새 버전(사용자 요구 '구역은 조금이라도 바뀔 때마다 다른 버전'). 규칙 배포 전(권한 없음)에는 관리자 전용 'adminAlerts'에 'jbsw_' 문서로 임시 보관(resolved 필드 없음 → 경매 알림 목록에 안 나옴), 목록은 두 곳을 합침. 규칙을 고치면 사용자가 auction-server 폴더에서 `firebase deploy --only firestore:rules` (jbsWork 규칙은 2026-11-04 20:04 배포 완료 — 이후 저장은 jbsWork로, 그 전 임시 보관분은 목록에서 함께 보임)
 - 새 저장 키를 만들 때 이름을 'jbs-' 또는 'jbs.'로 시작하면 자동으로 작업에 포함됨. 다시 받을 수 있는 큰 자료는 키 이름에 'cache'를 넣거나 저장하지 말 것
 - 저장 공간: JbsSite.save는 주변 건물(site.context)을 저장하지 않음(/arch는 창 안에서만 기억). 저장 실패 시 'jbs-storage-full' 이벤트 → 작업 버튼이 빨갛게 바뀜
 

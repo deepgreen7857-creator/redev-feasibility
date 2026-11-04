@@ -4,7 +4,7 @@
  * 다 붙인 높이는 CSS 변수 --sticky-h로 남김(본 화면 구역계 오른쪽 칸 등이 그 아래에 붙도록).
  * 창 높이가 낮으면(560px 미만) 맨 위 머리줄은 빼고 탭만 고정해 내용 볼 자리를 남김. */
 (() => {
-  const SEL = ['.topbar', '#kpis', '#tabs', 'header.top', 'nav.steps', 'nav.tools'];
+  const SEL = ['#siteNav', '#planSteps', '.topbar', '#kpis', '#tabs', 'header.top', 'nav.steps', 'nav.tools'];
   const bgOf = el => {
     for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
       const c = getComputedStyle(e).backgroundColor;
@@ -20,7 +20,7 @@
     const low = window.innerHeight < 560;
     let top = 0;
     els.forEach((el, i) => {
-      const isTabs = el.matches('#tabs, nav.steps, nav.tools');
+      const isTabs = el.matches('#siteNav, #planSteps, #tabs, nav.steps, nav.tools');
       // 지표줄(#kpis)은 창이 넉넉할 때(850px 이상)만 고정 — 낮은 화면에서는 내용 볼 자리를 남김
       if ((low && !isTabs) || (el.id === 'kpis' && window.innerHeight < 850)) { el.style.position = ''; el.style.top = ''; return; }
       el.style.position = 'sticky';

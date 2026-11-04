@@ -135,6 +135,8 @@
   async function autoVersion(reason) {
     if (verBusy) { setTimeout(() => autoVersion(reason), 3000); return; }
     const snap = snapshot(); if (summary(snap) === '빈 작업') return;
+    // 예시 불러오기로 연 예시 사업만 있는 상태는 버전으로 쌓지 않음(언제든 다시 불러올 수 있고, 실제 작업 목록을 헷갈리게 함)
+    try { const pj = JSON.parse((snap.keys || {})['jbsc.project.v1'] || 'null'), nm = pj && (pj.meta || (pj.state || {}).meta || {}).name; if (/\(예시\)\s*$/.test(String(nm || '')) && !(snap.keys || {})['jbs-urban-zones-v1']) return; } catch (e) { /* 무시 */ }
     const h = hashOf(snap); if (h === localStorage.getItem(LAST)) return;
     verBusy = true;
     try {

@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
 <script src="/shared/gate.js"></script>
+<script src="/shared/sitenav.js?v=1"></script>
 <meta name="robots" content="noindex, nofollow">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -247,6 +248,8 @@ body.resizing .lmap{pointer-events:none}
 td .u{font-size:11px;color:var(--ink-2);font-family:var(--f-mono)}
 a.back{color:var(--accent);font-size:13px;text-decoration:none}
 a.back:hover{text-decoration:underline}
+header.top a.back{display:none}
+nav.steps button .n{display:none}
 </style>
 </head>
 <body>
@@ -269,8 +272,8 @@ a.back:hover{text-decoration:underline}
   <nav class="steps" role="tablist" aria-label="검토 단계">
     <button role="tab" data-tab="zone" aria-selected="true"><span class="n">1</span>구역계·현황</button><span class="arrow">›</span>
     <button role="tab" data-tab="req" aria-selected="false"><span class="n">2</span>요건판정</button><span class="arrow">›</span>
-    <button role="tab" data-tab="plan" aria-selected="false"><span class="n">3</span>정비계획</button><span class="arrow">›</span>
-    <button role="tab" data-tab="arch" aria-selected="false"><span class="n">4</span>개략 건축계획</button><span class="arrow">›</span>
+    <button role="tab" data-tab="plan" aria-selected="false"><span class="n">3</span>정비기반시설</button><span class="arrow">›</span>
+    <button role="tab" data-tab="arch" aria-selected="false"><span class="n">4</span>출입구·개략 배치</button><span class="arrow">›</span>
     <button role="tab" data-tab="biz" aria-selected="false"><span class="n">5</span>사업성</button><span class="arrow">·</span>
     <button role="tab" data-tab="rules" aria-selected="false"><span class="n">≡</span>적용 기준</button>
   </nav>
@@ -375,8 +378,8 @@ a.back:hover{text-decoration:underline}
 <script src="../shared/site-store.js?v=8"></script>
 <script src="../js/overlay.js?v=95"></script>
 <script src="../shared/cases.js?v=95"></script>
-<script src="urban.js?v=113"></script>
-<script src="../shared/workfile.js?v=7"></script>
-<script src="../shared/sticky-top.js?v=1"></script>
+<script src="urban.js?v=114"></script>
+<script src="../shared/workfile.js?v=8"></script>
+<script src="../shared/sticky-top.js?v=2"></script>
 </body>
 </html>
