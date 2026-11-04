@@ -2199,7 +2199,7 @@ function drawLeaflet() {
  - 계산은 화면을 그린 뒤 따로(setTimeout) 하고 결과를 기억(같은 조건이면 다시 계산 안 함) */
 const ARCHLAY = {
   memo: {}, busy: '',
-  key(a, pl) { const z = Z.zones[a.key] || {}; return [a.key, Math.round(pl.site), Math.round(pl.farUse), JSON.stringify(JbsFeas.mixOf(JbsFeas.get())), JSON.stringify((z.infra || {}).fit || {}), JSON.stringify(((pl.infra || {}).lots || []).map(l => Math.round(l.area || 0))), P.infraMode, z.roads && z.roads.at].join('|'); },
+  key(a, pl) { const z = Z.zones[a.key] || {}; return [a.key, Math.round(pl.site), Math.round(pl.farUse), JSON.stringify(JbsFeas.mixOf(JbsFeas.get())), JSON.stringify((z.infra || {}).fit || {}), JSON.stringify(((pl.infra || {}).lots || []).map(l => Math.round(l.area || 0))), Math.round((pl.infra || {}).relArea || 0), P.infraMode, z.roads && z.roads.at].join('|'); },
   input(a, pl) {
     const C = ARCHC, G = window.ArchGeom, z = Z.zones[a.key];
     if (!C || !G || !C.평면 || !C.가정 || !z || !z.geojson) return null;
@@ -2216,7 +2216,7 @@ const ARCHLAY = {
     });
     const A0 = C.가정, sb = tags.map(t => t === 'road' ? A0.roadSetback_m : t === 'arterial' ? A0.arterialSetback_m : A0.boundarySetback_m);
     const inf = pl.infra || {}, exclude = [];
-    [inf.parkGeom, inf.roadGeom, inf.schoolGeom, inf.pubB && inf.pubB.geom, inf.other && inf.other.geom, inf.green && inf.green.geom].forEach(gm => ringsOf(gm).forEach(rg => { const q = G.openRing(rg).map(pr.to); if (q.length >= 3) exclude.push(q); }));
+    [inf.parkGeom, inf.roadGeom, inf.schoolGeom, inf.relGeom, inf.pubB && inf.pubB.geom, inf.other && inf.other.geom, inf.green && inf.green.geom].forEach(gm => ringsOf(gm).forEach(rg => { const q = G.openRing(rg).map(pr.to); if (q.length >= 3) exclude.push(q); }));
     (inf.lots || []).filter(l => l.small && l.geom).forEach(l => ringsOf(l.geom).forEach(rg => exclude.push(G.openRing(rg).map(pr.to))));
     const zoning = String(a.zone || P.zone || '');
     const win = (C.items || []).find(i => i.id === 'window_setback'), sun = ((C.items || []).find(i => i.id === 'sunlight_north') || {}).이격;
@@ -2277,6 +2277,7 @@ function drawInfraLite(pl) {
   add(inf.roadGeom, { color: '#7a7f86', fillColor: '#b9bec4' }, `도로(확폭 포함) ${fmt(inf.roadArea || 0)}㎡`);
   add(inf.parkGeom, { color: '#2f7d4a', fillColor: '#6fbf7e' }, `공원·녹지 ${fmt(inf.parkArea || 0)}㎡ — 주동을 놓지 않음`);
   add(inf.schoolGeom, { color: '#7a5aa6', fillColor: '#b9a3d6' }, `학교용지 ${fmt(inf.schoolArea || 0)}㎡`);
+  add(inf.relGeom, { color: '#7b2cbf', fillColor: '#c9a7e8' }, `종교용지${inf.relC ? '(대체부지)' : '(현 위치 존치)'} ${fmt(inf.relArea || 0)}㎡ — 주동을 놓지 않음`);
   (Array.isArray(inf.lots) ? inf.lots : []).forEach((l, i) => add(l.geom, { color: '#1f2933', weight: 2, dashArray: '6 4', fill: false }, `공동주택 획지${inf.lots.length > 1 ? ' ' + (i + 1) : ''} ${fmt(l.area || turf.area(l.geom))}㎡${l.small ? ' (작아서 배치 제외)' : ''}`));
 }
 function drawTowersMap(gj, pl) {
