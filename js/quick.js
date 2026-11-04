@@ -592,7 +592,16 @@ Tabs.quick = {
     const el = $('#qk_memSrc'); if (!el) return;
     if (q.membersManual) { el.innerHTML = '직접 넣은 값 <button type="button" class="link-btn" id="qkMemAuto">자동 추정으로 되돌리기</button>'; }
     else if (!S.buildings.length && !S.lands.length) el.textContent = '조서가 아직 없습니다 — 구역을 만들면 토지·건축물대장을 불러와 셉니다';
-    else if (Tabs.survey._ledgerRun || MapView.importing) el.innerHTML = '<b class="warn">건축물대장(세대·호수) 불러오는 중… 끝나면 자동으로 바뀝니다.</b> 큰 아파트 단지는 1~2분 걸립니다';
+    else if (Tabs.survey._ledgerRun || MapView.importing) {
+      // 진행 상황(3탭 조회 문구)을 그대로 보여 주고 1초마다 새로 그림. 6분 넘게 안 끝나면 다시 시작 버튼
+      const t0 = Tabs.survey._ledgerT0 || Date.now(), sec = Math.round((Date.now() - t0) / 1000);
+      const pm = ($('#ledgerMsg') && $('#ledgerMsg').innerText || '').replace(/\s+/g, ' ').trim();
+      el.innerHTML = `<b class="warn">건축물대장(세대·호수) 불러오는 중… ${sec >= 60 ? Math.floor(sec / 60) + '분 ' : ''}${sec % 60}초</b>${pm ? ` — ${esc(pm.slice(0, 120))}` : ''}`
+        + (sec > 360 ? ' <button type="button" class="link-btn" id="qkMemRetry">너무 오래 걸립니다 — 다시 시작</button>' : ' 끝나면 자동으로 바뀝니다');
+      clearTimeout(this._memT);
+      this._memT = setTimeout(() => { if ($('#tab-quick') && !$('#tab-quick').hidden) this.memSrc(S.quick || q); }, 1000);
+      const rt = $('#qkMemRetry'); if (rt) rt.onclick = async () => { Tabs.survey._ledgerRun = false; MapView.importing = false; await Tabs.survey.bldgLedger(true); App.update(true); };
+    }
     else {
       const led = S.buildings.filter(b => b.ledger), noLed = S.buildings.filter(b => !b.ledger);
       const units = S.buildings.reduce((a, b) => a + (Math.max(num(b.hoCount), num(b.units)) || 1), 0);
