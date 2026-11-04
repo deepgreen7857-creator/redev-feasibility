@@ -2169,7 +2169,7 @@ function drawLeaflet() {
   });
   if (ZK.rough[S.region]) L.geoJSON(ZK.rough[S.region], { style: { color: cssVar('--ink-2'), weight: 2, dashArray: '6 6', fill: false }, interactive: false }).addTo(layZ);
   S.placed = null; S.placedIn = null; S.placedNeed = null; S.placedFloors = null; S.placedFloorsCalc = null;
-  if (S.mode === 'arch' && R && R.geojson) { const a = analyze(S.region); if (a) { const pl = plan(a); drawInfraLite(pl); drawTowersMap(R.geojson, pl); GATE.draw(layT, a); } if (R.fetched && !INFRA.ready(S.region)) INFRA.fetchRoads(S.region); }
+  if (S.mode === 'arch' && R && R.geojson) { const a = analyze(S.region); if (a) { const pl = plan(a); drawInfraLite(pl); if (!ARCHLAY.draw(a, pl)) drawTowersMap(R.geojson, pl); GATE.draw(layT, a); } if (R.fetched && !INFRA.ready(S.region)) INFRA.fetchRoads(S.region); }
   if (S.mode === 'infra' && R && R.geojson && R.fetched) {
     if (!INFRA.ready(S.region)) INFRA.fetchRoads(S.region);
     const a = analyze(S.region); if (a) INFRA.draw(layT, a);
@@ -2177,6 +2177,84 @@ function drawLeaflet() {
   drawLegend();
 }
 // 개략 주동 배치: 구역계를 미터 좌표로 펴서 격자로 놓은 뒤 다시 경위도로
+/* ===== 4탭 개략 배치: /arch와 같은 배치 엔진(shared/arch-geom.js)으로 실제 평면 모양 동을 놓음 (2026-11-04 사용자 결정 '1번') =====
+ - 대지: 구역계, 건축 불가 = 3탭 정비기반시설(공원·도로 확폭·학교 등) — 그 경계에서 대지경계 이격만큼 띄움
+ - 경계 성격: 도로가 닿은 변 'road'(폭 20m 이상 'arterial'), 북쪽을 향한 변 'north', 나머지 'boundary' (/arch '경계 자동 지정'과 같은 규칙)
+ - 형태는 판상, 방향은 0°와 긴 변 방향 중 연면적 큰 쪽. 세대수 숫자는 여전히 개략 계산(용적률 연면적 ÷ 공급면적)이고 이 그림은 배치 확인용
+ - 계산은 화면을 그린 뒤 따로(setTimeout) 하고 결과를 기억(같은 조건이면 다시 계산 안 함) */
+const ARCHLAY = {
+  memo: {}, busy: '',
+  key(a, pl) { const z = Z.zones[a.key] || {}; return [a.key, Math.round(pl.site), Math.round(pl.farUse), JSON.stringify(JbsFeas.mixOf(JbsFeas.get())), JSON.stringify((z.infra || {}).fit || {}), JSON.stringify(((pl.infra || {}).lots || []).map(l => Math.round(l.area || 0))), P.infraMode, z.roads && z.roads.at].join('|'); },
+  input(a, pl) {
+    const C = ARCHC, G = window.ArchGeom, z = Z.zones[a.key];
+    if (!C || !G || !C.평면 || !C.가정 || !z || !z.geojson) return null;
+    const g = z.geojson.geometry || z.geojson, ring0 = g.type === 'Polygon' ? g.coordinates[0] : g.type === 'MultiPolygon' ? g.coordinates.slice().sort((x, y) => turf.area(turf.polygon(y)) - turf.area(turf.polygon(x)))[0][0] : null;
+    if (!ring0) return null;
+    const ring = G.openRing(ring0), pr = G.projector(ring), pts = G.ccw(ring.map(pr.to));
+    const ringsOf = gm => { const t = gm && (gm.geometry || gm); return !t ? [] : t.type === 'Polygon' ? [t.coordinates[0]] : t.type === 'MultiPolygon' ? t.coordinates.map(c => c[0]) : []; };
+    const roads = ((z.roads && z.roads.edge) || []).filter(r => r.geom).map(r => ({ w: +r.w || 0, polys: ringsOf(r.geom).map(rg => G.openRing(rg).map(pr.to)) }));
+    const tags = G.edges(pts).map(e => {
+      const m = [(e.a[0] + e.b[0]) / 2 + e.out[0] * 3, (e.a[1] + e.b[1]) / 2 + e.out[1] * 3];
+      const hit = roads.find(r => r.polys.some(pl2 => G.inside(m[0], m[1], pl2) || pl2.some((q, k) => G.segDist(m, q, pl2[(k + 1) % pl2.length]) < 4)));
+      if (hit) return hit.w >= 20 ? 'arterial' : 'road';
+      return e.out[1] > 0.6 ? 'north' : 'boundary';
+    });
+    const A0 = C.가정, sb = tags.map(t => t === 'road' ? A0.roadSetback_m : t === 'arterial' ? A0.arterialSetback_m : A0.boundarySetback_m);
+    const inf = pl.infra || {}, exclude = [];
+    [inf.parkGeom, inf.roadGeom, inf.schoolGeom, inf.pubB && inf.pubB.geom, inf.other && inf.other.geom, inf.green && inf.green.geom].forEach(gm => ringsOf(gm).forEach(rg => { const q = G.openRing(rg).map(pr.to); if (q.length >= 3) exclude.push(q); }));
+    (inf.lots || []).filter(l => l.small && l.geom).forEach(l => ringsOf(l.geom).forEach(rg => exclude.push(G.openRing(rg).map(pr.to))));
+    const zoning = String(a.zone || P.zone || '');
+    const win = (C.items || []).find(i => i.id === 'window_setback'), sun = ((C.items || []).find(i => i.id === 'sunlight_north') || {}).이격;
+    const mix = {}; Object.entries(JbsFeas.mixOf(JbsFeas.get())).forEach(([t, v]) => { if (num(v) > 0 && C.평면[t]) mix[t] = num(v); });
+    if (!Object.keys(mix).length) return null;
+    return { pr, pts, site: { pts, tags, setbacks: sb, exclude }, opt: { units: C.평면, lib: C.평면_라이브러리, assume: Object.assign({}, A0), mix, form: 'slab', spacing: 0.8, sun, lot: pl.site, far: pl.farUse, winRatio: win ? (/준주거|근린상업/.test(zoning) ? (win.값.근린상업_준주거_배수 || 4) : (win.값.배수 || 2)) : 0, edgeW: [], exSetback: A0.boundarySetback_m || 0 } };
+  },
+  cands(I) {
+    const G = window.ArchGeom, cand = new Set([0]);
+    G.edges(I.pts).sort((x, y) => y.len - x.len).slice(0, 2).forEach(e => { let d = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]) * 180 / Math.PI; while (d > 45) d -= 90; while (d < -45) d += 90; cand.add(Math.round(d)); });
+    const A = I.opt.assume;
+    return { cand: [...cand], F: Math.round(A.minFloors + (A.maxFloors - A.minFloors) * 0.6) };
+  },
+  // 방향은 빠른 추정(quick, 기준 층수 하나)으로 고르고 고른 방향에서만 한 번 자세히 — /arch '배치안 만들기'와 같은 방식. 일꾼(Worker)에서 계산
+  solve(I, done) {
+    const c = this.cands(I);
+    try {
+      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=1'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
+      const id = (this.seq = (this.seq || 0) + 1); this.cb[id] = done;
+      this.wk.postMessage({ id, site: I.site, opt: I.opt, cand: c.cand, F: c.F });
+    } catch (e) { done(null); }
+  },
+  // 결과가 있으면 그리고 true. 없으면 계산을 걸어 두고 false(그동안은 예전 네모 그림)
+  draw(a, pl) {
+    let k; try { k = this.key(a, pl); } catch (e) { return false; }
+    const r = this.memo[k];
+    if (r === undefined) {
+      if (this.busy !== k) {
+        this.busy = k;
+        const fin = res => {
+          if (Object.keys(this.memo).length > 20) this.memo = {};
+          this.memo[k] = res; this.busy = '';
+          if (S.mode === 'arch' && S.region === a.key) render();
+        };
+        let I = null; try { I = this.input(a, pl); } catch (e) { console.warn('개략 배치(엔진) 입력 실패', e); }
+        if (!I) setTimeout(() => fin(null), 0); else this.solve(I, r => { if (r) r.pr = I.pr; fin(r); });
+      }
+      S.archLay = { busy: true };
+      return false;
+    }
+    if (!r) { S.archLay = { fail: true }; return false; }
+    const col = cssVar('--accent');
+    r.buildings.forEach(b => {
+      const ll = q => q.map(p => { const c = r.pr.back(p); return [c[1], c[0]]; });
+      const tip = `${b.floors}층 · ${b.t}㎡형 층당 ${b.n}세대 · ${fmt(b.n * b.floors)}세대${b.vname ? ` · 평면 ${esc(b.vname)}` : ''}`;
+      (b.parts && b.parts.length ? b.parts : [b.poly]).forEach(q => L.polygon(ll(q), { color: '#1f2933', weight: 1, fillColor: col, fillOpacity: 0.85 }).bindTooltip(tip, { sticky: true }).addTo(layT));
+      (b.units || []).forEach(rs => rs.forEach(q => L.polygon(ll(q), { color: '#fff', weight: 0.5, fill: false, interactive: false }).addTo(layT)));
+    });
+    S.archLay = { n: r.buildings.length, units: r.units, maxF: r.maxFloors, far: r.far, bcr: r.bcr, angle: r.angle };
+    return true;
+  },
+};
+
 // 개략 배치 화면에도 3탭에서 정한 정비기반시설(공원·녹지·도로·학교 등)과 공동주택 획지 경계를 함께 보여 줌(읽기 전용) — 주동이 그 밖에만 놓였는지 눈으로 확인
 function drawInfraLite(pl) {
   const inf = pl && pl.infra; if (!inf) return;
@@ -3014,6 +3092,7 @@ function renderArch(a) {
   </tbody></table></div>
   ${D.map ? gateSection(a, pl) : ''}
   <p class="note">도면의 <b>개략 배치</b>는 주동을 ${S.placedIn === 'lots' ? '정비기반시설(도로·공원·학교·종교용지 등)을 뺀 <b>공동주택 획지</b>' : '구역계'} 안에 격자로 놓아 봅니다(인동간격 높이×0.8 개략, 배치된 주동 ${S.placed ?? '–'}개동${S.placed != null && S.placedNeed && S.placed < S.placedNeed ? ` — 땅 모양 때문에 계산상 ${S.placedNeed}개동(${S.placedFloorsCalc}층)이 다 들어가지 않아 ${S.placed}개동 × ${S.placedFloors}층으로 세대수를 맞췄습니다. 오른쪽 개략 규모도 이 값입니다` : ''}). 일조·높이·학교예정부지·문화재 위치는 /arch 단계에서 다룹니다.</p>
+  ${S.archLay && S.archLay.n ? `<p class="note" style="background:#f7f9fb;border:1px solid var(--line);border-radius:6px;padding:8px 10px">지도 개략 배치(실제 평면·정북 일조·인동간격 0.8·기반시설 이격 반영, 판상 ${S.archLay.angle}°): <b>${S.archLay.n}개동 · ${fmt(S.archLay.units)}세대 · 최고 ${S.archLay.maxF}층</b> · 용적률 ${S.archLay.far.toFixed(1)}% · 건폐율 ${S.archLay.bcr.toFixed(1)}%. 위 세대수(개략 계산)와 다를 수 있으며, 형태 비교·확정은 /arch에서 합니다.</p>` : S.archLay && S.archLay.busy ? '<p class="note">지도 개략 배치를 실제 평면으로 계산하는 중입니다… (몇 초)</p>' : ''}
   ${handoffSection()}`;
   bindNum(['bcr', 'coreUnits', 'parkCount']);
   side.querySelectorAll('[data-mixpreset]').forEach(b => b.onclick = () => { const pr = ((ARCHC || {})['평형구성_예시'] || {})[b.dataset.mixpreset] || {}, patch = {}; unitTypes().forEach(t => { patch['mix' + t] = num(pr[t]); }); JbsFeas.set(patch); render(); });
