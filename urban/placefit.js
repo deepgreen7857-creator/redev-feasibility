@@ -111,9 +111,10 @@
     if (shape.geometry.type === 'LineString') { const c = shape.geometry.coordinates; if (c.length < 3) return { geom: null, area: 0, ok: false, msg: '그린 선이 너무 짧습니다' }; shape = T.polygon([[...c, c[0]]]); }
     // 손으로 그어 선이 꼬였을 때만 살짝 부풀려 바로잡음(반듯하게 찍은 모양은 그대로 — 부풀리면 모서리가 둥글어짐)
     let kinked = false; try { kinked = T.kinks(shape).features.length > 0; } catch (er) { kinked = true; }
-    if (kinked) { try { shape = T.buffer(shape, 0.01, { units: 'meters' }) || shape; } catch (er) { /* 꼬인 선은 그대로 */ } }
+    // 꼬인 손그림(8자·여러 고리)은 고리마다 나눠 합침 — 안 되면 바깥 테두리(볼록 껍질)
+    if (kinked) { try { shape = U(T.unkinkPolygon(shape).features) || T.convex(shape); } catch (er) { try { shape = T.convex(shape); } catch (er2) { /* 그대로 */ } } }
     const base = I(shape, free);
-    if (!base) return { geom: null, area: 0, ok: false, msg: '그린 모양이 구역 안 빈 땅과 겹치지 않습니다' };
+    if (!base) return { geom: null, area: 0, ok: false, msg: '그린 모양이 구역(노란색) 안 빈 땅과 겹치지 않습니다 — 구역 안에 다시 그려 주세요' };
     const a0 = A(base);
     if (keepSize || !(target > 0)) return { geom: base, area: a0, ok: true, msg: `그린 모양대로 ${fmt(a0)}㎡` };
     // 크기 맞추기: 그린 모양을 가운데 기준으로 같은 비율로 키우거나 줄임(반듯하게 그린 변·각이 그대로 남음 — 예전 buffer는 모서리가 둥글어졌음)

@@ -1718,6 +1718,7 @@ const FITUI = {
       } else if (m === 'sketch') {
         sub = `<div style="margin-top:6px"><button type="button" class="btn sm" data-fitpoly="${k}">꼭짓점 찍어 그리기(반듯하게)</button>
           <button type="button" class="btn ghost sm" data-fitdraw="${k}">손으로 그리기</button>
+          ${o.sketch ? `<button type="button" class="btn ghost sm" data-fitclear="${k}">그린 모양 지우기</button>` : ''}
           <label class="zk-opts" style="display:inline"><input type="checkbox" data-fitkeep="${k}" ${o.keepSize ? 'checked' : ''}> 그린 크기 그대로(면적 맞추지 않음)</label></div>
           <span class="u"><b>꼭짓점 찍어 그리기</b>: 지도에서 모서리를 차례로 누르고, 첫 점을 다시 누르거나 두 번 눌러 끝냅니다(되돌리기 Backspace, 취소 Esc). 직선으로 이어져 반듯한 모양이 됩니다. <b>손으로 그리기</b>: 누른 채 한 바퀴. 구역 밖·도로·다른 시설에 걸린 부분은 잘라 내고, 모양은 그대로 둔 채 같은 비율로 키우거나 줄여 필요 면적에 맞춥니다.</span>`;
       } else if (m === 'upload') {
@@ -1738,6 +1739,7 @@ const FITUI = {
     side.querySelectorAll('[data-fitanchor]').forEach(el => el.onchange = () => this.set(el.dataset.fitanchor, o => { o.anchor = el.value; }));
     side.querySelectorAll('[data-fitkeep]').forEach(el => el.onchange = () => this.set(el.dataset.fitkeep, o => { o.keepSize = el.checked; }));
     side.querySelectorAll('[data-fitdraw]').forEach(b => b.onclick = () => this.draw(b.dataset.fitdraw));
+    side.querySelectorAll('[data-fitclear]').forEach(b => b.onclick = () => this.set(b.dataset.fitclear, o => { o.sketch = null; }));
     side.querySelectorAll('[data-fitpoly]').forEach(b => b.onclick = () => this.drawPoly(b.dataset.fitpoly));
     side.querySelectorAll('[data-fitsheet]').forEach(b => b.onclick = () => this.sheet(b.dataset.fitsheet));
     side.querySelectorAll('[data-fitupload]').forEach(el => el.onchange = () => { const f = el.files && el.files[0]; el.value = ''; if (f) this.upload(el.dataset.fitupload, f); });
@@ -1784,19 +1786,22 @@ const FITUI = {
     if (!LM) return;
     const el = LM.getContainer(); let pts = [], line = null, down = false;
     LM.dragging.disable(); el.classList.add('picking'); el.style.touchAction = 'none';
-    toast('지도에서 누른 채로 원하는 자리를 한 바퀴 그리세요 (Esc: 취소)', 4000);
+    toast('지도에서 누른 채로 원하는 자리를 한 바퀴 그리세요 — 손을 떼면 끝납니다 (Esc: 취소)', 4000);
     const ll = e => LM.mouseEventToLatLng(e);
     const end = save => {
-      el.removeEventListener('pointerdown', pd, true); el.removeEventListener('pointermove', pm, true); window.removeEventListener('pointerup', pu); window.removeEventListener('keydown', kd);
+      el.removeEventListener('pointerdown', pd, true); el.removeEventListener('pointermove', pm, true);
+      window.removeEventListener('pointerup', pu, true); window.removeEventListener('pointercancel', pu, true); window.removeEventListener('keydown', kd);
       LM.dragging.enable(); el.classList.remove('picking'); el.style.touchAction = ''; if (line) line.remove();
       if (save && pts.length >= 6) this.set(kind, o => { o.mode = 'sketch'; o.sketch = { type: 'LineString', coordinates: pts.map(p => [p.lng, p.lat]) }; });
       else if (save) toast('너무 짧게 그렸습니다 — 다시 그려 주세요');
     };
-    const pd = e => { e.preventDefault(); e.stopPropagation(); down = true; pts = [ll(e)]; line = L.polyline(pts, { color: '#d6336c', weight: 3, dashArray: '6 4', interactive: false }).addTo(LM); };
+    // 한 번 누른 채 그린 한 획만 씀. 손 뗌은 창 전체에서 먼저(capture) 받음 — 지도 프로그램이 중간에 가로채면 획이 끝나지 않고 다음 누름이 새 획이 되던 문제
+    const pd = e => { if (e.button !== 0) return; e.preventDefault(); e.stopPropagation(); if (down) return; down = true; pts = [ll(e)]; if (line) line.remove(); line = L.polyline(pts, { color: '#d6336c', weight: 3, dashArray: '6 4', interactive: false }).addTo(LM); try { el.setPointerCapture(e.pointerId); } catch (er) { /* 무시 */ } };
     const pm = e => { if (!down) return; e.preventDefault(); const p = ll(e), q = pts[pts.length - 1]; if (LM.latLngToContainerPoint(p).distanceTo(LM.latLngToContainerPoint(q)) >= 4) { pts.push(p); line.setLatLngs(pts); } };
     const pu = () => { if (down) { down = false; end(true); } };
     const kd = e => { if (e.key === 'Escape') end(false); };
-    el.addEventListener('pointerdown', pd, true); el.addEventListener('pointermove', pm, true); window.addEventListener('pointerup', pu); window.addEventListener('keydown', kd);
+    el.addEventListener('pointerdown', pd, true); el.addEventListener('pointermove', pm, true);
+    window.addEventListener('pointerup', pu, true); window.addEventListener('pointercancel', pu, true); window.addEventListener('keydown', kd);
   },
   // 스케치 용지(PNG) 내려받기 — 구역·도로 확폭·다른 시설을 회색으로
   sheet(kind) {

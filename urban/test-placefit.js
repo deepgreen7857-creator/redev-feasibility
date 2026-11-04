@@ -28,6 +28,8 @@ chk('스케치', PF.run({ mode: 'sketch', sketch: L([[170, 255], [215, 250], [26
   chk('사각형', r);
   const n = r.geom ? turf.coordAll(r.geom).length : 0;
   if (n > 12) { fail++; console.log(`실패 사각형 꼭짓점 ${n}개 — 모양이 둥글어짐`); } else console.log(`통과 사각형 꼭짓점 ${n}개(반듯함 유지)`); }
+// 손으로 꼬이게 그은 8자 모양도 면적을 맞춰야 함
+chk('꼬인선', PF.run({ mode: 'sketch', sketch: L([[90, 130], [150, 170], [150, 130], [90, 170], [92, 132], [100, 131]]) }, { zone, anchorGeom: church, occupied: occ, target: T }));
 // 손그림: 용지를 래스터로 만들고 빨간 펜으로 끝이 덜 닫힌 타원을 그린 뒤 읽기
 const { meta } = PF.makeSheet({ zone, features: [{ geom: church, name: '종교' }], widthPx: 700 });
 const W = meta.width, H = meta.height, data = new Uint8ClampedArray(W * H * 4).fill(255);
