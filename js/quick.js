@@ -599,8 +599,17 @@ Tabs.quick = {
       const withB = new Set(S.buildings.map(b => b.pnu).filter(Boolean));
       const bare = S.lands.filter(l => l.jimok === '대' && l.pnu && !withB.has(l.pnu)).length;
       el.innerHTML = `셈: 건축물 ${fmt(S.buildings.length)}동의 세대·호 ${fmt(units)}${bare ? ` + 건물 없는 대지 ${fmt(bare)}필지` : ''}`
-        + (noLed.length ? ` · <b class="warn">건축물대장 미조회 ${fmt(noLed.length)}동(1동 = 1명으로 셈)</b> <button type="button" class="link-btn" id="qkMemLedger">건축물대장 불러오기</button>` : led.length ? ' (건축물대장 기준)' : '');
+        + (noLed.length ? ` · <b class="warn">건축물대장 미조회 ${fmt(noLed.length)}동(1동 = 1명으로 셈)</b> <button type="button" class="link-btn" id="qkMemLedger">다시 불러오기</button>` : led.length ? ' (건축물대장 기준)' : '');
     }
+    // 대장 안 받은 건물이 있으면 누르지 않아도 바로 받기 시작(구역마다 한 번 — 실패하면 버튼으로 다시)
+    try {
+      const k = S.area.geojson ? zoneKey(S.area.geojson) : '';
+      if (!q.membersManual && Ledger.enabled && k && this._ledAuto !== k && !Tabs.survey._ledgerRun && !MapView.importing
+        && S.buildings.some(b => !b.ledger) && S.lands.some(l => /^\d{19}$/.test(String(l.pnu || '')))) {
+        this._ledAuto = k;
+        setTimeout(async () => { await Tabs.survey.bldgLedger(); App.update(true); }, 0);
+      }
+    } catch (e) { /* 무시 */ }
     const a = $('#qkMemAuto'); if (a) a.onclick = () => { S.quick.membersManual = false; App.update(true); };
     const l = $('#qkMemLedger'); if (l) l.onclick = async () => { l.disabled = true; l.textContent = '불러오는 중…'; this.memSrc(S.quick); await Tabs.survey.bldgLedger(true); App.update(true); };
   },

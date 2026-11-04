@@ -353,7 +353,7 @@ const Tabs = {
       const need = S.lands.some(l => /^\d{19}$/.test(String(l.pnu || '')) && (force ? true : l.ledgerEmpty !== true) && !S.buildings.some(b => b.ledger && b.pnu === l.pnu));
       if (!need) return;
       this._ledgerRun = true;
-      if (typeof Quick !== 'undefined' && $('#qk_memSrc')) Quick.memSrc(S.quick || {});
+      try { if (Tabs.quick && Tabs.quick.memSrc && $('#qk_memSrc')) Tabs.quick.memSrc(S.quick || {}); } catch (e) { /* 표시만 */ }
       try { await Ledger.fill(); } catch (e) { console.warn('건축물대장 자동 조회 실패', e); } finally { this._ledgerRun = false; }
       App.update(true);
     },
