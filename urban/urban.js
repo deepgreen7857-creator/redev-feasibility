@@ -1960,13 +1960,15 @@ const GATE = {
       out.push({ kind, pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, dec: o.r.dec || '', pt: b.pt, dIx: b.dIx, dm: b.dm, sc: b.sc, same, isE2, front: o.n * 4 });
     });
     const big = c => GATE.isBig(c) ? 1 : 0;   // 대로급은 뒤로(주출입구와 같은 이유, 참고)
-    if (kind === 'sub') return out.sort((x, y) => (y.isE2 - x.isE2) || (big(x) - big(y)) || (x.same - y.same) || (y.sc - x.sc));
+    // 부출입구는 보행·보조 출입이라 간선도로도 괜찮음 → 다른 도로 우선, 그다음 대로급 뒤로
+    if (kind === 'sub') return out.sort((x, y) => (y.isE2 - x.isE2) || (x.same - y.same) || (big(x) - big(y)) || (y.sc - x.sc));
     return out.sort((x, y) => ((x.w < 6) - (y.w < 6)) || (big(x) - big(y)) || ((x.dIx < 30) - (y.dIx < 30)) || (x.same - y.same) || (y.sc - x.sc));
   },
   put(z, kind, latlng) {
     const pt = this.snap(z, latlng);
     z.infra.gates = this.list(z).filter(g => kind === 'sub' || kind === 'park' || g.kind !== kind);   // 주출입구는 하나만
     z.infra.gates.push({ kind, pt });
+    if (kind === 'park') delete z.infra.parkShared;
     // 주출입구가 닿은 경계 도로 = 진입도로(제25조) → 3탭 진입도로·확폭이 이 도로 기준으로 다시 계산되고 교통성 검토로도 넘어감
     let roadMsg = '';
     if (kind === 'main') {
@@ -3389,9 +3391,13 @@ const AUTO = {
     z.infra.gateAuto = k;
     if (!main) { saveZ(); return true; }
     this.place(z, 'main', main.pt);
+    const mainBig = GATE.isBig(main);
     for (const kind of ['sub', 'park']) {
       INFRA.memo = {}; pl = plan(a);
       const c = pl.infra && GATE.suggestFor(z, pl.infra, kind)[0];
+      // 주차장 출입구 후보가 간선도로(광로·대로)뿐이면 따로 내지 않고 주출입구와 같이 씀(간선도로 차량 직접 진출입 피함)
+      if (c && kind === 'park' && GATE.isBig(c) && !mainBig) { z.infra.parkShared = true; continue; }
+      if (kind === 'park') delete z.infra.parkShared;
       if (c) this.place(z, kind, c.pt);
     }
     INFRA.memo = {}; saveZ();
@@ -3400,7 +3406,7 @@ const AUTO = {
   },
   reset(id) {
     const z = Z.zones[id]; if (!z || !z.infra) return;
-    z.infra.gates = []; delete z.infra.entryPnu; delete z.infra.gateAuto;
+    z.infra.gates = []; delete z.infra.entryPnu; delete z.infra.gateAuto; delete z.infra.parkShared;
     GATE.last = null; INFRA.memo = {}; saveZ();
   },
   // 교통성 1차 — /traffic 도구와 같은 계산(traffic/traffic-calc.js)·같은 기준표
@@ -3431,7 +3437,7 @@ const AUTO = {
     else {
       const r = GATE.roadAt(z, main.pt), sub = gl.find(g => g.kind === 'sub'), pk = gl.find(g => g.kind === 'park');
       const rs = g => { const q = GATE.roadAt(z, g.pt); return q ? `${esc(q.jibun)} 도로` : '경계'; };
-      g1 = `주출입구 ${r ? `<b>${esc(r.jibun)} 도로</b>(현황 약 ${r.w}m${r.dec ? ` · ${esc(r.dec)}` : ''}) → 진입도로` : '<span class="warn">도로에 닿지 않음</span>'}${sub ? ` · 부출입구 ${rs(sub)}` : ''}${pk ? ` · 주차장 출입구 ${rs(pk)}` : ''} <span class="pill ${allAuto ? 'warn' : 'ok'}">${allAuto ? '추천안' : '직접 정함'}</span>`;
+      g1 = `주출입구 ${r ? `<b>${esc(r.jibun)} 도로</b>(현황 약 ${r.w}m${r.dec ? ` · ${esc(r.dec)}` : ''}) → 진입도로` : '<span class="warn">도로에 닿지 않음</span>'}${sub ? ` · 부출입구 ${rs(sub)}` : ''}${pk ? ` · 주차장 출입구 ${rs(pk)}` : z.infra && z.infra.parkShared ? ' · 주차장 출입구는 주출입구와 같이 씀(간선도로 차량 진출입 피함)' : ''} <span class="pill ${allAuto ? 'warn' : 'ok'}">${allAuto ? '추천안' : '직접 정함'}</span>`;
     }
     // ② 정비기반시설
     const inf = pl.infra;
