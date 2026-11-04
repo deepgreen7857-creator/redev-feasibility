@@ -59,6 +59,7 @@
 
 ## 주의
 - 사이트 전체 관리자 잠금(2026-11-02, 사용자 결정 — 아직 공개 전): 모든 페이지 <head> 맨 앞에 `<script src="/shared/gate.js"></script>` + robots noindex. 새 페이지를 만들면 반드시 넣을 것(/data는 자체 잠금). 관리자 = deepgreen7857@gmail.com, 로그인은 /data·/auction과 공유(jbslab-auction). 화면 잠금일 뿐 저장소가 공개라 코드·json은 GitHub·직접 주소로 보임 — 개인정보는 여전히 커밋 금지. 공개 시점에 gate.js 태그를 빼면 됨
+- 머리줄·단계 탭 고정(2026-11-04, 사용자 요구): `shared/sticky-top.js`가 .topbar → #kpis(창 850px 이상만) → #tabs, header.top → nav.steps/nav.tools를 차례로 sticky로 붙이고 높이 합을 --sticky-h로 남김. 새 페이지에도 workfile.js 다음에 넣을 것
 - `_비공개/` 폴더(명부 등 개인정보)는 절대 커밋 금지 (`.gitignore`에 있음)
 - 브이월드 키는 `www.jbslab.co.kr` 도메인 전용. 로컬에서 시험할 때는 콘솔에서 `VWorld.domain`을 `'www.jbslab.co.kr'`로 바꿔야 지적도·토지특성이 조회됨
 
