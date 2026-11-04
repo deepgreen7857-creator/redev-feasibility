@@ -2480,13 +2480,15 @@ function render() {
 }
 // 각 탭 맨 아래 '다음 단계' 버튼(2026-11-04 사용자 요구: 기반시설을 정한 뒤 다음으로 넘어가는 버튼). 지금 정한 값은 저장된 상태로 넘어감
 function stepNav() {
-  const ORDER = [['zone', '1 구역계·현황'], ['req', '2 요건판정'], ['plan', '3 정비계획(기반시설)'], ['arch', '4 개략 건축계획'], ['biz', '5 사업성']];
+  // 화면 탭 순서 = 위 '정비계획 순서'(주출입구 → 정비기반시설 → 교통성 …)와 같게: 출입구·개략 배치가 정비기반시설보다 앞
+  const ORDER = [['zone', '구역계·현황'], ['req', '요건판정'], ['arch', '출입구·개략 배치'], ['plan', '정비기반시설'], ['biz', '사업성']];
   const i = ORDER.findIndex(([k]) => k === S.tab); if (i < 0) return;
   const prev = ORDER[i - 1], next = ORDER[i + 1];
-  const nextLabel = S.tab === 'plan' ? '기반시설 확정 → 다음: 4 개략 건축계획(교통성·환경성 검토로)' : next ? `다음: ${next[1]} →` : '';
+  const nextLabel = S.tab === 'arch' ? '출입구 정함 → 다음: 정비기반시설(도로 확폭·공원)' : next ? `다음: ${next[1]} →` : '';
   side.insertAdjacentHTML('beforeend', `<div class="stepnav" style="display:flex;justify-content:space-between;gap:8px;margin:18px 0 6px;padding-top:12px;border-top:1px solid var(--line)">
     ${prev ? `<button type="button" class="btn ghost" data-stepgo="${prev[0]}">← ${prev[1]}</button>` : '<span></span>'}
-    ${next ? `<button type="button" class="btn" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-stepgo="${next[0]}">${nextLabel}</button>` : S.tab === 'biz' ? `<a class="btn" style="background:var(--ink);color:var(--paper);text-decoration:none" data-tool="arch" href="${toolHref('arch')}">다음: 자세한 배치(/arch) →</a>` : ''}</div>`);
+    ${S.tab === 'plan' ? `<button type="button" class="btn" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-handoffnav="traffic" ${handoffReady() ? '' : 'disabled'}>기반시설 확정 → 다음: 3 교통성 검토(계획값을 넘김)</button>` : next ? `<button type="button" class="btn" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-stepgo="${next[0]}">${nextLabel}</button>` : S.tab === 'biz' ? `<a class="btn" style="background:var(--ink);color:var(--paper);text-decoration:none" data-tool="arch" href="${toolHref('arch')}">다음: 자세한 배치(/arch) →</a>` : ''}</div>`);
+  side.querySelectorAll('[data-handoffnav]').forEach(b => b.onclick = () => { const a = analyze(S.region); if (a) handoff(a, b.dataset.handoffnav); });
   side.querySelectorAll('[data-stepgo]').forEach(b => b.onclick = () => {
     saveZ(); try { saveP(); } catch (e) { /* 무시 */ }
     const t = document.querySelector(`nav.steps button[data-tab="${b.dataset.stepgo}"]`); if (t) t.click();
