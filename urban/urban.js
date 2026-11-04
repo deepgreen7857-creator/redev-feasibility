@@ -1719,12 +1719,14 @@ const FITUI = {
         sub = `<div style="margin-top:6px"><button type="button" class="btn sm" data-fitpoly="${k}">꼭짓점 찍어 그리기(반듯하게)</button>
           <button type="button" class="btn ghost sm" data-fitdraw="${k}">손으로 그리기</button>
           ${o.sketch ? `<button type="button" class="btn ghost sm" data-fitclear="${k}">그린 모양 지우기</button>` : ''}
-          <label class="zk-opts" style="display:inline"><input type="checkbox" data-fitkeep="${k}" ${o.keepSize ? 'checked' : ''}> 그린 크기 그대로(면적 맞추지 않음)</label></div>
-          <span class="u"><b>꼭짓점 찍어 그리기</b>: 지도에서 모서리를 차례로 누르고, 첫 점을 다시 누르거나 두 번 눌러 끝냅니다(되돌리기 Backspace, 취소 Esc). 직선으로 이어져 반듯한 모양이 됩니다. <b>손으로 그리기</b>: 누른 채 한 바퀴(또는 구역을 가로지르는 선 한 줄 — 선 바깥쪽 작은 쪽이 시설). 구역 밖·도로·다른 시설에 걸린 부분은 잘라 내고, 모양은 그대로 둔 채 같은 비율로 키우거나 줄여 필요 면적에 맞춥니다.</span>`;
+          <label class="zk-opts" style="display:inline"><input type="checkbox" data-fitkeep="${k}" ${o.keepSize ? 'checked' : ''}> 그린 크기 그대로(면적 맞추지 않음)</label>
+          <label class="zk-opts" style="display:inline"><input type="checkbox" data-fitstraight="${k}" ${o.straight !== false ? 'checked' : ''}> 가르는 선은 곧게 펴기</label></div>
+          <span class="u"><b>꼭짓점 찍어 그리기</b>: 지도에서 모서리를 차례로 누르고, 첫 점을 다시 누르거나 두 번 눌러 끝냅니다(되돌리기 Backspace, 취소 Esc). 직선으로 이어져 반듯한 모양이 됩니다. <b>점 두 개만 찍고 두 번 누르면</b> 구역을 가르는 곧은 선이 됩니다(선 바깥쪽이 시설). <b>손으로 그리기</b>: 누른 채 한 바퀴(또는 구역을 가로지르는 선 한 줄 — 선 바깥쪽 작은 쪽이 시설). 구역 밖·도로·다른 시설에 걸린 부분은 잘라 내고, 모양은 그대로 둔 채 같은 비율로 키우거나 줄여 필요 면적에 맞춥니다.</span>`;
       } else if (m === 'upload') {
         sub = `<div style="margin-top:6px"><button type="button" class="btn ghost sm" data-fitsheet="${k}">① 스케치 용지 내려받기</button>
           <label class="btn ghost sm" style="cursor:pointer">② 그린 그림 올리기<input type="file" accept="image/*" data-fitupload="${k}" hidden></label>
-          <label class="zk-opts" style="display:inline"><input type="checkbox" data-fitkeep="${k}" ${o.keepSize ? 'checked' : ''}> 그린 크기 그대로</label></div>
+          <label class="zk-opts" style="display:inline"><input type="checkbox" data-fitkeep="${k}" ${o.keepSize ? 'checked' : ''}> 그린 크기 그대로</label>
+          <label class="zk-opts" style="display:inline"><input type="checkbox" data-fitstraight="${k}" ${o.straight !== false ? 'checked' : ''}> 가르는 선은 곧게 펴기</label></div>
           <span class="u">용지(구역·시설이 회색으로 그려진 그림)를 그림판·휴대폰·태블릿에서 열어 빨강·파랑 같은 색 펜으로 원하는 자리를 그린 뒤 그대로 올리세요. 끝이 덜 닫혀도 됩니다. <b>구역을 가로지르는 선 한 줄</b>만 그으면 그 선 바깥쪽(작은 쪽)을 시설로 씁니다(면적을 맞출 때는 선을 평행으로 옮김, 선 자리 그대로 쓰려면 '그린 크기 그대로'). 자르거나 돌리면 위치가 맞지 않습니다. 종이에 출력해 그린 사진은 아직 안 되고 스캔본은 됩니다. 올린 그림은 모양만 읽고 저장하지 않습니다.${o.sheet ? '' : ' <b>먼저 ①로 용지를 내려받으세요.</b>'}</span>`;
       }
       const msg = m !== 'auto' && fm ? `<div class="${fm.ok ? '' : 'warn'}" style="margin-top:6px"><b>${fm.ok ? '배치 결과' : '확인 필요'}</b> ${esc(fm.msg)}</div>`
@@ -1738,6 +1740,7 @@ const FITUI = {
     side.querySelectorAll('[data-fitdir]').forEach(b => b.onclick = () => { const [k, d] = b.dataset.fitdir.split(':'); this.set(k, o => { o.dir = d; }); });
     side.querySelectorAll('[data-fitanchor]').forEach(el => el.onchange = () => this.set(el.dataset.fitanchor, o => { o.anchor = el.value; }));
     side.querySelectorAll('[data-fitkeep]').forEach(el => el.onchange = () => this.set(el.dataset.fitkeep, o => { o.keepSize = el.checked; }));
+    side.querySelectorAll('[data-fitstraight]').forEach(el => el.onchange = () => this.set(el.dataset.fitstraight, o => { o.straight = el.checked; }));
     side.querySelectorAll('[data-fitdraw]').forEach(b => b.onclick = () => this.draw(b.dataset.fitdraw));
     side.querySelectorAll('[data-fitclear]').forEach(b => b.onclick = () => this.set(b.dataset.fitclear, o => { o.sketch = null; }));
     side.querySelectorAll('[data-fitpoly]').forEach(b => b.onclick = () => this.drawPoly(b.dataset.fitpoly));
@@ -1762,7 +1765,8 @@ const FITUI = {
       el.classList.remove('picking'); LM.doubleClickZoom.enable(); if (shape) shape.remove(); if (guide) guide.remove();
       setTimeout(() => { if (this._polyOff) this._polyOff(); }, 0);
       if (save && pts.length >= 3) this.set(kind, o => { o.mode = 'sketch'; o.sketch = { type: 'Polygon', coordinates: [[...pts.map(p => [p.lng, p.lat]), [pts[0].lng, pts[0].lat]]] }; });
-      else if (save) toast('점이 3개 이상이어야 합니다 — 다시 그려 주세요');
+      else if (save && pts.length === 2) this.set(kind, o => { o.mode = 'sketch'; o.sketch = { type: 'LineString', coordinates: pts.map(p => [p.lng, p.lat]) }; });   // 점 두 개 = 곧은 나누는 선
+      else if (save) toast('점을 2개(가르는 직선) 또는 3개 이상(모양) 찍어 주세요');
     };
     // 누르고 거의 움직이지 않고 떼면 '점 찍기', 끌면 지도 이동(그대로 둠)
     const pd = e => { if (e.button !== 0) return; downAt = [e.clientX, e.clientY]; e.stopPropagation(); };
@@ -1772,7 +1776,7 @@ const FITUI = {
       e.stopPropagation(); e.preventDefault();
       const p = ll(e), now = Date.now();
       if (pts.length >= 3 && LM.latLngToContainerPoint(p).distanceTo(LM.latLngToContainerPoint(pts[0])) < 12) { end(true); return; }
-      if (now - lastT < 350 && pts.length >= 3) { end(true); return; }
+      if (now - lastT < 350 && pts.length >= 2) { end(true); return; }
       lastT = now; pts.push(p); redraw();
     };
     const pm = e => { if (pts.length && !downAt) redraw(ll(e)); };

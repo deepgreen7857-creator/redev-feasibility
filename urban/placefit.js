@@ -103,7 +103,7 @@
     return { geom: null, area: 0, ok: false, step: 9, msg: `${NAME[dir]}으로는 곧은 띠로 넣을 수 없습니다 — 감싸기나 스케치를 쓰세요` };
   }
 
-  function sketch({ zone, occupied = [], sketch: sk, target, keepSize = false }) {
+  function sketch({ zone, occupied = [], sketch: sk, target, keepSize = false, straight = true }) {
     zone = F(zone);
     const free = D(zone, U(occupied.map(F)));
     if (!free || !sk) return { geom: null, area: 0, ok: false, msg: '구역 안에 남은 빈 땅이 없습니다' };
@@ -111,7 +111,7 @@
     // 열린 선(양 끝이 그은 길이의 25% 넘게 떨어짐)은 '나누는 선'
     if (shape.geometry.type === 'LineString') {
       const c = shape.geometry.coordinates, len = T.length(shape, { units: 'meters' }), gap = c.length > 1 ? T.distance(T.point(c[0]), T.point(c[c.length - 1]), { units: 'meters' }) : 0;
-      if (c.length >= 2 && len > 0 && gap > len * 0.25) return cutBy({ free, line: shape, target, keepSize });
+      if (c.length >= 2 && len > 0 && gap > len * 0.25) return cutBy({ free, line: shape, target, keepSize, straight: straight !== false });
     }
     if (shape.geometry.type === 'LineString') { const c = shape.geometry.coordinates; if (c.length < 3) return { geom: null, area: 0, ok: false, msg: '그린 선이 너무 짧습니다' }; shape = T.polygon([[...c, c[0]]]); }
     // 손으로 그어 선이 꼬였을 때만 살짝 부풀려 바로잡음(반듯하게 찍은 모양은 그대로 — 부풀리면 모서리가 둥글어짐)
@@ -187,7 +187,21 @@
   }
 
   // 나누는 선: 선 양 끝을 구역 밖까지 늘려 빈 땅을 둘로 가르고, 작은 쪽을 시설로. 필요 면적이 있으면 선을 평행으로 옮겨 맞춤
-  function cutBy({ free, line, target, keepSize }) {
+  // 삐뚤게 그은 선을 곧은 선 하나로: 모든 점에 가장 잘 맞는 직선(주축) 위에 처음·끝을 올림
+  function straighten(line) {
+    const c = line.geometry.coordinates; if (c.length <= 2) return line;
+    const lat0 = c[0][1], [kx, ky] = m2d(lat0).map(v => 1 / v);
+    const P = c.map(([x, y]) => [x * kx, y * ky]), n = P.length;
+    const mx = P.reduce((a, p) => a + p[0], 0) / n, my = P.reduce((a, p) => a + p[1], 0) / n;
+    let sxx = 0, syy = 0, sxy = 0; P.forEach(([x, y]) => { sxx += (x - mx) ** 2; syy += (y - my) ** 2; sxy += (x - mx) * (y - my); });
+    const ang = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(ang), uy = Math.sin(ang);
+    const ts = P.map(([x, y]) => (x - mx) * ux + (y - my) * uy), t0 = ts[0], t1 = ts[n - 1];
+    const at = t => [(mx + t * ux) / kx, (my + t * uy) / ky];
+    return T.lineString([at(t0), at(t1)]);
+  }
+
+  function cutBy({ free, line, target, keepSize, straight = true }) {
+    if (straight) line = straighten(line);
     const c = line.geometry.coordinates, ext = 2000;   // m
     const far = (a, b) => T.destination(T.point(b), ext / 1000, T.bearing(T.point(a), T.point(b))).geometry.coordinates;
     const full = T.lineString([far(c[1], c[0]), ...c, far(c[c.length - 2], c[c.length - 1])]);
@@ -288,7 +302,7 @@
   // 정비계획 계산에서 부르는 입구: opt = z.infra.fit[kind] = { mode, dir, anchor, sketch, keepSize }
   function run(opt, { zone, anchorGeom, occupied, target }) {
     if (!opt || !opt.mode || opt.mode === 'auto') return null;
-    if (opt.mode === 'sketch' || opt.mode === 'upload') return opt.sketch ? sketch({ zone, occupied: occupied.concat(anchorGeom ? [anchorGeom] : []), sketch: opt.sketch, target, keepSize: !!opt.keepSize }) : null;
+    if (opt.mode === 'sketch' || opt.mode === 'upload') return opt.sketch ? sketch({ zone, occupied: occupied.concat(anchorGeom ? [anchorGeom] : []), sketch: opt.sketch, target, keepSize: !!opt.keepSize, straight: opt.straight !== false }) : null;
     if (!anchorGeom) return { geom: null, area: 0, ok: false, msg: '기준 시설이 지도에 없습니다 — 기준 시설을 다시 고르세요' };
     return (opt.mode === 'clean' ? clean : wrap)({ zone, anchor: anchorGeom, occupied, dir: opt.dir || 'N', target });
   }

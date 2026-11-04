@@ -62,6 +62,13 @@ chk('손그림', PF.run({ mode: 'sketch', sketch: rd.shapes[0] }, { zone, anchor
   if (!lineOk) fail++; console.log(`${lineOk ? '통과' : '실패'} 선 읽기 | ${rl.msg}`);
   if (lineOk) { const r2 = PF.run({ mode: 'upload', sketch: rl.lines[0].geometry }, { zone, occupied: [], target: tip });
     const ok2 = r2.geom && Math.abs(r2.area - tip) < tip * 0.01; if (!ok2) fail++; console.log(`${ok2 ? '통과' : '실패'} 올린 선   ${Math.round(r2.area)}㎡ | ${r2.msg}`); } }
+// 삐뚤빼뚤 그은 선도 곧게 펴서 자름 — 자른 공원 모양 꼭짓점이 구역 끝 꼭짓점 수 + 2 정도로 적어야 함
+{ const wob = L([[40, 200], [80, 208], [110, 196], [150, 212], [190, 199], [230, 210], [270, 203]]);
+  const r = PF.run({ mode: 'sketch', sketch: wob.geometry }, { zone, occupied: [], target: 2500 });
+  const n = r.geom ? turf.coordAll(r.geom).length : 99, ok = r.geom && Math.abs(r.area - 2500) < 25 && n <= 8;
+  if (!ok) fail++; console.log(`${ok ? '통과' : '실패'} 곧게펴기 ${Math.round(r.area)}㎡ 꼭짓점 ${n}개 | ${r.msg}`);
+  const r2 = PF.run({ mode: 'sketch', sketch: wob.geometry, straight: false, keepSize: true }, { zone, occupied: [], target: 2500 });
+  const n2 = r2.geom ? turf.coordAll(r2.geom).length : 0; console.log(`참고 펴지 않으면 꼭짓점 ${n2}개`); }
 // 면적 부족은 실패로 알려야 함
 const big = PF.run({ mode: 'wrap', dir: 'N' }, { zone, anchorGeom: church, occupied: occ, target: 60000 });
 if (big.ok) fail++;
