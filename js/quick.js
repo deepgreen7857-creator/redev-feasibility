@@ -602,7 +602,7 @@ Tabs.quick = {
     if (this._layKey === key) return;
     this._layKey = key;
     try {
-      if (!this._lw) { this._lw = new Worker('shared/layout-worker.js?v=2'); this._lw.onerror = () => { this._layKey = ''; this._lw = null; }; }
+      if (!this._lw) { this._lw = new Worker('shared/layout-worker.js?v=3'); this._lw.onerror = () => { this._layKey = ''; this._lw = null; }; }
       const id = (this._lid = (this._lid || 0) + 1);
       this._lw.onmessage = e => {
         if (e.data.id !== this._lid) return;

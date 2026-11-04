@@ -190,7 +190,7 @@
       : { id: U[t].대표사례 || 'rep', 폭: +U[t].폭, 깊이: +U[t].깊이, 베이: +U[t].베이 || 3, rep: 1 };
     const minD = tw ? 8.5 : ex >= 55 ? 8.3 : 7.5; // 4베이 59형은 8.5m 안팎도 있음(발코니 포함)
     const cs = ((LIB.사례 || [])).filter(c => +c.폭 > 0 && +c.깊이 > 0 && near(+c.전용) === tN && Math.abs(+c.전용 - ex) <= 6
-      && (tw ? c.형식 === '탑상' : c.형식 !== '탑상') && +c.깊이 >= minD && +c.폭 >= 4);
+      && (tw ? c.형식 === '탑상' : c.형식 !== '탑상' && c.형식 !== '복층') && +c.깊이 >= minD && +c.폭 >= 4 && !c.특수형);
     const out = rep ? [rep] : [];
     const byBay = {}; cs.forEach(c => { const b = +c.베이 || 0; (byBay[b] = byBay[b] || []).push(c); });
     // 베이 묶음마다 중간값에 가까운 것 + 가장 좁은 것 + 가장 얕은 것(좁은·얕은 자리용)
@@ -212,7 +212,10 @@
     VARC.map[key] = res; return res;
   }
   const withV = (U, t, v, tw) => Object.assign({}, U, { [t]: Object.assign({}, U[t], { 폭: v.폭, 깊이: v.깊이, 베이: v.베이 }, tw ? { 탑상: null } : {}) });
-  const tagV = (m, v, Uv) => { if (m) { m.v = v.id; m.vrep = !!v.rep; m.vname = v.rep ? '' : (v.단지 ? v.단지.replace(/\(.*\)/, '').trim() + ' ' + (v.타입 || '') : v.id); m.U = Uv; } return m; };
+  // 쓴 평면이 어디 평면인지(사용자 요구 2026-11-04 '그 평면이 어디 평면인지 써 달라'): 대표 평면도 사례 id로 단지·타입을 찾아 이름을 붙임
+  const caseOf = id => ((LIB && LIB.사례) || []).find(c => c.id === id) || null;
+  const srcName = (id, 단지, 타입) => { const c = 단지 ? { 단지, 타입 } : caseOf(id); return c && c.단지 ? c.단지.replace(/\(.*\)/, '').trim() + ' ' + (c.타입 || '') : (id && !/^rep/.test(id) ? id : '가정 평면'); };
+  const tagV = (m, v, Uv) => { if (m) { m.v = v.id; m.vrep = !!v.rep; m.vname = srcName(v.id, v.단지, v.타입); m.U = Uv; } return m; };
   function modulesFor(U, c, t, form, opt2) {
     const many = !opt2 || opt2.variants !== false;
     const VS = many ? variantsOf(U, t, 'slab') : variantsOf(U, t, 'slab').slice(0, 1);
@@ -646,6 +649,6 @@
     });
   }
 
-  const api = { FORM_NAME, modulesFor, projector, rot, area, ccw, openRing, inside, segDist, dirDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
+  const api = { FORM_NAME, caseOf: id => caseOf(id), modulesFor, projector, rot, area, ccw, openRing, inside, segDist, dirDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.ArchGeom = api;
 })(typeof window !== 'undefined' ? window : globalThis);

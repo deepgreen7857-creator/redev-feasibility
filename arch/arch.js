@@ -598,6 +598,11 @@
       <h3>동별 개요</h3>
       <table><tr><th>동</th><th>형태</th><th>평형</th><th>층당 세대</th><th>층수</th><th>세대수</th><th>높이</th><th>층수 상한(일조·경계)</th></tr>
       ${A.buildings.map(b => `<tr><td>${b.id}</td><td>${esc(G.FORM_NAME[b.form] || '판상형')}</td><td>${b.t}㎡${b.vname ? `<br><span class="note">${esc(b.vname)} 평면</span>` : ''}</td><td>${b.n}</td><td>${b.floors}</td><td>${b.n * b.floors}</td><td>${fmt(A.H(b.floors), 1)}m</td><td>${b.cap >= +I.p.maxFloors ? '-' : b.cap + '층'}</td></tr>`).join('')}</table>
+      ${(() => { // 사용한 평면 출처
+        const lib = (C.평면_라이브러리 || {}).사례 || [], seen = [];
+        A.buildings.forEach(b => { const k = (b.v || 'rep-' + b.t) + '|' + b.form; if (!seen.find(x => x.k === k)) seen.push({ k, b, c: lib.find(x => x.id === b.v) || null, n: 0 }); seen.find(x => x.k === k).n++; });
+        return `<h3>사용한 평면(어디 평면인지)</h3><table><tr><th>평형</th><th>형태</th><th>평면</th><th>폭 × 깊이</th><th>동 수</th><th>출처</th></tr>${seen.map(({ b, c, n }) => `<tr><td>${b.t}㎡</td><td>${esc(G.FORM_NAME[b.form] || '')}</td><td>${c ? esc(c.단지) + ' ' + esc(c.타입 || '') + (c.베이 ? ` (${c.베이}베이)` : '') : '<span class="chk">가정 평면(사례 없음)</span>'}</td><td>${c ? `${c.폭}m × ${c.깊이}m` : '–'}</td><td>${n}</td><td class="note">${c ? esc(c.출처종류 || c.출처 || '') + (c.신뢰도 ? ' · 신뢰도 ' + esc(c.신뢰도) : '') : ''}</td></tr>`).join('')}</table>`;
+      })()}
       <h3>적용 기준</h3>
       <table><tr><th style="width:160px">인동간격</th><td>앞 동 높이 × ${I.p.spacing}${/확인필요/.test(sp.상태) ? ' <span class="chk">※ 기준 확인 필요</span>' : ''}<br><span class="note">${esc(sp.근거)} — ${esc(sp.상태)}</span></td></tr>
       ${(() => { const w = crit('window_setback'); return w ? `<tr><th>채광창 이격</th><td>채광창 벽면에서 인접 대지경계선까지 높이의 1/${winRatio()} 이상(도로·공원이 사이에 있으면 그 중심선까지 — 공동주택, 판상형 앞·뒤 벽면 · 탑상형 모든 벽면)<br><span class="note">${esc(w.근거)} — ${esc(w.상태)}</span></td></tr>` : ''; })()}
