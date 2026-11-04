@@ -1874,9 +1874,12 @@ const GATE = {
       if (r) { z.infra.entryPnu = r.pnu; roadMsg = ` — 닿은 ${r.jibun} 도로(현황 약 ${r.w}m)를 진입도로로 정했습니다. 3탭 진입도로 확폭이 이 도로 기준으로 바뀝니다`; }
       else roadMsg = ' — 경계 도로에 닿지 않은 자리입니다. 진입도로는 도로에 닿은 경계에 찍어야 정해집니다';
     }
+    this.last = { i: z.infra.gates.length - 1, t: Date.now() };
     saveZ(); INFRA.memo = {};
     S.placing = null; $id('lmap').classList.remove('picking');
-    toast(`${this.KIND[kind]}를 구역 경계에 놓았습니다${roadMsg}`, roadMsg ? 6000 : 2500); render();
+    toast(`${this.KIND[kind]}를 구역 경계에 놓았습니다${roadMsg}`, roadMsg ? 6000 : 3000); render();
+    try { if (LM) LM.panTo([pt[0], pt[1]]); } catch (e) { /* 무시 */ }
+    setTimeout(() => { const g = document.getElementById('gateBox'); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 200);
   },
   // 점에서 15m 안의 경계 도로(z.roads.edge) 중 가장 가까운 것
   roadAt(z, pt) {
@@ -1963,8 +1966,11 @@ const GATE = {
     const z = Z.zones[a.key]; if (!z) return;
     const col = { main: '#c92a2a', sub: '#e67700', park: '#1971c2' };
     this.list(z).forEach((g, i) => {
-      L.circleMarker(g.pt, { radius: 8, color: '#fff', weight: 2, fillColor: col[g.kind], fillOpacity: 1 }).bindTooltip(`${this.KIND[g.kind]} — 누르면 지움`, { sticky: true }).on('click', ev => { L.DomEvent.stop(ev); z.infra.gates.splice(i, 1); saveZ(); render(); }).addTo(layer);
-      L.marker(g.pt, { interactive: false, icon: L.divIcon({ className: 'gate-lbl', html: `<span style="background:${col[g.kind]};color:#fff;padding:1px 5px;border-radius:3px;font-size:11px;white-space:nowrap">${{ main: '주', sub: '부', park: 'P' }[g.kind]}</span>`, iconSize: null, iconAnchor: [-8, 8] }) }).addTo(layer);
+      const r = g.kind === 'main' || g.kind === 'park' ? this.roadAt(z, g.pt) : null;
+      const just = this.last && this.last.i === i && Date.now() - this.last.t < 8000;
+      if (just) L.circleMarker(g.pt, { radius: 22, color: col[g.kind], weight: 3, fill: false, className: 'gate-pulse', interactive: false }).addTo(layer);
+      L.circleMarker(g.pt, { radius: 10, color: '#fff', weight: 3, fillColor: col[g.kind], fillOpacity: 1 }).bindTooltip(`${this.KIND[g.kind]}${r ? ` — ${r.jibun} 도로(현황 약 ${r.w}m)` : ''} · 누르면 지움`, { sticky: true }).on('click', ev => { L.DomEvent.stop(ev); z.infra.gates.splice(i, 1); this.last = null; saveZ(); render(); }).addTo(layer);
+      L.marker(g.pt, { interactive: false, icon: L.divIcon({ className: 'gate-lbl', html: `<span style="background:${col[g.kind]};color:#fff;padding:2px 7px;border-radius:4px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.35)">${this.KIND[g.kind]}${r && g.kind === 'main' ? ` · 진입도로 ${esc(r.jibun)}` : ''}</span>`, iconSize: null, iconAnchor: [-12, 10] }) }).addTo(layer);
     });
   },
 };
@@ -3142,13 +3148,22 @@ function renderArch(a) {
   side.querySelectorAll('[data-mixpreset]').forEach(b => b.onclick = () => { const pr = ((ARCHC || {})['평형구성_예시'] || {})[b.dataset.mixpreset] || {}, patch = {}; unitTypes().forEach(t => { patch['mix' + t] = num(pr[t]); }); JbsFeas.set(patch); render(); });
   side.querySelectorAll('[data-handoff]').forEach(b => b.onclick = () => handoff(a, b.dataset.handoff));
   side.querySelectorAll('[data-feas]').forEach(e => e.addEventListener('change', () => { const v = parseFloat(e.value); JbsFeas.set({ [e.dataset.feas]: isNaN(v) ? 0 : v }); render(); }));
-  side.querySelectorAll('[data-gate]').forEach(b => b.onclick = () => { S.placing = 'gate:' + b.dataset.gate; $id('lmap').classList.add('picking'); toast(`지도에서 ${GATE.KIND[b.dataset.gate]}를 둘 구역 경계를 누르세요`); });
+  side.querySelectorAll('[data-gate]').forEach(b => b.onclick = () => {
+    S.placing = 'gate:' + b.dataset.gate; $id('lmap').classList.add('picking');
+    side.querySelectorAll('[data-gate]').forEach(x => { x.classList.remove('on'); x.style.cssText = ''; });
+    b.classList.add('on'); b.style.cssText = 'background:#c92a2a;color:#fff;border-color:#c92a2a';
+    b.textContent = `지도에서 구역 경계를 누르세요 — ${GATE.KIND[b.dataset.gate]}`;
+    toast(`지도에서 ${GATE.KIND[b.dataset.gate]}를 둘 구역 경계를 누르세요(도로에 닿은 경계)`, 4000);
+  });
   const gc = document.getElementById('gateClear'); if (gc) gc.onclick = () => { const z = Z.zones[S.region]; if (z && z.infra) { delete z.infra.gates; saveZ(); render(); } };
 }
 // 단지 출입구 검토(배치 탭) — 위치는 '가정', 교통영향평가·경찰 협의 뒤 확정
 function gateSection(a, pl) {
   const ck = GATE.check(a, pl), cls = { ok: 'ok', ng: 'bad', warn: 'warn', info: '' }, lab = { ok: '맞음', ng: '안 맞음', warn: '확인', info: '참고' };
+  const zz = Z.zones[a.key] || {}, gl = GATE.list(zz);
+  const sumHtml = gl.length ? `<div style="background:#f3faf3;border:1px solid #b7dcb9;border-radius:6px;padding:8px 10px;margin:6px 0">${gl.map(g => { const r = GATE.roadAt(zz, g.pt); return `<div>✔ <b>${GATE.KIND[g.kind]}</b> ${r ? `— ${esc(r.jibun)} 도로(현황 약 ${r.w}m)에 닿음${g.kind === 'main' ? ' → <b>진입도로로 정함</b>' : ''}` : '— <span class="warn">도로에 닿지 않은 경계</span>'}</div>`; }).join('')}</div>` : '<p class="note" style="margin:6px 0">아직 정한 출입구가 없습니다. 아래 [주출입구 찍기]부터 누르세요.</p>';
   return `<h3 id="gateBox">단지 출입구 (가정 — 교통 검토 후 확정)</h3>
+  ${sumHtml}
   <p class="hint">주출입구·부출입구·주차장 출입구를 지도에서 구역 경계에 찍으면 기준을 검사합니다. 점을 누르면 지워집니다. <b>주출입구를 찍으면 그 자리에 닿은 경계 도로가 진입도로로 정해져</b> 3탭 진입도로 확폭(주택건설기준 제25조)과 교통성 검토가 그 도로 기준으로 바뀝니다. '법정'은 공동주택(부설주차장)에 바로 적용되는 조항, '참고'는 노외주차장 기준·협의 관행입니다.</p>
   ${ck.gates.some(g => g.kind === 'main') ? '<p style="margin:4px 0"><button type="button" class="btn sm" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-stepgo="plan">출입구 정함 → 다음: 3 정비기반시설(도로 확폭·공원)</button></p>' : ''}
   <div class="zk-btns"><button type="button" class="btn ghost sm" data-gate="main">주출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="sub">부출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="park">주차장 출입구 찍기</button>${ck.gates.length ? '<button type="button" class="btn ghost sm" id="gateClear">모두 지우기</button>' : ''}</div>
