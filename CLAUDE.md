@@ -98,6 +98,10 @@
 - 순서 버튼(2026-11-04 사용자 결정 — 1회차는 교통·환경을 기본값으로 넘기거나 건너뜀): 1회차 ① /urban?from=main → ② /arch → ③ /?arch=id 2차 사업성, 2회차 /traffic·/env·/landscape (?site=id) 결과로 ①②③ 다시 — 각 단계 완료 여부는 site.constraints·site.arch.chosen으로 표시
 - /urban을 거치면 4탭에서 'urban:안' 구역이 따로 생김 → ⑥은 main·urban 구역 중 /arch 확정안이 있는 최근 것을 씀
 
+## 빠른 사업성 배치 확인 (Tabs.quick.layoutCheck — 2026-11-04 사용자 요구 '구역계 정할 때 건축계획이 한 번 자동으로 나와야')
+- 구역계가 있으면 shared/layout-worker.js(Web Worker, arch-geom.js + criteria/arch.json)로 판상 개략 배치를 한 번 돌려 S.quick.layout{key, zone, units, gfa, far, maxFloors, n, target}에 저장(같은 구역·획지·용적률·평형이면 다시 안 함)
+- 도로 자료가 없어 변은 방향으로만(북향 = 정북, 나머지 대지경계), 기반시설 위치 미반영 → 보수적 참고값. 목표의 97% 미만이면 경고 + '배치 기준 용적률로 계산'(S.quick.useLayoutFar → evaluate에서 v.far = min(목표, 배치 용적률))
+
 ## 실제 사례 대조 (shared/cases.js JbsCases + js/quick.js caseUi) — 2026-11-02
 - 사용자 요구: 입력한 실제 사례는 저장하고, 자동으로 띄우는 값과 늘 비교해 '자동 값이 실제와 얼마나 차이 나는지'를 알 수 있어야 함
 - ★빠른 사업성 맨 아래 '실제 사례와 비교': 사례(익명 이름·단계·근거 메모) + 실제 값(구역면적·기반시설 비율·획지·용적률·연면적·세대·평형·공사비·분양가·총수입·총사업비·종전자산·비례율) → 저장 당시 자동값(구역 geojson·가정 손잡이와 함께) / 지금 자동값(지금 구역이 사례 구역과 90% 이상 겹칠 때만)과 차이·차이율

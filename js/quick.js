@@ -111,8 +111,10 @@ const Quick = {
     t.plan.infraMode = 'ratio'; t.plan.infraRatio = num(q.infraPct);
     const f = this.farOf(q, t);
     const k = num(q.sizePct || 100) / 100;
+    // '배치 기준으로 계산'을 켰으면 개략 배치로 실제 들어간 용적률을 상한으로(땅 모양·일조로 목표를 다 못 채우는 구역)
+    const lay = q.layout, layOk = q.useLayoutFar && lay && lay.far > 0 && S.area.geojson && lay.zone === zoneKey(S.area.geojson);
     const v = {
-      far: f.v, gfaFactor: num(q.gfaFactor) || 1.45, resRatio: num(q.resRatio) || 97, mix59: num(q.mix59),
+      far: layOk ? Math.min(f.v, Math.round(lay.far * 10) / 10) : f.v, gfaFactor: num(q.gfaFactor) || 1.45, resRatio: num(q.resRatio) || 97, mix59: num(q.mix59),
       sup59: JbsFeas.supply(59) * k, sup84: JbsFeas.supply(84) * k, supRent: JbsFeas.supply(49) * k,
       rentRatio: num(q.rentRatio), mix114: num(q.mix114), members: num(q.members), generalPrice: num(q.generalPrice), memberRatio: num(q.memberRatio),
       memberPrice: num(q.generalPrice) * num(q.memberRatio) / 100, rentPrice: num(q.rentPrice), shopPrice: num(q.shopPrice),
@@ -592,6 +594,40 @@ Tabs.quick = {
     Quick.reviewLinks();
     Quick.caseUi();
   },
+  // 배치 확인: 구역계가 정해지면 /arch와 같은 엔진으로 한 번 개략 배치(일꾼에서) — 목표 연면적이 땅 모양·정북 일조·인동간격으로 다 들어가는지
+  layoutCheck(q, f) {
+    if (!S.area.geojson || !(f.lot > 0) || !window.Worker) return;
+    const g = S.area.geojson.geometry || S.area.geojson;
+    const ring = g.type === 'Polygon' ? g.coordinates[0] : g.type === 'MultiPolygon' ? g.coordinates.slice().sort((a, b) => turf.area(turf.polygon(b)) - turf.area(turf.polygon(a)))[0][0] : null;
+    if (!ring) return;
+    const mix = JbsFeas.mixOf(JbsFeas.get()), zk = zoneKey(S.area.geojson);
+    const key = [zk, Math.round(f.lot), f.v, JSON.stringify(mix), S.meta.zoning || ''].join('|');
+    const L0 = S.quick.layout;
+    if (L0 && L0.key === key) return;
+    if (this._layKey === key) return;
+    this._layKey = key;
+    try {
+      if (!this._lw) { this._lw = new Worker('shared/layout-worker.js?v=1'); this._lw.onerror = () => { this._layKey = ''; this._lw = null; }; }
+      const id = (this._lid = (this._lid || 0) + 1);
+      this._lw.onmessage = e => {
+        if (e.data.id !== this._lid) return;
+        const r = e.data.r; this._layKey = '';
+        S.quick.layout = r ? Object.assign({ key, zone: zk, at: new Date().toLocaleString('sv-SE').slice(0, 16) }, r) : { key, zone: zk, fail: e.data.err || '배치 실패' };
+        App.persist(); if ($('#tab-quick') && !$('#tab-quick').hidden) App.update(true);
+      };
+      this._lw.postMessage({ id, ring, lot: f.lot, far: f.v, mix, zoning: S.meta.zoning || '' });
+    } catch (e) { this._layKey = ''; }
+  },
+  layoutLine(q, f) {
+    const L0 = q.layout, zk = S.area.geojson ? zoneKey(S.area.geojson) : '';
+    if (!zk || !window.Worker) return '';
+    if (!L0 || L0.zone !== zk || this._layKey) return `<p class="note">배치 확인 중… 이 구역에 /arch와 같은 방식으로 동을 놓아 목표 용적률이 다 들어가는지 봅니다(몇 초).</p>`;
+    if (L0.fail) return `<p class="note">배치 확인: ${esc(L0.fail)}</p>`;
+    const pct = L0.target > 0 ? L0.gfa / L0.target * 100 : 100, short = pct < 97;
+    return `<div class="${short ? 'warn-box' : 'note'}" style="margin:8px 0">배치 확인(개략, 판상·정북 일조·인동간격 0.8·채광창 이격): <b>${fmt(L0.n)}개동 · ${fmt(L0.units)}세대 · 최고 ${L0.maxFloors}층</b>, 들어간 용적률 <b>${fmt(L0.far, 1)}%</b>(목표 ${fmt(f.v, 1)}%의 ${fmt(pct, 0)}%).
+      ${short ? `<br>땅 모양·일조 제한 때문에 목표 용적률을 다 채우지 못할 수 있습니다. <label style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" id="qkUseLay" ${q.useLayoutFar ? 'checked' : ''}> 배치 기준 용적률(${fmt(L0.far, 1)}%)로 사업성 계산</label>` : ' 목표 연면적이 다 들어갑니다.'}
+      <span class="note">· 도로 자료 없이 대지경계로 본 보수적 값, 기반시설 위치는 반영 전 — 자세한 배치는 /arch</span></div>`;
+  },
   // 조합원 수가 무엇으로 셈한 값인지(대장 조회 전이면 건물 동 수라 작게 나옴) 칸 아래에 보여 줌
   memSrc(q) {
     const el = $('#qk_memSrc'); if (!el) return;
@@ -628,6 +664,7 @@ Tabs.quick = {
     const l = $('#qkMemLedger'); if (l) l.onclick = async () => { l.disabled = true; l.textContent = '불러오는 중…'; this.memSrc(S.quick); await Tabs.survey.bldgLedger(true); App.update(true); };
   },
   refresh() {
+    if (!this._layBound) { this._layBound = true; document.addEventListener('change', ev => { if (ev.target && ev.target.id === 'qkUseLay') { S.quick.useLayoutFar = ev.target.checked; App.update(true); } }); }
     const q0 = Quick.ensure();
     bindInputs($('#tab-quick'));
     this.memSrc(q0);
@@ -638,6 +675,7 @@ Tabs.quick = {
     const site = Calc.siteArea(S);
     if (!(site > 0)) { out.innerHTML = '<p class="warn-box">구역 면적이 없습니다. <b>2 구역계</b>에서 구역을 그리거나 면적을 직접 넣으면 바로 계산됩니다.</p>'; $('#qkLevers').innerHTML = ''; $('#qkScan').innerHTML = ''; return; }
     const e = Quick.evaluate(q), f = e.f, p = e.p, r = e.r;
+    this.layoutCheck(q0, f);
     const scen = Quick.SCEN.map(sc => ({ sc, ratio: Calc.result(e.t, { construction: 1 + sc.con / 100, general: 1 + sc.gen / 100 }).ratio }));
     const avgPrior = num(q.members) > 0 ? r.prior / num(q.members) : 0;
     const right = isFinite(r.ratio) ? avgPrior * r.ratio / 100 : NaN;
@@ -652,7 +690,7 @@ Tabs.quick = {
     if (p.short) warn.push(`조합원 ${fmt(q.members)}명보다 분양 세대가 ${fmt(p.short)}세대 부족합니다.`);
     if (q.farStep === 'calc' && !S.lands.length) warn.push('토지조서가 없어 기존 공공시설(도로 등) 면적을 0으로 보고 산식 용적률을 냈습니다. 실제로는 기존 도로를 빼야 해서 용적률이 더 낮을 수 있습니다.');
     const tgt = num(q.target) || 100;
-    out.innerHTML = `
+    out.innerHTML = this.layoutLine(q0, f) + `
       <div class="qk-head">
         <div class="qk-ratio ${ratioClass(r.ratio)}"><span>1차 비례율 (표준)</span><b>${fmtPct(r.ratio)}</b><em>${isFinite(r.ratio) ? (r.ratio >= tgt ? `목표 ${tgt}% 이상` : `목표 ${tgt}%까지 ${fmt(tgt - r.ratio, 1)}%p 부족`) : '계산 전'}</em></div>
         <div class="qk-scen">${scen.map(x => `<div class="${ratioClass(x.ratio)}"><span>${x.sc.key}</span><b>${fmtPct(x.ratio)}</b><em>${x.sc.note}</em></div>`).join('')}</div>
