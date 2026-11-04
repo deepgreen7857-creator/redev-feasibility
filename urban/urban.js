@@ -1856,6 +1856,7 @@ const FITUI = {
 const GATE = {
   KIND: { main: '주출입구', sub: '부출입구', park: '주차장 출입구' },
   list(z) { return ((z && z.infra && z.infra.gates) || []); },
+  isBig(c) { return num(c.w) >= 25 || /광로|대로/.test(c.dec || ''); },
   // 다각형 테두리를 LineString 여러 개로(구멍·여러 덩어리 포함) — pointToLineDistance·nearestPointOnLine은 LineString만 받음
   lines(f) { try { return turf.flatten(turf.polygonToLine(f)).features.filter(l => l.geometry.type === 'LineString'); } catch (er) { return []; } },
   // 구역(획지) 경계에 붙임 — 찍기·끌어 옮기기 같이 씀
@@ -1918,10 +1919,10 @@ const GATE = {
     return [...by.values()].filter(o => o.s.length).map(o => {
       const b = o.s.reduce((m, q) => { const sc = Math.min(q.dIx, q.end); return !m || sc > m.sc ? { ...q, sc } : m; }, null);
       const q = e.per[o.r.pnu] || {}, front = q.front || o.n * 4, lack = Math.max(0, e.W - o.r.w);
-      return { kind: 'main', pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, pt: b.pt, dIx: b.dIx, front, lack, area: front * lack, partial: !!q.partial, oneway: !!(eo[o.r.pnu] || {}).oneway };
+      return { kind: 'main', pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, dec: o.r.dec || '', pt: b.pt, dIx: b.dIx, front, lack, area: front * lack, partial: !!q.partial, oneway: !!(eo[o.r.pnu] || {}).oneway };
     }).filter(c => !c.oneway && c.w >= 4 && c.front >= 10)
       // 25m 이상(대로급) 도로는 뒤로 — 간선도로에 단지 주출입구를 바로 내면 교차로 간격·가감속 차로 문제가 생겨 보통 그 아래 도로에 둠(참고, 2026-11-04)
-      .map(c => Object.assign(c, { big: c.w >= 25 }))
+      .map(c => Object.assign(c, { big: GATE.isBig(c) }))
       .sort((x, y) => (x.partial - y.partial) || (x.big - y.big) || (x.area - y.area) || (y.w - x.w));
   },
   // 다음에 정할 출입구: 주출입구가 없거나 획지 아닌 땅·도로 없는 자리면 주출입구 → 부출입구 → 주차장 출입구 → 없음
@@ -1956,9 +1957,9 @@ const GATE = {
       });
       if (!b) return;
       const isE2 = !!(e.mode === 3 && e.e2 && e.e2.pnu === o.r.pnu);
-      out.push({ kind, pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, pt: b.pt, dIx: b.dIx, dm: b.dm, sc: b.sc, same, isE2, front: o.n * 4 });
+      out.push({ kind, pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, dec: o.r.dec || '', pt: b.pt, dIx: b.dIx, dm: b.dm, sc: b.sc, same, isE2, front: o.n * 4 });
     });
-    const big = c => c.w >= 25 ? 1 : 0;   // 대로급은 뒤로(주출입구와 같은 이유, 참고)
+    const big = c => GATE.isBig(c) ? 1 : 0;   // 대로급은 뒤로(주출입구와 같은 이유, 참고)
     if (kind === 'sub') return out.sort((x, y) => (y.isE2 - x.isE2) || (big(x) - big(y)) || (x.same - y.same) || (y.sc - x.sc));
     return out.sort((x, y) => ((x.w < 6) - (y.w < 6)) || (big(x) - big(y)) || ((x.dIx < 30) - (y.dIx < 30)) || (x.same - y.same) || (y.sc - x.sc));
   },
@@ -3357,7 +3358,7 @@ function gateEntryHtml(a, pl, zz, gl) {
 //  사용자가 출입구를 하나라도 직접 놓거나 옮기면 그 뒤로 자동으로 바꾸지 않음. 같은 구역계에서 추천 출입구를 지웠으면 다시 넣지 않음
 //  구역계가 바뀌면(추천 출입구만 있을 때) 새 구역계로 다시 추천
 const AUTO = {
-  tried: {},
+  tried: {}, decTried: {},
   key(z) { try { return JSON.stringify(turf.bbox(z.geojson)); } catch (e) { return ''; } },
   // 구역계·필지를 불러왔는데 주변 도로가 없으면 불러오기(구역계마다 한 번 — 실패해도 되풀이하지 않음)
   roads(id) {
@@ -3374,6 +3375,9 @@ const AUTO = {
   // 추천 출입구 자동 배치. 바꾼 게 있으면 true
   ensure(a) {
     const z = Z.zones[a.key]; if (!z || !z.geojson || !INFRA.ready(a.key)) return false;
+    // 경계 도로의 도시계획도로 결정 등급(광로·대로 → 출입구 후보에서 뒤로)을 먼저 받음 — 한 번 시도해서 안 되면 그냥 진행
+    if (!z.roads.edgeDecOk && !this.decTried[a.key]) { this.decTried[a.key] = true; INFRA.fetchEdgeDec(a.key); return false; }
+    if (INFRA.decLoading[a.key]) return false;
     z.infra = z.infra || {};
     const k = this.key(z), gl = GATE.list(z);
     if (gl.some(g => !g.auto)) return false;            // 사용자가 직접 정한 출입구가 있음
@@ -3427,7 +3431,7 @@ const AUTO = {
     else {
       const r = GATE.roadAt(z, main.pt), sub = gl.find(g => g.kind === 'sub'), pk = gl.find(g => g.kind === 'park');
       const rs = g => { const q = GATE.roadAt(z, g.pt); return q ? `${esc(q.jibun)} 도로` : '경계'; };
-      g1 = `주출입구 ${r ? `<b>${esc(r.jibun)} 도로</b>(현황 약 ${r.w}m) → 진입도로` : '<span class="warn">도로에 닿지 않음</span>'}${sub ? ` · 부출입구 ${rs(sub)}` : ''}${pk ? ` · 주차장 출입구 ${rs(pk)}` : ''} <span class="pill ${allAuto ? 'warn' : 'ok'}">${allAuto ? '추천안' : '직접 정함'}</span>`;
+      g1 = `주출입구 ${r ? `<b>${esc(r.jibun)} 도로</b>(현황 약 ${r.w}m${r.dec ? ` · ${esc(r.dec)}` : ''}) → 진입도로` : '<span class="warn">도로에 닿지 않음</span>'}${sub ? ` · 부출입구 ${rs(sub)}` : ''}${pk ? ` · 주차장 출입구 ${rs(pk)}` : ''} <span class="pill ${allAuto ? 'warn' : 'ok'}">${allAuto ? '추천안' : '직접 정함'}</span>`;
     }
     // ② 정비기반시설
     const inf = pl.infra;
