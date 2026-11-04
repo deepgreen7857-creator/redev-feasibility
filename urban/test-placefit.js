@@ -23,6 +23,11 @@ chk('감싸기', PF.run({ mode: 'wrap', dir: 'N' }, { zone, anchorGeom: church, 
 chk('곧게', PF.run({ mode: 'clean', dir: 'N' }, { zone, anchorGeom: church, occupied: occ, target: T }));
 const L = pts => turf.lineString(pts.map(([x, y]) => [O[0] + x * mx, O[1] + y * my]));
 chk('스케치', PF.run({ mode: 'sketch', sketch: L([[170, 255], [215, 250], [260, 262], [245, 320], [215, 325], [180, 280]]) }, { zone, anchorGeom: church, occupied: occ, target: T }));
+// 꼭짓점 찍어 그린 반듯한 사각형: 키워도 모서리가 둥글어지지 않아야 함(꼭짓점 수가 그대로 적게)
+{ const r = PF.run({ mode: 'sketch', sketch: P([[90, 130], [150, 130], [150, 170], [90, 170]]).geometry }, { zone, anchorGeom: church, occupied: occ, target: T });
+  chk('사각형', r);
+  const n = r.geom ? turf.coordAll(r.geom).length : 0;
+  if (n > 12) { fail++; console.log(`실패 사각형 꼭짓점 ${n}개 — 모양이 둥글어짐`); } else console.log(`통과 사각형 꼭짓점 ${n}개(반듯함 유지)`); }
 // 손그림: 용지를 래스터로 만들고 빨간 펜으로 끝이 덜 닫힌 타원을 그린 뒤 읽기
 const { meta } = PF.makeSheet({ zone, features: [{ geom: church, name: '종교' }], widthPx: 700 });
 const W = meta.width, H = meta.height, data = new Uint8ClampedArray(W * H * 4).fill(255);

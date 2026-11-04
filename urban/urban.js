@@ -1716,9 +1716,10 @@ const FITUI = {
           &nbsp;방향 <span class="seg" role="group" aria-label="붙일 방향">${[['N', '북'], ['E', '동'], ['S', '남'], ['W', '서']].map(([d, t]) => `<button type="button" data-fitdir="${k}:${d}" aria-pressed="${(o.dir || 'N') === d}">${t}</button>`).join('')}</span></div>
           <span class="u">${m === 'wrap' ? '그 방향 빈 땅을 구역 모양대로 먼저 채우고, 모자라면 기준 시설 옆으로 감싸 이어 붙입니다.' : '기준 시설 변 폭 그대로 곧은 띠로 붙이고, 막히면 채울 만큼 채운 뒤 옆으로 곧게 꺾습니다(ㄱ자).'}</span>`;
       } else if (m === 'sketch') {
-        sub = `<div style="margin-top:6px"><button type="button" class="btn ghost sm" data-fitdraw="${k}">${o.sketch ? '다시 그리기' : '지도에 그리기'}</button>
+        sub = `<div style="margin-top:6px"><button type="button" class="btn sm" data-fitpoly="${k}">꼭짓점 찍어 그리기(반듯하게)</button>
+          <button type="button" class="btn ghost sm" data-fitdraw="${k}">손으로 그리기</button>
           <label class="zk-opts" style="display:inline"><input type="checkbox" data-fitkeep="${k}" ${o.keepSize ? 'checked' : ''}> 그린 크기 그대로(면적 맞추지 않음)</label></div>
-          <span class="u">버튼을 누른 뒤 지도에서 마우스(또는 손가락)를 누른 채 원하는 자리를 대충 한 바퀴 그리세요. 구역 밖·도로·다른 시설에 걸린 부분은 잘라 내고 필요 면적에 맞게 고르게 키우거나 줄입니다.</span>`;
+          <span class="u"><b>꼭짓점 찍어 그리기</b>: 지도에서 모서리를 차례로 누르고, 첫 점을 다시 누르거나 두 번 눌러 끝냅니다(되돌리기 Backspace, 취소 Esc). 직선으로 이어져 반듯한 모양이 됩니다. <b>손으로 그리기</b>: 누른 채 한 바퀴. 구역 밖·도로·다른 시설에 걸린 부분은 잘라 내고, 모양은 그대로 둔 채 같은 비율로 키우거나 줄여 필요 면적에 맞춥니다.</span>`;
       } else if (m === 'upload') {
         sub = `<div style="margin-top:6px"><button type="button" class="btn ghost sm" data-fitsheet="${k}">① 스케치 용지 내려받기</button>
           <label class="btn ghost sm" style="cursor:pointer">② 그린 그림 올리기<input type="file" accept="image/*" data-fitupload="${k}" hidden></label>
@@ -1737,8 +1738,46 @@ const FITUI = {
     side.querySelectorAll('[data-fitanchor]').forEach(el => el.onchange = () => this.set(el.dataset.fitanchor, o => { o.anchor = el.value; }));
     side.querySelectorAll('[data-fitkeep]').forEach(el => el.onchange = () => this.set(el.dataset.fitkeep, o => { o.keepSize = el.checked; }));
     side.querySelectorAll('[data-fitdraw]').forEach(b => b.onclick = () => this.draw(b.dataset.fitdraw));
+    side.querySelectorAll('[data-fitpoly]').forEach(b => b.onclick = () => this.drawPoly(b.dataset.fitpoly));
     side.querySelectorAll('[data-fitsheet]').forEach(b => b.onclick = () => this.sheet(b.dataset.fitsheet));
     side.querySelectorAll('[data-fitupload]').forEach(el => el.onchange = () => { const f = el.files && el.files[0]; el.value = ''; if (f) this.upload(el.dataset.fitupload, f); });
+  },
+  // 꼭짓점 찍어 그리기: 누를 때마다 점을 더해 직선으로 이음 → 첫 점 다시 누르기·두 번 누르기·Enter로 끝(반듯한 공원·녹지용)
+  drawPoly(kind) {
+    if (!LM) return;
+    const el = LM.getContainer(); let pts = [], shape = null, guide = null, lastT = 0, downAt = null;
+    LM.doubleClickZoom.disable(); el.classList.add('picking');
+    toast('모서리를 차례로 누르세요 — 첫 점을 다시 누르거나 두 번 눌러 끝냅니다 (Backspace 되돌리기 · Esc 취소)', 6000);
+    const ll = e => LM.mouseEventToLatLng(e);
+    const redraw = hover => {
+      const all = hover ? pts.concat([hover]) : pts;
+      if (shape) shape.remove(); if (guide) guide.remove();
+      shape = all.length >= 3 ? L.polygon(all, { color: '#d6336c', weight: 3, fillOpacity: 0.12, interactive: false }).addTo(LM) : L.polyline(all, { color: '#d6336c', weight: 3, interactive: false }).addTo(LM);
+      guide = L.layerGroup(pts.map((p, i) => L.circleMarker(p, { radius: i ? 4 : 6, color: '#d6336c', weight: 2, fillColor: '#fff', fillOpacity: 1, interactive: false }))).addTo(LM);
+    };
+    const end = save => {
+      el.removeEventListener('pointerdown', pd, true); el.removeEventListener('pointerup', pu, true); el.removeEventListener('pointermove', pm, true); window.removeEventListener('keydown', kd);
+      el.classList.remove('picking'); LM.doubleClickZoom.enable(); if (shape) shape.remove(); if (guide) guide.remove();
+      setTimeout(() => { if (this._polyOff) this._polyOff(); }, 0);
+      if (save && pts.length >= 3) this.set(kind, o => { o.mode = 'sketch'; o.sketch = { type: 'Polygon', coordinates: [[...pts.map(p => [p.lng, p.lat]), [pts[0].lng, pts[0].lat]]] }; });
+      else if (save) toast('점이 3개 이상이어야 합니다 — 다시 그려 주세요');
+    };
+    // 누르고 거의 움직이지 않고 떼면 '점 찍기', 끌면 지도 이동(그대로 둠)
+    const pd = e => { if (e.button !== 0) return; downAt = [e.clientX, e.clientY]; e.stopPropagation(); };
+    const pu = e => {
+      if (!downAt) return; const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]); downAt = null;
+      if (moved > 5) return;
+      e.stopPropagation(); e.preventDefault();
+      const p = ll(e), now = Date.now();
+      if (pts.length >= 3 && LM.latLngToContainerPoint(p).distanceTo(LM.latLngToContainerPoint(pts[0])) < 12) { end(true); return; }
+      if (now - lastT < 350 && pts.length >= 3) { end(true); return; }
+      lastT = now; pts.push(p); redraw();
+    };
+    const pm = e => { if (pts.length && !downAt) redraw(ll(e)); };
+    const kd = e => { if (e.key === 'Escape') end(false); else if (e.key === 'Enter') end(true); else if (e.key === 'Backspace' && pts.length) { e.preventDefault(); pts.pop(); redraw(); } };
+    const ck = e => { e.stopPropagation(); };   // 점 찍는 동안 지도 클릭(필지 넣기 등)이 같이 일어나지 않게
+    el.addEventListener('pointerdown', pd, true); el.addEventListener('pointerup', pu, true); el.addEventListener('pointermove', pm, true); el.addEventListener('click', ck, true); window.addEventListener('keydown', kd);
+    this._polyOff = () => el.removeEventListener('click', ck, true);
   },
   // 지도에 손으로 긋기(마우스·터치 모두 — pointer 이벤트)
   draw(kind) {
@@ -1748,7 +1787,7 @@ const FITUI = {
     toast('지도에서 누른 채로 원하는 자리를 한 바퀴 그리세요 (Esc: 취소)', 4000);
     const ll = e => LM.mouseEventToLatLng(e);
     const end = save => {
-      el.removeEventListener('pointerdown', pd); el.removeEventListener('pointermove', pm); window.removeEventListener('pointerup', pu); window.removeEventListener('keydown', kd);
+      el.removeEventListener('pointerdown', pd, true); el.removeEventListener('pointermove', pm, true); window.removeEventListener('pointerup', pu); window.removeEventListener('keydown', kd);
       LM.dragging.enable(); el.classList.remove('picking'); el.style.touchAction = ''; if (line) line.remove();
       if (save && pts.length >= 6) this.set(kind, o => { o.mode = 'sketch'; o.sketch = { type: 'LineString', coordinates: pts.map(p => [p.lng, p.lat]) }; });
       else if (save) toast('너무 짧게 그렸습니다 — 다시 그려 주세요');
@@ -1757,7 +1796,7 @@ const FITUI = {
     const pm = e => { if (!down) return; e.preventDefault(); const p = ll(e), q = pts[pts.length - 1]; if (LM.latLngToContainerPoint(p).distanceTo(LM.latLngToContainerPoint(q)) >= 4) { pts.push(p); line.setLatLngs(pts); } };
     const pu = () => { if (down) { down = false; end(true); } };
     const kd = e => { if (e.key === 'Escape') end(false); };
-    el.addEventListener('pointerdown', pd); el.addEventListener('pointermove', pm); window.addEventListener('pointerup', pu); window.addEventListener('keydown', kd);
+    el.addEventListener('pointerdown', pd, true); el.addEventListener('pointermove', pm, true); window.addEventListener('pointerup', pu); window.addEventListener('keydown', kd);
   },
   // 스케치 용지(PNG) 내려받기 — 구역·도로 확폭·다른 시설을 회색으로
   sheet(kind) {
