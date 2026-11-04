@@ -1867,9 +1867,24 @@ const GATE = {
     } catch (er) { /* 그대로 */ }
     z.infra.gates = this.list(z).filter(g => kind === 'sub' || kind === 'park' || g.kind !== kind);   // 주출입구는 하나만
     z.infra.gates.push({ kind, pt });
+    // 주출입구가 닿은 경계 도로 = 진입도로(제25조) → 3탭 진입도로·확폭이 이 도로 기준으로 다시 계산되고 교통성 검토로도 넘어감
+    let roadMsg = '';
+    if (kind === 'main') {
+      const r = this.roadAt(z, pt);
+      if (r) { z.infra.entryPnu = r.pnu; roadMsg = ` — 닿은 ${r.jibun} 도로(현황 약 ${r.w}m)를 진입도로로 정했습니다. 3탭 진입도로 확폭이 이 도로 기준으로 바뀝니다`; }
+      else roadMsg = ' — 경계 도로에 닿지 않은 자리입니다. 진입도로는 도로에 닿은 경계에 찍어야 정해집니다';
+    }
     saveZ(); INFRA.memo = {};
     S.placing = null; $id('lmap').classList.remove('picking');
-    toast(`${this.KIND[kind]}를 구역 경계에 놓았습니다`); render();
+    toast(`${this.KIND[kind]}를 구역 경계에 놓았습니다${roadMsg}`, roadMsg ? 6000 : 2500); render();
+  },
+  // 점에서 15m 안의 경계 도로(z.roads.edge) 중 가장 가까운 것
+  roadAt(z, pt) {
+    const p = turf.point([pt[1], pt[0]]); let best = null;
+    ((z.roads && z.roads.edge) || []).forEach(r => { if (!r.geom) return; let d = Infinity;
+      try { const f = { type: 'Feature', properties: {}, geometry: r.geom }; d = turf.booleanPointInPolygon(p, f) ? 0 : Math.min(...this.lines(f).map(l => turf.pointToLineDistance(p, l, { units: 'meters' }))); } catch (er) { d = Infinity; }
+      if (d <= 15 && (!best || d < best.d)) best = { d, pnu: r.pnu, jibun: r.jibun, w: r.w }; });
+    return best;
   },
   // 경계 도로끼리 맞닿은 곳 = 교차로(개략). 도로 필지가 닿는 곳의 가운데
   ixOf(z) {
@@ -3131,7 +3146,7 @@ function renderArch(a) {
 function gateSection(a, pl) {
   const ck = GATE.check(a, pl), cls = { ok: 'ok', ng: 'bad', warn: 'warn', info: '' }, lab = { ok: '맞음', ng: '안 맞음', warn: '확인', info: '참고' };
   return `<h3 id="gateBox">단지 출입구 (가정 — 교통 검토 후 확정)</h3>
-  <p class="hint">주출입구·부출입구·주차장 출입구를 지도에서 구역 경계에 찍으면 기준을 검사합니다. 점을 누르면 지워집니다. '법정'은 공동주택(부설주차장)에 바로 적용되는 조항, '참고'는 노외주차장 기준·협의 관행입니다.</p>
+  <p class="hint">주출입구·부출입구·주차장 출입구를 지도에서 구역 경계에 찍으면 기준을 검사합니다. 점을 누르면 지워집니다. <b>주출입구를 찍으면 그 자리에 닿은 경계 도로가 진입도로로 정해져</b> 3탭 진입도로 확폭(주택건설기준 제25조)과 교통성 검토가 그 도로 기준으로 바뀝니다. '법정'은 공동주택(부설주차장)에 바로 적용되는 조항, '참고'는 노외주차장 기준·협의 관행입니다.</p>
   <div class="zk-btns"><button type="button" class="btn ghost sm" data-gate="main">주출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="sub">부출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="park">주차장 출입구 찍기</button>${ck.gates.length ? '<button type="button" class="btn ghost sm" id="gateClear">모두 지우기</button>' : ''}</div>
   <div class="form" style="margin-top:6px">${field('parkCount', '주차대수(계획)', P.parkCount || '', `대 · 0이면 ${legalPark(pl) ? `법정 하한 ${fmt(legalPark(pl).legal)}대` : `세대당 1대(${fmt(pl.units)}대)`}로 가정`)}</div>
   <div class="tscroll"><table class="gi-tbl"><thead><tr><th>항목</th><th>판정</th><th>내용</th><th>근거</th></tr></thead><tbody>
