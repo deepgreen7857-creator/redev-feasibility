@@ -2467,14 +2467,15 @@ function stepNav() {
   const ORDER = [['zone', '1 구역계·현황'], ['req', '2 요건판정'], ['plan', '3 정비계획(기반시설)'], ['arch', '4 개략 건축계획'], ['biz', '5 사업성']];
   const i = ORDER.findIndex(([k]) => k === S.tab); if (i < 0) return;
   const prev = ORDER[i - 1], next = ORDER[i + 1];
-  const nextLabel = S.tab === 'plan' ? '기반시설 확정 → 다음: 4 개략 건축계획' : next ? `다음: ${next[1]} →` : '';
+  const nextLabel = S.tab === 'plan' ? '기반시설 확정 → 다음: 단지 출입구 정하기(4탭)' : next ? `다음: ${next[1]} →` : '';
   side.insertAdjacentHTML('beforeend', `<div class="stepnav" style="display:flex;justify-content:space-between;gap:8px;margin:18px 0 6px;padding-top:12px;border-top:1px solid var(--line)">
     ${prev ? `<button type="button" class="btn ghost" data-stepgo="${prev[0]}">← ${prev[1]}</button>` : '<span></span>'}
     ${next ? `<button type="button" class="btn" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-stepgo="${next[0]}">${nextLabel}</button>` : S.tab === 'biz' ? `<a class="btn" style="background:var(--ink);color:var(--paper);text-decoration:none" data-tool="arch" href="${toolHref('arch')}">다음: 자세한 배치(/arch) →</a>` : ''}</div>`);
   side.querySelectorAll('[data-stepgo]').forEach(b => b.onclick = () => {
     saveZ(); try { saveP(); } catch (e) { /* 무시 */ }
     const t = document.querySelector(`nav.steps button[data-tab="${b.dataset.stepgo}"]`); if (t) t.click();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (b.dataset.stepgo === 'arch' && S.region) setTimeout(() => { const g = document.getElementById('gateBox'); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); else window.scrollTo({ top: 0, behavior: 'smooth' }); }, 300);
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 }
 const kpi = (l, v, f) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="f">${f || ''}</div></div>`;
@@ -3129,7 +3130,7 @@ function renderArch(a) {
 // 단지 출입구 검토(배치 탭) — 위치는 '가정', 교통영향평가·경찰 협의 뒤 확정
 function gateSection(a, pl) {
   const ck = GATE.check(a, pl), cls = { ok: 'ok', ng: 'bad', warn: 'warn', info: '' }, lab = { ok: '맞음', ng: '안 맞음', warn: '확인', info: '참고' };
-  return `<h3>단지 출입구 (가정 — 교통 검토 후 확정)</h3>
+  return `<h3 id="gateBox">단지 출입구 (가정 — 교통 검토 후 확정)</h3>
   <p class="hint">주출입구·부출입구·주차장 출입구를 지도에서 구역 경계에 찍으면 기준을 검사합니다. 점을 누르면 지워집니다. '법정'은 공동주택(부설주차장)에 바로 적용되는 조항, '참고'는 노외주차장 기준·협의 관행입니다.</p>
   <div class="zk-btns"><button type="button" class="btn ghost sm" data-gate="main">주출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="sub">부출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="park">주차장 출입구 찍기</button>${ck.gates.length ? '<button type="button" class="btn ghost sm" id="gateClear">모두 지우기</button>' : ''}</div>
   <div class="form" style="margin-top:6px">${field('parkCount', '주차대수(계획)', P.parkCount || '', `대 · 0이면 ${legalPark(pl) ? `법정 하한 ${fmt(legalPark(pl).legal)}대` : `세대당 1대(${fmt(pl.units)}대)`}로 가정`)}</div>
@@ -3597,6 +3598,12 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
   render();
   // 사업성 검토 '1차 재검토' → ?from=main: 사업성 검토 구역계·조서를 빈 안(없으면 새 안)으로 가져와 정비계획(기반시설) 탭을 엶
   const qs = new URLSearchParams(location.search);
+  // ?tab=plan|arch|… 로 그 탭을 바로 열고, ?focus=gate면 단지 출입구 칸으로 내려감(사업성 화면 순서 버튼에서 씀)
+  if (qs.get('tab') && qs.get('from') !== 'main') {
+    const tb = qs.get('tab'), fc = qs.get('focus');
+    history.replaceState(null, '', location.pathname + location.hash);
+    setTimeout(() => { const b = document.querySelector(`nav.steps button[data-tab="${tb}"]`); if (b) b.click(); if (fc === 'gate') setTimeout(() => { const g = document.getElementById('gateBox'); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 400); }, 300);
+  }
   if (qs.get('from') === 'main') {
     history.replaceState(null, '', location.pathname + location.hash);
     const pj = loadProject();
