@@ -7,7 +7,8 @@ self.onmessage = e => {
   try {
     cand.forEach(ang => { try { const r = G.layout(site, Object.assign({}, opt, { angle: ang, fixedF: F, quick: true })); if (r.units && r.gfa > top) { top = r.gfa; bestA = ang; } } catch (er) { /* 건너뜀 */ } });
     if (bestA != null) {
-      const r = G.layout(site, Object.assign({}, opt, { angle: bestA }));
+      // 미리보기라 빠른 방식(3m 격자·후보 줄임)으로 — 큰 구역에서 몇 분 걸리던 것을 줄임. 정밀 배치는 /arch
+      const r = G.layout(site, Object.assign({}, opt, { angle: bestA, quick: true }));
       if (r.units) out = { angle: bestA, units: r.units, maxFloors: r.maxFloors, far: r.far, bcr: r.bcr, gfa: r.gfa,
         buildings: r.buildings.map(b => ({ floors: b.floors, t: b.t, n: b.n, vname: b.vname || '', poly: b.poly, parts: b.parts, units: b.units })) };
     }

@@ -2243,6 +2243,8 @@ const ARCHLAY = {
       if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=2'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
       const id = (this.seq = (this.seq || 0) + 1); this.cb[id] = done;
       this.wk.postMessage({ id, site: I.site, opt: I.opt, cand: c.cand, F: c.F });
+      // 90초가 넘으면 일꾼을 멈추고 예전 네모 그림으로(화면에 '계산 중'이 계속 남지 않게)
+      setTimeout(() => { if (this.cb[id]) { const f = this.cb[id]; delete this.cb[id]; try { this.wk.terminate(); } catch (e) { /* 무시 */ } this.wk = null; Object.values(this.cb).forEach(g => g(null)); this.cb = {}; f(null); } }, 90000);
     } catch (e) { done(null); }
   },
   // 결과가 있으면 그리고 true. 없으면 계산을 걸어 두고 false(그동안은 예전 네모 그림)
@@ -3142,7 +3144,7 @@ function renderArch(a) {
   </tbody></table></div>
   ${D.map ? gateSection(a, pl) : ''}
   <p class="note">도면의 <b>개략 배치</b>는 주동을 ${S.placedIn === 'lots' ? '정비기반시설(도로·공원·학교·종교용지 등)을 뺀 <b>공동주택 획지</b>' : '구역계'} 안에 격자로 놓아 봅니다(인동간격 높이×0.8 개략, 배치된 주동 ${S.placed ?? '–'}개동${S.placed != null && S.placedNeed && S.placed < S.placedNeed ? ` — 땅 모양 때문에 계산상 ${S.placedNeed}개동(${S.placedFloorsCalc}층)이 다 들어가지 않아 ${S.placed}개동 × ${S.placedFloors}층으로 세대수를 맞췄습니다. 오른쪽 개략 규모도 이 값입니다` : ''}). 일조·높이·학교예정부지·문화재 위치는 /arch 단계에서 다룹니다.</p>
-  ${S.archLay && S.archLay.n ? `<p class="note" style="background:#f7f9fb;border:1px solid var(--line);border-radius:6px;padding:8px 10px">지도 개략 배치(실제 평면·정북 일조·인동간격 0.8·기반시설 이격 반영, 판상 ${S.archLay.angle}°): <b>${S.archLay.n}개동 · ${fmt(S.archLay.units)}세대 · 최고 ${S.archLay.maxF}층</b> · 용적률 ${S.archLay.far.toFixed(1)}% · 건폐율 ${S.archLay.bcr.toFixed(1)}%. 위 세대수(개략 계산)와 다를 수 있으며, 형태 비교·확정은 /arch에서 합니다.</p>` : S.archLay && S.archLay.busy ? '<p class="note">지도 개략 배치를 실제 평면으로 계산하는 중입니다… (몇 초)</p>' : ''}
+  ${S.archLay && S.archLay.n ? `<p class="note" style="background:#f7f9fb;border:1px solid var(--line);border-radius:6px;padding:8px 10px">지도 개략 배치(실제 평면·정북 일조·인동간격 0.8·기반시설 이격 반영, 판상 ${S.archLay.angle}°): <b>${S.archLay.n}개동 · ${fmt(S.archLay.units)}세대 · 최고 ${S.archLay.maxF}층</b> · 용적률 ${S.archLay.far.toFixed(1)}% · 건폐율 ${S.archLay.bcr.toFixed(1)}%. 위 세대수(개략 계산)와 다를 수 있으며, 형태 비교·확정은 /arch에서 합니다.</p>` : S.archLay && S.archLay.busy ? '<p class="note">지도 개략 배치를 실제 평면으로 계산하는 중입니다… (큰 구역은 1분 안팎)</p>' : S.archLay && S.archLay.fail ? '<p class="note">실제 평면 배치를 시간 안에 끝내지 못해 지도는 간단한 네모 배치로 보여 줍니다. 자세한 배치는 6 건축계획 수립(/arch)에서 하세요.</p>' : ''}
   ${handoffSection()}`;
   bindNum(['bcr', 'coreUnits', 'parkCount']);
   side.querySelectorAll('[data-mixpreset]').forEach(b => b.onclick = () => { const pr = ((ARCHC || {})['평형구성_예시'] || {})[b.dataset.mixpreset] || {}, patch = {}; unitTypes().forEach(t => { patch['mix' + t] = num(pr[t]); }); JbsFeas.set(patch); render(); });

@@ -22,7 +22,7 @@ self.onmessage = async e => {
     let bestA = null, top = -1;
     cand.forEach(ang => { try { const r = G.layout({ pts, tags, setbacks: sb }, Object.assign({}, opt, { angle: ang, fixedF: F, quick: true })); if (r.units && r.gfa > top) { top = r.gfa; bestA = ang; } } catch (er) { /* 건너뜀 */ } });
     if (bestA == null) { self.postMessage({ id, r: null, err: '동이 들어가지 않습니다' }); return; }
-    const r = G.layout({ pts, tags, setbacks: sb }, Object.assign({}, opt, { angle: bestA }));
+    const r = G.layout({ pts, tags, setbacks: sb }, Object.assign({}, opt, { angle: bestA, quick: true }));   // 참고값이라 빠른 방식
     self.postMessage({ id, r: r.units ? { units: r.units, gfa: r.gfa, far: r.far, maxFloors: r.maxFloors, n: r.buildings.length, target: r.target || lot * far / 100, angle: bestA } : null });
   } catch (er) { self.postMessage({ id, r: null, err: String(er && er.message || er) }); }
 };
