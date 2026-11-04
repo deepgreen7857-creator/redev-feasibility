@@ -2169,7 +2169,7 @@ function drawLeaflet() {
   });
   if (ZK.rough[S.region]) L.geoJSON(ZK.rough[S.region], { style: { color: cssVar('--ink-2'), weight: 2, dashArray: '6 6', fill: false }, interactive: false }).addTo(layZ);
   S.placed = null; S.placedIn = null; S.placedNeed = null; S.placedFloors = null; S.placedFloorsCalc = null;
-  if (S.mode === 'arch' && R && R.geojson) { const a = analyze(S.region); if (a) { drawTowersMap(R.geojson, plan(a)); GATE.draw(layT, a); } if (R.fetched && !INFRA.ready(S.region)) INFRA.fetchRoads(S.region); }
+  if (S.mode === 'arch' && R && R.geojson) { const a = analyze(S.region); if (a) { const pl = plan(a); drawInfraLite(pl); drawTowersMap(R.geojson, pl); GATE.draw(layT, a); } if (R.fetched && !INFRA.ready(S.region)) INFRA.fetchRoads(S.region); }
   if (S.mode === 'infra' && R && R.geojson && R.fetched) {
     if (!INFRA.ready(S.region)) INFRA.fetchRoads(S.region);
     const a = analyze(S.region); if (a) INFRA.draw(layT, a);
@@ -2177,6 +2177,15 @@ function drawLeaflet() {
   drawLegend();
 }
 // 개략 주동 배치: 구역계를 미터 좌표로 펴서 격자로 놓은 뒤 다시 경위도로
+// 개략 배치 화면에도 3탭에서 정한 정비기반시설(공원·녹지·도로·학교 등)과 공동주택 획지 경계를 함께 보여 줌(읽기 전용) — 주동이 그 밖에만 놓였는지 눈으로 확인
+function drawInfraLite(pl) {
+  const inf = pl && pl.infra; if (!inf) return;
+  const add = (g, st, tip) => { if (!g) return; try { L.geoJSON(g, { style: Object.assign({ weight: 1.5, fillOpacity: 0.55 }, st), interactive: !!tip }).eachLayer(l => { if (tip) l.bindTooltip(tip, { sticky: true }); l.addTo(layT); }); } catch (e) { /* 무시 */ } };
+  add(inf.roadGeom, { color: '#7a7f86', fillColor: '#b9bec4' }, `도로(확폭 포함) ${fmt(inf.roadArea || 0)}㎡`);
+  add(inf.parkGeom, { color: '#2f7d4a', fillColor: '#6fbf7e' }, `공원·녹지 ${fmt(inf.parkArea || 0)}㎡ — 주동을 놓지 않음`);
+  add(inf.schoolGeom, { color: '#7a5aa6', fillColor: '#b9a3d6' }, `학교용지 ${fmt(inf.schoolArea || 0)}㎡`);
+  (Array.isArray(inf.lots) ? inf.lots : []).forEach((l, i) => add(l.geom, { color: '#1f2933', weight: 2, dashArray: '6 4', fill: false }, `공동주택 획지${inf.lots.length > 1 ? ' ' + (i + 1) : ''} ${fmt(l.area || turf.area(l.geom))}㎡${l.small ? ' (작아서 배치 제외)' : ''}`));
+}
 function drawTowersMap(gj, pl) {
   if (pl.rects) {
     const col0 = cssVar('--accent');
