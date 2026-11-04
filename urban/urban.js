@@ -1920,7 +1920,9 @@ const GATE = {
       const q = e.per[o.r.pnu] || {}, front = q.front || o.n * 4, lack = Math.max(0, e.W - o.r.w);
       return { kind: 'main', pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, pt: b.pt, dIx: b.dIx, front, lack, area: front * lack, partial: !!q.partial, oneway: !!(eo[o.r.pnu] || {}).oneway };
     }).filter(c => !c.oneway && c.w >= 4 && c.front >= 10)
-      .sort((x, y) => (x.partial - y.partial) || (x.area - y.area) || (y.w - x.w));
+      // 25m 이상(대로급) 도로는 뒤로 — 간선도로에 단지 주출입구를 바로 내면 교차로 간격·가감속 차로 문제가 생겨 보통 그 아래 도로에 둠(참고, 2026-11-04)
+      .map(c => Object.assign(c, { big: c.w >= 25 }))
+      .sort((x, y) => (x.partial - y.partial) || (x.big - y.big) || (x.area - y.area) || (y.w - x.w));
   },
   // 다음에 정할 출입구: 주출입구가 없거나 획지 아닌 땅·도로 없는 자리면 주출입구 → 부출입구 → 주차장 출입구 → 없음
   nextKind(z, inf) {
@@ -2303,6 +2305,8 @@ function drawLeaflet() {
     const a = analyze(S.region); if (a) INFRA.draw(layT, a);
   }
   if (S.source === 'map' && R && R.geojson && R.fetched) AUTO.roads(S.region);
+  // 출입구(추천 포함)는 출입구 탭이 아니어도 지도에 보임 — 구역계를 정하면 추천 출입구가 바로 눈에 띄게
+  if (S.mode !== 'arch' && S.source === 'map' && R && R.geojson && R.fetched && INFRA.ready(S.region)) { const z = Z.zones[S.region]; if (GATE.list(z).length) { const a = analyze(S.region); if (a) GATE.draw(layT, a, null); } }
   drawLegend();
 }
 // 개략 주동 배치: 구역계를 미터 좌표로 펴서 격자로 놓은 뒤 다시 경위도로
