@@ -286,6 +286,15 @@
     const a = site.arch || {};
     tags = (a.tags && a.tags.length === pts.length) ? a.tags.slice() : null;
     entries = a.entries || []; exclude = (a.exclude || []).map(ex => ex.map(pr.to)); exKinds = (a.exKinds || []).slice(); exFrom = a.exFrom || '';
+    // /urban 4탭에서 찍은 단지 출입구(z.infra.gates)가 있고 여기서 아직 출입구를 안 정했으면 그대로 가져옴 — 주차장 출입구 우선, 없으면 주·부출입구
+    if (!entries.length && Array.isArray(site.urbanGates) && site.urbanGates.length) {
+      const gs = site.urbanGates.filter(g => g.kind === 'park').concat(site.urbanGates.filter(g => g.kind === 'main'), site.urbanGates.filter(g => g.kind === 'sub'));
+      const E = G.edges(pts);
+      gs.forEach(g => { if (!g.pt || entries.length >= 3) return; const q = pr.to([g.pt[1], g.pt[0]]);
+        let best = null; E.forEach((e, i) => { const d = G.segDist(q, e.a, e.b); if (!best || d < best.d) { const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1], L2 = dx * dx + dy * dy || 1; best = { d, edge: i, t: Math.max(0.02, Math.min(0.98, ((q[0] - e.a[0]) * dx + (q[1] - e.a[1]) * dy) / L2)) }; } });
+        if (best && best.d < 30 && !entries.some(en => en.edge === best.edge && Math.abs(en.t - best.t) < 0.1)) entries.push({ edge: best.edge, t: best.t, from: 'urban' }); });
+      if (entries.length) setTimeout(() => msg(`/urban 정비계획에서 찍은 단지 출입구 ${entries.length}곳을 차량 출입구로 가져왔습니다(도로에 닿은 변만 남김). 옮기려면 [차량 출입구 찍기].`), 600);
+    }
     drawExclude();
     { const sp = filled(a.params); const hasMix = TYPES().some(t => sp['m' + t] !== undefined); const d0 = defaults(); if (hasMix) TYPES().forEach(t => { d0['m' + t] = ''; }); setP(Object.assign(d0, sp)); mixSum(); }
     if (!tags) { tags = pts.map(() => 'boundary'); autoTag(); }

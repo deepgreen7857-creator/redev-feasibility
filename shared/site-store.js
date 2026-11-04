@@ -54,6 +54,8 @@
       }
       // /urban 정비기반시설 탭이 저장한 기반시설 도형(도로·공원·학교·종교용지, 획지) → /arch 건축 불가 영역
       try { const inf = JSON.parse(localStorage.getItem('jbs-urban-infra-v1') || '{}')[key]; if (inf) site.urbanInfra = inf; } catch (e) { /* 무시 */ }
+      // /urban 4탭 단지 출입구(주·부·주차장) → /arch 차량 출입구 초기값
+      site.urbanGates = ((it.zone.infra || {}).gates || []).map(g => ({ kind: g.kind, pt: g.pt }));
       site.plan = site.plan || {};
       if (P.zone && !site.profile.zoning) site.profile.zoning = P.zone;
       // 사업 유형: 사업성 화면에서 넘어온 구역이면 그 화면의 사업 유형(재건축·재개발·가로주택)을 따름

@@ -2619,6 +2619,25 @@ function zoneUpCheck(a, pl) {
   const pc = (Zu.public_contribution || {})[`${cur.replace('일반주거지역', '')}→${P.zone.replace('일반주거지역', '')}`];
   return `<div class="field" style="grid-column:1/-1"><span class="u"><b>용도지역 상향 입지요건</b>(${esc(cur)} → ${esc(P.zone)}): ${esc(Zu[P.zone] || '')}. ${need ? `경계 도로 계획 폭 최대 ${best ? `${esc(best.j)} ${fmt(best.w, 1)}m` : '–'} → ${ok ? `<b class="good">${need}m 이상 충족</b>` : `<b class="warn">${need}m 이상 도로 없음</b>`}` : ''}. 연접 용도지역은 지도로 직접 확인하세요.${pc ? ` 공공기여 ${Math.round(pc * 100)}% 이상(법정의무시설·부가차로 포함).` : ''}</span></div>`;
 }
+// 교통성 검토서 결과(site.constraints.traffic.확폭_검토_도로 [{도로:'○○ 도로', 현재_m, 필요_m}]) → 경계 도로 계획 폭에 한 번에 적용
+//  도로 이름은 site-store가 '(지번) 도로'로 만든 것 → z.roads.edge의 jibun으로 찾아 edgeOpt[pnu].pw
+function trafficWidenInfo() {
+  if (!window.JbsSite) return null;
+  const site = JbsSite.list().find(x => x.source === 'urban:' + S.region), tr = site && site.constraints && site.constraints.traffic;
+  if (!tr) return null;
+  const z = Z.zones[S.region], edges = (z && z.roads && z.roads.edge) || [];
+  const rows = (tr.확폭_검토_도로 || []).map(r => { const jb = String(r.도로 || '').replace(/\s*도로$/, '').trim(); const e = edges.find(x => String(x.jibun) === jb); return { name: r.도로, now: r.현재_m, need: r.필요_m, pnu: e && e.pnu }; });
+  return { at: tr.at || site.updated || '', rows, entry: tr.진입_가능_도로 || [] };
+}
+function trafficWidenBox() {
+  const t = trafficWidenInfo(); if (!t) return '';
+  if (!t.rows.length) return `<p class="note" style="background:#f3f8f3;border:1px solid #cfe3cf;border-radius:6px;padding:6px 8px">교통성 검토서(${esc(t.at)}): 확폭이 필요한 진입도로 없음${t.entry.length ? ` · 진입 가능 도로 ${esc(t.entry.join(', '))}` : ''}.</p>`;
+  const inf = (Z.zones[S.region] || {}).infra || {}, eo = inf.edgeOpt || {};
+  const applied = t.rows.every(r => r.pnu && eo[r.pnu] && num(eo[r.pnu].pw) >= num(r.need));
+  return `<div style="background:#fff7e6;border:1px solid #f0c36d;border-radius:6px;padding:8px 10px;margin:6px 0">
+    <b>교통성 검토서 결과(${esc(t.at)})</b> — 확폭 검토 도로: ${t.rows.map(r => `${esc(r.name)} 현재 ${r.now}m → 필요 ${r.need}m${r.pnu ? '' : ' <span class="warn">(경계 도로 목록에서 못 찾음)</span>'}`).join(' · ')}
+    <div style="margin-top:6px"><button type="button" class="btn sm" data-trwiden="1" ${applied ? 'disabled' : ''}>${applied ? '적용됨 — 계획 폭에 반영되어 있습니다' : '추천 폭 적용(이 도로들 계획 폭을 필요 폭으로)'}</button> <span class="u">적용 뒤 아래 표에서 도로별로 다시 고칠 수 있습니다. /arch는 [정비계획 기반시설 불러오기]로 새 획지를 받습니다.</span></div></div>`;
+}
 function renderPlan(a) {
   const pl = plan(a), far = pl.far;
   saveUrbanOut(a, pl);
@@ -2718,6 +2737,7 @@ function entrySection(inf, pl) {
   return `<details class="gi" open><summary><b>경계 도로·진입도로 (가정 — 교통 검토 후 확정)</b> — ${e.mode === 3 ? `제25조③ 2개 진입도로 ${esc(e.e1.jibun)}(${e.e1.w}m) + ${esc(e.e2.jibun)}(${e.e2.w}m)` : `제25조① ${e.e1 ? `${esc(e.e1.jibun)}(현황 약 ${e.e1.w}m) → ${e.W}m 이상` : '경계 도로 없음'}`} · 경계 도로 확폭 ${fmt(inf.roadArea)}㎡</summary>
     <p class="hint">구역 경계 도로는 구역 쪽으로 넓혀 기부채납합니다. 도로마다 <b>추천 폭</b>은 기능상 필요한 폭만 채운 값입니다(진입도로 제25조·도시계획도로 결정 등급·일방통행·최소 폭 중 큰 값). <b>확폭은 면적 부족분 채우기에 쓰지 않습니다.</b> 구역에 30m 미만 또는 도로 필지 길이의 절반 미만만 닿은 도로는 넓히면 병목이 되므로 현황 유지로 추천합니다.</p>
     <p class="hint">${fmt(pl.units)}세대 기준 — ① 진입도로 1개: 폭 ${e.W}m 이상 · ③ 진입도로 2개: 각 4m 이상, 폭 합 ${e.W2}m 이상(4~6m 도로는 기간도로와 통행거리 200m 이내일 때만 — 자동으로는 6m 이상만 고름). 확폭 면적: ① ${fmt(e.A1)}㎡${e.A3 != null ? ` · ③ ${fmt(e.A3)}㎡` : ' · ③ 고를 두 번째 도로 없음'}.</p>
+    ${trafficWidenBox()}
     <div class="seg" role="group" aria-label="진입도로 기준" style="margin:4px 0"><button type="button" data-entrymode="auto" aria-pressed="${e.em === 'auto'}">자동(확폭 적은 쪽)</button><button type="button" data-entrymode="1" aria-pressed="${e.em === '1'}">① 진입도로 1개</button><button type="button" data-entrymode="3" aria-pressed="${e.em === '3'}" ${e.e2 ? '' : 'disabled'}>③ 진입도로 2개</button></div>
     <div class="tscroll"><table class="gi-tbl"><thead><tr><th>지번</th><th class="r">현황 폭(m)</th><th>등급(현황)</th><th>역할</th><th>계획 폭</th><th>추천 근거</th><th class="r">확폭㎡</th><th class="r" title="계획 폭을 1m 더 넓힐 때 새로 도로가 되는 면적 ≈ 구역에 닿은 길이(m)">+1m당㎡<br><span class="u">≈닿은 길이</span></th><th>진입도로로</th><th>일방통행</th><th>건너편 녹지</th></tr></thead><tbody>
     ${edge.map(r => `<tr><td><button type="button" class="linkbtn" data-edgefocus="${esc(r.pnu)}">${esc(r.jibun)}</button></td><td class="r">${r.w}</td><td>${ROADCLS.of(r.w)}${(e.per[r.pnu] || {}).dec ? `<br><span class="u">결정 ${esc(e.per[r.pnu].dec)}</span>` : ''}</td><td>${role(r)}</td>
@@ -3014,6 +3034,11 @@ function bindInfra(a) {
   on('entryAuto', () => { const inf = zi(); if (!inf) return; delete inf.entryPnu; saveZ(); INFRA.memo = {}; render(); });
   side.querySelectorAll('[data-edgeopt]').forEach(el => el.onchange = () => { const inf = zi(); if (!inf) return; inf.edgeOpt = inf.edgeOpt || {}; const o = inf.edgeOpt[el.dataset.pnu] = inf.edgeOpt[el.dataset.pnu] || {}; if (el.checked) o[el.dataset.edgeopt] = true; else delete o[el.dataset.edgeopt]; if (!Object.keys(o).length) delete inf.edgeOpt[el.dataset.pnu]; if (el.dataset.edgeopt === 'oneway' && el.checked && inf.entryPnu === el.dataset.pnu) delete inf.entryPnu; saveZ(); INFRA.memo = {}; render(); });
   side.querySelectorAll('[data-parkto]').forEach(btn => btn.onclick = () => szSet('park', o => { o.mode = 'area'; o.val = num(btn.dataset.parkto); }));
+  side.querySelectorAll('[data-trwiden]').forEach(b => b.onclick = () => {
+    const t = trafficWidenInfo(); const inf = zi(); if (!t || !inf) return; inf.edgeOpt = inf.edgeOpt || {};
+    let n = 0; t.rows.forEach(r => { if (!r.pnu || !(num(r.need) > 0)) return; const o = inf.edgeOpt[r.pnu] = inf.edgeOpt[r.pnu] || {}; delete o.keep; o.pw = num(r.need); n++; });
+    saveZ(); INFRA.memo = {}; render(); toast(n ? `교통성 검토 결과로 경계 도로 ${n}곳의 계획 폭을 넓혔습니다` : '적용할 도로를 찾지 못했습니다', 3000);
+  });
   side.querySelectorAll('[data-edgesel]').forEach(el => el.onchange = () => {
     const inf = zi(); if (!inf) return; inf.edgeOpt = inf.edgeOpt || {}; const k = el.dataset.edgesel, o = inf.edgeOpt[k] = inf.edgeOpt[k] || {};
     let v = el.value;
