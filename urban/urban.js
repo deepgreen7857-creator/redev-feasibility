@@ -1892,11 +1892,12 @@ const GATE = {
     inf._facB = b; return b;
   },
   onFac(inf, pt) { const b = this.facOf(inf); if (!b) return false; try { return turf.booleanPointInPolygon(turf.point([pt[1], pt[0]]), b); } catch (er) { return false; } },
-  suggest(z, inf) {
+  // 경계를 4m마다 훑은 지점을 닿은 도로별로 묶음(획지 아닌 땅의 경계는 뺌) — 주·부·주차장 출입구 추천이 같이 씀
+  samples(z, inf) {
     const e = inf && inf.entry;
-    if (!z || !z.roads || !z.geojson || !e) return [];
+    if (!z || !z.roads || !z.geojson || !e) return null;
     const key = [z.roads.at, e.W, inf.relArea || 0, inf.parkArea || 0, JSON.stringify(((z.infra || {}).fit) || {}), JSON.stringify(z.geojson.geometry || z.geojson).length, JSON.stringify(((z.infra || {}).edgeOpt) || {})].join('|');
-    if (this._sug && this._sug.k === key && this._sug.z === z) return this._sug.v;
+    if (this._smp && this._smp.k === key && this._smp.z === z) return this._smp.v;
     const ix = this.ixOf(z), eo = ((z.infra || {}).edgeOpt) || {}, by = new Map();
     this.lines(z.geojson).forEach(l => {
       let len = 0; try { len = turf.length(l, { units: 'meters' }); } catch (er) { len = 0; }
@@ -1907,14 +1908,56 @@ const GATE = {
         const o = by.get(r.pnu) || { r, s: [] }; o.s.push({ pt, dIx }); by.set(r.pnu, o);
       }
     });
-    // 닿은 구간의 양 끝(모퉁이)과 교차로에서 모두 먼 자리 = min(교차로 거리, 구간 끝까지 거리)가 가장 큰 곳
-    by.forEach(o => { o.n = o.s.length; o.best = null; o.s.forEach((q, k) => { const sc = Math.min(q.dIx, Math.min(k, o.n - 1 - k) * 4 + 2); if (!o.best || sc > o.best.sc) o.best = { ...q, sc }; }); });
-    const v = [...by.values()].map(o => {
+    by.forEach(o => { o.n = o.s.length; o.s.forEach((q, k) => { q.end = Math.min(k, o.n - 1 - k) * 4 + 2; }); });
+    this._smp = { k: key, z, v: by }; return by;
+  },
+  // 주출입구 추천: 병목 아님 → 제25조① 확폭 면적 적음 → 현황 넓음. 자리 = min(교차로 거리, 구간 끝 거리) 최대
+  suggest(z, inf) {
+    const by = this.samples(z, inf); if (!by) return [];
+    const e = inf.entry, eo = ((z.infra || {}).edgeOpt) || {};
+    return [...by.values()].filter(o => o.s.length).map(o => {
+      const b = o.s.reduce((m, q) => { const sc = Math.min(q.dIx, q.end); return !m || sc > m.sc ? { ...q, sc } : m; }, null);
       const q = e.per[o.r.pnu] || {}, front = q.front || o.n * 4, lack = Math.max(0, e.W - o.r.w);
-      return { pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, pt: o.best.pt, dIx: o.best.dIx, front, lack, area: front * lack, partial: !!q.partial, oneway: !!(eo[o.r.pnu] || {}).oneway };
+      return { kind: 'main', pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, pt: b.pt, dIx: b.dIx, front, lack, area: front * lack, partial: !!q.partial, oneway: !!(eo[o.r.pnu] || {}).oneway };
     }).filter(c => !c.oneway && c.w >= 4 && c.front >= 10)
       .sort((x, y) => (x.partial - y.partial) || (x.area - y.area) || (y.w - x.w));
-    this._sug = { k: key, z, v }; return v;
+  },
+  // 다음에 정할 출입구: 주출입구가 없거나 획지 아닌 땅·도로 없는 자리면 주출입구 → 부출입구 → 주차장 출입구 → 없음
+  nextKind(z, inf) {
+    const gl = this.list(z), main = gl.find(g => g.kind === 'main');
+    if (!main || this.onFac(inf, main.pt) || !this.roadAt(z, main.pt)) return 'main';
+    if (!gl.some(g => g.kind === 'sub')) return 'sub';
+    if (!gl.some(g => g.kind === 'park')) return 'park';
+    return null;
+  },
+  // 부출입구·주차장 출입구 추천(주출입구를 정한 뒤)
+  //  부출입구: 제25조③(진입도로 2개)으로 계산 중이면 두 번째 진입도로 우선 → 주출입구와 다른 도로 → 주출입구에서 먼 자리(최대 150m까지 셈). 폭 4m 이상
+  //  주차장 출입구: 차량 동선을 주출입구(보행·주 진입)와 나눔 — 주출입구에서 30m 이상, 교차로에서 먼 자리(30m 이상 우선), 폭 6m 이상(양방향) 우선, 주출입구와 다른 도로 우선, 부출입구와 20m 이상
+  suggestFor(z, inf, kind) {
+    if (kind === 'main') return this.suggest(z, inf);
+    const by = this.samples(z, inf); if (!by) return [];
+    const gl = this.list(z), main = gl.find(g => g.kind === 'main'); if (!main) return [];
+    const e = inf.entry, eo = ((z.infra || {}).edgeOpt) || {}, mr = this.roadAt(z, main.pt);
+    const dist = (a, b) => turf.distance(turf.point([a[1], a[0]]), turf.point([b[1], b[0]]), { units: 'meters' });
+    const subs = gl.filter(g => g.kind === 'sub');
+    const out = [];
+    by.forEach(o => {
+      if ((eo[o.r.pnu] || {}).oneway || o.r.w < 4 || o.n * 4 < 10) return;
+      const same = !!(mr && mr.pnu === o.r.pnu);
+      let b = null;
+      o.s.forEach(q => {
+        const dm = dist(q.pt, main.pt), ds = subs.length ? Math.min(...subs.map(g => dist(q.pt, g.pt))) : 999;
+        let sc;
+        if (kind === 'sub') sc = Math.min(Math.min(dm, 150), q.end * 2, q.dIx * 2);
+        else { if (dm < 30 || ds < 20) return; sc = Math.min(q.dIx, q.end, dm); }
+        if (!b || sc > b.sc) b = { ...q, sc, dm };
+      });
+      if (!b) return;
+      const isE2 = !!(e.mode === 3 && e.e2 && e.e2.pnu === o.r.pnu);
+      out.push({ kind, pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, pt: b.pt, dIx: b.dIx, dm: b.dm, sc: b.sc, same, isE2, front: o.n * 4 });
+    });
+    if (kind === 'sub') return out.sort((x, y) => (y.isE2 - x.isE2) || (x.same - y.same) || (y.sc - x.sc));
+    return out.sort((x, y) => ((x.w < 6) - (y.w < 6)) || ((x.dIx < 30) - (y.dIx < 30)) || (x.same - y.same) || (y.sc - x.sc));
   },
   put(z, kind, latlng) {
     const pt = this.snap(z, latlng);
@@ -2013,12 +2056,13 @@ const GATE = {
     const z = Z.zones[a.key]; if (!z) return;
     const col = { main: '#c92a2a', sub: '#e67700', park: '#1971c2' };
     // 주출입구가 아직 없으면 추천 자리를 점선 원으로 — 누르면 그 자리에 주출입구를 놓음
-    const sg = !this.list(z).some(g => g.kind === 'main') && pl && pl.infra && pl.infra.entry ? this.suggest(z, pl.infra)[0] : null;
+    const nk = pl && pl.infra && pl.infra.entry ? this.nextKind(z, pl.infra) : null, sg = nk ? this.suggestFor(z, pl.infra, nk)[0] : null;
     if (sg) {
-      L.circleMarker(sg.pt, { radius: 14, color: '#c92a2a', weight: 2.5, dashArray: '4 3', fillColor: '#fff', fillOpacity: 0.6 })
-        .bindTooltip(`추천 주출입구 — ${sg.jibun} 도로(현황 약 ${sg.w}m) · 누르면 여기에 주출입구를 놓음`, { sticky: true })
-        .on('click', ev => { L.DomEvent.stop(ev); this.put(z, 'main', { lat: sg.pt[0], lng: sg.pt[1] }); }).addTo(layer);
-      L.marker(sg.pt, { interactive: false, icon: L.divIcon({ className: 'gate-lbl', html: '<span style="background:#fff;color:#c92a2a;border:1.5px dashed #c92a2a;padding:1px 6px;border-radius:4px;font-size:12px;font-weight:700;white-space:nowrap">추천 주출입구</span>', iconSize: null, iconAnchor: [-16, 10] }) }).addTo(layer);
+      const cc = col[nk];
+      L.circleMarker(sg.pt, { radius: 14, color: cc, weight: 2.5, dashArray: '4 3', fillColor: '#fff', fillOpacity: 0.6 })
+        .bindTooltip(`추천 ${this.KIND[nk]} — ${sg.jibun} 도로(현황 약 ${sg.w}m) · 누르면 여기에 ${this.KIND[nk]}를 놓음`, { sticky: true })
+        .on('click', ev => { L.DomEvent.stop(ev); this.put(z, nk, { lat: sg.pt[0], lng: sg.pt[1] }); }).addTo(layer);
+      L.marker(sg.pt, { interactive: false, icon: L.divIcon({ className: 'gate-lbl', html: `<span style="background:#fff;color:${cc};border:1.5px dashed ${cc};padding:1px 6px;border-radius:4px;font-size:12px;font-weight:700;white-space:nowrap">추천 ${this.KIND[nk]}</span>`, iconSize: null, iconAnchor: [-16, 10] }) }).addTo(layer);
     }
     this.list(z).forEach((g, i) => {
       const r = g.kind === 'main' || g.kind === 'park' ? this.roadAt(z, g.pt) : null;
@@ -3224,8 +3268,8 @@ function renderArch(a) {
     toast(`지도에서 ${GATE.KIND[g.kind]}의 새 자리(구역 경계)를 누르세요`, 4000);
   });
   side.querySelectorAll('[data-gatesug]').forEach(b => b.onclick = () => {
-    const z = Z.zones[S.region], pl = plan(analyze(S.region)), c = GATE.suggest(z, pl.infra)[+b.dataset.gatesug];
-    if (c) GATE.put(z, 'main', { lat: c.pt[0], lng: c.pt[1] });
+    const [kind, idx] = b.dataset.gatesug.split(':'), z = Z.zones[S.region], pl = plan(analyze(S.region)), c = GATE.suggestFor(z, pl.infra, kind)[+idx];
+    if (c) GATE.put(z, kind, { lat: c.pt[0], lng: c.pt[1] });
   });
   side.querySelectorAll('[data-gate]').forEach(b => b.onclick = () => {
     S.placing = 'gate:' + b.dataset.gate; $id('lmap').classList.add('picking');
@@ -3240,18 +3284,38 @@ function renderArch(a) {
 // 주출입구를 정하면서 바로 판단하도록: 진입도로 기준 폭·확폭·병목, 다른 경계 도로에 두면 어떤지(개략)
 // 주출입구 추천 상자 — 찍기 전에 단지 상황(경계 도로 폭·닿은 길이·병목·교차로 거리)으로 순위
 function gateSugHtml(a, pl, zz, gl) {
-  const e = pl.infra && pl.infra.entry; if (!e || !zz.roads) return '';
-  const c = GATE.suggest(zz, pl.infra); if (!c.length) return '';
+  const inf = pl.infra, e = inf && inf.entry; if (!e || !zz.roads) return '';
+  const col = { main: '#c92a2a', sub: '#e67700', park: '#1971c2' };
   const main = gl.find(g => g.kind === 'main'), mr = main ? GATE.roadAt(zz, main.pt) : null;
-  const desc = x => `${esc(x.jibun)} 도로(현황 약 ${x.w}m, 닿은 길이 약 ${fmt(x.front)}m) — ${x.lack >= 0.3 ? `제25조① ${e.W}m까지 확폭 ${fmt(x.lack, 1)}m·약 ${fmt(x.area)}㎡` : '확폭 필요 없음'}${x.partial ? ' · 병목 주의' : ''}${x.dIx < 30 ? ` · 교차로에서 ${fmt(x.dIx)}m` : ''}`;
-  if (main && mr && mr.pnu === c[0].pnu) return '';
-  const top = c[0];
-  return `<div style="background:#fff5f5;border:1px dashed #c92a2a;border-radius:6px;padding:8px 10px;margin:6px 0">
-    <b>추천 주출입구</b> — ${desc(top)}
-    <div style="margin:5px 0"><button type="button" class="btn sm" style="background:#c92a2a;color:#fff;border-color:#c92a2a" data-gatesug="0">${main ? '추천 자리로 주출입구 옮기기' : '추천 자리에 주출입구 놓기'}</button></div>
-    ${c.length > 1 ? `<div class="note">다른 후보: ${c.slice(1, 3).map((x, i) => `<button type="button" class="btn ghost sm" data-gatesug="${i + 1}">${i + 2}순위</button> ${desc(x)}`).join('<br>')}</div>` : ''}
-    <div class="u" style="margin-top:3px">추천 기준: 병목이 아닌 도로 → 진입도로 확폭 면적이 적은 도로 → 현황이 넓은 도로, 그 도로에 닿은 경계 중 교차로에서 가장 먼 자리(공원·녹지·종교용지·학교 등 획지가 아닌 땅의 경계는 뺌). 일방통행·4m 미만 도로는 뺐습니다. 버스·보행 동선과 주변 단지 출입구는 반영하지 않았으니 지도를 보고 판단하세요.</div>
+  const descMain = x => `${esc(x.jibun)} 도로(현황 약 ${x.w}m, 닿은 길이 약 ${fmt(x.front)}m) — ${x.lack >= 0.3 ? `제25조① ${e.W}m까지 확폭 ${fmt(x.lack, 1)}m·약 ${fmt(x.area)}㎡` : '확폭 필요 없음'}${x.partial ? ' · 병목 주의' : ''}${x.dIx < 30 ? ` · 교차로에서 ${fmt(x.dIx)}m` : ''}`;
+  const descSub = x => `${esc(x.jibun)} 도로(현황 약 ${x.w}m) — 주출입구에서 약 ${fmt(x.dm)}m${x.isE2 ? ' · <b>두 번째 진입도로(제25조③)</b>' : x.same ? ' · 주출입구와 같은 도로' : ' · 주출입구와 다른 도로'}${x.dIx < 30 ? ` · 교차로에서 ${fmt(x.dIx)}m` : ''}`;
+  const descPark = x => `${esc(x.jibun)} 도로(현황 약 ${x.w}m${x.w < 6 ? ', 6m 미만이라 양방향 진출입 어려움' : ''}) — 주출입구에서 약 ${fmt(x.dm)}m · 교차로에서 약 ${fmt(x.dIx)}m${x.same ? ' · 주출입구와 같은 도로' : ' · 주출입구와 다른 도로(차량·보행 동선 분리)'}`;
+  const BASIS = {
+    main: '병목이 아닌 도로 → 진입도로 확폭 면적이 적은 도로 → 현황이 넓은 도로, 그 도로에 닿은 경계 중 교차로·모퉁이에서 가장 먼 자리.',
+    sub: '진입도로 2개(제25조③)로 계산 중이면 두 번째 진입도로 → 주출입구와 다른 도로 → 주출입구에서 먼 자리(비상·보행 동선 분산).',
+    park: '폭 6m 이상(양방향) 도로 → 교차로에서 30m 이상 → 주출입구와 다른 도로, 주출입구에서 30m·부출입구에서 20m 이상 떨어진 자리(차량·보행 동선 분리). 횡단보도·학교 출입구 위치는 지도 자료가 없어 빠져 있습니다.',
+  };
+  const box = (kind, c, desc, moving) => {
+    if (!c.length) return `<div class="note" style="margin:6px 0">추천할 ${GATE.KIND[kind]} 자리가 없습니다(조건에 맞는 경계 도로 없음). 지도를 보고 직접 찍으세요.</div>`;
+    return `<div style="background:#fff;border:1.5px dashed ${col[kind]};border-radius:6px;padding:8px 10px;margin:6px 0">
+    <b style="color:${col[kind]}">추천 ${GATE.KIND[kind]}</b> — ${desc(c[0])}
+    <div style="margin:5px 0"><button type="button" class="btn sm" style="background:${col[kind]};color:#fff;border-color:${col[kind]}" data-gatesug="${kind}:0">${moving ? `추천 자리로 ${GATE.KIND[kind]} 옮기기` : `추천 자리에 ${GATE.KIND[kind]} 놓기`}</button></div>
+    ${c.length > 1 ? `<div class="note">다른 후보: ${c.slice(1, 3).map((x, i) => `<button type="button" class="btn ghost sm" data-gatesug="${kind}:${i + 1}">${i + 2}순위</button> ${desc(x)}`).join('<br>')}</div>` : ''}
+    <div class="u" style="margin-top:3px">추천 기준: ${BASIS[kind]} 공원·녹지·종교용지·학교 등 획지가 아닌 땅의 경계와 일방통행·4m 미만 도로는 뺐습니다. 버스·보행 동선과 주변 단지 출입구는 반영하지 않았으니 지도를 보고 판단하세요.</div>
   </div>`;
+  };
+  const nk = GATE.nextKind(zz, inf);
+  let h = '';
+  if (nk === 'main') h += box('main', GATE.suggest(zz, inf), descMain, !!main);
+  else {
+    // 주출입구는 적정 — 추천과 다른 도로면 한 줄로만 알림
+    const c = GATE.suggest(zz, inf);
+    if (c.length && mr && mr.pnu !== c[0].pnu) h += `<div class="note" style="margin:6px 0">주출입구 추천 1순위는 ${descMain(c[0])}입니다. <button type="button" class="btn ghost sm" data-gatesug="main:0">추천 자리로 옮기기</button></div>`;
+    if (nk === 'sub') h += box('sub', GATE.suggestFor(zz, inf, 'sub'), descSub, false);
+    else if (nk === 'park') h += box('park', GATE.suggestFor(zz, inf, 'park'), descPark, false);
+    else h += '<div class="note" style="margin:6px 0">✔ 주출입구·부출입구·주차장 출입구를 모두 정했습니다. 아래 검사표를 확인하고 다음 단계(정비기반시설)로 넘어가세요.</div>';
+  }
+  return h;
 }
 function gateEntryHtml(a, pl, zz, gl) {
   const inf = pl.infra, e = inf && inf.entry; if (!e || !zz.roads) return '';
