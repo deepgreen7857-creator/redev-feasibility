@@ -235,10 +235,10 @@ const Quick = {
     const archSite = [site, ...JbsSite.list().filter(x => /^urban:/.test(x.source || ''))].filter(x => x.arch && x.arch.chosen)
       .sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')))[0];
     box.innerHTML = `<p class="note">넘긴 구역: <b>${esc(site.name)}</b> (${esc(site.updated || '')}) — 1회차 ${fmt(site.quick ? site.quick.units : 0)}세대 · 용적률 ${fmt(site.quick ? site.quick.far : 0, 1)}%. 아래 순서로 열면 각 도구가 이 구역과 1회차 값을 그대로 이어받습니다.</p>
-      <p style="margin:8px 0 2px"><b>1회차</b> — 구역계 → 빠른 사업성(자동 배치) → 기반시설 → 출입구 → 교통·환경 → 배치 확정 → 사업성</p>
+      <p style="margin:8px 0 2px"><b>1회차</b> — 구역계 → 빠른 사업성(자동 배치) → 출입구 → 기반시설(도로 확폭·공원) → 교통·환경 → 배치 확정 → 사업성</p>
       <ol class="rv-steps">
-        <li><a class="btn small" href="urban/?from=main" target="_blank" rel="noopener">① 정비기반시설 (/urban 3탭)</a> 공원·녹지 위치와 면적, 경계 도로 폭 → 맨 아래 [기반시설 확정 → 다음]</li>
-        <li><a class="btn small" href="urban/?tab=arch&focus=gate" target="_blank" rel="noopener">② 단지 출입구 (/urban 4탭)</a> 주출입구·부출입구·주차장 출입구를 경계에 찍고 기준 검사(진입도로·교차로 거리)</li>
+        <li><a class="btn small" href="urban/?from=main" target="_blank" rel="noopener">① 단지 출입구 (/urban 4탭)</a> 구역을 가져와 주출입구·부출입구·주차장 출입구를 찍음 — 주출입구가 닿은 도로가 진입도로가 됨</li>
+        <li><a class="btn small" href="urban/?tab=plan" target="_blank" rel="noopener">② 정비기반시설 (/urban 3탭)</a> 진입도로 확폭(주출입구 도로 기준)·경계 도로 폭 → 공원·녹지 위치와 면적</li>
         <li><a class="btn small" href="${u('traffic/')}" target="_blank" rel="noopener">③ 교통성 검토</a> ${done('traffic')} · <a class="btn small" href="${u('env/')}" target="_blank" rel="noopener">환경성 검토</a> ${done('env')} — 잘 모르면 기본값 그대로 [검토서 만들기]만 눌러도 됨(모르는 칸은 '○○')</li>
         <li><a class="btn small" href="${u('arch/')}" target="_blank" rel="noopener">④ 개략 배치 (/arch)</a> 기반시설·출입구·검토 조건을 받아 형태 비교 → [이 안으로 확정] ${archDone}</li>
         <li>${archSite ? `<a class="btn small primary" href="./?arch=${encodeURIComponent(archSite.id)}">⑤ 2차 사업성 (1회차와 비교)</a> ${esc(archSite.name)} 확정안 기준` : '<span class="btn small" aria-disabled="true" style="opacity:.5">⑤ 2차 사업성 (1회차와 비교)</span> ④ 개략 배치를 확정하면 눌러집니다'}</li>

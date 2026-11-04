@@ -2482,7 +2482,7 @@ function stepNav() {
   const ORDER = [['zone', '1 구역계·현황'], ['req', '2 요건판정'], ['plan', '3 정비계획(기반시설)'], ['arch', '4 개략 건축계획'], ['biz', '5 사업성']];
   const i = ORDER.findIndex(([k]) => k === S.tab); if (i < 0) return;
   const prev = ORDER[i - 1], next = ORDER[i + 1];
-  const nextLabel = S.tab === 'plan' ? '기반시설 확정 → 다음: 단지 출입구 정하기(4탭)' : next ? `다음: ${next[1]} →` : '';
+  const nextLabel = S.tab === 'plan' ? '기반시설 확정 → 다음: 4 개략 건축계획(교통성·환경성 검토로)' : next ? `다음: ${next[1]} →` : '';
   side.insertAdjacentHTML('beforeend', `<div class="stepnav" style="display:flex;justify-content:space-between;gap:8px;margin:18px 0 6px;padding-top:12px;border-top:1px solid var(--line)">
     ${prev ? `<button type="button" class="btn ghost" data-stepgo="${prev[0]}">← ${prev[1]}</button>` : '<span></span>'}
     ${next ? `<button type="button" class="btn" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-stepgo="${next[0]}">${nextLabel}</button>` : S.tab === 'biz' ? `<a class="btn" style="background:var(--ink);color:var(--paper);text-decoration:none" data-tool="arch" href="${toolHref('arch')}">다음: 자세한 배치(/arch) →</a>` : ''}</div>`);
@@ -3147,6 +3147,7 @@ function gateSection(a, pl) {
   const ck = GATE.check(a, pl), cls = { ok: 'ok', ng: 'bad', warn: 'warn', info: '' }, lab = { ok: '맞음', ng: '안 맞음', warn: '확인', info: '참고' };
   return `<h3 id="gateBox">단지 출입구 (가정 — 교통 검토 후 확정)</h3>
   <p class="hint">주출입구·부출입구·주차장 출입구를 지도에서 구역 경계에 찍으면 기준을 검사합니다. 점을 누르면 지워집니다. <b>주출입구를 찍으면 그 자리에 닿은 경계 도로가 진입도로로 정해져</b> 3탭 진입도로 확폭(주택건설기준 제25조)과 교통성 검토가 그 도로 기준으로 바뀝니다. '법정'은 공동주택(부설주차장)에 바로 적용되는 조항, '참고'는 노외주차장 기준·협의 관행입니다.</p>
+  ${ck.gates.some(g => g.kind === 'main') ? '<p style="margin:4px 0"><button type="button" class="btn sm" style="background:var(--ink);color:var(--paper);border-color:var(--ink)" data-stepgo="plan">출입구 정함 → 다음: 3 정비기반시설(도로 확폭·공원)</button></p>' : ''}
   <div class="zk-btns"><button type="button" class="btn ghost sm" data-gate="main">주출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="sub">부출입구 찍기</button><button type="button" class="btn ghost sm" data-gate="park">주차장 출입구 찍기</button>${ck.gates.length ? '<button type="button" class="btn ghost sm" id="gateClear">모두 지우기</button>' : ''}</div>
   <div class="form" style="margin-top:6px">${field('parkCount', '주차대수(계획)', P.parkCount || '', `대 · 0이면 ${legalPark(pl) ? `법정 하한 ${fmt(legalPark(pl).legal)}대` : `세대당 1대(${fmt(pl.units)}대)`}로 가정`)}</div>
   <div class="tscroll"><table class="gi-tbl"><thead><tr><th>항목</th><th>판정</th><th>내용</th><th>근거</th></tr></thead><tbody>
@@ -3654,7 +3655,7 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
       if (window.JbsWork) await JbsWork.backup(pick + '안 바꾸기 전 자동 백업');
       id = pick;
     }
-    importProject(id).then(() => { const b = document.querySelector('nav.steps button[data-tab="plan"]'); if (b) b.click(); toast(`${id}안으로 사업성 검토 구역을 가져왔습니다. 정비기반시설을 정한 뒤 4탭 개략 건축계획에서 검토서 도구로 넘기세요`); });
+    importProject(id).then(() => { const b = document.querySelector('nav.steps button[data-tab="arch"]'); if (b) b.click(); setTimeout(() => { const g = document.getElementById('gateBox'); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 400); toast(`${id}안으로 사업성 검토 구역을 가져왔습니다. 먼저 주출입구를 찍어 진입도로를 정한 뒤 3탭에서 도로 확폭·공원을 정하세요`, 6000); });
   }
 });
 
