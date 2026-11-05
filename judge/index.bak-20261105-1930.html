@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<script src="/shared/gate.js"></script>
+<meta name="robots" content="noindex, nofollow">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>판단기록장</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+:root{--bg:#f5f6f3;--panel:#fff;--fg:#1d2420;--muted:#66706a;--line:#dde2dc;--hover:#f0f3ef;--go:#1f6b4f;--go-bg:#e0f0e8;--wait:#9a6a12;--wait-bg:#fbf1dc;--no:#a33a2c;--no-bg:#f8e3df;
+--sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;--mono:"IBM Plex Mono",Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141916;--panel:#1c231f;--fg:#e4ebe6;--muted:#98a39c;--line:#2d3631;--hover:#232b26;--go:#6cc39b;--go-bg:#183326;--wait:#e2b45a;--wait-bg:#3a2f18;--no:#ee8b7c;--no-bg:#3a201c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#141916;--panel:#1c231f;--fg:#e4ebe6;--muted:#98a39c;--line:#2d3631;--hover:#232b26;--go:#6cc39b;--go-bg:#183326;--wait:#e2b45a;--wait-bg:#3a2f18;--no:#ee8b7c;--no-bg:#3a201c;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14.5px/1.55 var(--sans)}
+.wrap{max-width:1760px;margin:0 auto;padding:24px 16px 60px}
+h1{font-size:22px;margin:0 0 2px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 18px}.sub a{color:var(--go)}
+h2{font-size:16px;margin:26px 0 8px;display:flex;gap:8px;align-items:baseline}
+h2 .cnt{font:500 13px var(--mono);color:var(--muted)}
+.tbl-wrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:860px}
+th{font-size:12.5px;font-weight:600;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--panel);position:sticky;top:0}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.row{cursor:pointer}tr.row:hover td{background:var(--hover)}
+tr.row.open td{background:var(--hover);border-bottom-color:transparent}
+td.n{font-family:var(--mono);text-align:right;white-space:nowrap}
+th.n{text-align:right}
+.dd{display:inline-block;font:700 12.5px var(--mono);padding:1px 7px;border-radius:10px;background:var(--fg);color:var(--panel)}
+.dd.soon{background:var(--no);color:#fff}.dd.past{background:transparent;color:var(--muted);border:1px solid var(--line)}
+.date{display:block;font:500 12px var(--mono);color:var(--muted);margin-top:2px}
+.st{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:10px;white-space:nowrap}
+.st.go{background:var(--go-bg);color:var(--go)}.st.wait{background:var(--wait-bg);color:var(--wait)}.st.no{background:var(--no-bg);color:var(--no)}.st.mute{color:var(--muted);border:1px solid var(--line)}
+.addr{font-weight:700}.case{font:500 12px var(--mono);color:var(--muted)}
+.why1{color:var(--muted);font-size:12.5px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;max-width:420px}
+tr.det td{background:var(--hover);padding:4px 14px 16px}
+.det-in{max-width:900px}
+.det-in h3{font-size:13px;color:var(--muted);margin:10px 0 2px}
+.det-in p{margin:0}
+.rec{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;margin:4px 0 0;font-size:14px}.rec dt{color:var(--muted);white-space:nowrap}.rec dd{margin:0}
+.det-in ul{margin:0;padding-left:18px}
+.det-in a{color:var(--go)}
+details.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-top:10px}
+details.box summary{cursor:pointer;font-weight:600}
+.drop{border-top:1px solid var(--line);padding:8px 0;font-size:13.5px}.drop:first-of-type{border-top:0}
+.drop .case{margin-right:6px}
+.empty{padding:14px;color:var(--muted)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+.filters button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:14px;padding:2px 10px;cursor:pointer}
+.top-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 2px}
+.nav-btns{display:flex;gap:6px}
+.nav-btn{display:inline-block;font-size:13px;font-weight:700;padding:4px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--fg);text-decoration:none;white-space:nowrap}
+.nav-btn.main{background:var(--go);border-color:var(--go);color:#fff}
+.nav-btn:hover{opacity:.88}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.45fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:1200px){.cols{grid-template-columns:minmax(0,1fr) minmax(0,1.45fr)}.col-w{grid-column:1/-1}}
+@media (max-width:900px){.cols{grid-template-columns:1fr}}
+.cols>div{min-width:0}
+.col-l h2,.col-r h2,.col-w h2{margin-top:6px}
+.col-w .slot .dd{flex:none;margin-top:1px}
+.daybox{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:0 0 10px}
+.day-h{display:flex;justify-content:space-between;align-items:center;margin:0 0 4px}
+.fill{font:700 13px var(--mono);color:var(--no)}.fill.ok{color:var(--go)}
+.slot{display:flex;align-items:center;gap:8px;padding:5px 4px;border-top:1px dashed var(--line);text-decoration:none;color:var(--fg);font-size:13.5px}
+.slot:first-of-type{border-top:0}
+a.slot:hover{background:var(--hover)}
+.slot .no{flex:none;width:20px;height:20px;border-radius:50%;background:var(--go-bg);color:var(--go);font:700 12px var(--mono);display:flex;align-items:center;justify-content:center}
+.empty-slot .no{background:transparent;border:1px dashed var(--line);color:var(--muted)}
+.s-main{flex:1;min-width:0;display:flex;flex-direction:column}.s-main b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.why-empty summary{font-size:12px;color:var(--muted);cursor:pointer;margin-top:4px}.why-empty p{font-size:12.5px;color:var(--muted);margin:4px 0 0}
+table.rt{min-width:540px}
+tr.flash td{background:var(--go-bg)!important;transition:background .3s}
+table.rt{table-layout:fixed;width:100%}
+table.rt th:nth-child(1),table.rt td:nth-child(1){width:64px}
+table.rt th:nth-child(3),table.rt td:nth-child(3){width:150px}
+table.rt th:nth-child(4),table.rt td:nth-child(4){width:96px}
+table.rt th:nth-child(5),table.rt td:nth-child(5){width:84px}
+table.rt tr.row td{height:78px;vertical-align:top;line-height:1.45}
+table.rt .dd{white-space:nowrap}
+td.rc{overflow:hidden}
+td.rc .l1{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+td.rc .l2{font:500 12px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+td.rc .l3{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot.alt{opacity:.75}.slot.alt .no{background:var(--wait-bg);color:var(--wait)}
+.slot{height:78px;align-items:flex-start;padding-top:9px;box-sizing:border-box}
+.s-main{line-height:1.45}.s-main .case{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.s-main .l3{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.filters button.on{background:var(--fg);color:var(--panel);border-color:var(--fg)}
+@media (max-width:700px){h1{font-size:19px}}
+:root{--note-bg:#fff4a8;--note-fg:#3d3514;--note-tag:#8a6d00;--note-shadow:rgba(0,0,0,.18)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--note-bg:#4a4218;--note-fg:#f3ebc4;--note-tag:#e8cf6a;--note-shadow:rgba(0,0,0,.5)}}
+:root[data-theme="dark"]{--note-bg:#4a4218;--note-fg:#f3ebc4;--note-tag:#e8cf6a;--note-shadow:rgba(0,0,0,.5)}
+/* 착안 노트: 화면 오른쪽 끝에 얇은 포스트잇 띠로 붙여 두고, 누르면 포스트잇처럼 펼쳐짐 */
+#ideas{position:fixed;right:0;top:110px;z-index:50;display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none}
+.idea{pointer-events:auto;background:var(--note-bg);color:var(--note-fg);border-radius:3px 0 0 3px;box-shadow:-2px 3px 8px var(--note-shadow);margin:0;width:34px;max-height:190px;overflow:hidden}
+.idea>summary{cursor:pointer;list-style:none;writing-mode:vertical-rl;padding:10px 8px;font-size:12.5px;font-weight:600;line-height:1.3;max-height:190px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.idea>summary::-webkit-details-marker{display:none}
+.idea .tag{font-weight:700;color:var(--note-tag);margin-bottom:6px}
+.idea .by{display:none}
+.idea[open]{width:min(360px,calc(100vw - 24px));max-height:72vh;overflow:auto;padding:4px 16px 14px;border-radius:3px;margin-right:12px;transform:rotate(-0.8deg)}
+.idea[open]>summary{writing-mode:horizontal-tb;white-space:normal;max-height:none;padding:8px 0 4px;font-size:14px;line-height:1.45}
+.idea[open] .tag{display:inline-block;margin:0 6px 0 0}
+.idea[open] .by{display:inline;font-size:12px;font-weight:400;opacity:.75;margin-left:6px}
+.idea .sum{margin:6px 0 4px;font-size:13.5px}.idea h4{margin:10px 0 3px;font-size:13.5px}.idea ul{margin:0;padding-left:18px;font-size:13px}.idea li{margin:2px 0}
+@media (max-width:700px){#ideas{position:static;align-items:stretch;margin:0 0 12px}.idea{width:auto;max-height:none;border-radius:3px}.idea>summary{writing-mode:horizontal-tb;white-space:normal;padding:8px 12px}.idea .tag{margin:0 6px 0 0}.idea[open]{width:auto;margin-right:0;transform:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top-nav"><h1>판단기록장</h1><span class="nav-btns"><a class="nav-btn" href="/auction/">정비경매 리포트</a><a class="nav-btn main" href="/">정비사업 →</a></span></div>
+<p class="sub">왼쪽 날짜별 매일 5건 · 가운데 추천 물건 기일순(최초 추천일) · 오른쪽 예비·보류 기일순. 왼쪽 물건을 누르면 가운데 줄로 가서 검토서가 펼쳐집니다. 최저입찰가 = 그 회차 최저가 + 1만 원, 법인 취득세 1.1% 물건만. · <a href="../review/">입찰 판단표(review)</a></p>
+<div id="ideas"></div>
+<div id="list">불러오는 중입니다.</div>
+</div>
+<script>
+const RATE=0.7,MAXK=6,CASH=50000000;
+const CT=0.33; // 법인 주택 양도: 일반 법인세 약 10% + 주택 추가 법인세 20% + 지방소득세(그 10%)
+const afterTax=(p,land)=>(p>0&&!land)?Math.round(p*(1-CT)):p;
+const man=n=>Math.round(n/10000).toLocaleString('ko-KR')+'만';
+const rname=k=>k===0?'최초':k+'회 유찰';
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function calc(it){
+  // 매도는 급매 기준(시세 하한 −7%), 복비 0.55%, 보유비 60만을 뺀 값으로 계산 (정민님 2026.10.28)
+  const low=it.land?it.market.low:Math.round(it.market.low*0.93*(1-0.0055))-600000,D=it.priorDeposit||0,A=it.assume||0;
+  const X=(low-it.costs-it.minProfit/(it.land?1:(1-CT)))/1.011;   // 세후 목표수익이 남는 총투입 한도
+  let hi=D?(X>=D?X:-1):X-A;
+  if(!it.land&&!it.budgetOnly)hi=Math.min(hi,(CASH-it.costs)/1.011-A);   // 현금 한도(대출 없음)
+  if(it.bidMax)hi=Math.min(hi,it.bidMax);
+  hi=hi>0?Math.floor(hi/10000)*10000:0;
+  const rows=[];let min=it.appraisal;
+  for(let k=0;k<=Math.max(MAXK,it.rounds.length+1);k++){
+    if(k>0)min=Math.floor(Math.round(min*(it.rate||RATE))/1000)*1000;
+    const bid=min+10000,take=D?Math.max(0,D-bid):A,total=bid+take,tax=Math.round(total*0.011);
+    rows.push({k,min,bid,take,total,tax,pre:low-total-tax-it.costs,profit:afterTax(low-total-tax-it.costs,it.land),ok:hi>0&&bid<=hi});
+  }
+  const cur=it.rounds.findIndex(r=>r.result!=='유찰');const curK=cur<0?it.rounds.length:cur;
+  const entry=it.taxFail?null:(rows.find(r=>r.k>=curK&&r.ok)||null);
+  return {rows,curK,entry,hi};
+}
+
+
+const TODAY_K=new Date(Date.now()+9*36e5).toISOString().slice(0,10);
+const esc2=esc;
+function ddays(d){if(!/^\d{4}-\d{2}-\d{2}$/.test(d||''))return null;return Math.round((new Date(d)-new Date(TODAY_K))/864e5)}
+function normDate(x,it){
+  if(/^\d{4}-\d{2}-\d{2}$/.test(x.date||''))return x.date;
+  const m=String(x.date||x.why||'').match(/(\d{1,2})\.(\d{1,2})/);if(m&&!x.date&&it&&it.rounds){} 
+  if(it&&it.rounds){const r=it.rounds.find(r=>r.result!=='유찰');if(r&&/^\d{4}-\d{2}-\d{2}$/.test(r.date||''))return r.date}
+  return m?'2026-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0'):'';
+}
+function addrOf(x,it){let a=(it&&it.address)||x.addr||'';if(!a){const m=(x.why||'').match(/^(?:\[[^\]]*\]\s*)?([^:—(]+)/);a=m?m[1]:x.id}return a.replace(/^인천 /,'').replace(/\(.*$/,'').trim()}
+function kindOf(x,src){if(src==='picks')return '추천';const s=x.status||'예비';return s}
+function stCls(k,res){if(res)return 'mute';if(k==='추천')return 'go';if(k==='예비')return 'go';if(/보류|미확보|감시/.test(k))return 'wait';return 'mute'}
+function nums(it){
+  if(!it||!it.market||!it.rounds)return null;
+  try{const c=calc(it),cr=c.rows[c.curK],e=c.entry;
+    return {round:rname(c.curK),min:cr?man(cr.min):'-',bid:e?(man(e.bid)+'~'+man(c.hi)):'진입 불가',
+      market:it.land?('공시 '+man(it.market.low)):(man(it.market.low)+'~'+man(it.market.high)),
+      profit:e?(it.land?'현금 '+man(e.bid+e.tax+it.costs):man(e.profit)):'-',
+      when:e?(e.k===c.curK?'금회':rname(e.k)):'-'}}catch(err){return null}
+}
+function detail(r){
+  const x=r.x,it=r.it;let h='<div class="det-in">';
+  h+=`<h3>판단</h3><p>${esc(r.why)}</p>`;
+  const rep=x.report;if(rep)h+='<h3>Claude 검토서</h3><dl class="rec">'+Object.entries(rep).map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')+'</dl>';
+  if(x.open&&x.open.length)h+='<h3>남은 확인</h3><ul>'+x.open.map(o=>`<li>${esc(o)}</li>`).join('')+'</ul>';
+  if(it&&!it.land&&it.market){
+    if(it.market.basis&&it.market.basis.length)h+='<h3>시세 근거</h3><ul>'+it.market.basis.map(b=>`<li>${esc(b)}</li>`).join('')+'</ul>';
+    if(it.marketReview)h+=`<h3>결론이 뒤집히는 기준선</h3><p>${esc(it.marketReview)}</p>`;
+    if(it.rights&&it.rights.length)h+='<h3>권리</h3><ul>'+it.rights.map(b=>`<li>${esc(b)}</li>`).join('')+'</ul>';
+    if(it.tax11)h+=`<h3>공시가·취득세</h3><p>${esc(it.tax11)}</p>`;
+  }
+  const hist=r.hist.length>1?r.hist.map(hh=>`${esc(hh.from)} ${esc(hh.kind)}`).join(' → '):'';
+  h+='<dl class="rec" style="margin-top:10px">'+(hist?`<dt>기록 흐름</dt><dd>${hist}</dd>`:'')+
+    (it&&it.myJudgment?`<dt>정민님</dt><dd>${esc(it.myJudgment)}</dd>`:'')+
+    (it&&it.prediction&&it.prediction.actual?`<dt>결과</dt><dd>${esc(it.prediction.actual)}</dd>`:'')+'</dl>';
+  const cn=String(x.id).replace(/^L:/,'').replace(/\(\d+\)$/,'');
+  h+=`<p style="margin-top:8px"><a href="https://www.jbslab.co.kr/data/#${encodeURIComponent(cn)}" target="_blank" rel="noopener">원문(data) 보기</a>${(!String(x.id).startsWith('L:')&&it)?` · <a href="../review/#i-${encodeURIComponent(x.id)}">입찰 판단표에서 보기</a>`:''}</p>`;
+  return h+'</div>';
+}
+function table(rows,past){
+  if(!rows.length)return '<div class="tbl-wrap"><div class="empty">없습니다.</div></div>';
+  let h='<div class="tbl-wrap"><table><thead><tr><th>기일</th><th>구분</th><th>물건</th><th>금회</th><th class="n">최저가</th><th class="n">입찰예정가</th><th class="n">시세</th><th class="n">세후 수익</th><th>진입</th></tr></thead><tbody>';
+  rows.forEach((r,i)=>{
+    const n=nums(r.it),dd=ddays(r.date),res=r.it&&r.it.prediction&&r.it.prediction.actual;
+    const ddh=dd==null?'<span class="dd past">미정</span>':dd<0?'<span class="dd past">지남</span>':`<span class="dd ${dd<=3?'soon':''}">${dd===0?'D-day':'D-'+dd}</span>`;
+    const key=(typeof past==='string'?past:(past?'p':'l'))+i;
+    h+=`<tr class="row" data-k="${key}"><td>${ddh}<span class="date">${esc((r.date||'').slice(5).replace('-','.'))}</span></td>
+<td><span class="st ${stCls(r.kind,res)}">${esc(res||r.kind)}</span>${r.x.budgetOnly?'<div class="case">예산 초과</div>':''}</td>
+<td><div class="addr">${esc(r.addr)}${r.it&&r.it.type?' <span class="case">'+esc(r.it.type)+'</span>':''}</div><div class="case">${esc(String(r.x.id).replace(/^L:/,''))} · ${esc(r.from.slice(5).replace('-','.'))} 기록</div><div class="why1">${esc(r.why)}</div></td>
+<td style="white-space:nowrap">${n?esc(n.round):'-'}</td><td class="n">${n?n.min:'-'}</td><td class="n">${n?esc(n.bid):'-'}</td><td class="n">${n?esc(n.market):'-'}</td><td class="n">${n?esc(n.profit):'-'}</td><td style="white-space:nowrap">${n?esc(n.when):'-'}</td></tr>
+<tr class="det" data-d="${key}" hidden><td colspan="9">${detail(r)}</td></tr>`;
+  });
+  return h+'</tbody></table></div>';
+}
+Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/items.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/land.json',{cache:'no-store'}).then(r=>r.json()).catch(()=>[])]).then(([days,items,land])=>{
+  const by={};items.forEach(x=>by[x.id]=x);
+  land.forEach(x=>{if(!x.market)x.market={low:x.pubTotal||0,high:x.pubTotal||0,basis:[]};x.rounds=x.rounds||[];if(x.yuchal&&!x.rounds.some(r=>r.result==='유찰')){const cur=x.rounds.find(r=>r.result!=='유찰')||{name:x.yuchal+'회 유찰',date:x.date,result:'예정'};x.rounds=Array.from({length:x.yuchal},(_,i)=>({name:i?i+'회 유찰':'최초',date:'',result:'유찰'})).concat([cur])}x.court=x.court||'';x.costs=x.costs||0;x.minProfit=x.minProfit||0;x.type=x.type||('토지('+(x.jimok||'')+')');x.land=true;by['L:'+x.id]=x});
+  days.sort((a,b)=>a.date.localeCompare(b.date)); // 오래된 것부터 쌓아 최신 기록이 덮어쓰게
+  const map=new Map();const drops=[];
+  days.forEach(d=>{
+    [['picks',d.picks||[]],['reserve',d.reserve||[]]].forEach(([src,arr])=>arr.forEach(x=>{
+      const it=by[x.id];const kind=kindOf(x,src);const why=String(x.why||'').replace(/^\[[^\]]*\]\s*/,'');
+      const prev=map.get(x.id);const hist=(prev?prev.hist:[]).concat([{from:d.date,kind}]);
+      map.set(x.id,{x:Object.assign({},prev?prev.x:{},x),it,kind,why,from:d.date,hist,date:normDate(x,it),addr:addrOf(x,it)});
+    }));
+    (d.dropped||[]).forEach(x=>drops.push({from:d.date,x}));
+  });
+  // 나중에 탈락된 물건은 기일 남은 목록에서 뺀다
+  const lastDrop={};drops.forEach(o=>{lastDrop[o.x.id]=o.from});
+  const all=[...map.values()].filter(r=>!(lastDrop[r.x.id]&&lastDrop[r.x.id]>=r.from));
+  const live=all.filter(r=>{const n=ddays(r.date);return (n==null||n>=0)&&!(r.it&&r.it.prediction&&r.it.prediction.actual)});
+  const past=all.filter(r=>!live.includes(r));
+  const order={'추천':0,'예비':1};
+  live.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9')||(order[a.kind]??2)-(order[b.kind]??2));
+  past.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const kinds=['전체',...new Set(live.map(r=>r.kind))];
+  const latest=days[days.length-1];
+  // 2026-11-02: 2단 — 왼쪽 날짜별 매일 5건, 오른쪽 추천 물건 전체를 기일순(최초 추천일 표시)으로 매칭
+  const pickRows=(d)=>(d.picks||[]).slice().sort((x,y)=>(x.rank||9)-(y.rank||9)).map(x=>{const it=by[x.id];return {x,it,kind:'추천',why:String(x.why||'').replace(/^\[[^\]]*\]\s*/,''),from:d.date,hist:[{from:d.date,kind:'추천'}],date:normDate(x,it),addr:addrOf(x,it)}});
+  const daysDesc=days.slice().reverse();
+  const firstRec={};days.forEach(d=>pickRows(d).forEach(r=>{const k=r.x.id;if(!firstRec[k])firstRec[k]={r,first:d.date,all:[d.date]};else{firstRec[k].all.push(d.date);firstRec[k].r=Object.assign({},r,{x:Object.assign({},firstRec[k].r.x,r.x)})}}));
+  const recs=Object.values(firstRec).map(o=>Object.assign({},o.r,{first:o.first,allDates:o.all}));
+  const upcoming=recs.filter(r=>{const n=ddays(r.date);return n==null||n>=0}).sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+  const gone=recs.filter(r=>!upcoming.includes(r)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const sid=(id)=>'r-'+String(id).replace(/[^\w가-힣-]/g,'_');
+  const dd=(r)=>{const n=ddays(r.date);return n==null?'<span class="dd past">미정</span>':n<0?'<span class="dd past">지남</span>':`<span class="dd ${n<=3?'soon':''}">${n===0?'D-day':'D-'+n}</span>`};
+  // 왼쪽: 날짜별 5칸
+  let left=`<h2>매일 5건 <span class="cnt">날짜별 · 5칸 중 채운 수</span></h2>`+daysDesc.map(d=>{const pr=pickRows(d);
+    const res=(d.reserve||[]).filter(x=>!pr.some(p=>p.x.id===x.id)).map(x=>{const it=by[x.id];return {x,it,addr:addrOf(x,it),date:normDate(x,it),st:x.status||'예비'}});
+    const fill=res.slice(0,Math.max(0,5-pr.length));
+    let slots='';
+    pr.forEach((r,i)=>{slots+=`<a class="slot" href="#${sid(r.x.id)}" data-t="${sid(r.x.id)}"><span class="no">${i+1}</span><span class="s-main"><b>${esc(r.addr)}</b><span class="case">${esc(String(r.x.id).replace(/^L:/,''))} · 기일 ${esc((r.date||'미정').slice(5).replace('-','.'))}</span><span class="l3">${esc(r.why)}</span></span>${dd(r)}</a>`});
+    fill.forEach((r,j)=>{slots+=`<div class="slot alt"><span class="no">${pr.length+j+1}</span><span class="s-main"><b>${esc(r.addr)}</b><span class="case">${esc(String(r.x.id).replace(/^L:/,''))} · 기일 ${esc((r.date||'미정').slice(5).replace('-','.'))}</span><span class="l3">${esc(String(r.x.why||'').replace(/^\[[^\]]*\]\s*/,''))}</span></span><span class="st wait" title="${esc(r.st)}">${esc(String(r.st).replace(/\s*\(.*$/,''))}</span></div>`});
+    if(!pr.length&&!fill.length)slots=`<div class="slot alt"><span class="case">이 날 추천·예비 물건 없음</span></div>`;
+    return `<div class="daybox"><div class="day-h"><b>${esc(d.date)}</b><span class="fill ${pr.length>=5?'ok':''}">${pr.length}/5</span></div>${slots}${pr.length<5&&d.note?`<details class="why-empty"><summary>추천 ${pr.length}건 — 5건을 못 채운 이유(이 날 실행 기록)</summary><p>${esc(String(d.note).slice(0,600))}${String(d.note).length>600?'…':''}</p></details>`:''}</div>`}).join('');
+  // 오른쪽: 추천 물건 기일순
+  const recRow=(r,i,pre)=>{const n=nums(r.it),res=r.it&&r.it.prediction&&r.it.prediction.actual;const key=pre+i;
+    return `<tr class="row" id="${sid(r.x.id)}" data-k="${key}"><td>${dd(r)}<span class="date">${esc((r.date||'').slice(5).replace('-','.'))}</span></td>
+<td class="rc"><div class="l1">${esc(r.addr)}</div><div class="l2">${esc(String(r.x.id).replace(/^L:/,''))}${n?' · '+esc(n.round):''}${res?' · '+esc(res):''}</div><div class="l3">${esc(r.why)}</div></td>
+<td class="n">${n?n.min:'-'}<span class="date">${n?esc(n.bid):''}</span></td><td class="n">${n?esc(n.profit):'-'}</td>
+<td style="white-space:nowrap"><b>${esc(r.first.slice(5).replace('-','.'))}</b>${r.allDates.length>1?`<span class="date">+${r.allDates.length-1}회 재추천</span>`:''}</td></tr>
+<tr class="det" data-d="${key}" hidden><td colspan="5">${detail(r)}</td></tr>`};
+  const recTable=(rows,pre)=>rows.length?`<div class="tbl-wrap"><table class="rt"><thead><tr><th>기일</th><th>물건</th><th class="n">최저가 / 입찰예정가</th><th class="n">세후</th><th>최초 추천일</th></tr></thead><tbody>${rows.map((r,i)=>recRow(r,i,pre)).join('')}</tbody></table></div>`:'<div class="tbl-wrap"><div class="empty">없습니다.</div></div>';
+  let right=`<h2>추천 물건 기일순 <span class="cnt">기일 남은 ${upcoming.length}건</span></h2>${recTable(upcoming,'u')}`+(gone.length?`<details class="box"><summary>기일 지난 추천 ${gone.length}건</summary><div style="margin-top:8px">${recTable(gone,'g')}</div></details>`:'');
+  // 3단: 왼쪽 매일 5건 · 가운데 추천 기일순 · 오른쪽 예비·보류 기일순
+  const waitList=live.filter(r=>r.kind!=='추천'&&!firstRec[r.x.id]);
+  const third=`<h2>예비·보류 기일순 <span class="cnt">기일 남은 ${waitList.length}건</span></h2><div class="daybox">`+(waitList.length?waitList.map(r=>`<div class="slot alt" title="${esc(r.why)}">${dd(r)}<span class="s-main"><b>${esc(r.addr)}</b><span class="case">${esc(String(r.x.id).replace(/^L:/,''))} · 기일 ${esc((r.date||'미정').slice(5).replace('-','.'))} · ${esc(r.from.slice(5).replace('-','.'))} 기록</span><span class="l3">${esc(r.why)}</span></span><span class="st wait" title="${esc(r.kind)}">${esc(String(r.kind).replace(/\s*\(.*$/,''))}</span></div>`).join(''):'<div class="slot alt"><span class="case">없습니다</span></div>')+'</div>';
+  let h=`<div class="cols"><div class="col-l">${left}</div><div class="col-r">${right}</div><div class="col-w">${third}</div></div>`;
+  // (참고 전체 목록은 3단 오른쪽 칸으로 옮김)
+  h+=`<details class="box"><summary>기일 지난 기록 ${past.length}건</summary><div style="margin-top:10px">${table(past,true)}</div></details>`;
+  h+=`<details class="box"><summary>탈락 ${drops.length}건과 이유</summary>${drops.slice().reverse().map(o=>`<div class="drop"><span class="case">${esc(o.from.slice(5).replace('-','.'))}</span><b>${esc(String(o.x.id).replace(/^L:/,''))}</b> — ${esc(String(o.x.why||'').replace(/^\[[^\]]*\]\s*/,''))}</div>`).join('')}</details>`;
+  const box=document.getElementById('list');box.innerHTML=h;
+  const bind=()=>box.querySelectorAll('tr.row').forEach(tr=>tr.onclick=()=>{const d=box.querySelector(`tr.det[data-d="${tr.dataset.k}"]`);d.hidden=!d.hidden;tr.classList.toggle('open',!d.hidden)});
+  bind();
+  box.querySelectorAll('a.slot').forEach(el=>el.onclick=(e)=>{e.preventDefault();const tr=document.getElementById(el.dataset.t);if(!tr)return;const det=tr.closest('details');if(det)det.open=true;tr.scrollIntoView({behavior:'smooth',block:'center'});tr.classList.add('flash');setTimeout(()=>tr.classList.remove('flash'),1600);const d=box.querySelector(`tr.det[data-d="${tr.dataset.k}"]`);if(d&&d.hidden){d.hidden=false;tr.classList.add('open')}});
+  box.querySelectorAll('.filters button').forEach(b=>b.onclick=()=>{box.querySelectorAll('.filters button').forEach(x=>x.classList.toggle('on',x===b));const f=b.dataset.f;document.getElementById('live').innerHTML=table(f==='전체'?live:live.filter(r=>r.kind===f),false);bind()});
+}).catch(e=>{document.getElementById('list').textContent='불러오지 못했습니다: '+e});
+</script>
+<script>
+fetch('ideas.json',{cache:'no-store'}).then(r=>r.json()).then(list=>{const e=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+list.sort((a,b)=>b.date.localeCompare(a.date));
+document.getElementById('ideas').innerHTML=list.map((x,i)=>`<details class="idea"><summary title="${e(x.date)} · ${e(x.title)}"><span class="tag">착안</span>${e(String(x.date).slice(5).replace('-','.'))} ${e(x.title)}<span class="by">${e(x.by||'정민')} 노트</span></summary><p class="sum">${e(x.summary||'')}</p>${(x.sections||[]).map(s=>`<h4>${e(s.h)}</h4><ul>${s.items.map(i=>`<li>${e(i)}</li>`).join('')}</ul>`).join('')}</details>`).join('')}).catch(()=>{});
+// 착안 포스트잇: 바깥을 누르면 접힘
+document.addEventListener('click',ev=>{if(!ev.target.closest('#ideas'))document.querySelectorAll('#ideas details[open]').forEach(d=>d.open=false)});
+</script>
+</body>
+</html>

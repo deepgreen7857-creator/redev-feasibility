@@ -131,7 +131,9 @@ function calc(it){
   hi=hi>0?Math.floor(hi/10000)*10000:0;
   const rows=[];let min=it.appraisal;
   for(let k=0;k<=Math.max(MAXK,it.rounds.length+1);k++){
-    if(k>0)min=Math.floor(Math.round(min*(it.rate||RATE))/1000)*1000;
+    const rk=it.rounds[k];
+    if(rk&&(rk.min||rk.minBid))min=rk.min||rk.minBid; // 원문에서 확인한 회차 최저가가 있으면 그 값(공매 10% 저감·재매각 등)
+    else if(k>0)min=Math.floor(Math.round(min*(it.rate||RATE))/1000)*1000;
     const bid=min+10000,take=D?Math.max(0,D-bid):A,total=bid+take,tax=Math.round(total*0.011);
     rows.push({k,min,bid,take,total,tax,pre:low-total-tax-it.costs,profit:afterTax(low-total-tax-it.costs,it.land),ok:hi>0&&bid<=hi});
   }
@@ -197,7 +199,7 @@ function table(rows,past){
 }
 Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/items.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/land.json',{cache:'no-store'}).then(r=>r.json()).catch(()=>[])]).then(([days,items,land])=>{
   const by={};items.forEach(x=>by[x.id]=x);
-  land.forEach(x=>{if(!x.market)x.market={low:x.pubTotal||0,high:x.pubTotal||0,basis:[]};x.rounds=x.rounds||[];if(x.yuchal&&!x.rounds.some(r=>r.result==='유찰')){const cur=x.rounds.find(r=>r.result!=='유찰')||{name:x.yuchal+'회 유찰',date:x.date,result:'예정'};x.rounds=Array.from({length:x.yuchal},(_,i)=>({name:i?i+'회 유찰':'최초',date:'',result:'유찰'})).concat([cur])}x.court=x.court||'';x.costs=x.costs||0;x.minProfit=x.minProfit||0;x.type=x.type||('토지('+(x.jimok||'')+')');x.land=true;by['L:'+x.id]=x});
+  land.forEach(x=>{if(!x.market)x.market={low:x.pubTotal||0,high:x.pubTotal||0,basis:[]};x.rounds=x.rounds||[];if(x.yuchal&&!x.rounds.some(r=>r.result==='유찰')){const cur=x.rounds.find(r=>r.result!=='유찰')||{name:x.yuchal+'회 유찰',date:x.date,result:'예정'};x.rounds=Array.from({length:x.yuchal},(_,i)=>({name:i?i+'회 유찰':'최초',date:'',result:'유찰'})).concat([cur])}{const c=x.rounds.find(r=>r.result!=='유찰');if(c&&!c.min&&x.minPrice)c.min=x.minPrice}x.court=x.court||'';x.costs=x.costs||0;x.minProfit=x.minProfit||0;x.type=x.type||('토지('+(x.jimok||'')+')');x.land=true;by['L:'+x.id]=x});
   days.sort((a,b)=>a.date.localeCompare(b.date)); // 오래된 것부터 쌓아 최신 기록이 덮어쓰게
   const map=new Map();const drops=[];
   days.forEach(d=>{
