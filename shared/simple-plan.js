@@ -84,7 +84,7 @@
             const W = p => G.rot([x + p[0], row.y + p[1]], Gd.r), poly = G.hull(m.parts.flat().map(W)), walls = G.wallsTo(walls0, W, Gd.r);
             const fl = Math.min(row.f, cap({ poly, form: m.form, angle: th, walls }));
             if (fl < A.minFloors) return;
-            blds.push({ id: 0, poly, floors: fl, form: m.form, angle: th, mixT: m.mixT, n: m.n, t: m.t, seq: m.seq, dtype: m.dtype, dname: m.dname, vname: m.vname, notes: m.notes || [], block: 0, row: ri,
+            blds.push({ id: 0, poly, floors: fl, planF: row.f, form: m.form, angle: th, mixT: m.mixT, n: m.n, t: m.t, seq: m.seq, dtype: m.dtype, dname: m.dname, vname: m.vname, notes: m.notes || [], block: 0, row: ri,
               parts: m.parts.map(q => q.map(W)), cores: m.cores.map(q => q.map(W)), units: (m.units || []).map(rs => rs.map(q => q.map(W))), walls });
           }); });
           if (!blds.length) continue;
@@ -122,7 +122,7 @@
     const sideGap = (a, b, f) => (a.form === 'slab' && b.form === 'slab' ? A.sideGap_m : Math.max(A.sideGap_m, sp * H(f)));
     const mk = (m, x, y, f, row) => { const W = p => G.rot([x + p[0], y + p[1]], Gd.r), poly = G.hull(m.parts.flat().map(W)), walls = G.wallsTo(G.wallsOf(m), W, Gd.r);
       const fl = Math.min(f, cap({ poly, form: m.form, angle: th, walls })); if (fl < A.minFloors) return null;
-      return { id: 0, poly, floors: fl, form: m.form, angle: th, mixT: m.mixT, n: m.n, t: m.t, seq: m.seq, dtype: m.dtype, dname: m.dname, vname: m.vname, notes: m.notes || [], block: 0, row,
+      return { id: 0, poly, floors: fl, planF: f, form: m.form, angle: th, mixT: m.mixT, n: m.n, t: m.t, seq: m.seq, dtype: m.dtype, dname: m.dname, vname: m.vname, notes: m.notes || [], block: 0, row,
         parts: m.parts.map(q => q.map(W)), cores: m.cores.map(q => q.map(W)), units: (m.units || []).map(rs => rs.map(q => q.map(W))), walls }; };
     let blds = base.blds.slice();
     const rowsY = base.rows.map((r, i) => ({ i, y: r.y, f: r.f, D: r.m.D, form: r.m.form }));
@@ -192,6 +192,35 @@
     return { blds, steps };
   }
 
+  /* ---------- 기본형 성적표(2026-11-05 사용자 '배치해 보면서 무언가 알 수 있을 것') ----------
+     동 타입마다(보완안이 있으면 보완안 기준): 세대·용적률·목표 대비·평형 비율 차이·일조 부족 동·층수 급변
+     막힌 원인: 계획 층수에서 깎인 층수 합을 조문별로(정북 일조 / 채광창 이격), 줄 안 빈 길이(자투리), 옆 벽 창 때문에 넓어진 옆 간격
+     잘한 것: 세대수 1위·일조 1위(부족 동 적음)·평형 1위 */
+  function scorecard(site, opt, variants) {
+    const capSun = G.capper(site, Object.assign({}, opt, { winRatio: 0 })), capAll = G.capper(site, opt), target = opt.lot * opt.far / 100;
+    const rows = variants.map(v0 => {
+      const v = v0.improved || v0, B = v.buildings;
+      let cutSun = 0, cutWin = 0;
+      B.forEach(b => { const pf = b.planF || b.floors; if (b.floors >= pf) return; const cs = capSun(b), ca = capAll(b); if (cs < pf) cutSun += Math.min(pf, cs < pf ? pf - Math.max(b.floors, cs) : 0) * b.n; cutWin += Math.max(0, Math.min(pf, cs) - b.floors) * b.n; });
+      const st = (v0.improved && v0.improved.steps) || v0.steps || [];
+      return { dtype: v0.dtype, name: v0.label.replace('기본 배치 — ', ''), improved: !!v0.improved, steps: st.slice(1).map(x => x.name), angle: v0.angle,
+        units: v.units, far: v.far, ofTarget: target ? v.gfa / target : 0, mixErr: v.mixErr, sunFail: v.risks.filter(r => r.id === 'sun_tolerance').length, jumps: v.risks.filter(r => r.id === 'height_jump').length,
+        rules: v.rules.length, n: B.length, maxF: v.maxFloors, cutSun, cutWin, empty: st.length ? st[0].empty : null, sideWin: v0.gapX > (opt.assume.sideGap_m || 10) + 0.1, gapX: v0.gapX };
+    });
+    const best = k => rows.slice().sort(k)[0];
+    const win = { units: best((a, b) => b.units - a.units), sun: best((a, b) => a.sunFail / Math.max(1, a.n) - b.sunFail / Math.max(1, b.n) || b.units - a.units), mix: best((a, b) => a.mixErr - b.mixErr || b.units - a.units) };
+    // 이 구역에서 공통으로 막힌 것(모든 타입 평균) — 문장 한 줄씩
+    const avg = f => rows.reduce((s, r) => s + f(r), 0) / (rows.length || 1), notes = [];
+    if (avg(r => r.ofTarget) < 0.8) notes.push(`어떤 동 타입으로도 목표 용적률의 ${Math.round(Math.max(...rows.map(r => r.ofTarget)) * 100)}%까지만 들어감 — 목표(${opt.far}%) 자체가 이 대지에 무리일 수 있음`);
+    if (avg(r => r.cutSun) > avg(r => r.cutWin) && avg(r => r.cutSun) > 0) notes.push('층수를 가장 많이 깎는 것은 정북 일조(시행령 제86조①) — 북쪽 줄 저층·남북 방향 동이 유리할 수 있음');
+    else if (avg(r => r.cutWin) > 0) notes.push('층수를 가장 많이 깎는 것은 채광창 이격(시행령 제86조③1호) — 경계 쪽 동 저층 또는 경계에서 더 띄우기');
+    const sideLoss = rows.filter(r => r.sideWin);
+    if (sideLoss.length) notes.push(`옆 벽에 창이 있는 동(${sideLoss.map(r => r.name).join('·')})은 옆 간격이 높이 × 0.8로 넓어져 세대수 손해(가목, 법제처 21-0403)`);
+    const emp = rows.filter(r => r.empty >= 30);
+    if (emp.length) notes.push(`줄 안 자투리가 큰 동 타입: ${emp.map(r => `${r.name} ${r.empty}m`).join(', ')} — 길이를 섞는 보완이 효과 큼`);
+    return { rows, win, notes, target };
+  }
+
   function simple(site, opt, o) {
     o = o || {};
     const t0 = Date.now(), types = o.types || TYPES;
@@ -206,9 +235,9 @@
       const im = o.improve === false ? null : improve(site, opt, r, o);
       out.push(pack(r.blds, `기본 배치 — ${r.m.dname}`, { improved: im && im.steps.length > 1 ? pack(im.blds, `기본 + 보완 — ${r.m.dname}`, { steps: im.steps }) : null, steps: im ? im.steps.slice(0, 1) : [] }));
     });
-    return { variants: out, ms: Date.now() - t0 };
+    return { variants: out, ms: Date.now() - t0, card: o.card === false ? null : scorecard(site, opt, out) };
   }
 
-  const api = { simple, one, improve, angles, seqFor, mixErrOf, TYPES };
+  const api = { simple, one, improve, scorecard, angles, seqFor, mixErrOf, TYPES };
   if (NODE) module.exports = api; else g.JbsSimple = api;
 })(typeof window !== 'undefined' ? window : globalThis);
