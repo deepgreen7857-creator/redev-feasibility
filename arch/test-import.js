@@ -27,4 +27,14 @@ t('확인한 동으로 검사: 101동(25층)–102동(20층) 앞뒤 47m < 높이
   assert.ok(r && r.동.includes(101), JSON.stringify(q.rules));
   assert.ok(K.dims(site, blds, opt).some(d => d.kind === 'spacing' && d.판정 === '위반'));
 });
+t('블록(INSERT)으로 넣은 동: 블록 정의 × 삽입점·회전 → 동 2개 + 블록 안 층수 글자', () => {
+  const blk = '0\nSECTION\n2\nBLOCKS\n0\nBLOCK\n8\n0\n2\nAPT_A\n10\n0\n20\n0\n' + lw('0', box(0, 0, 50, 12)) + tx('0', 10, 6, '15F') + '0\nENDBLK\n0\nENDSEC\n';
+  const ent = '0\nSECTION\n2\nENTITIES\n' + lw('구역경계', site.pts) + '0\nINSERT\n8\nA-동\n2\nAPT_A\n10\n40\n20\n30\n0\nINSERT\n8\nA-동\n2\nAPT_A\n10\n120\n20\n100\n50\n90\n0\nENDSEC\n0\nEOF\n';
+  const d = blk + ent, ins = IM.dxfInserts(d);
+  assert.strictEqual(ins.polys.length, 2); assert.strictEqual(ins.texts.length, 2);
+  const rows2 = IM.recognize(ZK.dxfPolys(d).concat(ins.polys), IM.dxfTexts(d).concat(ins.texts), site, opt);
+  assert.strictEqual(rows2.length, 2, JSON.stringify(rows2.map(r => r.layer + r.area)));
+  assert.ok(rows2.every(r => r.floors === 15), JSON.stringify(rows2.map(r => r.floors)));
+  assert.ok(rows2.some(r => Math.abs(Math.abs(r.angle) - 90) < 1), '90° 돌린 동');
+});
 console.log(`\n${n}개 모두 통과`);

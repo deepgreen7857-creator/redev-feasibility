@@ -16,9 +16,12 @@
     const L = text.split(/\r?\n/), out = [];
     let cur = null;
     const push = () => { if (cur && cur.s && isFinite(cur.x) && isFinite(cur.y)) out.push(cur); cur = null; };
+    let inBlocks = false, sec = false;
     for (let i = 0; i + 1 < L.length; i += 2) {
       const c = L[i].trim(), v = L[i + 1].replace(/\r$/, '');
-      if (c === '0') { push(); if (v.trim() === 'TEXT' || v.trim() === 'MTEXT') cur = { layer: '', x: NaN, y: NaN, s: '' }; continue; }
+      if (c === '0' && v.trim() === 'SECTION') { sec = true; push(); continue; }
+      if (sec && c === '2') { inBlocks = v.trim() === 'BLOCKS'; sec = false; continue; }
+      if (c === '0') { push(); if (!inBlocks && (v.trim() === 'TEXT' || v.trim() === 'MTEXT')) cur = { layer: '', x: NaN, y: NaN, s: '' }; continue; }
       if (!cur) continue;
       if (c === '8') cur.layer = v.trim();
       else if (c === '10') cur.x = parseFloat(v);
@@ -28,6 +31,45 @@
     push();
     out.forEach(t => { t.s = t.s.replace(/\\[PpNn]/g, ' ').replace(/\{\\[^;]*;|\}|\\[A-Za-z][^;]*;/g, '').trim(); });
     return out;
+  }
+  // 블록(INSERT)으로 넣은 동(2026-11-05): BLOCKS 구역의 블록 정의(닫힌 폴리선·글자) × ENTITIES의 INSERT(삽입점·배율·회전) → 도면 좌표 도형·글자
+  //  중첩 블록은 한 단계만. 블록 안 레이어가 '0'이면 INSERT 레이어를 씀(CAD 관례)
+  function dxfInserts(text) {
+    const L = text.split(/\r?\n/), pr = []; for (let i = 0; i + 1 < L.length; i += 2) pr.push([L[i].trim(), L[i + 1].replace(/\r$/, '').trim()]);
+    const blocks = {}, inserts = []; let sec = '', blk = null, ent = null;
+    const endEnt = () => {
+      if (!ent) return;
+      if (ent.type === 'LWPOLYLINE' && blk && ent.pts.length >= 3 && ent.closed) blk.polys.push({ layer: ent.layer, pts: ent.pts });
+      if ((ent.type === 'TEXT' || ent.type === 'MTEXT') && blk && ent.s) blk.texts.push({ layer: ent.layer, x: ent.x, y: ent.y, s: ent.s });
+      if (ent.type === 'INSERT' && sec === 'ENTITIES' && ent.name) inserts.push(ent);
+      ent = null;
+    };
+    for (const [c, v] of pr) {
+      if (c === '0') {
+        endEnt();
+        if (v === 'SECTION') { sec = ''; continue; }
+        if (v === 'ENDSEC') { sec = ''; blk = null; continue; }
+        if (v === 'BLOCK') { blk = { name: '', bx: 0, by: 0, polys: [], texts: [] }; ent = { type: 'BLOCK' }; continue; }
+        if (v === 'ENDBLK') { if (blk && blk.name) blocks[blk.name] = blk; blk = null; continue; }
+        if (['LWPOLYLINE', 'TEXT', 'MTEXT', 'INSERT'].includes(v)) ent = { type: v, layer: '0', pts: [], closed: false, x: NaN, y: NaN, s: '', name: '', sx: 1, sy: 1, rot: 0 };
+        continue;
+      }
+      if (c === '2' && !sec) { sec = v; continue; }
+      if (!ent) continue;
+      if (ent.type === 'BLOCK') { if (c === '2' && blk) blk.name = v; else if (c === '10' && blk) blk.bx = +v; else if (c === '20' && blk) blk.by = +v; continue; }
+      if (c === '8') ent.layer = v;
+      else if (ent.type === 'LWPOLYLINE') { if (c === '70') ent.closed = (parseInt(v, 10) & 1) === 1; else if (c === '10') ent.pts.push([+v, NaN]); else if (c === '20' && ent.pts.length) ent.pts[ent.pts.length - 1][1] = +v; }
+      else if (ent.type === 'INSERT') { if (c === '2') ent.name = v; else if (c === '10') ent.x = +v; else if (c === '20') ent.y = +v; else if (c === '41') ent.sx = +v; else if (c === '42') ent.sy = +v; else if (c === '50') ent.rot = +v; }
+      else { if (c === '10') ent.x = +v; else if (c === '20') ent.y = +v; else if (c === '1' || c === '3') ent.s += v; }
+    }
+    endEnt();
+    const polys = [], texts = [];
+    inserts.forEach(I => { const B = blocks[I.name]; if (!B) return; const r = (I.rot || 0) * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r);
+      const T = ([x, y]) => { const u = (x - B.bx) * (I.sx || 1), w = (y - B.by) * (I.sy || 1); return [I.x + u * c - w * sn, I.y + u * sn + w * c]; };
+      B.polys.forEach(p => polys.push({ layer: p.layer === '0' ? I.layer : p.layer, pts: p.pts.map(T), block: I.name }));
+      B.texts.forEach(t => { const q = T([t.x, t.y]); texts.push({ layer: t.layer === '0' ? I.layer : t.layer, x: q[0], y: q[1], s: t.s.replace(/\\[PpNn]/g, ' ').replace(/\{\\[^;]*;|\}|\\[A-Za-z][^;]*;/g, '').trim(), block: I.name }); });
+    });
+    return { polys, texts, blocks: Object.keys(blocks).length, inserts: inserts.length };
   }
   const areaOf = q => Math.abs(G.area(q));
   // 가장 작은 둘레 직사각형(볼록껍질 변 방향마다) → 긴 변 방향(도), 직사각형다움(면적 ÷ 직사각형 면적)
@@ -69,6 +111,6 @@
       return b;
     });
   }
-  const api = { dxfTexts, recognize, toBuildings, minRect };
+  const api = { dxfTexts, dxfInserts, recognize, toBuildings, minRect };
   if (NODE) module.exports = api; else g.JbsImport = api;
 })(typeof window !== 'undefined' ? window : globalThis);

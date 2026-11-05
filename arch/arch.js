@@ -536,11 +536,12 @@
       const buf = await file.arrayBuffer(); let text;
       try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { text = new TextDecoder('euc-kr').decode(buf); }
       if (/^AutoCAD Binary DXF/.test(text.slice(0, 22))) throw new Error('바이너리 DXF는 읽지 못합니다. CAD에서 ASCII DXF로 다시 저장해 주세요');
-      const polys = ZoneKit.dxfPolys(text), texts = JbsImport.dxfTexts(text);
+      const ins = JbsImport.dxfInserts(text);   // 블록(INSERT)으로 넣은 동도 펼쳐서 읽음
+      const polys = ZoneKit.dxfPolys(text).concat(ins.polys), texts = JbsImport.dxfTexts(text).concat(ins.texts);
       if (!polys.length) throw new Error('닫힌 폴리선이 없습니다');
       // 좌표계: 경위도면 그대로, 아니면 한국 측량 좌표 후보 중 대지 가운데에 가장 가까운 것
       const c0 = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length], [0, 0]), cLL = pr.back(c0);
-      const p0 = polys[0].pts[0]; let fn = null, crs = '';
+      const p0 = polys.map(q => q.pts[0]).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0]))[0]; let fn = null, crs = '';
       if (Math.abs(p0[0]) <= 180 && Math.abs(p0[1]) <= 90) { fn = q => q; crs = '경위도'; }
       else {
         await ZoneKit.loadProj4(); let bd = Infinity;
