@@ -11,6 +11,7 @@ t('동 타입 6가지(판상 4·6·8·10호, 꺾인 판상 3호, 탑상 4호) �
 t('모든 안 법정 위반 0(경계·동 사이 거리·정북 일조·채광창)', () => r.variants.forEach(v => assert.strictEqual(v.rules.length, 0, v.dtype + ' ' + JSON.stringify(v.rules.slice(0, 2)))));
 t('한 안 안에서는 같은 동 타입·같은 평형 배열만', () => r.variants.forEach(v => { assert.ok(v.buildings.every(b => b.dtype === v.dtype && b.seq.join() === v.seq.join()), v.dtype); }));
 t('줄은 나란히(같은 줄 동은 같은 높이에서 시작)', () => r.variants.forEach(v => { const rows = {}; v.buildings.forEach(b => { (rows[b.row] = rows[b.row] || []).push(b); }); Object.values(rows).forEach(bs => { const ys = bs.map(b => Math.min(...b.parts.flat().map(p => G.rot(p, -v.angle * Math.PI / 180)[1]))); assert.ok(Math.max(...ys) - Math.min(...ys) < 0.01, v.dtype); }); }));
-t('계산 10초 이내', () => assert.ok(r.ms < 10000, r.ms));
+t('보완안도 법정 위반 0, 보완은 나빠지지 않음(연면적 95% 이상 또는 평형 비율 개선)', () => r.variants.forEach(v => { const w = v.improved; if (!w) return; assert.strictEqual(w.rules.length, 0, v.dtype + ' ' + JSON.stringify(w.rules.slice(0, 2))); assert.ok(w.gfa >= v.gfa * 0.95 || w.mixErr < v.mixErr, v.dtype); }));
+t('계산 30초 이내(방향 후보 0·±15·±30°·긴 변)', () => assert.ok(r.ms < 30000, r.ms));
 console.log(`\n${n}개 모두 통과`);
-r.variants.forEach(v => console.log(`  ${v.label}: ${v.seq.join('-')} · ${v.Flo}~${v.Fhi}층 · ${v.buildings.length}동 ${v.units}세대 · 용적률 ${v.far.toFixed(0)}% · 평형 비율 차이 ${v.mixErr.toFixed(2)}`));
+r.variants.forEach(v => { const w = v.improved; console.log(`  ${v.label}(${v.angle}°): ${v.units}세대 ${v.far.toFixed(0)}% 차이 ${v.mixErr.toFixed(2)}` + (w ? ` → 보완 ${w.units}세대 ${w.far.toFixed(0)}% 차이 ${w.mixErr.toFixed(2)} (${w.steps.slice(1).map(x => x.name).join(', ')})` : ' → 보완 없음')); });

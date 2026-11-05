@@ -12,9 +12,9 @@
   const D2R = Math.PI / 180;
   const TYPES = ['P4', 'P6', 'P8', 'P10', 'B3', 'T4'];
 
-  // 방향 후보: 정남(0°)과 가장 긴 경계 변 방향(±45° 안)
+  // 방향 후보(2026-11-05 사용자 '정남향을 고집할거야?'): 정남(0°)·남동/남서 15°·30°와 긴 경계 변 두 개의 방향(±45° 안). 남향에서 멀어질수록 남향 점수·일조는 불리
   function angles(site) {
-    const E = G.edges(site.pts).slice().sort((a, b) => b.len - a.len), out = [0];
+    const E = G.edges(site.pts).slice().sort((a, b) => b.len - a.len), out = [0, -15, 15, -30, 30];
     E.slice(0, 2).forEach(e => { let th = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]) / D2R; th = ((th % 180) + 180) % 180; if (th > 90) th -= 180; if (Math.abs(th) <= 45 && out.every(a => Math.abs(a - th) > 3)) out.push(Math.round(th)); });
     return out;
   }
@@ -95,7 +95,7 @@
           const v = Math.min(gfaOf(bl), target), spread = Fhi - Flo;
           // 연면적(목표까지) 큰 것 → 같으면 층수 차이 작은 것(더 일정) → 낮은 최고 층수
           if (!best || v > best.val + 1 || (Math.abs(v - best.val) <= 1 && (spread < best.spread || (spread === best.spread && Fhi < best.Fhi))))
-            best = { val: v, Flo, Fhi, spread, F: Fhi, th, seq, m: mLow, blds: bl, gapX: gapXOf(Flo), gapY: Math.max(10, sp * H(Flo)) };
+            best = { val: v, Flo, Fhi, spread, F: Fhi, th, seq, m: mLow, blds: bl, gapX: gapXOf(Flo), gapY: Math.max(10, sp * H(Flo)), rows: bestY.rows, Gd };
         }
       }
       if (best) per.push(Object.assign(best, { e: mixErrOf(best.blds, opt) }));
@@ -106,6 +106,92 @@
     return best;
   }
 
+  /* ---------- 진단 → 보완(2026-11-05 사용자 결정: '기본형부터 무조건 돌리고, 무엇이 모자란지 보고 섞는 것을 넣자') ----------
+     진단: 줄 안 빈 길이(동 + 옆 간격을 빼고 남은 건축 가능 길이), 평형 비율 차이, 목표 연면적 대비 부족
+     보완(진단에 걸린 것만, 순서대로 — 단계마다 전후 숫자를 남김)
+       ① 줄 끝 채우기: 빈 길이에 같은 계열의 짧은 동(판상은 호수가 적은 판상, ㄱ자는 판상 2호)을 같은 줄 앞선에 맞춰 넣음. 깊이 ≤ 그 줄 동 깊이(뒷줄 간격 그대로)
+       ② 평형 맞추기: 평형 비율이 어긋나면 같은 동 타입 안에서 다른 평형 배열로 바꿔 끼움(옆 간격·대지·동 사이 거리 다시 확인, 연면적은 95% 이상 유지) */
+  function improve(site, opt, base, o) {
+    o = o || {};
+    const A = opt.assume, sp = opt.spacing, H = f => f * A.floorHeight_m + A.groundExtra_m, sup = t => { const u = opt.units[t]; return +u.공급 > 0 ? +u.공급 : u.전용 * A.supplyFactor; };
+    const target = opt.lot * opt.far / 100, cap = G.capper(site, opt), Gd = base.Gd, th = base.th;
+    const gfaOf = bs => bs.reduce((a, b) => a + Object.keys(b.mixT).reduce((c, t) => c + b.mixT[t] * b.floors * sup(t), 0), 0);
+    const ts = Object.keys(opt.mix).filter(t => opt.mix[t] > 0);
+    const loc = p => G.rot(p, -Gd.r);
+    const xr = b => { const xs = b.parts.flat().map(p => loc(p)[0]); return [Math.min(...xs), Math.max(...xs)]; };
+    const sideGap = (a, b, f) => (a.form === 'slab' && b.form === 'slab' ? A.sideGap_m : Math.max(A.sideGap_m, sp * H(f)));
+    const mk = (m, x, y, f, row) => { const W = p => G.rot([x + p[0], y + p[1]], Gd.r), poly = G.hull(m.parts.flat().map(W)), walls = G.wallsTo(G.wallsOf(m), W, Gd.r);
+      const fl = Math.min(f, cap({ poly, form: m.form, angle: th, walls })); if (fl < A.minFloors) return null;
+      return { id: 0, poly, floors: fl, form: m.form, angle: th, mixT: m.mixT, n: m.n, t: m.t, seq: m.seq, dtype: m.dtype, dname: m.dname, vname: m.vname, notes: m.notes || [], block: 0, row,
+        parts: m.parts.map(q => q.map(W)), cores: m.cores.map(q => q.map(W)), units: (m.units || []).map(rs => rs.map(q => q.map(W))), walls }; };
+    let blds = base.blds.slice();
+    const rowsY = base.rows.map((r, i) => ({ i, y: r.y, f: r.f, D: r.m.D, form: r.m.form }));
+    // 진단
+    const diag = () => {
+      let empty = 0;
+      rowsY.forEach(R => {
+        const ivs = blds.filter(b => b.row === R.i).map(b => { const [a, c] = xr(b); return [a - base.gapX, c + base.gapX]; });
+        for (let x = Math.floor(Gd.xmin); x < Gd.xmax; x++) if (Gd.free(x, R.y, x + 1, R.y + R.D) && !ivs.some(([a, c]) => x + 1 > a && x < c)) empty++;
+      });
+      const g = gfaOf(blds);
+      return { empty, mixErr: mixErrOf(blds, opt), gfa: g, far: g / opt.lot * 100, short: Math.max(0, target - g), units: blds.reduce((a, b) => a + b.n * b.floors, 0), n: blds.length };
+    };
+    const steps = [Object.assign({ name: '기본형', why: '' }, diag())];
+    // ① 줄 끝 채우기
+    const fillerIds = base.m.form === 'slab' ? ['P2', 'P4', 'P6', 'P8', 'P10'].filter(id => { const T = (opt.dongTypes.타입 || []).find(x => x.id === id); return T && T.호수 < base.m.n; }) : base.m.form === 'L' ? ['P2'] : [];
+    if (fillerIds.length && steps[0].empty >= 15 && steps[0].short > 0) {
+      const fillers = [];
+      fillerIds.forEach(id => seqFor(id, opt).forEach(seq => { const m = DL.build(id, seq); if (m) fillers.push(m); }));
+      fillers.sort((a, b) => b.L - a.L);
+      rowsY.forEach(R => {
+        let x = Math.floor(Gd.xmin);
+        while (x < Gd.xmax) {
+          let put = null;
+          for (const m of fillers) {
+            if (m.D > R.D + 0.01 || x + m.L > Gd.xmax || !fits(Gd, m, x, R.y)) continue;
+            const row = blds.filter(b => b.row === R.i);
+            if (row.some(b => { const [a, c] = xr(b), g = sideGap(m, b, Math.max(R.f, b.floors)); return x < c + g && x + m.L > a - g; })) continue;
+            const nb = mk(m, x, R.y, R.f, R.i); if (!nb) continue;
+            if (blds.some(o2 => K.pairCheck(nb, o2, opt))) continue;
+            put = { nb, L: m.L }; break;
+          }
+          if (put) { blds.push(put.nb); x += Math.ceil(put.L) + 1; if (gfaOf(blds) >= target) break; } else x += 1;
+        }
+      });
+      const d = diag(); if (d.n > steps[steps.length - 1].n) steps.push(Object.assign({ name: '줄 끝 채우기', why: `줄 안 빈 길이 ${steps[0].empty}m → 같은 계열 짧은 동(${fillerIds.join('·')})으로 채움` }, d));
+    }
+    // ② 평형 맞추기
+    const e0 = mixErrOf(blds, opt);
+    if (e0 > 0.15) {
+      const gfa0 = gfaOf(blds), alts = {};
+      const altOf = id => alts[id] || (alts[id] = DL.assignments(id, ts).map(seq => DL.build(id, seq)).filter(Boolean));
+      for (let it = 0; it < 3; it++) {
+        let changed = false;
+        for (let i = 0; i < blds.length; i++) {
+          const b = blds[i], R = rowsY[b.row], [a0, c0] = xr(b), others = blds.filter(o2 => o2 !== b);
+          let room = Infinity; others.filter(o2 => o2.row === b.row).forEach(o2 => { const [a, c] = xr(o2); if (a >= c0) room = Math.min(room, a - c0 - sideGap(b, o2, Math.max(b.floors, o2.floors))); });
+          const cur = mixErrOf(blds, opt);
+          let bestSwap = null;
+          for (const m of altOf(b.dtype)) {
+            if (m.seq.join() === b.seq.join() || m.D > R.D + 0.01 || m.L > (c0 - a0) + Math.max(0, room) + 0.01) continue;
+            const x = a0 - (m.parts.flat().reduce((mn, p) => Math.min(mn, p[0]), Infinity));
+            if (!fits(Gd, m, x, R.y)) continue;
+            const nb = mk(m, x, R.y, R.f, b.row); if (!nb) continue;
+            const trial = others.concat([nb]), e = mixErrOf(trial, opt);
+            if (e < cur - 0.01 && gfaOf(trial) >= gfa0 * 0.95 && !others.some(o2 => K.pairCheck(nb, o2, opt)) && (!bestSwap || e < bestSwap.e)) bestSwap = { nb, e };
+          }
+          if (bestSwap) { blds[i] = bestSwap.nb; changed = true; }
+        }
+        if (!changed) break;
+      }
+      const d = diag(); if (d.mixErr < e0 - 0.01) steps.push(Object.assign({ name: '평형 맞추기', why: `평형 비율 차이 ${e0.toFixed(2)} → 같은 모양 안에서 평형 배열을 바꿔 끼움` }, d));
+    }
+    // 목표를 넘으면 남쪽 줄 가장자리부터 뺌
+    if (gfaOf(blds) > target) { const cx = blds.reduce((a, b) => a + b.poly[0][0], 0) / blds.length; blds.sort((a, b) => a.row - b.row || Math.abs(b.poly[0][0] - cx) - Math.abs(a.poly[0][0] - cx)); while (blds.length > 1 && gfaOf(blds) > target) blds.shift(); }
+    blds.sort((a, b) => a.row - b.row || a.poly[0][0] - b.poly[0][0]).forEach((b, i) => { b.id = 101 + i; });
+    return { blds, steps };
+  }
+
   function simple(site, opt, o) {
     o = o || {};
     const t0 = Date.now(), types = o.types || TYPES;
@@ -113,14 +199,16 @@
     const out = [];
     types.forEach(id => {
       const r = one(site, opt, id, o); if (!r) return;
-      const v = K.verify(site, r.blds, opt), byType = {};
-      r.blds.forEach(b => Object.keys(b.mixT).forEach(t => { byType[t] = (byType[t] || 0) + b.mixT[t] * b.floors; }));
-      out.push({ key: id, label: `기본 배치 — ${r.m.dname}`, mixErr: r.e, dtype: id, seq: r.seq, angle: r.th, F: r.F, Flo: r.Flo, Fhi: r.Fhi, gapX: r.gapX, gapY: r.gapY, buildings: r.blds,
-        far: v.far, bcr: v.bcr, gfa: v.gfa, units: v.units, rules: v.rules, risks: v.risks, prefs: v.prefs, byType, maxFloors: Math.max(...r.blds.map(b => b.floors)) });
+      const pack = (blds, label, extra) => { const v = K.verify(site, blds, opt), byType = {};
+        blds.forEach(b => Object.keys(b.mixT).forEach(t => { byType[t] = (byType[t] || 0) + b.mixT[t] * b.floors; }));
+        return Object.assign({ key: id, label, mixErr: mixErrOf(blds, opt), dtype: id, seq: r.seq, angle: r.th, F: r.F, Flo: r.Flo, Fhi: r.Fhi, gapX: r.gapX, gapY: r.gapY, buildings: blds,
+          far: v.far, bcr: v.bcr, gfa: v.gfa, units: v.units, rules: v.rules, risks: v.risks, prefs: v.prefs, byType, maxFloors: Math.max(...blds.map(b => b.floors)) }, extra || {}); };
+      const im = o.improve === false ? null : improve(site, opt, r, o);
+      out.push(pack(r.blds, `기본 배치 — ${r.m.dname}`, { improved: im && im.steps.length > 1 ? pack(im.blds, `기본 + 보완 — ${r.m.dname}`, { steps: im.steps }) : null, steps: im ? im.steps.slice(0, 1) : [] }));
     });
     return { variants: out, ms: Date.now() - t0 };
   }
 
-  const api = { simple, one, angles, seqFor, TYPES };
+  const api = { simple, one, improve, angles, seqFor, mixErrOf, TYPES };
   if (NODE) module.exports = api; else g.JbsSimple = api;
 })(typeof window !== 'undefined' ? window : globalThis);
