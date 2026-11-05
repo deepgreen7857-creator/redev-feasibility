@@ -114,6 +114,20 @@
     if (mirror) { const f = q => q.map(([x, yy]) => [L1 - x, yy]).reverse(); parts = parts.map(f); cores = cores.map(f); units = units.map(rs => rs.map(f)); }
     return { form: 'L', L: L1, D: Math.max(y, y0), parts, cores, divs: [], units, mir: !!mirror };
   }
+  // T자: 앞동(남향 판상 bar세대) 가운데에서 북쪽으로 꼬리(stem세대). 꼬리 세대는 90° 돌려 동·서 채광
+  //  앞동 2호면 그 코어 뒤에서(코어 하나가 3세대), 앞동 4호면 가운데(두 세대 뒷벽)에서 뻗음. 꼬리 2세대면 세대 사이에 꼬리 코어(2호 1코어를 세운 꼴)
+  function tMix(us, bar, high) {
+    const cw = coreW(high), base = slabMix(us.slice(0, bar), high), stem = us.slice(bar);
+    const dw = Math.max(...stem.map(u => u.깊이)) + backD();
+    let parts = base.parts.slice(), cores = base.cores.slice(), units = base.units.slice(), y = base.D;
+    const xc = bar === 2 ? (us[0].폭 + cw / 2) : base.L / 2;
+    stem.forEach((u, i) => {
+      if (i === 1) { const c = R4(xc - dw * 0.31, y, xc + dw * 0.31, y + cw); cores.push(c); parts.push(c); y += cw; }
+      const x0 = xc - dw / 2, r = [R4(x0, y, x0 + u.깊이, y + u.폭)].concat(backD() > 0 ? [R4(x0 + u.깊이, y + u.폭 * 0.3, x0 + dw, y + u.폭 * 0.7)] : []);
+      units.push(r); parts.push(...r); y += u.폭;
+    });
+    return { form: 'T', L: base.L, D: y, parts, cores, divs: [], units };
+  }
   // 탑상: 코어 네 변에 세대가 한쪽으로 치우쳐 붙어 도는 바람개비형. 세대마다 평형이 달라도 됨
   function towerMix(us) {
     const s = num0((LIB.탑상_코어 || {}).한변_m, 7.9);
@@ -124,23 +138,29 @@
     const U2 = units.map(rs => rs.map(sh));
     return { form: 'tower', L: Mx - mx, D: My - my, parts: U2.flat().concat([sh(core)]), cores: [sh(core)], divs: [], units: U2 };
   }
-  // Y자: 육각 코어 + 세 날개(남·북동·북서), 날개마다 1세대
-  function yMix(us) {
+  // Y자: 육각 코어 + 세 날개(남·북동·북서). wings = 날개별 세대 수(꼬리 길이) — 세대를 코어에서 바깥으로 이어 붙임(날개 길이 = 세대 깊이 합)
+  //  날개 폭은 그 날개 세대 중 가장 넓은 세대 폭. us는 날개 순서대로(날개 안에서는 코어 쪽 → 끝)
+  function yMix(us, wings) {
+    wings = wings && wings.length === 3 ? wings : [1, 1, 1];
     const cw = coreW(false), wmax = Math.max(...us.map(u => u.폭)), a = Math.max(cw * 0.8, wmax / 2 / 1.6), Rh = a / Math.cos(Math.PI / 6);
     const hex = [0, 1, 2, 3, 4, 5].map(i => [Rh * Math.cos(i * Math.PI / 3), Rh * Math.sin(i * Math.PI / 3)]);
-    const parts = [hex], units = [];
+    const parts = [hex], units = [], divs = [];
+    let k = 0;
     [-90, 30, 150].forEach((deg, i) => {
       const th = deg * D2R, u = [Math.cos(th), Math.sin(th)], v = [-u[1], u[0]], P = (s2, q) => [u[0] * s2 + v[0] * q, u[1] * s2 + v[1] * q];
-      const w = us[i].폭, len = us[i].깊이, r = [[P(a, -w / 2), P(a + len, -w / 2), P(a + len, w / 2), P(a, w / 2)]];
-      units.push(r); parts.push(...r);
+      let s0 = a;
+      for (let j = 0; j < wings[i]; j++, k++) {
+        const w = us[k].폭, len = us[k].깊이, r = [[P(s0, -w / 2), P(s0 + len, -w / 2), P(s0 + len, w / 2), P(s0, w / 2)]];
+        units.push(r); parts.push(...r); if (j) divs.push([P(s0, -w / 2), P(s0, w / 2)]); s0 += len;
+      }
     });
     const [mx, my, Mx, My] = bbox(parts), sh = q => q.map(([x, y]) => [x - mx, y - my]);
-    return { form: 'Y', L: Mx - mx, D: My - my, parts: parts.map(sh), cores: [hex.map(p => [p[0] * 0.75 - mx, p[1] * 0.75 - my])], divs: [], units: units.map(rs => rs.map(sh)) };
+    return { form: 'Y', L: Mx - mx, D: My - my, parts: parts.map(sh), cores: [hex.map(p => [p[0] * 0.75 - mx, p[1] * 0.75 - my])], divs: divs.map(sh), units: units.map(rs => rs.map(sh)), wings: wings.slice() };
   }
 
   /* ---------- 평형 배열 만들기 ---------- */
   const typeDef = id => (DT.타입 || []).find(x => x.id === id) || null;
-  const formKind = f => (f === 'tower' || f === 'Y' ? 'tower' : 'slab');
+  const formKind = f => (f === 'tower' || f === 'Y' ? 'tower' : 'slab');  // T자 꼬리는 판상 세대를 돌려 씀
   // 동 타입 + 쓸 평형 목록 → 조합 규칙을 지키는 평형 배열들(같은 배열의 좌우 뒤집기는 하나로)
   //  6·8호는 끝 평형 + 가운데 평형 두 가지로만(배열 수가 너무 많아짐)
   function assignments(id, ts) {
@@ -148,13 +168,16 @@
     ts = [...new Set(ts.map(String))].filter(t => U[t]).sort((a, b) => +a - +b);
     const n = T.호수, slots = T.슬롯, rules = T.조합_규칙 || [], out = [], seen = new Set();
     let raw = [];
-    if (T.형태 === 'tower' || T.형태 === 'Y') {
+    if (T.형태 === 'tower' || (T.형태 === 'Y' && n <= 3)) {
       // 코어 둘레: 순서 없는 조합 → 큰 것·작은 것을 번갈아 둠
       const rec = (start, acc) => { if (acc.length === n) { raw.push(acc.slice()); return; } for (let i = start; i < ts.length; i++) { acc.push(ts[i]); rec(i, acc); acc.pop(); } };
       rec(0, []);
       raw = raw.map(a => { const s = a.slice().sort((x, y) => +y - +x), r = []; let lo = s.length - 1, hi = 0; for (let i = 0; i < s.length; i++) r.push(i % 2 ? s[lo--] : s[hi++]); return r; });
     } else if (n > 4) {
-      ts.forEach(e => ts.forEach(m => raw.push(slots.map(sl => (sl === 'end' ? e : m)))));
+      // 칸이 많으면 칸 성격(end·mid·stem·corner)마다 평형 하나씩만 고름
+      const roles = [...new Set(slots)];
+      const rec = (i, pick) => { if (i === roles.length) { raw.push(slots.map(sl => pick[sl])); return; } ts.forEach(t => { pick[roles[i]] = t; rec(i + 1, pick); }); };
+      rec(0, {});
     } else {
       const rec = acc => { if (acc.length === n) { raw.push(acc.slice()); return; } ts.forEach(t => { acc.push(t); rec(acc); acc.pop(); }); };
       rec([]);
@@ -162,9 +185,12 @@
     raw.forEach(a => {
       const ends = a.filter((_, i) => slots[i] === 'end'), mids = a.filter((_, i) => slots[i] === 'mid'), corner = a.filter((_, i) => slots[i] === 'corner'), wings = a.filter((_, i) => slots[i] !== 'corner');
       if (rules.includes('end_ge_mid') && mids.length && Math.min(...ends.map(Number)) < Math.max(...mids.map(Number))) return;
+      const stems = a.filter((_, i) => slots[i] === 'stem'), bars = a.filter((_, i) => slots[i] !== 'stem');
+      if (rules.includes('stem_le_bar') && stems.length && Math.max(...stems.map(Number)) > Math.min(...bars.map(Number))) return;
       if (rules.includes('corner_le_wing') && corner.length && Math.max(...corner.map(Number)) > Math.min(...wings.map(Number))) return;
       if (rules.includes('symmetric') && T.형태 === 'slab' && a.join() !== a.slice().reverse().join()) return;
-      const k = [a.join(), a.slice().reverse().join()].sort()[0];
+      if (T.형태 === 'T') { const b2 = a.slice(0, T.앞동); if (b2.join() !== b2.slice().reverse().join()) return; }
+      const k = T.형태 === 'T' || T.형태 === 'Y' && n > 3 ? a.join() : [a.join(), a.slice().reverse().join()].sort()[0];
       if (seen.has(k)) return; seen.add(k); out.push(a);
     });
     return out;
@@ -179,8 +205,9 @@
     let m;
     if (T.형태 === 'slab') m = slabMix(us, opt.high);
     else if (T.형태 === 'bent') m = bentMix(us, opt.high, opt.mirror);
+    else if (T.형태 === 'T') m = tMix(us, T.앞동, opt.high);
     else if (T.형태 === 'tower') m = towerMix(us);
-    else if (T.형태 === 'Y') m = yMix(us);
+    else if (T.형태 === 'Y') m = yMix(us, T.날개);
     else return null;
     const mixT = {}; seq.forEach(t => { mixT[t] = (mixT[t] || 0) + 1; });
     const t = Object.keys(mixT).sort((a, b) => mixT[b] - mixT[a] || +b - +a)[0];
@@ -190,7 +217,8 @@
       dtype: id, dname: T.이름, t, n: seq.length, seq: seq.map(String), mixT, uplans: us,
       vname: [...new Set(us.map(u => u.vname))].join(' · '), adjusted,
       notes: [].concat(adjusted.length ? [`평면 조정 필요(${adjusted.join('·')}㎡형, 실제 사례 범위 안에서 폭을 줄이고 깊이를 늘림)`] : [],
-        depthGap > 2 ? [`한 동 안 세대 깊이 차이 ${depthGap.toFixed(1)}m — 후면 요철 큼`] : []),
+        depthGap > 2 ? [`한 동 안 세대 깊이 차이 ${depthGap.toFixed(1)}m — 후면 요철 큼`] : [],
+        T.형태 === 'Y' && Math.max(...(T.날개 || [1])) >= 3 ? ['Y자 날개 3세대 이상 — 날개 끝 피난 동선(직통계단) 확인 필요'] : []),
     });
   }
   // 쓸 평형 목록으로 만들 수 있는 동 전체(타입 × 배열). 같은 평형만 쓴 동(단일)과 섞은 동(혼합)을 다 냄

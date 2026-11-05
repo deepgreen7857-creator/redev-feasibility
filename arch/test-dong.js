@@ -50,5 +50,17 @@ t('목록: 59·84로 만들 수 있는 동이 10가지 이상, 단일·혼합 �
   const cat = D.catalog(['59', '84']); assert.ok(cat.length >= 10, cat.length);
   assert.ok(cat.some(m => Object.keys(m.mixT).length === 1) && cat.some(m => Object.keys(m.mixT).length === 2));
 });
+t('Y자 꼬리 늘리기: 날개 2세대(Y6)는 6세대·코어 1, 날개 3세대(Y9)는 피난 메모', () => {
+  const m6 = D.build('Y6', ['59', '84', '59', '84', '59', '84']); assert.strictEqual(m6.units.length, 6); assert.strictEqual(m6.cores.length, 1);
+  const m3 = D.build('Y3', ['84', '84', '84']); assert.ok(m6.D > m3.D + 5, '꼬리가 길어짐');
+  const m9 = D.build('Y9', Array(9).fill('59')); assert.ok(m9.notes.some(x => /피난/.test(x)));
+  assert.ok(D.assignments('Y6', ['59', '84']).every(a => [1, 3, 5].every(i => +a[i] >= +a[i - 1])), '날개 끝 ≥ 안쪽');
+});
+t('T자: 앞동 2호+꼬리 1(코어 1), 꼬리 2(코어 2), 앞동 4호+꼬리 2(코어 3), 꼬리 평형 ≤ 앞동', () => {
+  assert.strictEqual(D.build('TJ3', ['84', '84', '59']).cores.length, 1);
+  assert.strictEqual(D.build('TJ4', ['84', '84', '59', '59']).cores.length, 2);
+  const m = D.build('TJ6', ['84', '84', '84', '84', '59', '59']); assert.strictEqual(m.cores.length, 3); assert.strictEqual(m.units.length, 6);
+  assert.ok(!D.assignments('TJ4', ['59', '84']).some(a => a.slice(2).some(x => +x > Math.min(+a[0], +a[1]))));
+});
 console.log(`\n${n}개 모두 통과`);
 const R = D.ranges(); console.log('평형별 판상 폭·깊이 범위(m):'); Object.keys(R).forEach(k => { const s = R[k].slab; if (s) console.log(`  ${k}㎡ 사례 ${s.n}건 폭 ${s.폭.map(v => v.toFixed(1)).join('~')} 깊이 ${s.깊이.map(v => v.toFixed(1)).join('~')} 베이 ${s.베이.join('/')} (${s.상태})`); });
