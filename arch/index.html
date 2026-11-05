@@ -132,7 +132,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       </div>
       <details><summary>이격·인동간격 등 세부 조건</summary>
       <div class="grid" style="margin-top:8px">
-        <label>인동간격(높이 대비 배수)<input id="p_spacing" inputmode="decimal"></label>
+        <label>인동간격(높이 대비 배수)<input id="p_spacing" inputmode="decimal"><span class="note">법정 0.8(인천 조례 제32조⑤). 0.4~0.5로 낮추면 정비계획 도면 수준 밀도 — 대신 동지 2시간 일조 단서(시행령 제86조③2호 단서)를 일조분석으로 입증해야 함, 위험요소 카드는 늘 0.8로 검사</span></label>
         <label>동 측면 간격 m<input id="p_sideGap" inputmode="decimal"></label>
         <label>도로 경계 이격 m<input id="p_roadSb" inputmode="decimal"></label>
         <label>간선도로 이격(소음) m<input id="p_artSb" inputmode="decimal"></label>
@@ -141,7 +141,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
         <label>층수 상한 적용 거리 m<input id="p_lowDist" inputmode="decimal"></label>
         <label>계획 주차(세대당 대수, 법정보다 작으면 법정)<input id="p_parkPer" inputmode="decimal"></label>
         <label>공원·녹지 폭 m (중심선을 경계로 봄)<input id="p_parkW" inputmode="decimal"></label>
-        <label>동 모서리 근접(실무 기준·가정)<select id="p_corner"><option value="rec">최소 10m + 45° 안에서 보이면 높이 × 0.5(추천)</option><option value="min10">모든 동 사이 최소 10m만</option><option value="all">모서리끼리 모두 높이 × 0.5</option><option value="off">안 봄(법정 기준만)</option></select></label>
+        <label>동 모서리 근접(실무 기준·가정)<select id="p_corner"><option value="min10">모든 동 사이 최소 10m(기본 — 실제 정비계획 수준)</option><option value="rec">최소 10m + 45° 안에서 보이면 높이 × 0.5(심의 대비 엄격안)</option><option value="all">모서리끼리 모두 높이 × 0.5</option><option value="off">안 봄(법정 기준만)</option></select></label>
         <label>일조 높이 제한 기준<select id="p_sunBase"><option value="north">정북방향(기본)</option><option value="south">정남방향(정비구역 등, 건축법 제61조③ — 고시 필요)</option></select></label>
         <label>최저 층수<input id="p_minFloors" inputmode="numeric"></label>
         <label>층고 m<input id="p_fh" inputmode="decimal"></label>
@@ -202,7 +202,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../shared/feas.js?v=148"></script>
 <script src="../shared/plan-import.js?v=2"></script>
 <script src="arch-draw.js?v=10"></script>
-<script src="arch.js?v=40"></script>
+<script src="arch.js?v=41"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>
 </body>

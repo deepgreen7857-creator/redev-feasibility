@@ -7,7 +7,7 @@ site.setbacks = site.tags.map(t => (t === 'road' ? 3 : 5));
 const opt = { units: U, assume: A, mix: { 59: 40, 84: 50, 114: 10 }, spacing: 0.8, sun: sunN, lot: G.area(L), far: 250, angle: 0, lib: C.평면_라이브러리, winRatio: 2, crit: C.items, dongTypes: DT };
 const r = SP.simple(site, opt);
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('통과', name); };
-t('동 타입 8가지(판상 4·6·8·10호, 꺾인 판상 3·4·5호, 탑상 4호) 모두 배치가 나옴', () => assert.deepStrictEqual(r.variants.map(v => v.dtype), SP.TYPES));
+t('동 타입 9가지(판상 2·4·6·8·10호, 꺾인 판상 3·4·5호, 탑상 4호) 모두 배치가 나옴', () => assert.deepStrictEqual(r.variants.map(v => v.dtype), SP.TYPES));
 t('모든 안 법정 위반 0(경계·동 사이 거리·정북 일조·채광창)', () => r.variants.forEach(v => assert.strictEqual(v.rules.length, 0, v.dtype + ' ' + JSON.stringify(v.rules.slice(0, 2)))));
 t('한 안 안에서는 같은 동 타입·같은 평형 배열만', () => r.variants.forEach(v => { assert.ok(v.buildings.every(b => b.dtype === v.dtype && b.seq.join() === v.seq.join()), v.dtype); }));
 t('줄은 나란히(같은 줄 동은 같은 높이에서 시작)', () => r.variants.forEach(v => { const rows = {}; v.buildings.forEach(b => { (rows[b.row] = rows[b.row] || []).push(b); }); Object.values(rows).forEach(bs => { const ys = bs.map(b => Math.min(...b.parts.flat().map(p => G.rot(p, -v.angle * Math.PI / 180)[1]))); assert.ok(Math.max(...ys) - Math.min(...ys) < 0.01, v.dtype); }); }));
