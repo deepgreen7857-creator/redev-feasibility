@@ -511,6 +511,66 @@
       <p class="note">보수 = 일반분양가 −10%·공사비 +10%, 낙관 = 분양가 +10%·공사비 −5%(가정). 분양가·공사비·임대 비율 등은 사업성 화면 공통 가정값. 인허가 및 심의 과정에서 변동될 수 있습니다.</p>`;
   }
   document.addEventListener('change', e => { if (e.target && e.target.id === 'feasPrior') { site.v = site.v || {}; site.v.priorEok = e.target.value; try { saveState(); } catch (er) { /* 무시 */ } setTimeout(renderFeas, 0); } });
+  /* ---------- 배치도 올려서 검토(2026-11-05): shared/plan-import.js(JbsImport) — ① DXF 읽기(ZoneKit.dxfPolys + JbsImport.dxfTexts, 측량 좌표 → 경위도 → 대지 좌표) ② 동 알아보기 표(사람이 확인·수정) ③ [이 배치로 검사] → 대안 하나로 배치도·치수선·위험요소·사업성 */
+  let IMP = null;
+  async function importDxf(file) {
+    const out = $('#impOut'); out.innerHTML = '읽는 중…';
+    try {
+      if (!pts || !pr) throw new Error('먼저 구역계를 불러오세요(배치도를 대지에 맞추는 기준)');
+      const buf = await file.arrayBuffer(); let text;
+      try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { text = new TextDecoder('euc-kr').decode(buf); }
+      if (/^AutoCAD Binary DXF/.test(text.slice(0, 22))) throw new Error('바이너리 DXF는 읽지 못합니다. CAD에서 ASCII DXF로 다시 저장해 주세요');
+      const polys = ZoneKit.dxfPolys(text), texts = JbsImport.dxfTexts(text);
+      if (!polys.length) throw new Error('닫힌 폴리선이 없습니다');
+      // 좌표계: 경위도면 그대로, 아니면 한국 측량 좌표 후보 중 대지 가운데에 가장 가까운 것
+      const c0 = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length], [0, 0]), cLL = pr.back(c0);
+      const p0 = polys[0].pts[0]; let fn = null, crs = '';
+      if (Math.abs(p0[0]) <= 180 && Math.abs(p0[1]) <= 90) { fn = q => q; crs = '경위도'; }
+      else {
+        await ZoneKit.loadProj4(); let bd = Infinity;
+        ZoneKit.DXF_CRS.forEach(([name, def]) => { try { const ll = proj4(def, 'WGS84', p0), d = Math.hypot(ll[0] - cLL[0], (ll[1] - cLL[1]) * 1.25); if (d < bd) { bd = d; fn = q => proj4(def, 'WGS84', q); crs = name; } } catch (e) { /* 건너뜀 */ } });
+        if (!fn || bd > 0.05) throw new Error('도면 좌표가 이 구역 근처 측량 좌표가 아닙니다(도면 자체 좌표이거나 다른 곳). 측량 좌표가 들어간 DXF가 필요합니다');
+      }
+      const toM = q => pr.to(fn(q));
+      const P2 = polys.map(p => ({ layer: p.layer, pts: p.pts.map(toM) })), T2 = texts.map(t => { const m = toM([t.x, t.y]); return Object.assign({}, t, { x: m[0], y: m[1] }); });
+      const I = buildInput(), rows = JbsImport.recognize(P2, T2, I.site, I.opt);
+      const t0 = Object.keys(I.opt.mix).sort((a, b) => I.opt.mix[b] - I.opt.mix[a])[0] || '84'; rows.forEach(r => { r.t = t0; });
+      IMP = { rows, crs, file: file.name };
+      renderImp();
+    } catch (e) { console.warn(e); out.innerHTML = `<p class="msg err">${esc(e.message)}</p>`; }
+  }
+  function renderImp() {
+    const out = $('#impOut'); if (!IMP) { out.innerHTML = ''; return; }
+    const ts = TYPES();
+    out.innerHTML = `<p>${esc(IMP.file)} — 좌표계 ${esc(IMP.crs)}, 동으로 보이는 도형 ${IMP.rows.length}개. 믿음 정도가 '낮음'이면 층수·층당 세대를 꼭 고치세요.</p>
+      <table class="tbl"><tr><th>사용</th><th>동</th><th>레이어</th><th>바닥 ㎡</th><th>형태</th><th>층수</th><th>층당 세대</th><th>주 평형</th><th>믿음</th><th>도형 안 글자</th></tr>
+      ${IMP.rows.map((r, i) => `<tr><td><input type="checkbox" data-imp="${i}" data-k="use" ${r.use ? 'checked' : ''}></td><td><input type="number" data-imp="${i}" data-k="id" value="${r.id}" style="width:5em"></td><td>${esc(r.layer)}</td><td>${fmt(r.area)}</td>
+        <td><select data-imp="${i}" data-k="form"><option value="slab"${r.form === 'slab' ? ' selected' : ''}>판상(긴 변 창)</option><option value="free"${r.form !== 'slab' ? ' selected' : ''}>그 밖(모든 벽 창)</option></select></td>
+        <td><input type="number" data-imp="${i}" data-k="floors" value="${r.floors}"> <span class="note">${esc(r.floorsFrom)}</span></td><td><input type="number" data-imp="${i}" data-k="perFloor" value="${r.perFloor}"></td>
+        <td><select data-imp="${i}" data-k="t">${ts.map(t => `<option value="${t}"${String(r.t) === t ? ' selected' : ''}>${t}㎡</option>`).join('')}</select></td><td>${esc(r.conf)}</td><td class="note">${esc(r.texts.join(' · ').slice(0, 40))}</td></tr>`).join('')}</table>
+      <div class="bar" style="margin-top:8px"><button class="primary" id="impRun">이 배치로 검사</button></div>`;
+  }
+  document.addEventListener('change', e => {
+    const el = e.target; if (!el) return;
+    if (el.id === 'impFile' && el.files && el.files[0]) importDxf(el.files[0]);
+    if (el.dataset && el.dataset.imp !== undefined && IMP) { const r = IMP.rows[+el.dataset.imp], k = el.dataset.k; r[k] = k === 'use' ? el.checked : (k === 'form' || k === 't') ? el.value : +el.value; }
+  });
+  document.addEventListener('click', e => { if (e.target && e.target.id === 'impRun') runImported(); });
+  function runImported() {
+    if (!IMP) return;
+    const I = buildInput(), As = I.opt.assume, H = f => f * As.floorHeight_m + As.groundExtra_m, sup = t => (+C.평면[t].공급 > 0 ? +C.평면[t].공급 : C.평면[t].전용 * As.supplyFactor);
+    const blds = JbsImport.toBuildings(IMP.rows, I.opt).map(b => { const th = (b.angle || 0) * Math.PI / 180, loc = b.poly.map(p => G.rot(p, -th)), xs = loc.map(p => p[0]), ys = loc.map(p => p[1]);
+      return Object.assign(b, { L: Math.max(...xs) - Math.min(...xs), D: Math.max(...ys) - Math.min(...ys), center: b.poly.reduce((a, p) => [a[0] + p[0] / b.poly.length, a[1] + p[1] / b.poly.length], [0, 0]), cap: b.floors, divs: [], cores: [], units: [], vname: '올린 배치도' }); });
+    if (!blds.length) { msg('사용할 동이 없습니다.', true); return; }
+    const byType = {}; blds.forEach(b => { byType[b.t] = (byType[b.t] || 0) + b.n * b.floors; });
+    const gfa = blds.reduce((s, b) => s + b.n * b.floors * sup(b.t), 0), ba = blds.reduce((s, b) => s + Math.abs(G.area(b.poly)), 0), mf = Math.max(...blds.map(b => b.floors));
+    alts = [{ label: `올린 배치도 · ${IMP.file}`, buildings: blds, units: blds.reduce((s, b) => s + b.n * b.floors, 0), gfa, far: gfa / I.lot * 100, bcr: ba / I.lot * 100, byType, maxFloors: mf, maxHeight: H(mf), H, angle: blds[0].angle || 0, form: 'slab', target: I.lot * I.opt.far / 100, imported: true }];
+    cur = 0; sunRes = null; v3 = null;
+    $('#out').hidden = false; $('#confirm').disabled = false; if ($('#basicCard')) $('#basicCard').hidden = true;
+    renderAlts(); showView('plan'); drawBuildingsOnMap();
+    msg(`올린 배치도 ${blds.length}개동을 같은 기준으로 검사했습니다. 배치도 아래 '위험요소 검토'와 치수선에서 법정 거리·일조를 확인하세요(세대·연면적은 표에 넣은 층당 세대 기준).`);
+    $('#out').scrollIntoView({ behavior: 'smooth' });
+  }
   function invalidate() { if (alts.length) { msg('조건이 바뀌었습니다. [배치안 만들기]를 다시 누르세요.'); } }
 
   /* ---------- 결과 화면 ---------- */

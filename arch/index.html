@@ -18,6 +18,7 @@
 #basicCard .tbl th, #basicCard .tbl td { border-bottom: 1px solid #e6e9ec; padding: 5px 6px; text-align: left; white-space: nowrap; }
 #basicCard .tbl th { background: #f4f6f8; font-weight: 600; }
 #feasCard .card { margin: 12px 0; padding: 10px 14px; border: 1px solid #d6dbe0; border-radius: 8px; background: #fff; } #feasCard .tbl { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 13px; } #feasCard .tbl th, #feasCard .tbl td { border-bottom: 1px solid #e6e9ec; padding: 5px 6px; text-align: left; white-space: nowrap; } #feasCard { overflow-x: auto; }
+#impOut .tbl { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 13px; } #impOut .tbl th, #impOut .tbl td { border-bottom: 1px solid #e6e9ec; padding: 4px 5px; text-align: left; } #impOut input[type=number] { width: 4.5em; } #impOut { overflow-x: auto; }
 #riskCard h4 { margin: 10px 0 4px; font-size: 14px; }
 #riskCard ul { margin: 0; padding-left: 18px; }
 #riskCard li { margin: 6px 0; line-height: 1.45; font-size: 13px; }
@@ -153,6 +154,11 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       </div>
       <div class="msg" id="msg" role="status"></div>
       <div class="nextsteps" id="nextSteps" hidden></div>
+      <details id="impBox" style="margin-top:12px"><summary><b>배치도 올려서 검토(DXF)</b> — 용역사·건축사 배치도를 읽어 법정 거리·일조·사업성을 같은 기준으로 검사</summary>
+        <p class="note">측량 좌표가 들어간 ASCII DXF. 동 외곽선은 닫힌 폴리선, 층수·동 번호는 동 안에 글자(예: 101동, 25F)로 있으면 자동으로 읽습니다. 읽은 결과는 아래 표에서 꼭 확인·수정한 뒤 [이 배치로 검사]를 누르세요. 올린 파일은 이 브라우저에서 읽기만 하고 저장·전송하지 않습니다.</p>
+        <input type="file" id="impFile" accept=".dxf">
+        <div id="impOut"></div>
+      </details>
     </section>
   </div>
 
@@ -193,8 +199,9 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../shared/mass3d.js?v=1"></script>
 <script src="../traffic/traffic-calc.js?v=4"></script>
 <script src="../shared/feas.js?v=147"></script>
+<script src="../shared/plan-import.js?v=1"></script>
 <script src="arch-draw.js?v=9"></script>
-<script src="arch.js?v=31"></script>
+<script src="arch.js?v=32"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>
 </body>
