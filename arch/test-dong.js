@@ -62,5 +62,10 @@ t('T자: 앞동 2호+꼬리 1(코어 1), 꼬리 2(코어 2), 앞동 4호+꼬리 
   const m = D.build('TJ6', ['84', '84', '84', '84', '59', '59']); assert.strictEqual(m.cores.length, 3); assert.strictEqual(m.units.length, 6);
   assert.ok(!D.assignments('TJ4', ['59', '84']).some(a => a.slice(2).some(x => +x > Math.min(+a[0], +a[1]))));
 });
+t('자유형 Y자: 날개마다 세대 수·각도를 따로, 날개 사이 60° 미만·세대 겹침은 만들지 않음', () => {
+  const m = D.buildY(['59', '84', '84', '59', '59', '84'], [2, 1, 3], D.Y_ANGLES.한쪽펼침); assert.ok(m && m.units.length === 6 && m.cores.length === 1);
+  assert.strictEqual(D.buildY(['84', '84', '84'], [1, 1, 1], [-90, 60, 110]), null, '날개 사이 50°');
+  const ys = D.yShapes(['59', '84']); assert.ok(ys.length > 100 && new Set(ys.map(y => y.wings.join())).size >= 10);
+});
 console.log(`\n${n}개 모두 통과`);
 const R = D.ranges(); console.log('평형별 판상 폭·깊이 범위(m):'); Object.keys(R).forEach(k => { const s = R[k].slab; if (s) console.log(`  ${k}㎡ 사례 ${s.n}건 폭 ${s.폭.map(v => v.toFixed(1)).join('~')} 깊이 ${s.깊이.map(v => v.toFixed(1)).join('~')} 베이 ${s.베이.join('/')} (${s.상태})`); });

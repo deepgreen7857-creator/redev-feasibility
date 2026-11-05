@@ -140,13 +140,15 @@
   }
   // Y자: 육각 코어 + 세 날개(남·북동·북서). wings = 날개별 세대 수(꼬리 길이) — 세대를 코어에서 바깥으로 이어 붙임(날개 길이 = 세대 깊이 합)
   //  날개 폭은 그 날개 세대 중 가장 넓은 세대 폭. us는 날개 순서대로(날개 안에서는 코어 쪽 → 끝)
-  function yMix(us, wings) {
+  //  angles = 날개 방향(도, 동쪽 0°·반시계). 기본 남 -90°·북동 30°·북서 150°(120° 간격). 날개마다 각도를 달리해 펼치거나 오므림
+  function yMix(us, wings, angles) {
     wings = wings && wings.length === 3 ? wings : [1, 1, 1];
+    angles = angles && angles.length === 3 ? angles : [-90, 30, 150];
     const cw = coreW(false), wmax = Math.max(...us.map(u => u.폭)), a = Math.max(cw * 0.8, wmax / 2 / 1.6), Rh = a / Math.cos(Math.PI / 6);
     const hex = [0, 1, 2, 3, 4, 5].map(i => [Rh * Math.cos(i * Math.PI / 3), Rh * Math.sin(i * Math.PI / 3)]);
     const parts = [hex], units = [], divs = [];
     let k = 0;
-    [-90, 30, 150].forEach((deg, i) => {
+    angles.forEach((deg, i) => {
       const th = deg * D2R, u = [Math.cos(th), Math.sin(th)], v = [-u[1], u[0]], P = (s2, q) => [u[0] * s2 + v[0] * q, u[1] * s2 + v[1] * q];
       let s0 = a;
       for (let j = 0; j < wings[i]; j++, k++) {
@@ -155,7 +157,7 @@
       }
     });
     const [mx, my, Mx, My] = bbox(parts), sh = q => q.map(([x, y]) => [x - mx, y - my]);
-    return { form: 'Y', L: Mx - mx, D: My - my, parts: parts.map(sh), cores: [hex.map(p => [p[0] * 0.75 - mx, p[1] * 0.75 - my])], divs: divs.map(sh), units: units.map(rs => rs.map(sh)), wings: wings.slice() };
+    return { form: 'Y', L: Mx - mx, D: My - my, parts: parts.map(sh), cores: [hex.map(p => [p[0] * 0.75 - mx, p[1] * 0.75 - my])], divs: divs.map(sh), units: units.map(rs => rs.map(sh)), wings: wings.slice(), angles: angles.slice() };
   }
 
   /* ---------- 평형 배열 만들기 ---------- */
@@ -228,6 +230,47 @@
     return res;
   }
 
-  const api = { init, ranges, casesOf, unitFor, assignments, build, catalog, typeDef, get types() { return DT.타입 || []; } };
+  /* ---------- 자유형 Y자(날개마다 세대 수·각도를 따로) ----------
+     wings [남, 북동, 북서] 날개별 세대 수(1~3), angles 날개 방향(도). 날개 사이 각도 60° 미만이거나 세대가 서로 겹치면 null
+     심화 배치에서 대지 모양에 맞춰 날개를 펼치거나(남향 쪽으로 눕힘) 오므리고, 한쪽 꼬리만 길게 뺄 때 씀 */
+  const Y_ANGLES = { 표준: [-90, 30, 150], 펼침: [-90, 15, 165], 오므림: [-90, 45, 135], 한쪽펼침: [-90, 15, 140], 남날개기울임: [-110, 30, 150] };
+  function overlapRects(a, b) {
+    const axes = [a, b].flatMap(P => P.map((p, i) => { const q = P[(i + 1) % P.length], dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1; return [-dy / L, dx / L]; }));
+    return axes.every(n => { const pa = a.map(p => p[0] * n[0] + p[1] * n[1]), pb = b.map(p => p[0] * n[0] + p[1] * n[1]); return Math.max(...pa) > Math.min(...pb) + 0.05 && Math.max(...pb) > Math.min(...pa) + 0.05; });
+  }
+  function buildY(seq, wings, angles, opt) {
+    opt = opt || {};
+    if (!wings || wings.length !== 3 || wings.some(k => k < 1 || k > 3) || seq.length !== wings[0] + wings[1] + wings[2]) return null;
+    angles = angles || Y_ANGLES.표준;
+    const sorted = angles.map(a => ((a % 360) + 360) % 360).sort((x, y) => x - y), gaps = sorted.map((a, i) => (i ? a - sorted[i - 1] : a + 360 - sorted[2]));
+    if (Math.min(...gaps) < 60) return null;
+    const maxW = opt.maxW || {}, us = seq.map(t => unitFor(t, 'tower', maxW[t])); if (us.some(u => !u)) return null;
+    const m = yMix(us, wings, angles);
+    // 다른 날개 세대끼리 겹치면 못 씀(날개를 너무 오므렸거나 세대 폭이 넓음)
+    let k = 0; const wingOf = []; wings.forEach((c, i) => { for (let j = 0; j < c; j++) wingOf[k++] = i; });
+    for (let i = 0; i < m.units.length; i++) for (let j = i + 1; j < m.units.length; j++) if (wingOf[i] !== wingOf[j] && overlapRects(m.units[i][0], m.units[j][0])) return null;
+    const mixT = {}; seq.forEach(t => { mixT[t] = (mixT[t] || 0) + 1; });
+    const t = Object.keys(mixT).sort((a, b) => mixT[b] - mixT[a] || +b - +a)[0];
+    return Object.assign(m, { dtype: 'YF', dname: `Y자 ${seq.length}호(날개 ${wings.join('·')}세대, ${angles.join('°·')}°)`, t, n: seq.length, seq: seq.map(String), mixT, uplans: us,
+      vname: [...new Set(us.map(u => u.vname))].join(' · '), adjusted: us.filter(u => u.adjusted).map(u => u.t),
+      notes: Math.max(...wings) >= 3 ? ['Y자 날개 3세대 이상 — 날개 끝 피난 동선(직통계단) 확인 필요'] : [] });
+  }
+  // 자유형 Y자 후보: 날개 세대 수 조합(북동·북서 맞바꾼 것은 하나로) × 각도 틀. 평형 배열은 날개 끝 ≥ 안쪽
+  function yShapes(ts, opt) {
+    ts = [...new Set(ts.map(String))].filter(t => U[t]).sort((a, b) => +a - +b);
+    const out = [], seen = new Set();
+    for (let a = 1; a <= 3; a++) for (let b = 1; b <= 3; b++) for (let c = b; c <= 3; c++) {
+      const wings = [a, b, c];
+      Object.keys(Y_ANGLES).forEach(nm => ts.forEach(e => ts.forEach(mid => {
+        if (+e < +mid) return;
+        const seq = wings.flatMap(k => Array(k - 1).fill(mid).concat([e]));
+        const key = wings.join() + nm + seq.join(); if (seen.has(key)) return; seen.add(key);
+        const m = buildY(seq, wings, Y_ANGLES[nm], opt); if (m) { m.angleName = nm; out.push(m); }
+      })));
+    }
+    return out;
+  }
+
+  const api = { init, ranges, casesOf, unitFor, assignments, build, catalog, typeDef, buildY, yShapes, Y_ANGLES, get types() { return DT.타입 || []; } };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.JbsDong = api;
 })(typeof window !== 'undefined' ? window : globalThis);
