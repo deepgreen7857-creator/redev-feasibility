@@ -143,10 +143,10 @@
           let ok = true;
           for (const p of m.samples) { const q = T(p), k = cellAt(P, q[0], q[1]); if (k < 0 || !P.free[k] || occ[k] || RES[k] || BLK[k] !== B.b) { ok = false; break; } }
           if (!ok) { failSize.add(sz); continue; }
-          const poly = m.hullL.map(T), form = m.form === 'T' ? 'tower' : m.form;
-          const floors = Math.min(f0, cap({ poly, form, angle: B.angle, inner: m.inner || 0 }));
+          const poly = m.hullL.map(T), form = m.form, walls = G.wallsTo(G.wallsOf(m), T, th);   // 벽면별 채광창(ㄱ자·T자 날개 동·서 창 포함)
+          const floors = Math.min(f0, cap({ poly, form, angle: B.angle, inner: m.inner || 0, walls }));
           if (floors < A.minFloors) continue;
-          const b = { id: 101 + placed.length, poly, floors, form, angle: B.angle, mixT: m.mixT, n: m.n, t: m.t, notes: m.notes || [], mod: m, T, block: B.b, parts: m.parts.map(q => q.map(T)) };
+          const b = { id: 101 + placed.length, poly, floors, form, angle: B.angle, mixT: m.mixT, n: m.n, t: m.t, notes: m.notes || [], mod: m, T, block: B.b, parts: m.parts.map(q => q.map(T)), walls };
           if (placed.some(o => Math.hypot(o.poly[0][0] - poly[0][0], o.poly[0][1] - poly[0][1]) < 150 && K.pairCheck(b, o, opt))) continue;
           placed.push(b); Object.keys(m.mixT).forEach(t => { got[t] += m.mixT[t] * floors; });
           // 앞뒤 최소 간격 띠: 북쪽은 이 동 높이 × 배수(누가 오든 가목·나목 최소), 남쪽은 min(10m, 높이 × 배수). 띠 안의 자리는 바로 건너뜀
@@ -166,7 +166,7 @@
       changed = false;
       for (const b of placed.slice().sort((p, q) => Math.max(...q.poly.map(v => v[1])) - Math.max(...p.poly.map(v => v[1])))) {
         if (gfaNow() >= target0) break;
-        const lim = Math.min(A.maxFloors, cap({ poly: b.poly, form: b.form, angle: b.angle, inner: b.mod.inner || 0 }), Math.round(HF(...b.poly[0]) * 1.3) + 1);
+        const lim = Math.min(A.maxFloors, cap({ poly: b.poly, form: b.form, angle: b.angle, inner: b.mod.inner || 0, walls: b.walls }), Math.round(HF(...b.poly[0]) * 1.3) + 1);
         if (b.floors + 1 > lim) continue;
         b.floors++;
         if (placed.some(o => o !== b && K.pairCheck(b, o, opt))) { b.floors--; continue; }
@@ -180,7 +180,7 @@
     if (gfaAt(1) > target) { let lo = 0, hi = 1; for (let i = 0; i < 18; i++) { const mid = (lo + hi) / 2; if (gfaAt(mid) <= target) lo = mid; else hi = mid; } placed.forEach(b => { b.floors = Math.max(A.minFloors, Math.floor(b.f0 * lo)); }); }
     // 결과 동(월드 좌표 조각·코어·세대)
     const blds = placed.map(b => { const m = b.mod, T = b.T; return { id: b.id, poly: b.poly, floors: b.floors, form: b.form, angle: b.angle, mixT: m.mixT, n: m.n, t: m.t, seq: m.seq, dtype: m.dtype, dname: m.dname, vname: m.vname, notes: b.notes, block: b.block,
-      parts: m.parts.map(q => q.map(T)), cores: m.cores.map(q => q.map(T)), units: (m.units || []).map(rs => rs.map(q => q.map(T))) }; });
+      parts: m.parts.map(q => q.map(T)), cores: m.cores.map(q => q.map(T)), units: (m.units || []).map(rs => rs.map(q => q.map(T))), walls: b.walls }; });
     return { blds, SK, blocks: blocks.map(B => ({ b: B.b, angle: B.angle, cx: B.cx, cy: B.cy })), tried };
   }
 

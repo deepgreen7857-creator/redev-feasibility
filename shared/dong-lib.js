@@ -98,35 +98,35 @@
       units.push(left, right); cores.push(core); parts.push(...left, core, ...right);
       x += a.폭 + cw + b.폭;
     }
-    return { form: 'slab', L: x, D, parts, cores, divs: [], units };
+    return { form: 'slab', L: x, D, parts, cores, divs: [], units, uw: units.map(() => 0) };
   }
   // 꺾인 판상(ㄱ자): 남쪽 날개 [끝 세대 | 코어 | 모서리 세대] + 모서리 위로 북쪽 날개(세대를 90° 돌려 동쪽 채광). B3 = 날개 1세대(코어 1), B4 = 날개 2세대 + 날개 코어(코어 2)
   //  mirror면 서쪽에서 꺾임
   function bentMix(us, high, mirror) {
     const cw = coreW(high), base = slabMix(us.slice(0, 2), high), y0 = base.D, L1 = base.L;
     const wing = us.slice(2), dw = Math.max(...wing.map(u => u.깊이)) + backD();
-    let parts = base.parts.slice(), cores = base.cores.slice(), units = base.units.slice(), y = y0;
+    let parts = base.parts.slice(), cores = base.cores.slice(), units = base.units.slice(), uw = base.uw.slice(), y = y0;
     wing.forEach((u, i) => {
       if (i === 1) { const c = R4(L1 - dw * 0.62, y, L1, y + cw); cores.push(c); parts.push(c); y += cw; }
       const r = [R4(L1 - dw, y, L1 - dw + u.깊이, y + u.폭)].concat(backD() > 0 ? [R4(L1 - dw + u.깊이, y + u.폭 * 0.3, L1, y + u.폭 * 0.7)] : []);
-      units.push(r); parts.push(...r); y += u.폭;
+      units.push(r); uw.push(90); parts.push(...r); y += u.폭;   // 날개 세대: 폭 방향 남북 → 창은 동·서
     });
     if (mirror) { const f = q => q.map(([x, yy]) => [L1 - x, yy]).reverse(); parts = parts.map(f); cores = cores.map(f); units = units.map(rs => rs.map(f)); }
-    return { form: 'L', L: L1, D: Math.max(y, y0), parts, cores, divs: [], units, mir: !!mirror };
+    return { form: 'L', L: L1, D: Math.max(y, y0), parts, cores, divs: [], units, uw, mir: !!mirror };
   }
   // T자: 앞동(남향 판상 bar세대) 가운데에서 북쪽으로 꼬리(stem세대). 꼬리 세대는 90° 돌려 동·서 채광
   //  앞동 2호면 그 코어 뒤에서(코어 하나가 3세대), 앞동 4호면 가운데(두 세대 뒷벽)에서 뻗음. 꼬리 2세대면 세대 사이에 꼬리 코어(2호 1코어를 세운 꼴)
   function tMix(us, bar, high) {
     const cw = coreW(high), base = slabMix(us.slice(0, bar), high), stem = us.slice(bar);
     const dw = Math.max(...stem.map(u => u.깊이)) + backD();
-    let parts = base.parts.slice(), cores = base.cores.slice(), units = base.units.slice(), y = base.D;
+    let parts = base.parts.slice(), cores = base.cores.slice(), units = base.units.slice(), uw = base.uw.slice(), y = base.D;
     const xc = bar === 2 ? (us[0].폭 + cw / 2) : base.L / 2;
     stem.forEach((u, i) => {
       if (i === 1) { const c = R4(xc - dw * 0.31, y, xc + dw * 0.31, y + cw); cores.push(c); parts.push(c); y += cw; }
       const x0 = xc - dw / 2, r = [R4(x0, y, x0 + u.깊이, y + u.폭)].concat(backD() > 0 ? [R4(x0 + u.깊이, y + u.폭 * 0.3, x0 + dw, y + u.폭 * 0.7)] : []);
-      units.push(r); parts.push(...r); y += u.폭;
+      units.push(r); uw.push(90); parts.push(...r); y += u.폭;
     });
-    return { form: 'T', L: base.L, D: y, parts, cores, divs: [], units };
+    return { form: 'T', L: base.L, D: y, parts, cores, divs: [], units, uw };
   }
   // 탑상: 코어 네 변에 세대가 한쪽으로 치우쳐 붙어 도는 바람개비형. 세대마다 평형이 달라도 됨
   function towerMix(us) {

@@ -81,6 +81,20 @@
       const fs = Math.max(5 * u, Math.min(Math.min(b.D, b.L) * 0.22, 8.5 * u));
       s += `<g transform="translate(${X(cx)},${Y(cy)}) rotate(${ang.toFixed(1)})"><text text-anchor="middle" y="${-fs * 0.15}" font-size="${fs}" font-weight="700" fill="#1d2a33">${b.id}동</text><text text-anchor="middle" y="${fs * 0.95}" font-size="${fs * 0.72}" fill="#33424b">${b.floors}F · ${b.t}㎡×${b.n}</text></g>`.replace('<text', `<rect x="${-fs * 2.3}" y="${-fs * 1.05}" width="${fs * 4.6}" height="${fs * 2.35}" rx="${fs * 0.3}" fill="#fff" opacity=".72"/><text`);
     });
+    // 치수선: 실제 / 기준(초록 통과 · 빨강 위반 · 주황 권고 · 회색 참고). 이름표는 겹치지 않게 아래로 밀어 놓음
+    if (o.dims && o.dims.length) {
+      const DC = { 통과: '#1a7f37', 위반: '#d00', 권고: '#e07000', 참고: '#777' }, TAGN = { spacing: '인동', sun: '일조', window: '채광', corridor: '통경' }, boxes = [];
+      o.dims.forEach(d => {
+        const c = DC[d.판정] || '#777', a = d.a, b = d.b, dx = b[0] - a[0], dy = b[1] - a[1], Ln = Math.hypot(dx, dy) || 1, ux = dx / Ln, uy = dy / Ln, px = -uy, py = ux, t = 2.6 * u;
+        s += `<line x1="${X(a[0])}" y1="${Y(a[1])}" x2="${X(b[0])}" y2="${Y(b[1])}" stroke="${c}" stroke-width="${0.9 * u}"${d.kind === 'corridor' ? ` stroke-dasharray="${3 * u} ${2 * u}"` : ''}/>`;
+        [a, b].forEach((q, k) => { const sg = k ? -1 : 1; s += `<polygon points="${P(q)} ${P([q[0] + sg * ux * 4 * u + px * 1.6 * u, q[1] + sg * uy * 4 * u + py * 1.6 * u])} ${P([q[0] + sg * ux * 4 * u - px * 1.6 * u, q[1] + sg * uy * 4 * u - py * 1.6 * u])}" fill="${c}"/><line x1="${X(q[0] - px * t)}" y1="${Y(q[1] - py * t)}" x2="${X(q[0] + px * t)}" y2="${Y(q[1] + py * t)}" stroke="${c}" stroke-width="${0.7 * u}"/>`; });
+        const txt = `${TAGN[d.kind] || ''} ${d.글}`, fs = 5.2 * u, w = txt.length * fs * 0.56 + 3 * u;
+        let mx = +X((a[0] + b[0]) / 2), my = +Y((a[1] + b[1]) / 2), g = 0;
+        while (boxes.some(r => Math.abs(r[0] - mx) < (r[2] + w) / 2 && Math.abs(r[1] - my) < fs * 1.5) && g++ < 10) my += fs * 1.5;
+        boxes.push([mx, my, w]);
+        s += `<g><title>${esc(d.근거 || '')}</title><rect x="${(mx - w / 2).toFixed(2)}" y="${(my - fs * 0.9).toFixed(2)}" width="${w.toFixed(2)}" height="${(fs * 1.3).toFixed(2)}" rx="${fs * 0.25}" fill="#fff" stroke="${c}" stroke-width="${0.4 * u}" opacity=".93"/><text x="${mx.toFixed(2)}" y="${(my + fs * 0.1).toFixed(2)}" font-size="${fs}" text-anchor="middle" font-weight="700" fill="${c}">${esc(txt)}</text></g>`;
+      });
+    }
     // 출입구
     (o.entries || []).forEach(en => {
       const e = E[en.edge]; if (!e) return;

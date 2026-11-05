@@ -451,7 +451,13 @@
     ['plan', 'sun', 'm3d', 'sum', 'unit'].forEach(k => { $('#v' + k).hidden = k !== v; });
     ({ plan: renderPlan, sun: renderSun, m3d: render3d, sum: renderSum, unit: renderUnits })[v]();
   }
-  const planOpts = extra => Object.assign({ site: pts, tags, setbacks: buildInput().site.setbacks, exclude, exKinds, entries, alt: alts[cur], title: site.name || '', coreW: C.가정.coreW_m }, extra || {});
+  // 치수선(인동·정북 일조·채광창 이격 — 2026-11-05 사용자 요구 '치수선을 그대로 표시하면 바로 보임'): 검사 부품 JbsCheck.dims
+  function planDims() {
+    const on = $('#dimShow'); if (!on || !on.checked || !window.JbsCheck || !alts[cur]) return null;
+    try { const I = buildInput(); return JbsCheck.dims(I.site, alts[cur].buildings, Object.assign({}, I.opt, { crit: C.items, dimAll: !!($('#dimAll') || {}).checked })); } catch (e) { console.warn('치수선', e); return null; }
+  }
+  const planOpts = extra => Object.assign({ site: pts, tags, setbacks: buildInput().site.setbacks, exclude, exKinds, entries, alt: alts[cur], title: site.name || '', coreW: C.가정.coreW_m, dims: planDims() }, extra || {});
+  document.addEventListener('change', e => { if (e.target && (e.target.id === 'dimShow' || e.target.id === 'dimAll') && alts.length) renderPlan(); });
   function renderPlan() { $('#planSvg').innerHTML = D.sitePlan(planOpts()); }
 
   // 동지 일조: 구역 밖 주변 땅(평지·기존 건물 없음 가정)의 일조 시간
@@ -551,7 +557,7 @@
       : sunRes && sunRes.alt === cur
       ? `구역 밖 주변 땅 기준, 동지 ${tol.연속_구간[0]}~${tol.연속_구간[1]}시 연속 ${tol.연속_h}시간과 ${tol.합계_구간[0]}~${tol.합계_구간[1]}시 합계 ${tol.합계_h}시간을 <b>모두</b> 못 채우는 곳: <b>${fmt(sunRes.failArea)}㎡</b>(격자 ${sunRes.step}m)${sunRes.fail ? `, 가장 나쁜 곳 연속 ${fmt(sunRes.worst, 1)}시간` : ''}. 평지·기존 건물 없음 가정이며 판례상 수인한도를 참고한 개략 판정입니다.`
       : (ctx.length ? `주변 기존 건물 ${fmt(ctx.length)}동을 반영합니다. ` : '주변 건물 정보가 없어 주변을 빈 땅으로 봅니다. ') + '[일조 계산]을 누르면 동지 일조 시간을 계산합니다(수 초 걸릴 수 있음). 지금은 선택한 시각의 그림자만 보입니다.';
-    $('#sunSvg').innerHTML = D.sitePlan(planOpts({ shadowAt: sh, sunGrid: sunRes && sunRes.alt === cur ? sunRes : null, context: ctxNear(), hit: new Set(hit.map(h => h.c)) }));
+    $('#sunSvg').innerHTML = D.sitePlan(planOpts({ dims: null, shadowAt: sh, sunGrid: sunRes && sunRes.alt === cur ? sunRes : null, context: ctxNear(), hit: new Set(hit.map(h => h.c)) }));
   }
   function render3d() {
     const A = alts[cur], blds = A.buildings.flatMap(b => (b.parts || [b.poly]).map(q => ({ poly: q, h: A.H(b.floors), color: TYPE_HEX[b.t] })));
