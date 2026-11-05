@@ -180,6 +180,33 @@
       });
       const d = diag(); if (d.n > steps[steps.length - 1].n) steps.push(Object.assign({ name: '줄 끝 채우기', why: `줄 안 빈 길이 ${steps[0].empty}m → 같은 계열 짧은 동(${fillerIds.join('·')})으로 채움` }, d));
     }
+    // ③ 남은 땅 채우기(2026-11-06, 사용자 판단 '판상 줄 + 가장자리 탑상'): 줄 밖 남은 땅(경계 모서리·북쪽 끝 등)에 탑상 4호·판상 4호를
+    //  층수를 낮춰 가며 넣어 봄 — 법정 동 사이 거리·모서리 근접(실무 기준) 모두 pairCheck로 확인
+    if (o.fillFree !== false && gfaOf(blds) < target * 0.99 && base.m.dtype !== 'T4') {
+      const n0 = blds.length, extra = [];
+      ['T4', 'P4'].forEach(id => seqFor(id, opt).slice(0, 2).forEach(seq => { const m = DL.build(id, seq); if (m) extra.push(m); }));
+      const Fmax = Math.max(...rowsY.map(R => R.f), A.minFloors), step = 4;
+      const bbOf = b => { const xs = b.poly.map(p => p[0]), ys = b.poly.map(p => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+      const BBX = new WeakMap(), nearOf = nb => { const B = bbOf(nb); return blds.filter(o2 => { let Q = BBX.get(o2); if (!Q) BBX.set(o2, Q = bbOf(o2)); return Math.max(Q[0] - B[2], B[0] - Q[2], Q[1] - B[3], B[1] - Q[3]) < 110; }); };   // 외접사각형 틈 110m 안(동 사이 기준 최대 약 85m)
+      for (let y = Math.ceil(Gd.ymax); y >= Gd.ymin && gfaOf(blds) < target; y -= step) {
+        for (let x = Math.floor(Gd.xmin); x <= Gd.xmax && gfaOf(blds) < target; x += step) {
+          let put = null;
+          for (const m of extra) {
+            if (!fits(Gd, m, x, y)) continue;
+            let nr = null;
+            for (let f = Fmax; f >= A.minFloors && !put; f -= 4) {
+              const nb = mk(m, x, y, f, -1); if (!nb) break;
+              if (!nr) { nr = nearOf(nb); const B = bbOf(nb); if (nr.some(o2 => { const Q = BBX.get(o2); return Math.max(Q[0] - B[2], B[0] - Q[2], Q[1] - B[3], B[1] - Q[3]) < 4; })) break; }   // 너무 붙은 자리는 층수와 관계없이 안 됨(측벽 4m)
+              if (nr.some(o2 => K.pairCheck(nb, o2, opt))) continue;
+              put = nb;
+            }
+            if (put) break;
+          }
+          if (put) { put.row = rowsY.length; blds.push(put); x += 10; }
+        }
+      }
+      const d = diag(); if (blds.length > n0) steps.push(Object.assign({ name: '남은 땅 채우기', why: `줄 밖 남은 땅에 탑상·작은 판상 ${blds.length - n0}개 동(층수를 낮춰 가며, 동 사이 거리·모서리 기준 확인)` }, d));
+    }
     // ② 평형 맞추기
     const e0 = mixErrOf(blds, opt);
     if (e0 > 0.15) {
@@ -188,7 +215,7 @@
       for (let it = 0; it < 3; it++) {
         let changed = false;
         for (let i = 0; i < blds.length; i++) {
-          const b = blds[i], R = rowsY[b.row], [a0, c0] = xr(b), others = blds.filter(o2 => o2 !== b);
+          const b = blds[i], R = rowsY[b.row]; if (!R) continue; const [a0, c0] = xr(b), others = blds.filter(o2 => o2 !== b);
           let room = Infinity; others.filter(o2 => o2.row === b.row).forEach(o2 => { const [a, c] = xr(o2); if (a >= c0) room = Math.min(room, a - c0 - sideGap(b, o2, Math.max(b.floors, o2.floors))); });
           const cur = mixErrOf(blds, opt);
           let bestSwap = null;
