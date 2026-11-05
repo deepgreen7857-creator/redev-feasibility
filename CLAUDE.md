@@ -91,6 +91,7 @@
   - [이 안으로 확정] → site.arch.chosen 저장, site.v(세대수·층수·전용면적 합계)를 갱신해 교통·환경·경관 검토에 이어짐
   - 사업성 화면 연동(js/assume.js): `/?arch=<site id>`로 열면 가정값 창이 그 확정안을 세대수 기준으로 골라 엶. 단계 stages[1](1차 개략·초기 사업성)·stages[2](2차·교통·환경 반영) 중 고름(기본 2차), 둘 다 있으면 비례율·총수입·총사업비 비교표. 공사비 연면적은 chosen.ex.totalGfa('개략 건축계획 기준')도 고를 수 있음. stage·ex 없는 예전 안은 1차로 봄
   - 사업성 화면에 구역이 없거나 /arch 구역과 90% 미만 겹치면 물어보고 /arch 구역을 가져와 필지·조서까지 불러옴(Assume.loadSiteZone → MapView.zoneFromTool). 2단계 '다른 도구의 구역'(MapView.toolZones: 공통 구역 + /urban 안)으로도 직접 가져올 수 있음. 구역계 교체는 MapView.setZoneGeo 한 곳(파일 불러오기와 같이 씀)
+- 심화 배치 동 타입 라이브러리(2026-11-05, 사용자 결정 — 컨셉 문서 'jbslab 정비계획 배치·사업성 검토 컨셉'): `shared/criteria/dong-types.json`(동 타입 P2·P4·P6·P8 판상, B3·B4 꺾인 판상, T4 탑상, Y3 — 슬롯·코어 규칙·조합 규칙·근거 동_사례, 변형 규칙) + `shared/dong-lib.js`(JbsDong: ranges() 평형별 실제 평면 폭·깊이 범위(하위·상위 10%), unitFor() 대표 → 범위 안 실제 사례 → 면적 같은 조정 평면(adjusted, 위험 '평면 조정 필요'), assignments() 조합 규칙(끝 ≥ 가운데, 모서리 ≤ 날개, 대칭), build() 섞인 평형 동 모듈(arch-geom 모듈과 같은 꼴 + seq·mixT·notes), catalog()). 시험 `node arch/test-dong.js`. 아직 배치 엔진(layout)에는 안 붙음 — 심화 모드(유전 알고리즘 바깥 + 정해진 순서 안쪽)에서 씀. 전용면적은 바꾸지 않음
 - /landscape 높이·경관계획: 정비구역 지정 단계 수준(높이·스카이라인·통경축·조망). /arch 확정안으로 입면·통경축 개방률·조망점 3D 그림 자동. 경관심의 수준 확장은 이 도구에서
 
 ## 작업 저장·불러오기 (shared/workfile.js) — 2026-11-02
