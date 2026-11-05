@@ -408,6 +408,7 @@
         return b.r.length ? b : null;
       }
       if (I.p.form === 'basic') { await runBasic(I); return; }
+      if (I.p.form === 'deep') { await runDeep(I); return; }
       const best = await searchAngle(I.opt.form, I.p.form === 'compare' ? '판상형' : '');
       if (!best) throw new Error('어느 방향으로도 동이 들어가지 않습니다');
       alts = best.r.map(x => Object.assign(x, { angle: best.a, form: I.opt.form }));
@@ -511,6 +512,21 @@
       <p class="note">보수 = 일반분양가 −10%·공사비 +10%, 낙관 = 분양가 +10%·공사비 −5%(가정). 분양가·공사비·임대 비율 등은 사업성 화면 공통 가정값. 인허가 및 심의 과정에서 변동될 수 있습니다.</p>`;
   }
   document.addEventListener('change', e => { if (e.target && e.target.id === 'feasPrior') { site.v = site.v || {}; site.v.priorEok = e.target.value; try { saveState(); } catch (er) { /* 무시 */ } setTimeout(renderFeas, 0); } });
+  /* ---------- 심화 배치(2026-11-05): arch/plan-worker.js(JbsPlan) — 기본형·지금 엔진 후보까지 모아 세대수·일조·균형 세 가지 안 */
+  let PW = null; const PWCB = {};
+  async function runDeep(I) {
+    msg('심화 배치 계산 중… 골격·구획·방향·높이·동 형태를 바꿔 가며 반복 탐색합니다(기본형 후보 포함, 탐색 90초 + 기본형 계산 — 보통 2~3분). 이 창을 닫지 마세요.');
+    if (!PW) { PW = new Worker('plan-worker.js?v=3'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
+    const id = Date.now() + Math.random();
+    const res = await new Promise(ok => { PWCB[id] = ok; PW.postMessage({ id, site: I.site, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }) }); });
+    if (!res.r || !res.r.variants.length) throw new Error(res.err || '심화 배치 안을 만들지 못했습니다');
+    alts = res.r.variants.map(v => { const a = toAlt(Object.assign({}, v, { label: v.label, steps: [] }), I, null); a.label = `심화 · ${v.label} (${v.skeleton})`; return a; });
+    cur = 0; sunRes = null; v3 = null;
+    $('#out').hidden = false; $('#confirm').disabled = false; if ($('#basicCard')) $('#basicCard').hidden = true;
+    renderAlts(); showView('plan'); drawBuildingsOnMap();
+    msg(`심화 배치 ${alts.length}가지 안(구도 ${res.r.decodes}회 계산, ${Math.round(res.r.ms / 1000)}초). 세대수·일조·균형 우선 순서입니다.`);
+    $('#out').scrollIntoView({ behavior: 'smooth' });
+  }
   /* ---------- 배치도 올려서 검토(2026-11-05): shared/plan-import.js(JbsImport) — ① DXF 읽기(ZoneKit.dxfPolys + JbsImport.dxfTexts, 측량 좌표 → 경위도 → 대지 좌표) ② 동 알아보기 표(사람이 확인·수정) ③ [이 배치로 검사] → 대안 하나로 배치도·치수선·위험요소·사업성 */
   let IMP = null;
   async function importDxf(file) {

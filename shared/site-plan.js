@@ -7,6 +7,7 @@
 (function (g) {
   const NODE = typeof module !== 'undefined' && module.exports;
   const G = NODE ? require('./arch-geom.js') : g.ArchGeom, K = NODE ? require('./arch-check.js') : g.JbsCheck, DL = NODE ? require('./dong-lib.js') : g.JbsDong;
+  const SP = () => (NODE ? require('./simple-plan.js') : g.JbsSimple);
   const D2R = Math.PI / 180;
 
   /* ---------- 난수(같은 씨앗이면 같은 결과) ---------- */
@@ -245,11 +246,14 @@
         popl = prev.map(x => x.gn);
       }
       while (popl.length < o.pop) popl.push(randGene(r, A));
-      let scored = popl.map(gn => { const R = run(gn); return { gn, R, s: score(site, opt, R, w) }; });
-      for (let gi = 0; gi < o.gens; gi++) {
+      const over = () => o.budget > 0 && Date.now() - t0 > o.budget;   // 시간 예산(ms, 2026-11-05 화면용): 넘으면 그때까지 찾은 구도로 고름
+      if (over() && cache.size) return;
+      let scored = []; for (const gn of popl) { if (over() && scored.length) break; const R = run(gn); scored.push({ gn, R, s: score(site, opt, R, w) }); }
+      for (let gi = 0; gi < o.gens && !over(); gi++) {
         scored.sort((a, b) => b.s.fit - a.s.fit); const el = scored.slice(0, o.elite);
         const kids = []; for (let i = 0; i < o.kids; i++) { const pa = pick(r, el).gn, pb = pick(r, el).gn, ch = mutate(r, r() < 0.5 ? pa : Object.assign({}, pa, { hshape: pb.hshape, Fmax: pb.Fmax, Fmin: pb.Fmin }), A); kids.push(ch); }
-        scored = el.concat(kids.map(gn => { const R = run(gn); return { gn, R, s: score(site, opt, R, w) }; }));
+        const ks = []; for (const gn of kids) { if (over()) break; const R = run(gn); ks.push({ gn, R, s: score(site, opt, R, w) }); }
+        scored = el.concat(ks);
       }
     });
     // 지금 엔진(arch-geom layout — 판상 줄 배치·자유 배치) 결과도 후보로 넣음(2026-11-05): 심화 탐색이 못 찾는 빽빽한 판상 줄 배치보다 못한 안을 내지 않게
@@ -262,6 +266,10 @@
         if (blds.length) cache.set(JSON.stringify({ skel: 'base', form, i, label: a.label }), { blds, SK: null, blocks: [], tried: 0 });
       });
     });
+    // 기본형(같은 모양 일정 배치 + 보완, 2026-11-05 사용자 결정 '기본형부터') 결과도 후보로 — 심화가 기본형보다 못한 안을 내지 않게
+    if (opt.withSimple !== false && SP()) { try { const sr = SP().simple(site, opt, { card: false });
+      sr.variants.forEach(v0 => { const v = v0.improved || v0; if (v.buildings.length) cache.set(JSON.stringify({ skel: 'simple', dtype: v0.dtype, label: v.label }), { blds: v.buildings.map(b => Object.assign({}, b, { block: 0 })), SK: null, blocks: [], tried: 0 }); });
+    } catch (e) { /* 기본형 실패는 건너뜀 */ } }
     // 세 탐색에서 계산한 구도를 모두 모아 무게별로 고름. 일조·균형안은 용적률 최고 안의 85% 이상인 것만(세대가 반토막 난 안은 쓸모없음)
     const all = [...cache.entries()].map(([k, R]) => ({ gn: JSON.parse(k), R })).filter(x => x.R.blds.length);
     all.forEach(x => { x.q = K.quick(site, x.R.blds, opt); x.far = x.q.far; });
@@ -281,7 +289,7 @@
     // 결과 정리 + 정밀 검증(경험 항목: 원인·영향·대안)
     const variants = Object.keys(out).filter(wk => out[wk]).map(wk => {
       const { gn, R, s } = out[wk], v = K.verify(site, R.blds, opt);
-      return { key: wk, label: WEIGHTS[wk].label, genome: gn, skeleton: gn.skel === 'base' ? `지금 엔진 ${gn.label || ''}(${gn.form === 'slab' ? '판상' : '혼합'})` : SKELS[gn.skel], buildings: R.blds, blocks: R.blocks, skel: R.SK,
+      return { key: wk, label: WEIGHTS[wk].label, genome: gn, skeleton: gn.skel === 'base' ? `지금 엔진 ${gn.label || ''}(${gn.form === 'slab' ? '판상' : '혼합'})` : gn.skel === 'simple' ? String(gn.label || '기본형').replace('기본 배치 — ', '기본형 ').replace('기본 + 보완 — ', '기본형+보완 ') : SKELS[gn.skel], buildings: R.blds, blocks: R.blocks, skel: R.SK,
         far: v.far, bcr: v.bcr, gfa: v.gfa, units: v.units, rules: v.rules, risks: v.risks, prefs: v.prefs, sunPass: s.sun, fit: s.fit,
         byType: (() => { const o2 = {}; R.blds.forEach(b => Object.keys(b.mixT).forEach(t => { o2[t] = (o2[t] || 0) + b.mixT[t] * b.floors; })); return o2; })(),
         maxFloors: R.blds.length ? Math.max(...R.blds.map(b => b.floors)) : 0 };
