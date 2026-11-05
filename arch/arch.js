@@ -507,7 +507,27 @@
   }
   const planOpts = extra => Object.assign({ site: pts, tags, setbacks: buildInput().site.setbacks, exclude, exKinds, entries, alt: alts[cur], title: site.name || '', coreW: C.가정.coreW_m, dims: planDims() }, extra || {});
   document.addEventListener('change', e => { if (e.target && (e.target.id === 'dimShow' || e.target.id === 'dimAll') && alts.length) renderPlan(); });
-  function renderPlan() { $('#planSvg').innerHTML = D.sitePlan(planOpts()); }
+  function renderPlan() { $('#planSvg').innerHTML = D.sitePlan(planOpts()); renderRisk(); }
+  // 위험요소 카드(2026-11-05): 검사 부품 JbsCheck.verify — 규칙 위반(대안 포함)·동 사이 거리 단서(동지 2시간)·경험 항목(원인·영향·확인 자료·대안)
+  function renderRisk() {
+    const box = $('#riskCard'); if (!box) return;
+    const A = alts[cur]; if (!A || !window.JbsCheck) { box.innerHTML = ''; return; }
+    if (!A.__risk) {
+      try {
+        const I = buildInput(), opt = Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }), v = JbsCheck.verify(I.site, A.buildings, opt);
+        const sp = v.rules.filter(r => ['spacing', 'side'].includes(r.id));
+        Object.defineProperty(A, '__risk', { value: { v, pv: sp.length ? JbsCheck.proviso(I.site, A.buildings, opt) : null }, enumerable: false, configurable: true });
+      } catch (e) { console.warn('위험요소', e); box.innerHTML = ''; return; }
+    }
+    const { v, pv } = A.__risk, G1 = { 고위험: 0, 주의: 1, 권고: 2 }, risks = v.risks.slice().sort((a, b) => (G1[a.등급] ?? 3) - (G1[b.등급] ?? 3));
+    const rule = r => `<li class="bad"><b>${esc(r.항목)}</b> ${r.동 && r.동.length ? `(${r.동.join('·')}동)` : ''} — ${esc(r.값 || '')}${r.기준 ? ` / 기준 ${esc(r.기준)}` : ''}<br><span class="note">${esc(r.근거 || '')}</span>${r.대안 ? `<br>대안: ${esc(r.대안)}` : ''}</li>`;
+    const risk = r => `<li class="${r.등급 === '고위험' ? 'bad' : r.등급 === '주의' ? 'warn' : ''}"><b>[${esc(r.등급)}] ${esc(r.항목)}</b><br>원인: ${esc(r.원인 || '')}<br>영향: ${esc(r.영향 || '')}${r.확인자료 ? `<br>확인 자료: ${esc(r.확인자료)}` : ''}${r.대안 ? `<br>대안: ${esc(r.대안)}` : ''}<br><span class="note">${esc(r.근거 || '')}</span></li>`;
+    box.innerHTML = `<details open class="card"><summary><b>위험요소 검토</b> — 법정 위반 ${v.rules.length}건 · 경험 항목 ${risks.length}건(고위험 ${risks.filter(r => r.등급 === '고위험').length} · 주의 ${risks.filter(r => r.등급 === '주의').length} · 권고 ${risks.filter(r => r.등급 === '권고').length})</summary>
+      ${v.rules.length ? `<h4>법정 기준 위반(이대로는 안 됨)</h4><ul>${v.rules.map(rule).join('')}</ul>` : '<p>법정 기준(대지 경계·동 사이 거리·정북 일조·채광창 이격·용적률·건폐율) 위반 없음</p>'}
+      ${pv ? `<h4>동 사이 거리 단서(${esc(pv.근거)})</h4><p>${pv.ok ? '개략 확인으로는 모든 동의 1층 남쪽 창 앞이 동지 연속 2시간 이상 — 단서 적용 검토 가능' : `개략 확인으로 ${pv.bad.map(x => `${x.id}동(재 본 ${x.n}곳 중 ${x.bad}곳 미달, 최소 연속 ${x.minCont}시간)`).join(', ')} — 단서로도 어려움`}. <span class="note">${esc(pv.메모)}</span></p>` : ''}
+      ${risks.length ? `<h4>심의·민원 위험(경험 — 탈락 아님)</h4><ul>${risks.map(risk).join('')}</ul>` : ''}
+      <p class="note">규칙은 법령·조례 숫자, 경험 항목은 심의·협의에서 지적되기 쉬운 것(가정값 포함). 인허가 및 심의 과정에서 변동될 수 있습니다.</p></details>`;
+  }
 
   // 동지 일조: 구역 밖 주변 땅(평지·기존 건물 없음 가정)의 일조 시간
   /* ---------- 주변 기존 건물(브이월드 GIS건물통합정보) ----------

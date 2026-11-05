@@ -225,6 +225,24 @@
     return Object.assign({}, q, { risks, prefs: ev.prefs, score: ev.score });
   }
 
+  /* ---------- 동 사이 거리 단서(2026-11-05): 건축법 시행령 제86조③2호 단서 — "그 대지의 모든 세대가 동지를 기준으로 9시에서 15시 사이에
+     2시간 이상을 계속하여 일조를 확보할 수 있는 거리 이상으로 할 수 있다" → 동 사이 거리가 모자라도 이걸 입증하면 가능
+     개략 확인: 동마다 남쪽을 향한 채광창 벽 앞 1m·1층 높이(가장 불리한 자리)를 6m 간격으로 재서 연속 2시간 이상인지. 정밀 일조 분석(층별·세대별)으로 입증해야 함 */
+  function proviso(site, blds, opt) {
+    const tol = { 연속_h: 2, 연속_구간: [9, 15], 합계_h: 99, 합계_구간: [8, 16] }, lat = +opt.lat || 37.46, Hf = f => H(opt, f);
+    const per = [];
+    blds.forEach(b => {
+      const pts = [];
+      wallsW(b).filter(w => w.win && w.n[1] < -0.3).forEach(w => { const L = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]), k = Math.max(1, Math.round(L / 6));
+        for (let i = 0; i < k; i++) { const t = (i + 0.5) / k; pts.push([w.a[0] + (w.b[0] - w.a[0]) * t + w.n[0], w.a[1] + (w.b[1] - w.a[1]) * t + w.n[1]]); } });
+      if (!pts.length) return;
+      const r = G.sunHours(blds.filter(o => o !== b), Hf, lat, pts, tol), bad = r.filter(x => !x.ok).length;
+      per.push({ id: b.id, n: pts.length, bad, minCont: Math.min(...r.map(x => x.cont)) });
+    });
+    const bad = per.filter(x => x.bad);
+    return { ok: !bad.length, per, bad, 근거: '건축법 시행령 제86조③2호 단서(동지 9~15시 연속 2시간 이상)', 메모: '1층 남쪽 창 앞 지점 기준 개략 — 정밀 일조 분석(세대별)으로 입증 필요' };
+  }
+
   /* ---------- 치수선(2026-11-05, 사용자 요구 '인동거리·일조권·통경축은 치수선을 그대로 표시하면 바로 보일 것') ----------
      배치도에 그릴 치수선 목록: { kind, a, b(월드 좌표 양 끝), d(실제 m), need(기준 m), 판정('통과'|'위반'|'권고'|'참고'), 동, 글(짧은 이름표), 근거 }
        spacing  동 사이(인동): 두 동마다 마주 보는 벽 중 기준 대비 가장 빠듯한 곳 하나(벽면 직각 방향)
@@ -292,6 +310,6 @@
     f(ringsOf(a), ringsOf(b), false); f(ringsOf(b), ringsOf(a), true); return best;
   }
 
-  const api = { quick, evaluate, verify, pairCheck, facings, minDist, dims, nearPair, gfaOf, unitsOf, overlapConvex, bboxIn };
+  const api = { quick, evaluate, verify, pairCheck, facings, minDist, dims, nearPair, proviso, gfaOf, unitsOf, overlapConvex, bboxIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.JbsCheck = api;
 })(typeof window !== 'undefined' ? window : globalThis);
