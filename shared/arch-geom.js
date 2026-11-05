@@ -526,7 +526,7 @@
     //  'legacy' = 예전 방식(층당 세대로 세고 0차만 한도 — 평형은 쏠려도 용적률이 가장 큰 경우가 있어 후보로 남김). placeBest가 모두 해 보고 고름
     function pack(F, mode) {
       const single = mode === 'single', legacy = mode === 'legacy';
-      const blds = [], cols = {}; types.forEach(t => { cols[t] = 0; });
+      const blds = [], cols = {}; types.forEach(t => { cols[t] = 0; }); let colsTot = 0;   // colsTot = cols 합(평형 한도 검사를 칸마다 다시 더하지 않게, 2026-11-05 속도)
       const st = opt.quick ? 3 : GW * GH > 25000 ? 2 : 1; // 큰 구역은 2m 간격(방향 고르기용 빠른 추정은 3m)
       const ordOf = () => { const tot = Object.values(cols).reduce((a, b) => a + b, 0) || 1; return types.slice().sort((a, b) => (cols[a] / tot - want[a]) - (cols[b] / tot - want[b])); };
       let order = ordOf();
@@ -538,7 +538,7 @@
       // 평형 비율은 '세대 수'(층당 세대 × 층수)로 셈. 예전엔 층당 세대만 세서 높은 동 하나가 낮은 동 하나와 같게 쳐졌고 한도가 거의 안 걸려
       //  작은 평형이 좋은 자리를 먼저 가져갔음(숭의 A구역 74·114형 0세대). 한도: 0차 목표+6%p, 1차 +15%p,
       //  2차는 +15%p를 먼저 지키되 그 자리에 들어갈 다른 평형이 없으면 한도 없이(용적률 유지)
-      const MIX_TOL = [0.06, 0.15, 0.15], over = (m, fl, ps) => { if (legacy) { const t0 = Object.values(cols).reduce((a, b) => a + b, 0) + m.n; return ps === 0 && t0 > 12 && (cols[m.t] + m.n) / t0 > want[m.t] + 0.06; } const add = m.n * fl, tot = Object.values(cols).reduce((a, b) => a + b, 0) + add; return tot > 12 * F && (cols[m.t] + add) / tot > want[m.t] + MIX_TOL[ps]; };
+      const MIX_TOL = [0.06, 0.15, 0.15], over = (m, fl, ps) => { if (legacy) { const t0 = colsTot + m.n; return ps === 0 && t0 > 12 && (cols[m.t] + m.n) / t0 > want[m.t] + 0.06; } const add = m.n * fl, tot = colsTot + add; return tot > 12 * F && (cols[m.t] + add) / tot > want[m.t] + MIX_TOL[ps]; };
       const flip = (m, x, y) => { if (!(m.form === 'L' && x + m.L / 2 < (xmin + xmax) / 2)) return m; const mm = tagV(lForm(m.U || U, A.coreW_m, m.t, m.a, m.b, true), { id: m.v, rep: m.vrep, 단지: null }, m.U || U); return fits(mm, x, y) ? mm : m; };
       for (let pass = single ? 2 : types.length > 1 ? 0 : 1; pass < 3; pass++) {
         if (pass === 2 && F <= A.minFloors && !single) break;
@@ -571,7 +571,7 @@
             if (!pick) { if (isFinite(jump) && jump - st > x) x = Math.ceil(jump) - st; continue; }
             const m = pick;
             blds.push({ row: 0, t: m.t, n: m.n, form: m.form, mod: m, floors: pf, L: m.L, D: m.D, rx: x, ry: y });
-            cols[m.t] += m.n * (legacy ? 1 : pf); order = ordOf(); x = Math.ceil(x + m.L + A.sideGap_m) - st;
+            cols[m.t] += m.n * (legacy ? 1 : pf); colsTot += m.n * (legacy ? 1 : pf); order = ordOf(); x = Math.ceil(x + m.L + A.sideGap_m) - st;
           }
         }
       }
