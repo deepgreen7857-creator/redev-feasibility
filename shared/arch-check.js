@@ -63,10 +63,10 @@
     if (Math.abs(w.n[1]) > 0.7) {
       const [S, N] = w.n[1] > 0 ? [X, Y] : [Y, X], hS = H(opt, S.floors), hN = H(opt, N.floors);
       if (hN >= hS) return { need: Math.max(10, sp * hS), law: Math.max(10, 0.5 * hS), kind: 'ns', S, N, 근거: `건축법 시행령 제86조③2호나목(높은 동 주된 개구부가 낮은 동을 향함: 10m 이상, 낮은 동 높이 × ${sp}배 — 인천 건축조례 제32조⑤·⑥)` };
-      return { need: sp * Math.max(hS, hN), law: 0.5 * Math.max(hS, hN), kind: 'ns', S, N, 근거: `같은 조 ③2호가목(채광창 벽면에서 높이 × ${sp}배 — 인천 건축조례 제32조⑤·⑥)` };
+      return { need: sp * Math.max(hS, hN), law: 0.5 * Math.max(hS, hN), kind: 'ns', S, N, 근거: `같은 조 ③2호가목(채광창 벽면에서 두 동 중 높은 동 높이 × ${sp}배 — 법제처 해석 21-0403, 인천 건축조례 제32조⑤·⑥)` };
     }
     const h = Math.max(H(opt, X.floors), H(opt, Y.floors));
-    return { need: sp * h, law: 0.5 * h, kind: 'ew', 근거: `같은 조 ③2호가목(동·서를 향한 채광창 벽면 — ㄱ자·T자 날개, 탑상·Y형 옆 벽 — 높이 × ${sp}배, 인천 건축조례 제32조⑤·⑥)` };
+    return { need: sp * h, law: 0.5 * h, kind: 'ew', 근거: `같은 조 ③2호가목(동·서를 향한 채광창 벽면 — ㄱ자·T자 날개, 탑상·Y형 옆 벽 — 두 동 중 높은 동 높이 × ${sp}배, 법제처 해석 21-0403, 인천 건축조례 제32조⑤·⑥)` };
   }
   // 두 동의 마주 보는 벽면 목록: [{ X, Y, w, d(실제), need, law, kind, 근거 }]
   function facings(a, b, opt, sp) {
@@ -88,7 +88,9 @@
     if (!worst) return null;
     const f = worst, ids = f.kind === 'ns' ? [f.S.id, f.N.id] : [f.X.id, f.Y.id];
     return { id: f.kind === 'ns' ? 'spacing' : 'side', 항목: f.kind === 'ns' ? '동 사이 거리(앞뒤)' : f.kind === 'ew' ? '동 사이 거리(옆 — 채광창 벽)' : '동 사이 거리(옆 — 측벽)', 동: ids, 판정: '위반',
-      기준: `${f.need.toFixed(1)}m 이상`, 값: `${f.d.toFixed(1)}m`, 근거: f.근거 + (f.kind === 'side' ? '' : `, 법정 하한 ${f.law.toFixed(1)}m`) + (sb.상태 || f.kind === 'side' ? '' : ' ※ 기준 확인 필요') };
+      기준: `${f.need.toFixed(1)}m 이상`, 값: `${f.d.toFixed(1)}m`,
+      대안: f.kind === 'side' ? '두 동 간격 4m 이상으로' : '① 간격 넓히기 또는 높은 동 층수 낮추기 ② 같은 호 단서: 대지의 모든 세대가 동지 9~15시 연속 2시간 이상 일조 확보를 일조 분석으로 입증 ③ 마주보는 벽의 창을 아예 없애 측벽으로(0.5㎡ 미만 창도 창 — 법제처 21-0590) ④ 마주보는 부분만 단차로 낮춤',
+      근거: f.근거 + (f.kind === 'side' ? '' : `, 법정 하한 ${f.law.toFixed(1)}m`) + (sb.상태 || f.kind === 'side' ? '' : ' ※ 기준 확인 필요') };
   }
   // 두 동 둘레 사이 가장 가까운 거리(조각 기준)
   function minDist(a, b) {
@@ -107,7 +109,9 @@
     blds.forEach(b => {
       // 조각(parts)이 있으면 조각 꼭짓점·변 중점으로(Y·T·ㄱ자처럼 오목한 동은 바깥 둘레선이 빈 땅을 지나감)
       const rings = b.parts && b.parts.length ? b.parts : [b.poly];
-      const pts = rings.flatMap(R => R.flatMap((p, i) => { const q = R[(i + 1) % R.length]; return [p, [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]]; }));
+      //  5cm 허용(엔진이 1m 격자로 어림해 이격선을 몇 cm 넘는 경우): 조각 가운데 쪽으로 5cm 당긴 점으로 봄
+      const pts = rings.flatMap(R => { const c = R.reduce((a, p) => [a[0] + p[0] / R.length, a[1] + p[1] / R.length], [0, 0]), pull = p => { const dx = c[0] - p[0], dy = c[1] - p[1], L = Math.hypot(dx, dy) || 1; return [p[0] + dx / L * 0.05, p[1] + dy / L * 0.05]; };
+        return R.flatMap((p, i) => { const q = R[(i + 1) % R.length]; return [pull(p), pull([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2])]; }); });
       const outN = pts.filter(p => !test(p[0], p[1])).length, inEx = pts.filter(p => ex.some(e => G.inside(p[0], p[1], e))).length;
       if (outN) add({ id: 'boundary', 항목: '대지 경계·이격', 동: [b.id], 판정: '위반', 값: `꼭짓점·변 중점 ${outN}곳이 대지 밖 또는 경계 이격 안`, 근거: '대지 경계(입력한 변별 이격 포함)' });
       if (inEx) add({ id: 'infra', 항목: '기반시설 침범', 동: [b.id], 판정: '위반', 값: `${inEx}곳이 공원·도로 등 건축 불가 영역 안`, 근거: '정비기반시설 계획(건축 불가 영역)' });

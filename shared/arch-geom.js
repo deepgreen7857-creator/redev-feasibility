@@ -356,26 +356,29 @@
     const Dmax = Math.max(...types.flatMap(t => MODS_REP[t].map(m => m.D)));
 
     // 한 줄 채우기: 형태 그룹 fm(같은 형태의 모듈들)으로 [y0, y0+D] 띠를 채움. cols는 복사본에 반영
-    function fillRow(y0, cols0) {
+    function fillRow(y0, cols0, f) {
       const D = Dmax;
+      // 줄 안 이웃 동 간격: 판상끼리는 가정 옆 간격, ㄱ자·탑상 등이 끼면 날개(옆) 창 때문에 높이 × 배수(거울상은 나중에 정해지므로 양쪽 다 창으로 봄)
+      const gapOf = (a, b) => (a.form === 'slab' && b.form === 'slab') || !(f > 0) ? A.sideGap_m : Math.max(A.sideGap_m, opt.spacing * H(f));
       if (y0 + D > ymax) return null;
       const cols = Object.assign({}, cols0), out = [];
       stripRanges(test, xmin, xmax, y0, y0 + D).forEach(([s, e]) => {
-        let x = s; const items = [];
+        let x = s; const items = [];   // x = 앞 동 동쪽 끝(첫 동은 띠 시작)
         while (true) {
           // 부족한 평형부터, 큰 모듈 → 작은 모듈 순으로 들어가는 것 고르기
           const tot = Object.values(cols).reduce((a, b) => a + b, 0) || 1;
           const order = types.slice().sort((a, b) => (cols[a] / tot - want[a]) - (cols[b] / tot - want[b]));
           let pick = null;
-          for (const t of order) { for (const m of MODS[t]) { if (x + m.L <= e + 1e-6) { pick = m; break; } } if (pick) break; }
+          const prev = items.length ? items[items.length - 1].m : null, x0 = m => (prev ? x + gapOf(prev, m) : x);
+          for (const t of order) { for (const m of MODS[t]) { if (x0(m) + m.L <= e + 1e-6) { pick = m; break; } } if (pick) break; }
           if (!pick) break;
-          items.push({ x, m: pick }); cols[pick.t] += pick.n; x += pick.L + A.sideGap_m;
+          const px = x0(pick); items.push({ x: px, m: pick }); cols[pick.t] += pick.n; x = px + pick.L;
         }
         if (!items.length) return;
         const last = items[items.length - 1], shift = (e - s - (last.x + last.m.L - s)) / 2; // 가운데 맞춤
         items.forEach(it => {
           let m = it.m; const rx = it.x + shift;
-          if (m.form === 'L' && rx + m.L / 2 < (s + e) / 2) m = tagV(lForm(m.U || U, A.coreW_m, m.t, m.a, m.b, true), { id: m.v, rep: m.vrep, 단지: null }, m.U || U); // 왼쪽 반은 거울상(날개가 바깥쪽)
+          if (m.form === 'L' && rx + m.L / 2 < (s + e) / 2) { const mm = tagV(lForm(m.U || U, A.coreW_m, m.t, m.a, m.b, true), { id: m.v, rep: m.vrep, 단지: null }, m.U || U); if (fits(mm, rx, y0)) m = mm; } // 왼쪽 반은 거울상(날개가 바깥쪽) — 바뀐 모양도 대지 안일 때만(2026-11-05)
           out.push({ m, rx });
         });
       });
@@ -386,7 +389,7 @@
       let y0 = ymin, row = 0;
       while (y0 < ymax) {
         const f = rowFloors(row);
-        const best = fillRow(y0, cols);
+        const best = fillRow(y0, cols, f);
         if (!best) { y0 += 1; continue; } // 이 높이엔 들어갈 곳이 없음 → 1m 위로
         best.items.forEach(it => blds.push({ row, t: it.m.t, n: it.m.n, form: it.m.form, mod: it.m, floors: f, L: it.m.L, D: it.m.D, rx: it.rx, ry: y0 }));
         cols = best.cols;
@@ -415,7 +418,7 @@
         const W = p => rot([b.rx + p[0], b.ry + p[1]], th), m = b.mod;
         b.parts = m.parts.map(q => q.map(W)); b.cores = m.cores.map(q => q.map(W)); b.divs = m.divs.map(q => q.map(W)); b.units = (m.units || []).map(rs => rs.map(q => q.map(W)));
         b.poly = hull(b.parts.flat()); b.angle = opt.angle || 0; b.center = W([b.L / 2, b.D / 2]); Object.defineProperty(b, 'walls', { value: wallsTo(wallsOf(m), W, th), configurable: true, writable: true, enumerable: false });   // 저장·전송에는 안 실음
-        b.inner = m.inner || 0; b.v = m.v || ''; b.vname = m.vname || ''; b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); b.local = { L: m.L, D: m.D, parts: m.parts, cores: m.cores, divs: m.divs, units: m.units || [] }; delete b.mod;
+        b.inner = m.inner || 0; b.mir = !!m.mir; b.v = m.v || ''; b.vname = m.vname || ''; b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); b.local = { L: m.L, D: m.D, parts: m.parts, cores: m.cores, divs: m.divs, units: m.units || [] }; delete b.mod;
       });
       return blds;
     }
@@ -444,15 +447,23 @@
     }
     // 인동간격·측면 간격 검사. 통과하면 null, 막히면 다음에 시도할 x(막은 동의 오른쪽 끝 너머)
     //  남북으로 겹치는 두 동 사이는 '남쪽 동' 높이 × 배수(각 동의 실제 층수 fl·o.floors 기준)
+    // 옆으로 나란한 두 모듈(W: 서쪽, E: 동쪽) 사이 필요 간격(2026-11-05): 마주 보는 옆 벽에 채광창이 있으면
+    //  가목 = 두 동 중 높은 동 높이 × 배수(법제처 해석 21-0403: 측벽 쪽 동 높이도 기준), 둘 다 측벽이면 가정 옆 간격(sideGap_m, 법정 마목 4m 이상)
+    //  창 있는 옆 벽: ㄱ자는 날개 쪽(거울상이 아니면 동쪽), 탑상·Y·ㅁ은 양쪽. 0.5㎡ 미만 창도 창(법제처 21-0590)이라 측벽으로 보지 않음
+    function sideNeed(W, E, fW, fE) {
+      const win = (mm, side) => !mm ? false : mm.form === 'slab' ? false : mm.form === 'L' ? (side === 'E' ? !mm.mir : !!mm.mir) : true;
+      return (win(W, 'E') || win(E, 'W')) ? Math.max(A.sideGap_m, opt.spacing * H(Math.max(fW, fE))) : A.sideGap_m;
+    }
     function blocker(m, x, y, placed, fl) {
-      const gNew = opt.spacing * H(fl), gS = A.sideGap_m;
+      const gNew = opt.spacing * H(fl);
       for (const o of placed) {
         const gO = opt.spacing * H(o.floors), gMax = Math.max(gNew, gO);
         if (o.ry + o.D + gMax <= y) continue; // 충분히 남쪽(이미 지나간 줄)
         const xo = Math.min(x + m.L, o.rx + o.L) - Math.max(x, o.rx), yo = Math.min(y + m.D, o.ry + o.D) - Math.max(y, o.ry);
-        if (xo > 0) { // 남북으로 겹침
-          if (y >= o.ry ? y - (o.ry + o.D) < gO : o.ry - (y + m.D) < gNew) return o.rx + o.L;
-        } else if (yo > -gMax * 0.3) { // 옆으로 나란함: 측면 간격
+        if (xo > 0) { // 남북으로 겹침: 남쪽 동 높이 × 배수(가목), 북쪽 동이 같거나 높으면 10m 이상(나목)
+          if (y >= o.ry ? y - (o.ry + o.D) < (fl >= o.floors ? Math.max(10, gO) : gO) : o.ry - (y + m.D) < (o.floors >= fl ? Math.max(10, gNew) : gNew)) return o.rx + o.L;
+        } else if (yo > -gMax * 0.3) { // 옆으로 나란함: 마주 보는 옆 벽에 창이 있으면(ㄱ자 날개·탑상·Y·ㅁ) 높은 동 높이 × 배수(가목, 법제처 21-0403), 아니면 가정 옆 간격
+          const east = o.rx >= x, gS = sideNeed(east ? m : o.mod, east ? o.mod : m, east ? fl : o.floors, east ? o.floors : fl);
           if (Math.max(o.rx - (x + m.L), x - (o.rx + o.L)) < gS) return o.rx + o.L + gS;
         }
       }
@@ -461,7 +472,7 @@
     // 그 자리에 놓았을 때 채광창·정북 일조 등으로 정해지는 최고 층수(놓기 전에 미리 봄)
     //  층수와 관계없는 값이라 같은 모듈·자리는 한 번만 계산해 둠(세 번 훑기·층수별 반복에서 다시 씀)
     //  같은 구역(site 객체)·같은 방향·조건이면 층수별 배치(alternatives)끼리도 같이 씀
-    const capKey = ['walls1', opt.angle || 0, opt.winRatio || 0, opt.southBase ? 1 : 0, opt.parkWidth || 0, opt.lowriseCap || 0, opt.lowriseDist || 0, opt.spacing, A.floorHeight_m, A.groundExtra_m, A.maxFloors, JSON.stringify(opt.edgeW || []), JSON.stringify(opt.sun || {})].join('|');
+    const capKey = ['walls2', opt.angle || 0, opt.winRatio || 0, opt.southBase ? 1 : 0, opt.parkWidth || 0, opt.lowriseCap || 0, opt.lowriseDist || 0, opt.spacing, A.floorHeight_m, A.groundExtra_m, A.maxFloors, JSON.stringify(opt.edgeW || []), JSON.stringify(opt.sun || {})].join('|');
     if (!site.__capc || site.__capc.key !== capKey) { try { Object.defineProperty(site, '__capc', { value: { key: capKey, map: new Map() }, configurable: true, writable: true, enumerable: false }); } catch (e) { /* 얼린 객체면 이번 배치에서만 */ } }
     const CAPC = site.__capc && site.__capc.key === capKey ? site.__capc.map : new Map();
     function capAt(m, x, y) {
@@ -485,7 +496,7 @@
               if (t === b.t) continue;
               for (const m0 of MODS[t]) {
                 if (m0.form !== b.form || !fits(m0, b.rx, b.ry)) continue;
-                const m = m0.form === 'L' && b.rx + m0.L / 2 < (xmin + xmax) / 2 ? tagV(lForm(m0.U || U, A.coreW_m, m0.t, m0.a, m0.b, true), { id: m0.v, rep: m0.vrep }, m0.U || U) : m0;
+                const mf = m0.form === 'L' && b.rx + m0.L / 2 < (xmin + xmax) / 2 ? tagV(lForm(m0.U || U, A.coreW_m, m0.t, m0.a, m0.b, true), { id: m0.v, rep: m0.vrep }, m0.U || U) : m0, m = mf !== m0 && !fits(mf, b.rx, b.ry) ? m0 : mf;
                 if (capAt(m, b.rx, b.ry) < b.floors || blocker(m, b.rx, b.ry, others, b.floors) !== null) continue;
                 const keep = { t: b.t, n: b.n, mod: b.mod, L: b.L, D: b.D };
                 Object.assign(b, { t: m.t, n: m.n, mod: m, L: m.L, D: m.D }); const e1 = err(); Object.assign(b, keep);
@@ -516,7 +527,7 @@
       //  작은 평형이 좋은 자리를 먼저 가져갔음(숭의 A구역 74·114형 0세대). 한도: 0차 목표+6%p, 1차 +15%p,
       //  2차는 +15%p를 먼저 지키되 그 자리에 들어갈 다른 평형이 없으면 한도 없이(용적률 유지)
       const MIX_TOL = [0.06, 0.15, 0.15], over = (m, fl, ps) => { if (legacy) { const t0 = Object.values(cols).reduce((a, b) => a + b, 0) + m.n; return ps === 0 && t0 > 12 && (cols[m.t] + m.n) / t0 > want[m.t] + 0.06; } const add = m.n * fl, tot = Object.values(cols).reduce((a, b) => a + b, 0) + add; return tot > 12 * F && (cols[m.t] + add) / tot > want[m.t] + MIX_TOL[ps]; };
-      const flip = (m, x) => (m.form === 'L' && x + m.L / 2 < (xmin + xmax) / 2 ? tagV(lForm(m.U || U, A.coreW_m, m.t, m.a, m.b, true), { id: m.v, rep: m.vrep, 단지: null }, m.U || U) : m);
+      const flip = (m, x, y) => { if (!(m.form === 'L' && x + m.L / 2 < (xmin + xmax) / 2)) return m; const mm = tagV(lForm(m.U || U, A.coreW_m, m.t, m.a, m.b, true), { id: m.v, rep: m.vrep, 단지: null }, m.U || U); return fits(mm, x, y) ? mm : m; };
       for (let pass = single ? 2 : types.length > 1 ? 0 : 1; pass < 3; pass++) {
         if (pass === 2 && F <= A.minFloors && !single) break;
         for (let y = GY0; y <= ymax; y += st) {
@@ -528,7 +539,7 @@
               for (const m0 of MODS[t]) {
                 if (strict && over(m0, F, pass)) break;
                 if (!fits(m0, x, y)) continue;
-                const m = flip(m0, x);
+                const m = flip(m0, x, y);
                 // 가벼운 인동간격 검사를 먼저, 높이 제한 계산은 그다음(느림)
                 if (pass < 2) {
                   const bx = blocker(m, x, y, blds, F);
@@ -620,7 +631,26 @@
           // 이 동 북쪽에 남북으로 겹치는 동이 있으면 그 사이가 높아진 높이 × 배수 이상일 때만
           const north = bl.filter(o => o !== b && o.ry > b.ry && Math.min(b.rx + b.L, o.rx + o.L) - Math.max(b.rx, o.rx) > 0);
           if (north.length && Math.min(...north.map(o => o.ry)) - (b.ry + b.D) < opt.spacing * H(b.floors + 1)) continue;
+          // 옆 동: 날개·옆 창이 마주 보면 높아진 높이로 간격 다시 확인(가목)
+          const sideBad = bl.some(o => { if (o === b || Math.min(b.ry + b.D, o.ry + o.D) - Math.max(b.ry, o.ry) <= 0 || Math.min(b.rx + b.L, o.rx + o.L) - Math.max(b.rx, o.rx) > 0) return false;
+            const east = o.rx >= b.rx, gap = east ? o.rx - (b.rx + b.L) : b.rx - (o.rx + o.L), W = east ? b : o, E2 = east ? o : b;
+            return gap < sideNeed(W, E2, W === b ? b.floors + 1 : W.floors, E2 === b ? b.floors + 1 : E2.floors) - 0.05; });
+          if (sideBad) continue;
           b.floors++; changed = true;
+        }
+      }
+    }
+    // 마지막 안전장치(2026-11-05): 벽면별 동 사이 거리 검사(JbsCheck.pairCheck — 시행령 제86조③2호, 법제처 21-0403)에 걸리면 높은 동부터 한 층씩 낮춤(최저 층수 밑이면 뺌)
+    {
+      const PC = opt.pairCheck || (typeof JbsCheck !== 'undefined' ? JbsCheck.pairCheck : null) || ((typeof module !== 'undefined' && module.exports && typeof require === 'function') ? (() => { try { return require('./arch-check.js').pairCheck; } catch (e) { return null; } })() : null);
+      if (PC) {
+        bl.forEach((b, i) => { if (b.id == null) b.id = 101 + i; });
+        for (let guard = 0; guard < 400; guard++) {
+          let hit = null;
+          for (let i = 0; i < bl.length && !hit; i++) for (let j = i + 1; j < bl.length && !hit; j++) { const r = PC(bl[i], bl[j], opt); if (r && r.id !== 'collide') hit = [bl[i], bl[j]]; }
+          if (!hit) break;
+          const b = hit[0].floors >= hit[1].floors ? hit[0] : hit[1];
+          if (b.floors - 1 < A.minFloors) bl.splice(bl.indexOf(b), 1); else b.floors--;
         }
       }
     }

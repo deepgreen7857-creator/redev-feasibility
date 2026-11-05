@@ -1,6 +1,6 @@
 /* /urban 4탭 개략 배치 계산 일꾼(Web Worker) — 화면이 멈추지 않게 따로 계산. 엔진은 /arch와 같은 shared/arch-geom.js
    받는 것: { id, site, opt, cand(방향 후보 °), F(빠른 추정용 기준 층수) } → 돌려주는 것: { id, r(가벼운 결과) | null } */
-importScripts('../shared/arch-geom.js?v=22');
+importScripts('../shared/arch-geom.js?v=23', '../shared/arch-check.js?v=2');
 self.onmessage = e => {
   const { id, site, opt, cand, F } = e.data, G = self.ArchGeom;
   let bestA = null, top = -1, out = null;
