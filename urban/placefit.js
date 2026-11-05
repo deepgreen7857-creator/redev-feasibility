@@ -301,7 +301,31 @@
 
   // 구역 경계에 붙이기(2026-11-06, 한 필지 재건축처럼 기준 시설이 없을 때): 그 방향 끝에서 안쪽으로 곧은 선을 밀어 면적을 맞춤
   //  북 = 구역 북쪽 끝에서 남쪽으로 수평선, 동 = 동쪽 끝에서 서쪽으로 수직선 … 선 바깥쪽 빈 땅이 시설(구역 모양을 따라감)
-  function edge({ zone, occupied = [], dir = 'N', target }) {
+  //  기울어진 구역은 그 방향을 향한 가장 긴 경계 변에 나란한 선으로 자름(구역을 그 변이 수평이 되게 돌려 자른 뒤 되돌림)
+  function edge(o) {
+    const zone = F(o.zone), dir = o.dir || 'N', ring = (zone.geometry.type === 'Polygon' ? zone.geometry.coordinates[0] : zone.geometry.coordinates[0][0]);
+    const lat = ring[0][1], kx = 111320 * Math.cos(lat * Math.PI / 180), ky = 110540, want = { N: [0, 1], S: [0, -1], E: [1, 0], W: [-1, 0] }[dir];
+    let ccw = 0; for (let i = 0; i < ring.length - 1; i++) ccw += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+    const sg = ccw > 0 ? 1 : -1; let best = null;
+    for (let i = 0; i < ring.length - 1; i++) {
+      const dx = (ring[i + 1][0] - ring[i][0]) * kx, dy = (ring[i + 1][1] - ring[i][1]) * ky, L = Math.hypot(dx, dy); if (L < 1) continue;
+      const n = [sg * dy / L, -sg * dx / L], dot = n[0] * want[0] + n[1] * want[1];
+      if (dot > 0.7 && (!best || L * dot > best.w)) best = { w: L * dot, ang: Math.atan2(dy, dx) * 180 / Math.PI, n };
+    }
+    if (!best || Math.abs(((best.ang % 90) + 90) % 90) < 3 || Math.abs(((best.ang % 90) + 90) % 90) > 87) return edgeAxis(o);
+    // 변이 수평(동서) 또는 수직이 되도록 돌림
+    const vert = dir === 'N' || dir === 'S', rotA = vert ? -best.ang : 90 - best.ang, piv = T.centroid(zone);
+    const rot = (g, a) => T.transformRotate(F(g), a, { pivot: piv });
+    const nz = rot(zone, rotA), nocc = (o.occupied || []).map(g => rot(g, rotA));
+    // 돌린 뒤 그 변의 바깥쪽이 어느 방향인지
+    const r2 = rotA * Math.PI / 180, nn = [best.n[0] * Math.cos(r2) - best.n[1] * Math.sin(r2), best.n[0] * Math.sin(r2) + best.n[1] * Math.cos(r2)];
+    const d2 = vert ? (nn[1] > 0 ? 'N' : 'S') : (nn[0] > 0 ? 'E' : 'W');
+    const r = edgeAxis({ zone: nz, occupied: nocc, dir: d2, target: o.target });
+    if (r.geom) r.geom = rot(r.geom, -rotA);
+    if (r.ok) r.msg = r.msg.replace(/구역 .{2,3} 경계를 따라/, `구역 ${NAME[dir]} 경계(가장 긴 변에 나란히)를 따라`);
+    return r;
+  }
+  function edgeAxis({ zone, occupied = [], dir = 'N', target }) {
     zone = F(zone);
     const free = occupied.length ? D(zone, U(occupied.map(F))) : zone;
     if (!free || !(target > 0)) return { geom: null, area: 0, ok: false, msg: '구역 안에 남은 빈 땅이 없습니다' };
