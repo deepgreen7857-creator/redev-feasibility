@@ -265,8 +265,20 @@
       const uset = new Set(us.flat());
       parts.filter(q => !uset.has(q)).forEach(q => add(q, null, true));   // 코어 등
     } else parts.forEach(q => add(q, m.uw0 != null ? m.uw0 : (m.form === 'slab' ? 0 : null), false));
-    try { Object.defineProperty(m, '__walls', { value: out, configurable: true, writable: true, enumerable: false }); } catch (e) { /* 얼린 객체 */ }
-    return out;
+    // 같은 방향·같은 종류로 한 줄에 이어진 벽은 하나로 합침(판상 앞면처럼 세대마다 끊긴 벽 — 검사 횟수를 줄임)
+    const merged = [];
+    out.forEach(w => {
+      const t = [w.b[0] - w.a[0], w.b[1] - w.a[1]], L = Math.hypot(t[0], t[1]), u = [t[0] / L, t[1] / L];
+      const hit = merged.find(o => o.win === w.win && o.n[0] * w.n[0] + o.n[1] * w.n[1] > 0.999 && Math.abs((w.a[0] - o.a[0]) * o.n[0] + (w.a[1] - o.a[1]) * o.n[1]) < 0.05 && (() => {
+        const ou = [o.b[0] - o.a[0], o.b[1] - o.a[1]], oL = Math.hypot(ou[0], ou[1]), e = [ou[0] / oL, ou[1] / oL], s0 = (w.a[0] - o.a[0]) * e[0] + (w.a[1] - o.a[1]) * e[1], s1 = (w.b[0] - o.a[0]) * e[0] + (w.b[1] - o.a[1]) * e[1];
+        return Math.min(s0, s1) <= oL + 0.3 && Math.max(s0, s1) >= -0.3; })());
+      if (!hit) { merged.push({ a: w.a.slice(), b: w.b.slice(), n: w.n, win: w.win }); return; }
+      const ou = [hit.b[0] - hit.a[0], hit.b[1] - hit.a[1]], oL = Math.hypot(ou[0], ou[1]), e = [ou[0] / oL, ou[1] / oL], pr = p => (p[0] - hit.a[0]) * e[0] + (p[1] - hit.a[1]) * e[1];
+      const lo = Math.min(0, pr(w.a), pr(w.b)), hi = Math.max(oL, pr(w.a), pr(w.b)), a0 = hit.a.slice();
+      hit.a = [a0[0] + e[0] * lo, a0[1] + e[1] * lo]; hit.b = [a0[0] + e[0] * hi, a0[1] + e[1] * hi];
+    });
+    try { Object.defineProperty(m, '__walls', { value: merged, configurable: true, writable: true, enumerable: false }); } catch (e) { /* 얼린 객체 */ }
+    return merged;
   }
   // 모듈 좌표 벽면 → 월드(W: 점 변환, th: 회전 라디안)
   const wallsTo = (ws, W, th) => ws.map(w => ({ a: W(w.a), b: W(w.b), n: rot(w.n, th), win: w.win }));

@@ -252,6 +252,16 @@
         scored = el.concat(kids.map(gn => { const R = run(gn); return { gn, R, s: score(site, opt, R, w) }; }));
       }
     });
+    // 지금 엔진(arch-geom layout — 판상 줄 배치·자유 배치) 결과도 후보로 넣음(2026-11-05): 심화 탐색이 못 찾는 빽빽한 판상 줄 배치보다 못한 안을 내지 않게
+    if (opt.withBase !== false) ['slab', 'mix'].forEach(form => {
+      let alts = []; try { alts = G.alternatives(site, Object.assign({}, opt, { form })); } catch (e) { alts = []; }
+      (alts.list || alts).forEach((a, i) => {
+        const blds = a.buildings.map(b => ({ id: b.id, poly: b.poly, floors: b.floors, form: b.form, angle: b.angle, mixT: { [b.t]: b.n }, n: b.n, t: b.t, seq: Array(b.n).fill(String(b.t)),
+          dtype: (b.form === 'slab' ? 'P' : b.form === 'L' ? 'B' : b.form === 'tower' ? 'T' : 'X') + b.n, dname: '지금 엔진 ' + (G.FORM_NAME && G.FORM_NAME[b.form] || b.form), vname: b.vname, notes: [], block: 0,
+          parts: b.parts, cores: b.cores, units: b.units, walls: b.walls }));
+        if (blds.length) cache.set(JSON.stringify({ skel: 'base', form, i, label: a.label }), { blds, SK: null, blocks: [], tried: 0 });
+      });
+    });
     // 세 탐색에서 계산한 구도를 모두 모아 무게별로 고름. 일조·균형안은 용적률 최고 안의 85% 이상인 것만(세대가 반토막 난 안은 쓸모없음)
     const all = [...cache.entries()].map(([k, R]) => ({ gn: JSON.parse(k), R })).filter(x => x.R.blds.length);
     all.forEach(x => { x.q = K.quick(site, x.R.blds, opt); x.far = x.q.far; });
@@ -271,7 +281,7 @@
     // 결과 정리 + 정밀 검증(경험 항목: 원인·영향·대안)
     const variants = Object.keys(out).filter(wk => out[wk]).map(wk => {
       const { gn, R, s } = out[wk], v = K.verify(site, R.blds, opt);
-      return { key: wk, label: WEIGHTS[wk].label, genome: gn, skeleton: SKELS[gn.skel], buildings: R.blds, blocks: R.blocks, skel: R.SK,
+      return { key: wk, label: WEIGHTS[wk].label, genome: gn, skeleton: gn.skel === 'base' ? `지금 엔진 ${gn.label || ''}(${gn.form === 'slab' ? '판상' : '혼합'})` : SKELS[gn.skel], buildings: R.blds, blocks: R.blocks, skel: R.SK,
         far: v.far, bcr: v.bcr, gfa: v.gfa, units: v.units, rules: v.rules, risks: v.risks, prefs: v.prefs, sunPass: s.sun, fit: s.fit,
         byType: (() => { const o2 = {}; R.blds.forEach(b => Object.keys(b.mixT).forEach(t => { o2[t] = (o2[t] || 0) + b.mixT[t] * b.floors; })); return o2; })(),
         maxFloors: R.blds.length ? Math.max(...R.blds.map(b => b.floors)) : 0 };

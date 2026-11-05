@@ -41,15 +41,27 @@
   // 동 바깥 벽면(월드): b.walls가 있으면 그대로, 없으면 세대·조각으로 만듦(업로드 도면 등 — 판상은 동 각도를 세대 폭 방향으로 봄)
   const wallsW = b => (b.walls && b.walls.length ? b.walls : memo(b, '__walls', () => G.wallsOf({ form: b.form, parts: ringsOf(b), units: null, uw0: b.form === 'slab' ? (b.angle || 0) : null })));
   // 상대 동 둘레 표본점(1.5m 간격 + 꼭짓점)
-  const sampOf = b => memo(b, '__samp', () => ringsOf(b).flatMap(q => q.flatMap((p, i) => { const r = q[(i + 1) % q.length], k = Math.max(1, Math.ceil(Math.hypot(r[0] - p[0], r[1] - p[1]) / 1.5)); return Array.from({ length: k }, (_, t) => [p[0] + (r[0] - p[0]) * t / k, p[1] + (r[1] - p[1]) * t / k]); })));
+  // 조각마다 외접사각형 + 표본점(1.5m 간격, 필요할 때만 만듦)
+  const ringSamp = q => q.flatMap((p, i) => { const r = q[(i + 1) % q.length], k = Math.max(1, Math.ceil(Math.hypot(r[0] - p[0], r[1] - p[1]) / 1.5)); return Array.from({ length: k }, (_, t) => [p[0] + (r[0] - p[0]) * t / k, p[1] + (r[1] - p[1]) * t / k]); });
+  const ringsS = b => memo(b, '__rs', () => ringsOf(b).map(q => ({ q, bb: [Math.min(...q.map(a => a[0])), Math.min(...q.map(a => a[1])), Math.max(...q.map(a => a[0])), Math.max(...q.map(a => a[1]))], pts: null })));
+  const sampOf = b => ringsS(b).flatMap(r => r.pts || (r.pts = ringSamp(r.q)));
   const bbW = b => memo(b, '__bb', () => { const p = ringsOf(b).flat(); return [Math.min(...p.map(a => a[0])), Math.min(...p.map(a => a[1])), Math.max(...p.map(a => a[0])), Math.max(...p.map(a => a[1]))]; });
   // 벽면 w(동 X)가 '마주 보는' 상대 동 Y까지 직각 방향 거리: 벽 길이 범위 안(벽 앞 띠)에 든 Y 부분 중 가장 가까운 것. 띠 밖(비껴 놓임)이면 null
   function wallHit(w, Y) {
     const tx = w.b[0] - w.a[0], ty = w.b[1] - w.a[1], L = Math.hypot(tx, ty), t = [tx / L, ty / L];
+    // 빠른 거르기: 상대 동 외접사각형 네 모서리가 벽 앞 띠에 전혀 안 걸리면 건너뜀
+    { const B = bbW(Y); let s0 = Infinity, s1 = -Infinity, n1 = -Infinity;
+      [[B[0], B[1]], [B[2], B[1]], [B[2], B[3]], [B[0], B[3]]].forEach(p => { const vx = p[0] - w.a[0], vy = p[1] - w.a[1], ss = vx * t[0] + vy * t[1], nn = vx * w.n[0] + vy * w.n[1]; if (ss < s0) s0 = ss; if (ss > s1) s1 = ss; if (nn > n1) n1 = nn; });
+      if (n1 <= 0.01 || s1 < 0.05 || s0 > L - 0.05) return null; }
     let d = Infinity, hp = null;
-    for (const p of sampOf(Y)) {
-      const vx = p[0] - w.a[0], vy = p[1] - w.a[1], s2 = vx * t[0] + vy * t[1]; if (s2 < 0.05 || s2 > L - 0.05) continue;
-      const dn = vx * w.n[0] + vy * w.n[1]; if (dn > 0.01 && dn < d) { d = dn; hp = p; }
+    for (const R of ringsS(Y)) {
+      const B = R.bb; let s0 = Infinity, s1 = -Infinity, n0 = Infinity, n1 = -Infinity;
+      for (const c of [[B[0], B[1]], [B[2], B[1]], [B[2], B[3]], [B[0], B[3]]]) { const vx = c[0] - w.a[0], vy = c[1] - w.a[1], ss = vx * t[0] + vy * t[1], nn = vx * w.n[0] + vy * w.n[1]; if (ss < s0) s0 = ss; if (ss > s1) s1 = ss; if (nn < n0) n0 = nn; if (nn > n1) n1 = nn; }
+      if (n1 <= 0.01 || s1 < 0.05 || s0 > L - 0.05 || n0 >= d) continue;   // 이 조각은 벽 앞 띠 밖이거나 이미 찾은 것보다 멂
+      for (const p of R.pts || (R.pts = ringSamp(R.q))) {
+        const vx = p[0] - w.a[0], vy = p[1] - w.a[1], s2 = vx * t[0] + vy * t[1]; if (s2 < 0.05 || s2 > L - 0.05) continue;
+        const dn = vx * w.n[0] + vy * w.n[1]; if (dn > 0.01 && dn < d) { d = dn; hp = p; }
+      }
     }
     return hp ? { d, p: hp, foot: [hp[0] - w.n[0] * d, hp[1] - w.n[1] * d] } : null;
   }
