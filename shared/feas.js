@@ -20,7 +20,8 @@
     etcPct: 30,           // 기타 사업비(설계·감리·금융·제세·이주·보상 등) % of 공사비
     priorMul: 1.4,        // 종전자산 ≈ 공시지가 합 × 배율
     avgLand: 0,           // 토지조서 공시지가가 없을 때 쓰는 평균 공시지가(만원/㎡)
-    rentRatio: 15,        // 임대주택 비율(세대 %) — 임대는 49㎡형(공급 67㎡)으로 셈
+    rentRatio: 5,         // 임대주택 비율(세대 %) — 인천 재개발 5%(학교용지 확보 구역·상업지역 2.5%): 인천광역시고시 제2018-251호 제2조, 국토부고시 제2024-26호 제4조⑥ 범위 5~20%(2026-11-05 원문 대조, urban/rules/incheon.json rental_housing_ratio). 임대는 49㎡형으로 셈
+    rentFix: 1,           // 예전 기본값 15%가 저장된 것을 한 번만 5%로 고쳤다는 표시(get 참고)
     mix59: 40, mix84: 50, mix114: 10,   // 분양 평형 비율(%) — 평형 키는 전용㎡(shared/criteria/arch.json 평면과 같음)
     mix39: 0, mix49: 0, mix74: 0, mix101: 0,   // 소형·중형 평형(예전 저장값에는 없으므로 0)
     resRatio: 97,         // 용적률 연면적 중 주거 비율(나머지 상가)
@@ -43,6 +44,8 @@
     get() {
       let v = {}; try { v = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { v = {}; }
       const out = Object.assign({}, DEF);
+      // 예전 기본값(임대 15%)이 그대로 저장돼 있으면 한 번만 인천 고시 값(5%)으로 — 사용자가 나중에 15%를 다시 고르면 rentFix가 저장돼 있어 그대로 둠
+      if (!v.rentFix && +v.rentRatio === 15) { delete v.rentRatio; try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, v, { rentFix: 1 }))); } catch (e) { /* 무시 */ } }
       Object.keys(DEF).forEach(k => { if (v[k] !== undefined && v[k] !== '' && isFinite(+v[k])) out[k] = +v[k]; });
       out.rentPrice = Math.round(out.buildCost * PY * out.rentBuildPct / 100);   // 임대 건축물 인수가는 항상 기본형건축비에서 계산
       return out;
