@@ -201,14 +201,19 @@ async function onbidDetailBacklog() {
 async function runOnbid({ deadline, force = false, mode } = {}) {
   const st = await getState('onbid');
   const today = kstDay();
-  if (!force && st.lastDay === today) return { skipped: '오늘 이미 수집' };
+  const newParts = st.partsVer !== onbid.PARTS_VERSION; // 구간이 늘었으면(11-06 수도권 밖 땅·섬) 한 번은 전체로
+  if (!force && !newParts && st.lastDay === today) return { skipped: '오늘 이미 수집' };
   const isSunday = new Date(Date.now() + 9 * 3600e3).getUTCDay() === 0;
-  const m = mode || (!st.lastFullDay || isSunday ? 'full' : 'daily');
+  const m = mode || (!st.lastFullDay || isSunday || newParts ? 'full' : 'daily');
+  // 목록을 받다 시간이 끝나면 다음 회차에서 그 구간·쪽부터 이어 받는다(같은 날·같은 방식·같은 구간판일 때만)
+  const cur = st.listCursor && st.listCursor.day === today && st.listCursor.mode === m && st.listCursor.ver === onbid.PARTS_VERSION ? st.listCursor : null;
   const res = await onbid.collect({
     serviceKey: DATA_GO_KR_KEY.value(), quota: new Quota(db), mode: m, deadline,
     save: saveListings, log: logger.info, enrich: enrichLand, backfill: onbidDetailBacklog,
-    skipList: !force && st.listedDay === today,
-    onListed: () => setState('onbid', { listedDay: today }),
+    skipList: !force && !newParts && st.listedDay === today,
+    resume: force ? null : cur,
+    onPage: ({ label, pageNo }) => setState('onbid', { listCursor: { day: today, mode: m, ver: onbid.PARTS_VERSION, label, pageNo } }),
+    onListed: () => setState('onbid', { listedDay: today, partsVer: onbid.PARTS_VERSION, listCursor: null }),
   });
   // 오류만 나고 한 건도 못 받았으면(예: 키 오류) '오늘 수집함'으로 표시하지 않는다 → 다음 실행에서 다시 시도
   const failedAll = res.rows === 0 && res.errors && res.errors.length > 0;

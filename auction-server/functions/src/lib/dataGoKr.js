@@ -2,8 +2,9 @@
 const { XMLParser } = require('fast-xml-parser');
 
 const DAILY_LIMIT = Number(process.env.DATA_GO_KR_DAILY_LIMIT || 1000); // 개발계정 기본 1,000건(API별)
-// 운영계정으로 바꾼 API는 따로 한도(2026-11-02 승인: 온비드 부동산 물건상세·물건상세 입찰정보 각 하루 100,000건)
-const API_LIMITS = { 'onbid-detail': 100000, 'onbid-bid': 100000 };
+// 운영계정으로 바꾼 API는 따로 한도(2026-11-02 승인: 온비드 부동산 물건상세·물건상세 입찰정보 각 하루 100,000건,
+// 2026-11-06 사용자: 공매 관련 API 전부 운영계정 — 물건목록·입찰결과목록도 같은 한도. 실제 한도를 넘으면 서버가 22를 돌려주고 그때 멈춘다)
+const API_LIMITS = { 'onbid-detail': 100000, 'onbid-bid': 100000, 'onbid-list': 100000, 'onbid-result-list': 100000 };
 const limitOf = (api) => API_LIMITS[api] || DAILY_LIMIT;
 const SAFETY_MARGIN = 30; // 한도 끝까지 쓰지 않고 남겨 둔다(수동 시험용)
 

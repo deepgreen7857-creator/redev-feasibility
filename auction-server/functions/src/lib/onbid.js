@@ -34,11 +34,33 @@ function ymd(d) {
 }
 
 // 수집 구간: 수도권 시도 × 수의계약(N/Y) + 파산자산 전국 × (N/Y)
+//  + 2026-11-06(공매 API 전부 운영계정): 수도권 밖 전국 — 땅(토지)과 섬 물건만 남긴다(사용자 '섬이 나오면 무조건 검토')
+// 구간 구성이 바뀌면 PARTS_VERSION을 올린다 → 한 번은 전체(full)로 받아 새 구간 물건을 채움
+const PARTS_VERSION = 2;
+const NATION_CODES = PROPERTY_CODES.split(',').filter((c) => c !== BANKRUPT_CODE).join(',');
 function partitions() {
   const out = [];
   for (const sido of CAPITAL_SIDO) for (const pv of ['N', 'Y']) out.push({ sido, prptDivCd: PROPERTY_CODES, pvctTrgtYn: pv, label: `${sido}/${pv}` });
   for (const pv of ['N', 'Y']) out.push({ sido: null, prptDivCd: BANKRUPT_CODE, pvctTrgtYn: pv, label: `파산자산 전국/${pv}` });
+  for (const pv of ['N', 'Y']) out.push({ sido: null, prptDivCd: NATION_CODES, pvctTrgtYn: pv, label: `수도권 밖 땅·섬/${pv}`, keep: keepOutsideCapital });
   return out;
+}
+
+// ── 섬 물건 ─────────────────────────────────────────────
+// 사용자 결정(2026-11-06): 섬이 나오면 무조건 검토. 주소로 가린다 — 섬으로만 된 군·면·동(육지와 다리로 이어진 곳 포함)과
+// 물건명·주소의 'OO도(섬)' 표기. 빠뜨리는 것보다 넓게 잡는 쪽(검토에서 걸러냄).
+const ISLAND_SGG = /(옹진군|울릉군|신안군|완도군|진도군|남해군|거제시|통영시\s*(욕지|한산|사량|산양)|제주|서귀포)/;
+const ISLAND_EMD = /(강화군\s*(교동|삼산|서도)면|영흥면|덕적면|자월면|북도면|연평면|백령면|대청면|대부(동|북동|남동)|선감동|풍도동|서신면\s*제부리|원산면|오천면\s*(외연도|녹도|삽시도|원산도|효자도)|안면읍|고남면|증도면|임자면|자은면|비금면|도초면|흑산면|하의면|신의면|장산면|안좌면|팔금면|암태면|압해읍|지도읍|금일읍|노화읍|보길면|청산면|소안면|생일면|금당면|약산면|고금면|조약도|돌산읍|화정면|남면\s*(연도|금오도|안도)|삼산면|거문도|금오도|조도면|의신면|도서|무의동|영종동|운서동|용유동|덕적도|자월도|승봉도|이작도|장봉도|신도|시도|모도|석모도|볼음도|주문도|아차도|교동도)/;
+function isIsland(item) {
+  const t = `${item.sido || ''} ${item.sgg || ''} ${item.emd || ''} ${item.address || ''} ${item.title || ''}`;
+  if (ISLAND_SGG.test(t) || ISLAND_EMD.test(t)) return true;
+  return /(^|\s)[가-힣]{1,4}도(\s|\d|$)/.test(`${item.emd || ''} ${item.title || ''}`.replace(/(경기|강원|충청|충북|충남|전라|전북|전남|경상|경북|경남|제주|특별자치)도/g, ''));
+}
+const isLand = (item) => /^토지/.test(String(item.usage || '')) || /(전|답|과수원|임야|대지|잡종지|구거|목장|대$)/.test(String(item.usageSmall || ''));
+// 수도권 밖 구간: 수도권 물건은 앞 구간에서 이미 받으므로 빼고, 땅·섬만 남긴다
+function keepOutsideCapital(item) {
+  if (CAPITAL_SIDO.includes(item.sido)) return false;
+  return isLand(item) || isIsland(item);
 }
 
 function onbidDate(v) {
@@ -100,6 +122,7 @@ function mapListRow(r) {
     url: 'https://www.onbid.co.kr',
   };
 }
+function withFlags(it) { const island = isIsland(it); return island ? { ...it, island: true } : it; }
 
 const asList = (v) => {
   if (!v) return [];
@@ -199,16 +222,21 @@ async function fetchDetail({ cltrMngNo, pbctCdtnNo, serviceKey, quota, fetcher, 
 
 // 전체 수집. mode: 'daily'(어제 이후 수정분) | 'full'(전부)
 // backfill: 예전에 상세를 못 받은 물건 목록을 돌려주는 함수(평일 수집 뒤 남은 상세 한도로 다시 받는다)
-async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log = console.log, maxDetails = 600, maxBackfill = 400, deadline = Infinity, enrich, backfill, skipList = false, onListed }) {
+// resume: { label, pageNo } — 지난 실행이 멈춘 구간·쪽부터 이어 받는다(전국 구간이 한 회차 시간에 다 안 들어감). onPage: 쪽마다 위치 저장
+async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log = console.log, maxDetails = 600, maxBackfill = 400, deadline = Infinity, enrich, backfill, skipList = false, onListed, resume = null, onPage }) {
   const since = mode === 'daily' ? ymd(new Date(Date.now() - 2 * 86400e3)) : null;
   const stats = { pages: 0, rows: 0, saved: 0, details: 0, errors: [] };
   const fresh = [];
   // 오늘 목록을 이미 다 받았으면 목록은 건너뛰고 원문(상세)만 이어 받는다 — 전에는 20분마다 목록을 처음부터 다시 받다가
   // 상세 단계에서 시간이 끝나 '오늘 수집 완료'가 한 번도 안 찍혔다(10-24 이후)
-  for (const part of skipList ? [] : partitions()) {
-    let pageNo = 1;
+  const parts = skipList ? [] : partitions();
+  let startAt = resume ? parts.findIndex((p) => p.label === resume.label) : 0;
+  if (startAt < 0) startAt = 0;
+  for (const part of parts.slice(startAt)) {
+    let pageNo = resume && part.label === resume.label ? Math.max(1, resume.pageNo || 1) : 1;
     for (;;) {
       if (Date.now() > deadline) return { ...stats, stopped: 'time' };
+      if (onPage) await onPage({ label: part.label, pageNo });
       let page;
       try {
         page = await fetchListPage({ part, pageNo, serviceKey, quota, fetcher, modifiedSince: since });
@@ -218,7 +246,8 @@ async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log =
         break;
       }
       stats.pages++;
-      const items = page.rows.filter((r) => r.cltrMngNo).map(mapListRow);
+      const items = page.rows.filter((r) => r.cltrMngNo).map(mapListRow).filter((it) => !part.keep || part.keep(it)).map(withFlags);
+      stats.islands = (stats.islands || 0) + items.filter((it) => it.island).length;
       stats.rows += items.length;
       if (items.length) {
         const res = await save(items);
@@ -226,6 +255,7 @@ async function collect({ serviceKey, quota, fetcher, mode = 'daily', save, log =
         fresh.push(...(res && res.needDetail ? res.needDetail : items));
       }
       if (!page.rows.length || pageNo * PAGE_SIZE >= page.total) break;
+      // 거른 구간은 남는 게 없어도 다음 쪽으로(빈 쪽에서 멈추지 않게)
       pageNo++;
     }
   }
@@ -287,6 +317,7 @@ function inFocus(item) {
 }
 function score(item) {
   let s = inFocus(item) ? 100 : 0;
+  if (item.island || isIsland(item)) s += 50; // 섬은 무조건 검토(2026-11-06) — 원문을 먼저 받는다
   // 입찰일이 가까운 것 먼저(2주 안 +5, 4주 안 +2)
   const end = String(item.bidEnd || '').replace(/\./g, '-').slice(0, 10);
   if (end) { const d = (new Date(end) - Date.now()) / 86400e3; if (d >= -1 && d <= 14) s += 5; else if (d <= 28) s += 2; }
@@ -377,4 +408,4 @@ async function fetchResultPage({ sido, prptDivCd, from, to, pageNo, serviceKey, 
   });
 }
 
-module.exports = { inFocus, score, placeOf, mapResultRow, fetchResultPage, CAPITAL_SIDO, mapBidInfo, fetchBidInfo, resultFor, DETAIL_VERSION, validPnu, ENDPOINTS, PROPERTY_CODES, BANKRUPT_CODE, partitions, mapListRow, mapDetail, fetchListPage, fetchDetail, fetchDetails, collect, listingId, score };
+module.exports = { isIsland, isLand, keepOutsideCapital, PARTS_VERSION, withFlags, inFocus, score, placeOf, mapResultRow, fetchResultPage, CAPITAL_SIDO, mapBidInfo, fetchBidInfo, resultFor, DETAIL_VERSION, validPnu, ENDPOINTS, PROPERTY_CODES, BANKRUPT_CODE, partitions, mapListRow, mapDetail, fetchListPage, fetchDetail, fetchDetails, collect, listingId, score };

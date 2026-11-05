@@ -34,10 +34,34 @@ test('온비드 목록 한 줄 → 물건(파산자산 분류, 금액·날짜 �
   assert.equal(onbid.mapListRow({ ...sampleRow, lowstBidPrcIndctCont: '비공개' }).minBid, null);
 });
 
-test('온비드 수집 구간: 수도권 3개 시도 + 파산자산 전국', () => {
+test('온비드 수집 구간: 수도권 3개 시도 + 파산자산 전국 + 수도권 밖 땅·섬', () => {
   const parts = onbid.partitions();
-  assert.equal(parts.length, 8);
+  assert.equal(parts.length, 10);
   assert.ok(parts.some((p) => p.sido === null && p.prptDivCd === '0013'));
+  const out = parts.find((p) => p.keep);
+  assert.ok(out && !out.prptDivCd.includes('0013'));
+  assert.equal(out.keep({ sido: '경기도', usage: '토지 > 전' }), false);
+  assert.equal(out.keep({ sido: '전라남도', sgg: '신안군', usage: '주거용건물 > 단독주택' }), true);
+  assert.equal(out.keep({ sido: '충청남도', sgg: '홍성군', usage: '토지 > 답' }), true);
+  assert.equal(out.keep({ sido: '부산광역시', sgg: '해운대구', usage: '주거용건물 > 아파트' }), false);
+});
+
+test('섬 물건 가리기', () => {
+  assert.ok(onbid.isIsland({ sido: '인천광역시', sgg: '옹진군', emd: '영흥면' }));
+  assert.ok(onbid.isIsland({ sido: '인천광역시', sgg: '강화군', emd: '교동면', address: '인천광역시 강화군 교동면 대룡리 1' }));
+  assert.ok(onbid.isIsland({ sido: '경기도', sgg: '안산시 단원구', emd: '대부북동' }));
+  assert.ok(onbid.isIsland({ sido: '전라남도', sgg: '신안군', emd: '증도면' }));
+  assert.ok(!onbid.isIsland({ sido: '인천광역시', sgg: '부평구', emd: '부평동', title: '인천광역시 부평구 부평동 123' }));
+  assert.ok(!onbid.isIsland({ sido: '경기도', sgg: '광주시', emd: '곤지암읍', title: '경기도 광주시 곤지암읍 장심리 8-12' }));
+  assert.ok(onbid.score({ island: true }) >= 50);
+});
+
+test('온비드 목록 이어 받기: 멈춘 구간·쪽부터', async () => {
+  const asked = [];
+  const fetcher = fakeFetch((u) => { asked.push(`${u.searchParams.get('lctnSdnm')}/${u.searchParams.get('pvctTrgtYn')}/${u.searchParams.get('pageNo')}`); return onbidJson([], 0); });
+  await onbid.collect({ serviceKey: 'k', quota: new Quota(null), fetcher, mode: 'full', save: async () => ({}), resume: { label: '경기도/Y', pageNo: 3 } });
+  assert.equal(asked[0], '경기도/Y/3');
+  assert.ok(!asked.some((a) => a.startsWith('서울특별시')));
 });
 
 test('온비드 수집 흐름(가짜 서버): 목록 저장 → 상세 조회', async () => {
