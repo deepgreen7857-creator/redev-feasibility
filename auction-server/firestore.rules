@@ -38,5 +38,9 @@ service cloud.firestore {
     match /jbsWork/{id}         { allow read, write: if isAdmin();
       match /chunks/{n}         { allow read, write: if isAdmin(); }
     }
+    // 검토서 라이브러리(jbslab.co.kr/library) — 구청 검토서 원본·항목 분해(구역명·지번 포함). 관리자만 읽고 씀
+    match /reviewLib/{id}       { allow read, write: if isAdmin();
+      match /chunks/{n}         { allow read, write: if isAdmin(); }
+    }
   }
 }

@@ -1,5 +1,5 @@
 /* 사이트 공통 길잡이(2026-11-04 사용자 결정 '탭이 물 흐르듯이')
- * 1단: 페이지 — 정비사업 사업성 검토 · 정비계획 검토 · 정비경매 리포트 · 주식 모의투자 · 안전관리계획서
+ * 1단: 페이지 — 정비사업 사업성 검토 · 정비계획 검토 · 정비경매 리포트 · 주식 모의투자 · 안전관리계획서 · 검토서 라이브러리
  * 2단(정비계획 검토 쪽 화면만): 1 주출입구 설정 → 2 정비기반시설 지정 → 3 교통성 검토 → 4 환경성 검토 → 5 경관성 검토 → 6 건축계획 수립
  *   /urban의 4탭(단지 출입구)·3탭(기반시설)과 /traffic·/env·/landscape·/arch를 한 줄로 이음. /urban은 탭을 바꿀 때 JbsNav.mark()로 표시를 옮김
  * 페이지마다 <script src="/shared/sitenav.js"></script>(workfile.js 앞)만 넣으면 됨. sticky-top.js가 이 두 줄도 위에 고정함 */
@@ -11,6 +11,7 @@
     { k: 'auction', name: '정비경매 리포트', href: '/auction/', on: p => /^\/auction\//.test(p) },
     { k: 'stock', name: '주식 모의투자', href: '/stock/', on: p => /^\/stock\//.test(p) },
     { k: 'safety', name: '안전관리계획서(시험판)', href: '/safety/', on: p => /^\/safety\//.test(p) },
+    { k: 'library', name: '검토서 라이브러리', href: '/library/', on: p => /^\/library\//.test(p) },
   ];
   const STEPS = [
     { n: 1, name: '주출입구 설정', href: '/urban/?tab=arch&focus=gate', on: () => /^\/urban\//.test(P) && window.__urbanTab === 'arch' },
