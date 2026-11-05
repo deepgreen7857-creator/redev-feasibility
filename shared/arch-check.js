@@ -86,6 +86,28 @@
     [[a, b], [b, a]].forEach(([X, Y]) => wallsW(X).forEach(w => { const h = wallHit(w, Y); if (h) out.push(Object.assign({ X, Y, w, d: h.d, p0: h.foot, p1: h.p }, needOf(X, Y, w, opt, sp))); }));
     return out;
   }
+  /* 동 모서리 근접(2026-11-06 사용자 결정 — 실무 가정, 법정 아님). opt.corner || opt.assume.corner = { mode: off·min10·rec·all, min_m, ratio, cone_deg }
+     법정 동 사이 거리(벽면 직각 방향)에 안 걸리는 비껴 놓인 동도 막음:
+       min10 모든 동 사이 최소 min_m · rec  min_m + 채광창 벽 직각선 좌우 cone 안에 상대 동이 보이면 높은 동 높이 × ratio · all 모서리 전부 ratio
+     결과 { d, need, p, q, view(보이는 위치인지) } 또는 null(문제 없음) */
+  const cornerOf = opt => { const c = opt.corner || (opt.assume && opt.assume.corner); return c && c.mode && c.mode !== 'off' ? Object.assign({ min_m: 10, ratio: 0.5, cone_deg: 45 }, c) : null; };
+  //  법정 검사가 다루는 쌍(벽면 직각 방향으로 마주 봄 — 측벽끼리 마목 4m 포함)은 법정 기준으로만 봄(사용자 판단 2026-11-06: 103–104 측벽 4.7m는 통과)
+  function cornerCheck(a, b, opt, fs) {
+    const CN = cornerOf(opt); if (!CN) return null;
+    if ((fs || facings(a, b, opt, opt.spacing)).length) return null;
+    const hMax = H(opt, Math.max(a.floors, b.floors)), big = Math.max(CN.min_m, CN.ratio * hMax), np = nearPair(a, b);
+    if (CN.mode === 'min10') return np.d < CN.min_m - 0.05 ? { d: np.d, need: CN.min_m, p: np.p, q: np.q, view: false } : null;
+    if (CN.mode === 'all') return np.d < big - 0.05 ? { d: np.d, need: big, p: np.p, q: np.q, view: true } : null;
+    // rec: 채광창 벽 끝에서 비스듬히(직각선 좌우 cone 안) 보이는 상대 동 점 중 가장 가까운 것
+    const tn = Math.tan(CN.cone_deg * Math.PI / 180); let v = null;
+    [[a, b], [b, a]].forEach(([X, Y]) => wallsW(X).forEach(w => { if (!w.win) return;
+      const tx = w.b[0] - w.a[0], ty = w.b[1] - w.a[1], L = Math.hypot(tx, ty), t = [tx / L, ty / L];
+      sampOf(Y).forEach(p => { const vx = p[0] - w.a[0], vy = p[1] - w.a[1], s2 = vx * t[0] + vy * t[1], dn = vx * w.n[0] + vy * w.n[1]; if (dn <= 0.01) return;
+        const off = s2 < 0 ? -s2 : s2 > L ? s2 - L : 0; if (off <= 0 || off > dn * tn) return;   // 바로 앞(법정 검사 몫)이거나 시야 밖
+        const d = Math.hypot(off, dn); if (d < big - 0.05 && (!v || d < v.d)) { const e = s2 < 0 ? w.a : w.b; v = { d, need: big, p: e, q: p, view: true }; } }); }));
+    if (v) return v;
+    return np.d < CN.min_m - 0.05 ? { d: np.d, need: CN.min_m, p: np.p, q: np.q, view: false } : null;
+  }
   const collide = (a, b) => { const A = ringsOf(a), B = ringsOf(b); return A.some(p => B.some(q => overlapConvex(p, q))); };
 
   // 두 동 사이 검사(2026-11-05 벽면별로 바꿈): 겹침 → 벽면마다 마주 보는 상대 동까지 직각 방향 거리. 문제 없으면 null
@@ -93,11 +115,17 @@
   function pairCheck(a, b, opt) {
     const sp = opt.spacing, sb = itemOf(opt, 'spacing_ratio');
     const A = bbW(a), B = bbW(b), gapBB = Math.hypot(Math.max(0, B[0] - A[2], A[0] - B[2]), Math.max(0, B[1] - A[3], A[1] - B[3]));
-    if (gapBB > Math.max(10, sp * H(opt, Math.max(a.floors, b.floors))) + 0.1) return null;
+    const CN = cornerOf(opt), hM = H(opt, Math.max(a.floors, b.floors));
+    if (gapBB > Math.max(10, sp * hM, CN ? Math.max(CN.min_m, CN.ratio * hM) : 0) + 0.1) return null;
     if (gapBB < 0.02 && collide(a, b)) return { id: 'collide', 항목: '동 겹침', 동: [a.id, b.id], 판정: '위반', 값: '두 동이 겹침', 근거: '' };
-    let worst = null;
-    facings(a, b, opt, sp).forEach(f => { if (f.d < f.need - 0.05 && (!worst || f.d / f.need < worst.d / worst.need)) worst = f; });
-    if (!worst) return null;
+    let worst = null; const fs = facings(a, b, opt, sp);
+    fs.forEach(f => { if (f.d < f.need - 0.05 && (!worst || f.d / f.need < worst.d / worst.need)) worst = f; });
+    if (!worst) {
+      const c = cornerCheck(a, b, opt, fs); if (!c) return null;
+      return { id: 'corner', 항목: c.view ? '동 모서리 근접(비스듬히 마주 봄 — 실무 기준)' : '동 최소 거리(실무 기준)', 동: [a.id, b.id], 판정: '위반', 기준: `${c.need.toFixed(1)}m 이상`, 값: `${c.d.toFixed(1)}m`, d: c.d, need: c.need, p: c.p, q: c.q,
+        대안: '동을 옮기거나 돌려 간격 확보, 또는 높은 동 층수 낮추기',
+        근거: (c.view ? `채광창 벽 직각선 좌우 ${cornerOf(opt).cone_deg}° 안에서 보임 → 높은 동 높이 × ${cornerOf(opt).ratio}(최소 ${cornerOf(opt).min_m}m)` : `모든 동 사이 최소 ${cornerOf(opt).min_m}m`) + ' — 실무 기준(가정값, 법정 아님: 시행령 제86조③2호는 직각 방향으로 마주 보는 부분만. 서울 건축조례 최소 이격 10m·0.5배 차용)' };
+    }
     const f = worst, ids = f.kind === 'ns' ? [f.S.id, f.N.id] : [f.X.id, f.Y.id];
     return { id: f.kind === 'ns' ? 'spacing' : 'side', 항목: f.kind === 'ns' ? '동 사이 거리(앞뒤)' : f.kind === 'ew' ? '동 사이 거리(옆 — 채광창 벽)' : '동 사이 거리(옆 — 측벽)', 동: ids, 판정: '위반',
       기준: `${f.need.toFixed(1)}m 이상`, 값: `${f.d.toFixed(1)}m`,
@@ -258,6 +286,9 @@
     for (let i = 0; i < blds.length; i++) for (let j = i + 1; j < blds.length; j++) {
       const a = blds[i], b = blds[j], A2 = bbW(a), B2 = bbW(b);
       if (Math.hypot(Math.max(0, B2[0] - A2[2], A2[0] - B2[2]), Math.max(0, B2[1] - A2[3], A2[1] - B2[3])) > Math.max(10, sp * H(opt, Math.max(a.floors, b.floors))) * 1.3) continue;
+      { const c = cornerCheck(a, b, opt), CN = cornerOf(opt), np = CN ? null : nearPair(a, b);
+        if (c) out.push({ kind: 'corner', a: c.p, b: c.q, d: c.d, need: c.need, 판정: '위반', 동: [a.id, b.id], 글: `${m1(c.d)}m / 기준 ${m1(c.need)}m`, 근거: '실무 기준(가정값, 법정 아님)' });
+        else if (np && np.d < 10) out.push({ kind: 'corner', a: np.p, b: np.q, d: np.d, need: 10, 판정: '권고', 동: [a.id, b.id], 글: `${m1(np.d)}m / 권고 10m`, 근거: '실무 권고(가정값, 법정 아님)' }); }
       const f = facings(a, b, opt, sp).sort((x, y) => x.d / x.need - y.d / y.need)[0]; if (!f) continue;
       const bad = f.d < f.need - 0.05, pn = f.kind === 'ns' ? Math.max(10, PR.nsRatio * H(opt, f.S.floors)) : 0, adv = !bad && f.kind === 'ns' && f.w.win && f.d < pn - 0.05;
       out.push({ kind: 'spacing', a: f.p0, b: f.p1, d: f.d, need: f.need, 판정: bad ? '위반' : adv ? '권고' : '통과', 동: [f.X.id, f.Y.id],
@@ -310,6 +341,6 @@
     f(ringsOf(a), ringsOf(b), false); f(ringsOf(b), ringsOf(a), true); return best;
   }
 
-  const api = { quick, evaluate, verify, pairCheck, facings, minDist, dims, nearPair, proviso, gfaOf, unitsOf, overlapConvex, bboxIn };
+  const api = { quick, evaluate, verify, pairCheck, cornerCheck, facings, minDist, dims, nearPair, proviso, gfaOf, unitsOf, overlapConvex, bboxIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.JbsCheck = api;
 })(typeof window !== 'undefined' ? window : globalThis);

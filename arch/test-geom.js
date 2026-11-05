@@ -3,7 +3,8 @@ const assert = require('assert');
 const G = require('../shared/arch-geom.js'), C = require('../shared/criteria/arch.json');
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('통과', name); };
 const rect = (w, h) => [[0, 0], [w, 0], [w, h], [0, h]];
-const A = C.가정, U = C.평면, sunN = C.items.find(i => i.id === 'sunlight_north').이격;
+const A = Object.assign({}, C.가정, { corner: { mode: 'off' } }), U = C.평면   // 모서리 근접 실무 기준은 따로 시험(아래)
+const sunN = C.items.find(i => i.id === 'sunlight_north').이격;
 const run = (pts, tags, far, extra = {}) => {
   const sb = tags.map(tg => tg === 'road' ? A.roadSetback_m : tg === 'arterial' ? A.arterialSetback_m : A.boundarySetback_m);
   return G.layout({ pts, setbacks: sb, tags }, Object.assign({ units: U, assume: A, mix: { 59: 40, 84: 50, 114: 10 }, spacing: 0.8, sun: sunN, lot: G.area(pts) * 0.75, far, angle: 0 }, extra));

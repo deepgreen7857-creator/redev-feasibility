@@ -2,7 +2,8 @@
 const assert = require('assert');
 const G = require('../shared/arch-geom.js'), K = require('../shared/arch-check.js'), C = require('../shared/criteria/arch.json');
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('통과', name); };
-const A = C.가정, U = C.평면, sunN = C.items.find(i => i.id === 'sunlight_north').이격;
+const A = Object.assign({}, C.가정, { corner: { mode: 'off' } }), U = C.평면   // 모서리 근접 실무 기준은 따로 시험(아래)
+const sunN = C.items.find(i => i.id === 'sunlight_north').이격;
 const rect = (w, h) => [[0, 0], [w, 0], [w, h], [0, h]];
 const site = { pts: rect(240, 200), tags: ['road', 'boundary', 'north', 'boundary'] }; site.setbacks = site.tags.map(tg => tg === 'road' ? 3 : 5);
 const opt = { units: U, assume: A, mix: { 59: 40, 84: 50, 114: 10 }, spacing: 0.8, sun: sunN, lot: G.area(site.pts) * 0.75, far: 250, angle: 0, crit: C.items, winRatio: 2, lib: C.평면_라이브러리 };
@@ -54,6 +55,21 @@ t('치수선: 인동·정북 일조 치수선, 위반이면 판정 위반, 기�
   const D = K.dims(site, [s1, s2], opt), sp = D.find(d => d.kind === 'spacing'); assert.ok(sp && sp.판정 === '위반' && Math.abs(sp.d - 30) < 0.2, JSON.stringify(sp));
   const top = { id: 3, poly: box(100, 180, 40, 12), floors: 25, form: 'slab', angle: 0 }, sn = K.dims(site, [top], opt).find(d => d.kind === 'sun'); assert.ok(sn && sn.판정 === '위반' && sn.a[1] < sn.b[1]);
   assert.ok(K.dims(site, blds, Object.assign({}, opt, { dimAll: true })).length >= K.dims(site, blds, opt).length);
+});
+t('모서리 근접(실무 기준, 가정): 비껴 놓인 30층 두 동 — 끄면 통과, 10m만이면 8m 위반·12m 통과, 추천은 45° 안에서 보이면 높이 × 0.5', () => {
+  // 탑상(모든 벽 창) 두 동을 대각선으로: 아래 동 오른쪽 위 모서리 (70,70), 위 동 왼쪽 아래 모서리 (70+g, 70+g)
+  const mk = g => [{ id: 1, poly: box(50, 50, 20, 20), floors: 30, form: 'tower' }, { id: 2, poly: box(70 + g, 70 + g, 20, 20), floors: 30, form: 'tower' }];
+  const r = (g, mode) => K.quick(site, mk(g), Object.assign({}, opt, { corner: { mode } })).rules.filter(x => x.id === 'corner');
+  assert.strictEqual(r(5.7, 'off').length, 0);
+  assert.strictEqual(r(5.7, 'min10').length, 1); assert.strictEqual(r(8.5, 'min10').length, 0);   // 8m·12m 대각
+  const h = 30 * A.floorHeight_m + A.groundExtra_m;
+  const rr = r(10, 'rec'); assert.strictEqual(rr.length, 1); assert.ok(Math.abs(parseFloat(rr[0].기준) - 0.5 * h) < 0.2, rr[0].기준); assert.ok(/가정/.test(rr[0].근거));
+  assert.strictEqual(r(0.5 * h / Math.SQRT2 + 1, 'rec').length, 0);
+  // 측벽끼리 나란한 판상(마목 4m 대상)은 법정 기준만
+  const s2 = [{ id: 1, poly: box(50, 50, 40, 12), floors: 30, form: 'slab', angle: 0 }, { id: 2, poly: box(95, 50, 40, 12), floors: 30, form: 'slab', angle: 0 }];
+  assert.strictEqual(K.quick(site, s2, Object.assign({}, opt, { corner: { mode: 'rec' } })).rules.length, 0);
+  // 치수선에도 '모서리' 선
+  assert.ok(K.dims(site, mk(5.7), Object.assign({}, opt, { corner: { mode: 'rec' } })).some(d => d.kind === 'corner' && d.판정 === '위반'));
 });
 console.log(`\n${n}개 모두 통과`);
 const v = K.verify(site, blds, opt);
