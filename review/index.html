@@ -147,7 +147,7 @@ function calc(it){
   const rows=[]; let min=it.appraisal;
   for(let k=0;k<=Math.max(MAXK,it.rounds.length+1);k++){
     if(k>0) min=Math.floor(Math.round(min*(it.rate||RATE))/1000)*1000;
-    const bid=min+10000, take=D?Math.max(0,D-bid):A, total=bid+take, tax=Math.round(total*0.011);
+    const bid=min+10000, take=D?Math.max(0,D-bid):A, total=bid+take, tax=Math.round(total*(it.acqTax!=null?it.acqTax:(/12\.4%/.test(it.tax11||'')?0.124:0.011)));
     rows.push({k,min,bid,take,tax,pre:low-total-tax-it.costs,profit:afterTax(low-total-tax-it.costs),ok:hi>0&&bid<=hi});
   }
   const cur=it.rounds.findIndex(r=>r.result!=='유찰');
