@@ -34,39 +34,45 @@
   }
   const unitsOf = b => (b.units > 0 ? b.units : (b.mixT ? Object.values(b.mixT).reduce((a, c) => a + c, 0) : (b.n || 0)) * b.floors);
 
+  // 두 동 사이 검사: 겹침·앞뒤 거리(가목·나목)·옆 거리(마목·가목). 문제 없으면 null
+  function pairCheck(a, b, opt) {
+    const sp = opt.spacing, sb = itemOf(opt, 'spacing_ratio');
+    if (overlapConvex(a.poly, b.poly)) return { id: 'collide', 항목: '동 겹침', 동: [a.id, b.id], 판정: '위반', 값: '두 동이 겹침', 근거: '' };
+    const th = (a.angle || 0) * D2R, A = bboxIn(a.poly, th), B = bboxIn(b.poly, th);
+    const xo = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0), yo = Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0);
+    if (xo > 0.5) {
+      // 앞뒤로 마주봄: 남쪽 동 S, 북쪽 동 N. 가목 = 채광창 벽면에서 높이 × 배수(두 동 모두 → 높은 쪽), 나목 = 북쪽(높은) 동 주된 개구부가 남쪽(낮은) 동을 향하면 10m 이상 + 낮은 동 높이 × 배수
+      const [S, N, s, n] = A.y0 <= B.y0 ? [a, b, A, B] : [b, a, B, A];
+      const gap = n.y0 - s.y1, hS = H(opt, S.floors), hN = H(opt, N.floors);
+      const need = hN >= hS ? Math.max(10, sp * hS) : sp * Math.max(hS, hN), lawNeed = hN >= hS ? Math.max(10, 0.5 * hS) : 0.5 * Math.max(hS, hN);
+      if (gap < need - 0.05) return { id: 'spacing', 항목: '동 사이 거리(앞뒤)', 동: [S.id, N.id], 판정: '위반', 기준: `${need.toFixed(1)}m 이상`, 값: `${gap.toFixed(1)}m`,
+        근거: (hN >= hS ? '건축법 시행령 제86조③2호나목(높은 동 주된 개구부가 낮은 동을 향함: 10m 이상, 낮은 동 높이 × ' : '같은 조 ③2호가목(채광창 벽면에서 높이 × ') + `${sp}배 — 인천 건축조례 제32조⑤·⑥), 법정 하한 ${lawNeed.toFixed(1)}m` + (sb.상태 ? '' : ' ※ 기준 확인 필요') };
+    } else if (yo > 0.5) {
+      // 옆으로 나란함: 측벽끼리(판상 끝벽) 4m(마목), 창 있는 벽이 마주보면(탑상·Y·ㅁ·T) 가목
+      const gap = Math.max(B.x0 - A.x1, A.x0 - B.x1), side = f => ['slab', 'L'].includes(f);
+      const need = side(a.form) && side(b.form) ? 4 : sp * Math.max(H(opt, a.floors), H(opt, b.floors));
+      if (gap < need - 0.05) return { id: 'side', 항목: '동 사이 거리(옆)', 동: [a.id, b.id], 판정: '위반', 기준: `${need.toFixed(1)}m 이상`, 값: `${gap.toFixed(1)}m`,
+        근거: side(a.form) && side(b.form) ? '건축법 시행령 제86조③2호마목(측벽과 측벽 4m 이상)' : `같은 조 ③2호가목(창 있는 벽면 높이 × ${sp}배 — 탑상·Y·ㅁ·T형은 옆 벽에도 창)` };
+    }
+    return null;
+  }
+
   /* ---------- 1단계: 빠른 검사(규칙) ---------- */
   function quick(site, blds, opt) {
     const rules = [], add = r => rules.push(Object.assign({ 갈래: '규칙' }, r));
-    const sp = opt.spacing, sb = itemOf(opt, 'spacing_ratio'), winI = itemOf(opt, 'window_setback'), sunI = itemOf(opt, 'sunlight_north');
+    const winI = itemOf(opt, 'window_setback'), sunI = itemOf(opt, 'sunlight_north');
     // ① 대지 안·경계 이격(가정 이격 포함) — 경계에서 띄울 거리 중 법정 부분은 아래 높이 상한에서 따로 봄
     const test = G.buildableTest(site.pts, site.setbacks || []), ex = site.exclude || [];
     blds.forEach(b => {
-      const pts = b.poly.flatMap((p, i) => { const q = b.poly[(i + 1) % b.poly.length]; return [p, [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]]; });
+      // 조각(parts)이 있으면 조각 꼭짓점·변 중점으로(Y·T·ㄱ자처럼 오목한 동은 바깥 둘레선이 빈 땅을 지나감)
+      const rings = b.parts && b.parts.length ? b.parts : [b.poly];
+      const pts = rings.flatMap(R => R.flatMap((p, i) => { const q = R[(i + 1) % R.length]; return [p, [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]]; }));
       const outN = pts.filter(p => !test(p[0], p[1])).length, inEx = pts.filter(p => ex.some(e => G.inside(p[0], p[1], e))).length;
       if (outN) add({ id: 'boundary', 항목: '대지 경계·이격', 동: [b.id], 판정: '위반', 값: `꼭짓점·변 중점 ${outN}곳이 대지 밖 또는 경계 이격 안`, 근거: '대지 경계(입력한 변별 이격 포함)' });
       if (inEx) add({ id: 'infra', 항목: '기반시설 침범', 동: [b.id], 판정: '위반', 값: `${inEx}곳이 공원·도로 등 건축 불가 영역 안`, 근거: '정비기반시설 계획(건축 불가 영역)' });
     });
-    // ② 동끼리 겹침, ③ 동 사이 거리(시행령 제86조③2호)
-    for (let i = 0; i < blds.length; i++) for (let j = i + 1; j < blds.length; j++) {
-      const a = blds[i], b = blds[j];
-      if (overlapConvex(a.poly, b.poly)) { add({ id: 'collide', 항목: '동 겹침', 동: [a.id, b.id], 판정: '위반', 값: '두 동이 겹침', 근거: '' }); continue; }
-      const th = (a.angle || 0) * D2R, A = bboxIn(a.poly, th), B = bboxIn(b.poly, th);
-      const xo = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0), yo = Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0);
-      if (xo > 0.5) {
-        // 앞뒤로 마주봄: 남쪽 동 S, 북쪽 동 N. 가목 = 채광창 벽면에서 높이 × 배수(두 동 모두 → 높은 쪽), 나목 = 북쪽(높은) 동 주된 개구부가 남쪽(낮은) 동을 향하면 10m 이상 + 낮은 동 높이 × 배수
-        const [S, N, s, n] = A.y0 <= B.y0 ? [a, b, A, B] : [b, a, B, A];
-        const gap = n.y0 - s.y1, hS = H(opt, S.floors), hN = H(opt, N.floors);
-        const need = hN >= hS ? Math.max(10, sp * hS) : sp * Math.max(hS, hN), lawNeed = hN >= hS ? Math.max(10, 0.5 * hS) : 0.5 * Math.max(hS, hN);
-        if (gap < need - 0.05) add({ id: 'spacing', 항목: '동 사이 거리(앞뒤)', 동: [S.id, N.id], 판정: '위반', 기준: `${need.toFixed(1)}m 이상`, 값: `${gap.toFixed(1)}m`,
-          근거: (hN >= hS ? '건축법 시행령 제86조③2호나목(높은 동 주된 개구부가 낮은 동을 향함: 10m 이상, 낮은 동 높이 × ' : '같은 조 ③2호가목(채광창 벽면에서 높이 × ') + `${sp}배 — 인천 건축조례 제32조⑤·⑥), 법정 하한 ${lawNeed.toFixed(1)}m` + (sb.상태 ? '' : ' ※ 기준 확인 필요') });
-      } else if (yo > 0.5) {
-        // 옆으로 나란함: 측벽끼리(판상 끝벽) 4m(마목), 창 있는 벽이 마주보면(탑상·Y·ㅁ) 가목
-        const gap = Math.max(B.x0 - A.x1, A.x0 - B.x1), side = f => ['slab', 'L'].includes(f);
-        const need = side(a.form) && side(b.form) ? 4 : sp * Math.max(H(opt, a.floors), H(opt, b.floors));
-        if (gap < need - 0.05) add({ id: 'side', 항목: '동 사이 거리(옆)', 동: [a.id, b.id], 판정: '위반', 기준: `${need.toFixed(1)}m 이상`, 값: `${gap.toFixed(1)}m`,
-          근거: side(a.form) && side(b.form) ? '건축법 시행령 제86조③2호마목(측벽과 측벽 4m 이상)' : `같은 조 ③2호가목(창 있는 벽면 높이 × ${sp}배 — 탑상·Y·ㅁ형은 옆 벽에도 창)` });
-      }
-    }
+    // ② 동끼리 겹침, ③ 동 사이 거리(시행령 제86조③2호) — pairCheck
+    for (let i = 0; i < blds.length; i++) for (let j = i + 1; j < blds.length; j++) { const r = pairCheck(blds[i], blds[j], opt); if (r) add(r); }
     // ④ 높이 상한: 정북 일조(시행령 제86조①)·채광창 벽면(제86조③1호·⑥) — 정북만 켠 것과 모두 켠 것을 따로 재서 어느 조문인지 가림
     const capAll = G.capper(site, opt), capSun = G.capper(site, Object.assign({}, opt, { winRatio: 0 }));
     blds.forEach(b => {
@@ -148,6 +154,6 @@
     return Object.assign({}, q, { risks, prefs: ev.prefs, score: ev.score });
   }
 
-  const api = { quick, evaluate, verify, gfaOf, unitsOf };
+  const api = { quick, evaluate, verify, pairCheck, gfaOf, unitsOf, overlapConvex, bboxIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.JbsCheck = api;
 })(typeof window !== 'undefined' ? window : globalThis);
