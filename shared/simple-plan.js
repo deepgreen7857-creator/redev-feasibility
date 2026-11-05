@@ -19,17 +19,27 @@
     return out;
   }
   // 방향 th(도) 좌표계의 1m 격자 누적합(건축 가능 = 대지 안·변별 이격 밖·기반시설 밖)
+  // 같은 대지·같은 방향 격자는 한 번만(동 타입·평형 배열마다 다시 만들지 않음)
+  const GRIDC = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
   function gridAt(site, opt, th) {
+    let byTh = GRIDC && GRIDC.get(site); const key = th + '|' + JSON.stringify(site.setbacks || []) + '|' + (site.exclude || []).length;
+    if (byTh && byTh.has(key)) return byTh.get(key);
     const test = G.buildableTest(site.pts, site.setbacks || []), ex = site.exclude || [], r = th * D2R;
     const L = site.pts.map(p => G.rot(p, -r)), xs = L.map(p => p[0]), ys = L.map(p => p[1]);
     const X0 = Math.floor(Math.min(...xs)), Y0 = Math.floor(Math.min(...ys)), W = Math.ceil(Math.max(...xs)) - X0 + 1, H = Math.ceil(Math.max(...ys)) - Y0 + 1;
+    const okAt = (x, y) => { const p = G.rot([x, y], r); return test(p[0], p[1]) && !ex.some(e => G.inside(p[0], p[1], e)); };
+    // 칸 꼭짓점은 이웃 칸과 같이 쓰므로 한 번씩만 검사
+    const V = new Uint8Array((W + 1) * (H + 1)); for (let j = 0; j <= H; j++) for (let i = 0; i <= W; i++) V[j * (W + 1) + i] = okAt(X0 + i, Y0 + j) ? 1 : 0;
     const S = new Int32Array((W + 1) * (H + 1));
-    for (let j = 0; j < H; j++) { let row = 0; for (let i = 0; i < W; i++) { const bad = [[0.5, 0.5], [0, 0], [1, 0], [1, 1], [0, 1]].some(([a, b]) => { const p = G.rot([X0 + i + a, Y0 + j + b], r); return !test(p[0], p[1]) || ex.some(e => G.inside(p[0], p[1], e)); }); if (bad) row++; S[(j + 1) * (W + 1) + i + 1] = S[j * (W + 1) + i + 1] + row; } }
+    for (let j = 0; j < H; j++) { let row = 0; for (let i = 0; i < W; i++) {
+      const k = j * (W + 1) + i, bad = !V[k] || !V[k + 1] || !V[k + W + 1] || !V[k + W + 2] || !okAt(X0 + i + 0.5, Y0 + j + 0.5); if (bad) row++; S[(j + 1) * (W + 1) + i + 1] = S[j * (W + 1) + i + 1] + row; } }
     const free = (x0, y0, x1, y1) => { const i0 = Math.floor(x0 - X0), j0 = Math.floor(y0 - Y0), i1 = Math.ceil(x1 - X0), j1 = Math.ceil(y1 - Y0); if (i0 < 0 || j0 < 0 || i1 > W || j1 > H) return false; return S[j1 * (W + 1) + i1] - S[j0 * (W + 1) + i1] - S[j1 * (W + 1) + i0] + S[j0 * (W + 1) + i0] === 0; };
-    return { X0, Y0, W, H, free, r, xmin: Math.min(...xs), xmax: Math.max(...xs), ymin: Math.min(...ys), ymax: Math.max(...ys) };
+    const g2 = { X0, Y0, W, H, free, r, xmin: Math.min(...xs), xmax: Math.max(...xs), ymin: Math.min(...ys), ymax: Math.max(...ys) };
+    if (GRIDC) { if (!byTh) { byTh = new Map(); GRIDC.set(site, byTh); } byTh.set(key, g2); }
+    return g2;
   }
   const bbs = m => m.__bbs || (m.__bbs = m.parts.map(q => [Math.min(...q.map(p => p[0])), Math.min(...q.map(p => p[1])), Math.max(...q.map(p => p[0])), Math.max(...q.map(p => p[1]))]));
-  const fits = (Gd, m, x, y) => bbs(m).every(b => Gd.free(x + b[0], y + b[1], x + b[2], y + b[3]));
+  const fits = (Gd, m, x, y) => Gd.free(x, y, x + m.L, y + m.D) || bbs(m).every(b => Gd.free(x + b[0], y + b[1], x + b[2], y + b[3]));
 
   // 평형 비율이 목표에 가장 가까운 배열(같은 차이면 큰 평형 먼저)
   function seqFor(id, opt) {
@@ -56,7 +66,7 @@
       const mLow = DL.build(id, seq), mHigh = DL.build(id, seq, { high: true }); if (!mLow) continue;
       const side = mLow.form === 'slab' ? 'slab' : 'win';
       for (const th of o.angles || angles(site)) {
-        const Gd = gridAt(site, opt, th);
+        const Gd = gridAt(site, opt, th), ROWC = new Map();   // 줄 결과 기억(같은 높이·층수 줄은 한 번만)
         // 층수: 줄마다 남쪽 낮게 → 북쪽 높게(Flo → Fhi, 같으면 모두 같은 층수). 줄 간격은 남쪽 줄 층수로(북쪽 줄이 같거나 높음 → 나목: 10m 이상, 남쪽 동 높이 × 배수)
         const FS = []; for (let f = A.minFloors; f <= A.maxFloors; f += f < 15 ? 2 : 3) FS.push(f); if (FS[FS.length - 1] !== A.maxFloors) FS.push(A.maxFloors);
         for (const Flo of FS) for (const Fhi of FS) {
@@ -66,12 +76,14 @@
           const gfaDong = (m, f) => Object.keys(m.mixT).reduce((a, t) => a + m.mixT[t] * f * sup(t), 0);
           let bestY = null;
           const p0 = modOf(Flo).D + Math.max(10, sp * H(Flo));
+          const rowAt = (y, f, m, pX) => { const k = Math.round(y * 2) + '|' + f; let bx = ROWC.get(k); if (bx !== undefined) return bx; bx = null;
+            for (let ox = 0; ox < pX; ox += 2) { const xs = []; for (let x = Gd.xmin + ox; x + m.L <= Gd.xmax; x += pX) if (fits(Gd, m, x, y)) xs.push(x); if (!bx || xs.length > bx.length) bx = xs; }
+            ROWC.set(k, bx); return bx; };
           for (let oy = 0; oy < p0; oy += 2) {
             const rows = []; let est = 0;
             for (let y = Gd.ymin + oy; ;) {
               const f = fAt(y), m = modOf(f); if (y + m.D > Gd.ymax) break;
-              const pX = m.L + gapXOf(f); let bx = null;
-              for (let ox = 0; ox < pX; ox += 2) { const xs = []; for (let x = Gd.xmin + ox; x + m.L <= Gd.xmax; x += pX) if (fits(Gd, m, x, y)) xs.push(x); if (!bx || xs.length > bx.length) bx = xs; }
+              const pX = m.L + gapXOf(f), bx = rowAt(y, f, m, pX);
               if (bx && bx.length) { rows.push({ y, xs: bx, f, m }); est += bx.length * gfaDong(m, f); y += m.D + Math.max(10, sp * H(f)); }
               else y += 2;   // 이 높이엔 안 들어감 → 2m 위로
             }
