@@ -447,7 +447,7 @@
   let SW = null; const SWCB = {};
   function simpleWorker() {
     if (SW) return SW;
-    SW = new Worker('simple-worker.js?v=7');
+    SW = new Worker('simple-worker.js?v=8');
     SW.onmessage = e => { const f = SWCB[e.data.id]; delete SWCB[e.data.id]; if (f) f(e.data); };
     SW.onerror = ev => { Object.values(SWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(SWCB).forEach(k => delete SWCB[k]); SW = null; };
     return SW;
@@ -467,7 +467,7 @@
   function cardHtml(card) {
     if (!card) return '';
     const r = card.rows.slice().sort((a, b) => b.units - a.units), w = card.win;
-    return `<details open class="card"><summary><b>기본형 성적표</b> — 같은 모양 동을 일정하게 놓아 본 결과(보완 후). 세대수 1위 ${esc(w.units.name)} · 일조 1위 ${esc(w.sun.name)} · 평형 1위 ${esc(w.mix.name)}</summary>
+    return `<details open class="card"><summary><b>기본형 성적표</b> — 같은 모양 동을 일정하게 놓아 본 결과(보완 후). 세대수 1위 ${esc(w.units.name)} · 용적률 1위 ${esc((w.far || w.units).name)} · 일조 1위 ${esc(w.sun.name)} · 평형 1위 ${esc(w.mix.name)}</summary>
       <table class="tbl"><tr><th>동 타입</th><th>세대</th><th>용적률</th><th>방향</th><th>평형 비율 차이</th><th>일조 부족 동</th><th>정북 일조로 깎인 세대·층</th><th>채광창으로 깎인</th><th>기본형 자투리</th><th>보완</th></tr>
       ${r.map(x => `<tr><td>${esc(x.name)}</td><td>${fmt(x.units)}</td><td>${fmt(x.far, 0)}%</td><td>${x.angle}°</td><td>${x.mixErr.toFixed(2)}</td><td>${x.sunFail}/${x.n}</td><td>${x.cutSun}</td><td>${x.cutWin}</td><td>${x.empty == null ? '-' : x.empty + 'm'}</td><td>${esc(x.steps.join(' + ') || '-')}</td></tr>`).join('')}</table>
       <ul>${card.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
@@ -516,7 +516,7 @@
   let PW = null; const PWCB = {};
   async function runDeep(I) {
     msg('심화 배치 계산 중… 골격·구획·방향·높이·동 형태를 바꿔 가며 반복 탐색합니다(기본형 후보 포함, 탐색 90초 + 기본형 계산 — 보통 2~3분). 이 창을 닫지 마세요.');
-    if (!PW) { PW = new Worker('plan-worker.js?v=8'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
+    if (!PW) { PW = new Worker('plan-worker.js?v=9'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
     const id = Date.now() + Math.random();
     const res = await new Promise(ok => { PWCB[id] = ok; PW.postMessage({ id, site: I.site, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }) }); });
     if (!res.r || !res.r.variants.length) throw new Error(res.err || '심화 배치 안을 만들지 못했습니다');

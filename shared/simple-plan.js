@@ -255,7 +255,7 @@
         rules: v.rules.length, n: B.length, maxF: v.maxFloors, cutSun, cutWin, empty: st.length ? st[0].empty : null, sideWin: v0.gapX > (opt.assume.sideGap_m || 10) + 0.1, gapX: v0.gapX };
     });
     const best = k => rows.slice().sort(k)[0];
-    const win = { units: best((a, b) => b.units - a.units), sun: best((a, b) => a.sunFail / Math.max(1, a.n) - b.sunFail / Math.max(1, b.n) || b.units - a.units), mix: best((a, b) => a.mixErr - b.mixErr || b.units - a.units) };
+    const win = { units: best((a, b) => b.units - a.units), far: best((a, b) => b.far - a.far || b.units - a.units), sun: best((a, b) => a.sunFail / Math.max(1, a.n) - b.sunFail / Math.max(1, b.n) || b.units - a.units), mix: best((a, b) => a.mixErr - b.mixErr || b.units - a.units) };
     // 이 구역에서 공통으로 막힌 것(모든 타입 평균) — 문장 한 줄씩
     const avg = f => rows.reduce((s, r) => s + f(r), 0) / (rows.length || 1), notes = [];
     if (avg(r => r.ofTarget) < 0.8) notes.push(`어떤 동 타입으로도 목표 용적률의 ${Math.round(Math.max(...rows.map(r => r.ofTarget)) * 100)}%까지만 들어감 — 목표(${opt.far}%) 자체가 이 대지에 무리일 수 있음`);
