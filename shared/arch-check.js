@@ -123,10 +123,14 @@
       const others = blds.filter(o => o !== b);
       const r = G.sunHours(others, f => H(opt, f), lat, [front], tol)[0];
       if (r.ok) return;
-      // 그늘 원인: 이 동 남쪽(±45°) 가장 가까운 동
-      const cand = others.map(o => { const c = o.poly.reduce((s, p) => [s[0] + p[0] / o.poly.length, s[1] + p[1] / o.poly.length], [0, 0]); const v = [c[0] - front[0], c[1] - front[1]]; return { o, d: Math.hypot(v[0], v[1]), south: v[1] < 0 && Math.abs(v[0]) <= Math.abs(v[1]) }; }).filter(x => x.south).sort((x, y) => x.d - y.d)[0];
+      // 그늘 원인: 동을 하나씩 빼 보고 일조(연속 + 합계)가 가장 많이 늘어나는 동. 빼면 기준을 채우는지(fix)도 봄
+      const cand = others.filter(o => o.poly[0][1] < front[1] + 5).map(o => {
+        const r2 = G.sunHours(others.filter(x => x !== o), f => H(opt, f), lat, [front], tol)[0];
+        const c = o.poly.reduce((s, p) => [s[0] + p[0] / o.poly.length, s[1] + p[1] / o.poly.length], [0, 0]);
+        return { o, gain: (r2.cont - r.cont) + (r2.total - r.total) / 2, fix: r2.ok, d: Math.hypot(c[0] - front[0], c[1] - front[1]) };
+      }).filter(x => x.gain > 0.05).sort((x, y) => y.gain - x.gain)[0];
       add({ id: 'sun_tolerance', 항목: `${b.id}동 저층 동지 일조 부족`, 등급: r.cont < 1 && r.total < 2 ? '고위험' : '주의', 동: [b.id].concat(cand ? [cand.o.id] : []),
-        원인: cand ? `남쪽 ${cand.o.id}동(${cand.o.floors}층)과 거리 약 ${cand.d.toFixed(0)}m` : '주변 동 그림자',
+        원인: cand ? `${cand.o.id}동(${cand.o.floors}층, 약 ${cand.d.toFixed(0)}m) 그림자가 가장 큼${cand.fix ? '' : ' — 그 동만 고쳐서는 부족, 여러 동 그림자가 겹침'}` : '여러 동 그림자가 겹침',
         영향: `정면 1층 기준 연속 ${r.cont}시간·합계 ${r.total}시간(기준 연속 ${tol.연속_h}시간 또는 합계 ${tol.합계_h}시간) — 저층 세대 일조 민원·손해배상 가능성`,
         확인자료: '동지 일조 시뮬레이션(/arch 일조 분석)', 대안: cand ? `${cand.o.id}동 층수를 낮추거나 ${b.id}동과의 간격을 넓힘` : '동 배치 간격 조정',
         근거: (tolI.근거 || '대법원 판례(일조방해 수인한도) — 법정 기준 아님') });
