@@ -279,7 +279,7 @@
     return null;
   }
   function load(s) {
-    site = s; site.v = site.v || {}; alts = []; cur = 0; sunRes = null; $('#out').hidden = true; $('#confirm').disabled = true;
+    site = s; site.v = site.v || {}; alts = []; cur = 0; if ($('#feasCard')) $('#feasCard').innerHTML = ''; sunRes = null; $('#out').hidden = true; $('#confirm').disabled = true;
     lyrEx.clearLayers(); lyrBld.clearLayers();
     if (!site.geojson) { pts = null; drawSite(); setP(defaults()); fillSel(); msg('구역이 없습니다. 지도 왼쪽 위 다각형 도구로 구역계를 그리거나 저장한 구역을 불러오세요.'); return; }
     const ring = G.openRing(ringOf(site.geojson)); pr = G.projector(ring); pts = G.ccw(ring.map(pr.to));
@@ -487,10 +487,35 @@
     msg(`기본형 ${alts.length}가지를 만들었습니다(${(res.r.ms / 1000).toFixed(0)}초). 세대수가 가장 많은 ${alts[cur].label}을 골라 두었습니다. 아래 성적표에서 무엇이 막혔는지 보고, 다른 동 타입을 눌러 비교하세요.`);
     $('#out').scrollIntoView({ behavior: 'smooth' });
   }
+  /* ---------- 안별 사업성(2026-11-05): 배치 결과 세대·평형·연면적 → 공통 사업성 계산(shared/feas.js JbsFeas.money, 첫 화면·/urban과 같은 가정값)
+     보수(일반분양가 −10%·공사비 +10%) · 기본 · 낙관(분양가 +10%·공사비 −5%) 세 가지 비례율. 종전자산은 사업성 화면 [1차 재검토로 넘기기] 값(site.quick.prior), 없으면 직접 입력(억원) */
+  const SCEN = [{ k: '보수', gp: 0.9, cp: 1.1 }, { k: '기본', gp: 1, cp: 1 }, { k: '낙관', gp: 1.1, cp: 0.95 }];
+  function priorOf() { const m = num((site && site.v && site.v.priorEok) || 0) * 10000; return m > 0 ? { v: m, src: '직접 입력' } : (site && site.quick && site.quick.prior > 0 ? { v: site.quick.prior, src: `사업성 화면 1회차(${site.quick.at || ''})` } : null); }
+  function feasOf(A, sc) {
+    if (!window.JbsFeas) return null;
+    const F = JbsFeas.get(), Fs = Object.assign({}, F, { generalPrice: F.generalPrice * sc.gp, conPrice: F.conPrice * sc.cp }), pv = priorOf();
+    const total = Object.values(A.byType || {}).reduce((a, b) => a + b, 0), rental = Math.round(total * F.rentRatio / 100);
+    const members = num(site && site.quick && site.quick.members) || Math.round(total * 0.5);
+    return JbsFeas.money({ byType: A.byType, rental, members, farArea: A.gfa, resArea: A.gfa, prior: pv ? pv.v : 0 }, Fs);
+  }
+  function renderFeas() {
+    const box = $('#feasCard'); if (!box) return;
+    if (!alts.length || !window.JbsFeas) { box.innerHTML = ''; return; }
+    const pv = priorOf(), eok = x => fmt(x / 10000, 0);
+    const rows = alts.map((A, i) => { const r = SCEN.map(sc => feasOf(A, sc)); return { A, i, r }; });
+    if (!$('#feasBody')) box.innerHTML = `<details class="card" open><summary><b>안별 사업성(개략)</b> — 배치 결과 세대·평형·연면적으로 계산. <span id="feasPriorNote"></span></summary>
+      <p><label>종전자산(억원, 직접 입력) <input id="feasPrior" inputmode="decimal" style="width:8em" value="${esc(site && site.v && site.v.priorEok || '')}"></label> <span class="note">비우면 사업성 화면에서 넘긴 값</span></p><div id="feasBody"></div></details>`;
+    $('#feasPriorNote').textContent = `종전자산 ${pv ? `${eok(pv.v)}억원(${pv.src})` : '없음 — 아래 칸에 넣으면 비례율이 나옵니다'}`;
+    $('#feasBody').innerHTML = `<table class="tbl"><tr><th>안</th><th>세대</th><th>지상 연면적</th><th>총수입(기본)</th><th>총사업비(기본)</th>${SCEN.map(s => `<th>비례율 ${s.k}</th>`).join('')}</tr>
+      ${rows.map(({ A, i, r }) => `<tr${i === cur ? ' style="font-weight:600"' : ''}><td>${esc(A.label)}</td><td>${fmt(A.units)}</td><td>${fmt(A.gfa)}㎡</td><td>${r[1] ? eok(r[1].rev) + '억' : '-'}</td><td>${r[1] ? eok(r[1].cost) + '억' : '-'}</td>${r.map(x => `<td>${x && isFinite(x.ratio) ? fmt(x.ratio, 1) + '%' : (x ? '이익 ' + eok(x.profit) + '억' : '-')}</td>`).join('')}</tr>`).join('')}</table>
+      <p class="note">보수 = 일반분양가 −10%·공사비 +10%, 낙관 = 분양가 +10%·공사비 −5%(가정). 분양가·공사비·임대 비율 등은 사업성 화면 공통 가정값. 인허가 및 심의 과정에서 변동될 수 있습니다.</p>`;
+  }
+  document.addEventListener('change', e => { if (e.target && e.target.id === 'feasPrior') { site.v = site.v || {}; site.v.priorEok = e.target.value; try { saveState(); } catch (er) { /* 무시 */ } setTimeout(renderFeas, 0); } });
   function invalidate() { if (alts.length) { msg('조건이 바뀌었습니다. [배치안 만들기]를 다시 누르세요.'); } }
 
   /* ---------- 결과 화면 ---------- */
   function renderAlts() {
+    setTimeout(renderFeas, 0);
     $('#alts').innerHTML = alts.map((a, i) => `<button class="alt" data-alt="${i}" aria-pressed="${i === cur}"><b>${esc(a.label)}</b><span>${a.buildings.length}개동 · ${fmt(a.units)}세대 · 최고 ${a.maxFloors}층<br>용적률 ${fmt(a.far, 1)}% · 건폐율 ${fmt(a.bcr, 1)}%</span></button>`).join('');
   }
   let curView = 'plan';

@@ -218,7 +218,7 @@ const Quick = {
       planFrom: `사업성 검토 빠른 사업성 1회차 (${at}) — 기반시설 ${fmt(q.infraPct, 1)}%·용적률 ${fmt(e.f.v, 1)}%`,
     });
     if (S.meta.zoning) v.zoning = S.meta.zoning;
-    site.quick = { at, infraPct: num(q.infraPct), far: e.f.v, units: p.total, byType, ratio: e.r.ratio };
+    site.quick = { at, infraPct: num(q.infraPct), far: e.f.v, units: p.total, byType, ratio: e.r.ratio, prior: Math.round(num(e.r.prior)), members: num(q.members) };   // prior·members: /arch 안별 비례율(2026-11-05)
     JbsSite.save(site);
     S.quick.siteId = site.id; App.persist();
     return site;

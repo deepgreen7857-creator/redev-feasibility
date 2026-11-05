@@ -17,6 +17,7 @@
 #basicCard .tbl { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 13px; }
 #basicCard .tbl th, #basicCard .tbl td { border-bottom: 1px solid #e6e9ec; padding: 5px 6px; text-align: left; white-space: nowrap; }
 #basicCard .tbl th { background: #f4f6f8; font-weight: 600; }
+#feasCard .card { margin: 12px 0; padding: 10px 14px; border: 1px solid #d6dbe0; border-radius: 8px; background: #fff; } #feasCard .tbl { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 13px; } #feasCard .tbl th, #feasCard .tbl td { border-bottom: 1px solid #e6e9ec; padding: 5px 6px; text-align: left; white-space: nowrap; } #feasCard { overflow-x: auto; }
 #riskCard h4 { margin: 10px 0 4px; font-size: 14px; }
 #riskCard ul { margin: 0; padding-left: 18px; }
 #riskCard li { margin: 6px 0; line-height: 1.45; font-size: 13px; }
@@ -158,6 +159,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
   <section class="out" id="out" hidden>
     <div class="alts" id="alts" role="group" aria-label="배치 대안"></div>
     <div id="basicCard" hidden></div>
+    <div id="feasCard"></div>
     <div class="otabs" role="tablist">
       <button role="tab" data-v="plan" aria-selected="true">배치도</button>
       <button role="tab" data-v="sun" aria-selected="false">동지 일조</button>
@@ -190,8 +192,9 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../shared/arch-check.js?v=3"></script>
 <script src="../shared/mass3d.js?v=1"></script>
 <script src="../traffic/traffic-calc.js?v=4"></script>
+<script src="../shared/feas.js?v=147"></script>
 <script src="arch-draw.js?v=9"></script>
-<script src="arch.js?v=29"></script>
+<script src="arch.js?v=30"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>
 </body>
