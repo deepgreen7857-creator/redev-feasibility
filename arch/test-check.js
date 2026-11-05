@@ -34,6 +34,21 @@ t('정밀 검증: 가까운 남쪽 고층 → 수인한도 일조 위험(경험,
   const v = K.verify(site, [s, nb], opt), r = v.risks.find(x => x.id === 'sun_tolerance');
   assert.ok(r && r.갈래 === '경험' && ['주의', '고위험'].includes(r.등급) && r.원인 && r.영향 && r.대안 && r.동.includes(1), JSON.stringify(v.risks));
 });
+t('꺾인 판상(ㄱ자) 날개의 동·서 창 → 옆 동도 가목(측벽 4m 아님), 비껴 놓이면 법정 거리 대신 근접 주의', () => {
+  const DT = require('../shared/criteria/dong-types.json'), DL = require('../shared/dong-lib.js').init({ units: U, lib: C.평면_라이브러리, types: DT });
+  const m = DL.build('B4', ['84', '84', '84', '84']), mk = (id, x, y, f) => { const T = p => [x + p[0], y + p[1]]; return { id, floors: f, form: 'L', angle: 0, mixT: m.mixT, parts: m.parts.map(q => q.map(T)), units: m.units.map(rs => rs.map(q => q.map(T))), poly: G.hull(m.parts.flat().map(T)), walls: G.wallsTo(G.wallsOf(m), T, 0) }; };
+  const a = mk(1, 20, 20, 25), b = mk(2, 20 + m.L + 6, 20, 25);   // 날개(동쪽 창)와 옆 동 서쪽 끝벽 사이 6m
+  const r = K.quick(site, [a, b], opt).rules.find(x => x.id === 'side'); assert.ok(r && /가목/.test(r.근거) && parseFloat(r.기준) > 50, JSON.stringify(r));
+  const c = mk(3, 20 + m.L + 3, 20 + m.D + 3, 10);   // 북동쪽 대각선(벽이 마주 보지 않음)
+  assert.ok(!K.quick(site, [a, c], opt).rules.some(x => ['side', 'spacing'].includes(x.id)), '비껴 놓인 동은 법정 거리 대상 아님');
+  assert.ok(K.verify(site, [a, c], opt).risks.some(x => x.id === 'near' && x.등급 === '주의'), '근접 주의');
+});
+t('층수 상한: ㄱ자 날개 동쪽 창이 동쪽 경계에 가까우면 채광창 이격으로 층수 제한', () => {
+  const DT = require('../shared/criteria/dong-types.json'), DL = require('../shared/dong-lib.js').init({ units: U, lib: C.평면_라이브러리, types: DT });
+  const m = DL.build('B4', ['84', '84', '84', '84']), x = 240 - m.L - 8, T = p => [x + p[0], 60 + p[1]];
+  const b = { form: 'L', angle: 0, poly: G.hull(m.parts.flat().map(T)), walls: G.wallsTo(G.wallsOf(m), T, 0) };
+  const cap = G.capper(site, opt)(b), want = Math.floor((2 * 8 - A.groundExtra_m) / A.floorHeight_m); assert.ok(cap <= want, cap + ' > ' + want);
+});
 console.log(`\n${n}개 모두 통과`);
 const v = K.verify(site, blds, opt);
 console.log(`자동 배치 ${blds.length}개동 검사: 규칙 위반 ${v.rules.length} · 위험 ${v.risks.length} (${v.risks.map(r => r.등급 + ' ' + r.항목).join(', ') || '없음'}) · 선호 점수 ${v.score.toFixed(2)}`);

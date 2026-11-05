@@ -117,7 +117,7 @@
       const core = R4(x0 + w, cf, x0 + w + cw, D);
       units.push(left, right); cores.push(core); parts.push(...left, ...right, core);
     }
-    return { form: 'slab', t, n, L, D, parts, cores, divs: [], units };
+    return { form: 'slab', t, n, L, D, parts, cores, divs: [], units, uw: units.map(() => 0) };
   }
   // 탑상형: 바람개비형 4호 — 가운데 코어, 세대 4개가 코어 네 변에 한쪽으로 치우쳐 붙어 도는 모양(세대마다 2면 개방)
   function tower(U, c, t) {
@@ -155,8 +155,9 @@
     const wingU = [[R4(L1 - d, y0, L1, y0 + w)], [R4(L1 - d, y0 + w + c, L1, y0 + L2)]].slice(0, b === 1 ? 1 : 2);
     const wingC = R4(L1 - d * 0.62, y0 + w, L1, y0 + w + c);
     let parts = base.parts.concat(wingU.flat(), [wingC]), cores = base.cores.concat([wingC]), units = base.units.concat(wingU);
+    const uw = base.uw.concat(wingU.map(() => 90));   // 날개 세대는 90° 돌아 동·서쪽으로 창
     if (mirror) { const f = q => q.map(([x, y]) => [L1 - x, y]); parts = parts.map(f); cores = cores.map(f); units = units.map(rs => rs.map(f)); }
-    return { form: 'L', t, n: a + b, a, b, mir: !!mirror, L: L1, D: y0 + L2, parts, cores, divs: [], units };
+    return { form: 'L', t, n: a + b, a, b, mir: !!mirror, L: L1, D: y0 + L2, parts, cores, divs: [], units, uw };
   }
   // ㅁ형(중정형): 한 변 k세대 폭의 정방형 둘레 동, 가운데 중정
   //  k = 한 변 세대 수(6·4), k = 0이면 가장 작은 중정(동 깊이 2배·18m 이상)으로 둘레를 정함
@@ -239,6 +240,37 @@
     return out;
   }
 
+  /* 동 바깥 벽면(2026-11-05): 세대 조각의 변 중 바깥에 드러난 것 → [{ a, b, n(바깥 법선), win(채광창 벽면) }]
+     세대 폭 방향(uw, 도 — 모듈 좌표)과 나란한 법선 = 세대 옆벽(측벽, 창 없음), 그 밖 = 채광창 벽면
+     → 판상은 앞·뒤 벽만 창, ㄱ자·T자 날개 세대는 동·서 벽이 창. 탑상·Y·ㅁ형은 모든 바깥 벽에 창, 코어 벽은 측벽
+     세대 자료가 없으면 조각(또는 둘레) 전체를 한 세대로 봄: uw0(판상 기본 0°)가 있으면 그 기준, 없으면 모두 창 */
+  function wallsOf(m) {
+    if (m.__walls) return m.__walls;
+    const parts = m.parts && m.parts.length ? m.parts : (m.poly ? [m.poly] : []), out = [];
+    const allWin = !['slab', 'L', 'T'].includes(m.form);
+    const inAny = (x, y) => parts.some(q => inside(x, y, q));
+    const add = (q, deg, side) => {
+      const w = deg == null ? null : [Math.cos(deg * D2R), Math.sin(deg * D2R)];
+      const cx = q.reduce((s2, p) => s2 + p[0], 0) / q.length, cy = q.reduce((s2, p) => s2 + p[1], 0) / q.length;
+      q.forEach((p, i) => {
+        const r = q[(i + 1) % q.length], dx = r[0] - p[0], dy = r[1] - p[1], L = Math.hypot(dx, dy); if (L < 0.3) return;
+        let n = [dy / L, -dx / L]; if (((p[0] + r[0]) / 2 - cx) * n[0] + ((p[1] + r[1]) / 2 - cy) * n[1] < 0) n = [-n[0], -n[1]];
+        if (![0.15, 0.5, 0.85].some(f => !inAny(p[0] + dx * f + n[0] * 0.4, p[1] + dy * f + n[1] * 0.4))) return;   // 다른 조각에 붙은 안쪽 변
+        out.push({ a: p, b: r, n, win: !side && (allWin || !w || Math.abs(n[0] * w[0] + n[1] * w[1]) < 0.7) });
+      });
+    };
+    const us = m.units && m.units.length ? m.units : null;
+    if (us) {
+      us.forEach((rs, k) => rs.forEach(q => add(q, m.uw ? m.uw[k] : (m.form === 'slab' ? 0 : null), false)));
+      const uset = new Set(us.flat());
+      parts.filter(q => !uset.has(q)).forEach(q => add(q, null, true));   // 코어 등
+    } else parts.forEach(q => add(q, m.uw0 != null ? m.uw0 : (m.form === 'slab' ? 0 : null), false));
+    try { Object.defineProperty(m, '__walls', { value: out, configurable: true, writable: true, enumerable: false }); } catch (e) { /* 얼린 객체 */ }
+    return out;
+  }
+  // 모듈 좌표 벽면 → 월드(W: 점 변환, th: 회전 라디안)
+  const wallsTo = (ws, W, th) => ws.map(w => ({ a: W(w.a), b: W(w.b), n: rot(w.n, th), win: w.win }));
+
   /* ---------- 검사 부품: 그 자리 최고 층수 ----------
      정북 일조(시행령 제86조①)·정남 기준(제86조④)·채광창 벽면 이격(제86조③1호·⑥)·저층 인접 상한·ㅁ형 중정 → 동별 최고 층수.
      layout(자동 배치)과 JbsCheck(업로드 도면 검토·심화 배치 검사)가 같이 씀. b = { poly, form, inner?, angle?(도, 없으면 opt.angle) } */
@@ -274,13 +306,22 @@
         //  판상·ㄱ형은 앞·뒤 벽면(동 깊이 방향)을 향한 변만, 탑상·Y·ㅁ형은 모든 변. 도로 폭은 변의 성격 표시와 관계없이 실제로 닿은 도로 폭
         if (opt.winRatio) {
           // 벽면 방향: 판상·ㄱ형은 앞·뒤(동 깊이 방향 ±), 탑상·Y·ㅁ형은 네 방향. 경계 변이 바깥쪽(e.out)을 향하는 방향만 봄
-          const yax = rot([0, 1], th), xax = rot([1, 0], th);
-          const dirs = (['slab', 'L'].includes(b.form) ? [yax] : [yax, xax]).flatMap(v => [v, [-v[0], -v[1]]]).filter(v => v[0] * e.out[0] + v[1] * e.out[1] > 0.3);
-          dirs.forEach(v => {
-            const dd = dirDist(b.poly, e.a, e.b, v); if (dd === null) return;
-            const Hw = opt.winRatio * (dd + gap);
-            cap = Math.min(cap, Math.floor((Hw - A.groundExtra_m) / A.floorHeight_m));
-          });
+          //  벽면 자료(b.walls)가 있으면 채광창 벽면마다 그 벽의 직각 방향 거리(ㄱ자·T자 날개의 동·서 창도 봄, 2026-11-05)
+          if (b.walls && b.walls.length) {
+            b.walls.forEach(w => {
+              if (!w.win || w.n[0] * e.out[0] + w.n[1] * e.out[1] <= 0.3) return;
+              const dd = dirDist([w.a, w.b], e.a, e.b, w.n); if (dd === null) return;
+              cap = Math.min(cap, Math.floor((opt.winRatio * (dd + gap) - A.groundExtra_m) / A.floorHeight_m));
+            });
+          } else {
+            const yax = rot([0, 1], th), xax = rot([1, 0], th);
+            const dirs = (b.form === 'slab' ? [yax] : [yax, xax]).flatMap(v => [v, [-v[0], -v[1]]]).filter(v => v[0] * e.out[0] + v[1] * e.out[1] > 0.3);
+            dirs.forEach(v => {
+              const dd = dirDist(b.poly, e.a, e.b, v); if (dd === null) return;
+              const Hw = opt.winRatio * (dd + gap);
+              cap = Math.min(cap, Math.floor((Hw - A.groundExtra_m) / A.floorHeight_m));
+            });
+          }
         }
       });
       // ㅁ형: 중정을 사이에 두고 마주 보는 동 사이도 인동간격(높이 × 배수) 이상 → 중정 폭으로 층수 상한
@@ -373,7 +414,7 @@
         b.id = 101 + i;
         const W = p => rot([b.rx + p[0], b.ry + p[1]], th), m = b.mod;
         b.parts = m.parts.map(q => q.map(W)); b.cores = m.cores.map(q => q.map(W)); b.divs = m.divs.map(q => q.map(W)); b.units = (m.units || []).map(rs => rs.map(q => q.map(W)));
-        b.poly = hull(b.parts.flat()); b.angle = opt.angle || 0; b.center = W([b.L / 2, b.D / 2]);
+        b.poly = hull(b.parts.flat()); b.angle = opt.angle || 0; b.center = W([b.L / 2, b.D / 2]); Object.defineProperty(b, 'walls', { value: wallsTo(wallsOf(m), W, th), configurable: true, writable: true, enumerable: false });   // 저장·전송에는 안 실음
         b.inner = m.inner || 0; b.v = m.v || ''; b.vname = m.vname || ''; b.ba = m.parts.reduce((s2, q) => s2 + Math.abs(area(q)), 0); b.local = { L: m.L, D: m.D, parts: m.parts, cores: m.cores, divs: m.divs, units: m.units || [] }; delete b.mod;
       });
       return blds;
@@ -420,13 +461,13 @@
     // 그 자리에 놓았을 때 채광창·정북 일조 등으로 정해지는 최고 층수(놓기 전에 미리 봄)
     //  층수와 관계없는 값이라 같은 모듈·자리는 한 번만 계산해 둠(세 번 훑기·층수별 반복에서 다시 씀)
     //  같은 구역(site 객체)·같은 방향·조건이면 층수별 배치(alternatives)끼리도 같이 씀
-    const capKey = [opt.angle || 0, opt.winRatio || 0, opt.southBase ? 1 : 0, opt.parkWidth || 0, opt.lowriseCap || 0, opt.lowriseDist || 0, opt.spacing, A.floorHeight_m, A.groundExtra_m, A.maxFloors, JSON.stringify(opt.edgeW || []), JSON.stringify(opt.sun || {})].join('|');
+    const capKey = ['walls1', opt.angle || 0, opt.winRatio || 0, opt.southBase ? 1 : 0, opt.parkWidth || 0, opt.lowriseCap || 0, opt.lowriseDist || 0, opt.spacing, A.floorHeight_m, A.groundExtra_m, A.maxFloors, JSON.stringify(opt.edgeW || []), JSON.stringify(opt.sun || {})].join('|');
     if (!site.__capc || site.__capc.key !== capKey) { try { Object.defineProperty(site, '__capc', { value: { key: capKey, map: new Map() }, configurable: true, writable: true, enumerable: false }); } catch (e) { /* 얼린 객체면 이번 배치에서만 */ } }
     const CAPC = site.__capc && site.__capc.key === capKey ? site.__capc.map : new Map();
     function capAt(m, x, y) {
       const k = m.t + m.form + m.n + '|' + (m.v || '') + '|' + (m.a || 0) + (m.b || 0) + (m.mir ? 'm' : '') + '|' + m.L.toFixed(2) + 'x' + m.D.toFixed(2) + '|' + x + '|' + y;
       let c = CAPC.get(k);
-      if (c === undefined) { const poly = hull(m.parts.flat().map(p => rot([x + p[0], y + p[1]], th))); c = capFloors({ poly, form: m.form, inner: m.inner || 0 }); CAPC.set(k, c); }
+      if (c === undefined) { const poly = hull(m.parts.flat().map(p => rot([x + p[0], y + p[1]], th))); c = capFloors({ poly, form: m.form, inner: m.inner || 0, walls: wallsTo(wallsOf(m), p => rot([x + p[0], y + p[1]], th), th) }); CAPC.set(k, c); }
       return c;
     }
     // 평형 맞추기: 다 놓은 뒤, 많아진 평형의 동을 '같은 자리에 들어가는' 모자란 평형 동으로 바꿈
@@ -658,6 +699,6 @@
     });
   }
 
-  const api = { FORM_NAME, caseOf: id => caseOf(id), modulesFor, capper, northDist, southDist, projector, rot, area, ccw, openRing, inside, segDist, dirDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
+  const api = { FORM_NAME, caseOf: id => caseOf(id), modulesFor, capper, wallsOf, wallsTo, northDist, southDist, projector, rot, area, ccw, openRing, inside, segDist, dirDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.ArchGeom = api;
 })(typeof window !== 'undefined' ? window : globalThis);
