@@ -478,9 +478,20 @@
           const east = o.rx >= x, gS = sideNeed(east ? m : o.mod, east ? o.mod : m, east ? fl : o.floors, east ? o.floors : fl);
           if (Math.max(o.rx - (x + m.L), x - (o.rx + o.L)) < gS) return o.rx + o.L + gS;
         }
+        // 모서리끼리 비껴 놓인 동(2026-11-06, 실무 기준·가정 — JbsCheck.cornerCheck와 같은 뜻, 외접사각형으로 어림):
+        //  최소 min_m, rec는 창 벽 직각선 45° 안에서 보이면(앞뒤 창: 옆 틈 ≤ 앞뒤 틈, 옆 창: 앞뒤 틈 ≤ 옆 틈) 높은 동 높이 × ratio, all은 늘 ratio
+        if (CN && xo <= 0 && yo <= 0 && cornerHit(m, x, y, fl, o.mod || o, o.rx, o.ry, o.floors)) return o.rx + o.L;
       }
       return null;
     }
+    function cornerHit(m, x, y, fl, mo, ox, oy, fo) {
+      const xo = Math.min(x + m.L, ox + mo.L) - Math.max(x, ox), yo = Math.min(y + m.D, oy + mo.D) - Math.max(y, oy); if (xo > 0 || yo > 0) return false;
+      const dx = -xo, dy = -yo, d = Math.hypot(dx, dy), big = Math.max(CN.min_m, CN.ratio * H(Math.max(fl, fo))); if (d >= big) return false;
+      const ew = mm => mm && mm.form && mm.form !== 'slab', tn = Math.tan(CN.cone_deg * D2R);   // 옆 벽에도 창(ㄱ자·탑상·Y·ㅁ — 어림)
+      const view = CN.mode === 'all' || (CN.mode === 'rec' && (dx <= dy * tn + 0.01 || ((ew(m) || ew(mo)) && dy <= dx * tn + 0.01)));
+      return d < (view ? big : CN.min_m);
+    }
+    const CN = (() => { const c = opt.corner || A.corner; return c && c.mode && c.mode !== 'off' ? Object.assign({ min_m: 10, ratio: 0.5, cone_deg: 45 }, c) : null; })();
     // 그 자리에 놓았을 때 채광창·정북 일조 등으로 정해지는 최고 층수(놓기 전에 미리 봄)
     //  층수와 관계없는 값이라 같은 모듈·자리는 한 번만 계산해 둠(세 번 훑기·층수별 반복에서 다시 씀)
     //  같은 구역(site 객체)·같은 방향·조건이면 층수별 배치(alternatives)끼리도 같이 씀
