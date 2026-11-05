@@ -49,6 +49,12 @@ t('층수 상한: ㄱ자 날개 동쪽 창이 동쪽 경계에 가까우면 채�
   const b = { form: 'L', angle: 0, poly: G.hull(m.parts.flat().map(T)), walls: G.wallsTo(G.wallsOf(m), T, 0) };
   const cap = G.capper(site, opt)(b), want = Math.floor((2 * 8 - A.groundExtra_m) / A.floorHeight_m); assert.ok(cap <= want, cap + ' > ' + want);
 });
+t('치수선: 인동·정북 일조 치수선, 위반이면 판정 위반, 기본은 빠듯한 곳만', () => {
+  const s1 = { id: 1, poly: box(50, 30, 40, 12), floors: 20, form: 'slab', angle: 0 }, s2 = { id: 2, poly: box(50, 30 + 12 + 30, 40, 12), floors: 10, form: 'slab', angle: 0 };
+  const D = K.dims(site, [s1, s2], opt), sp = D.find(d => d.kind === 'spacing'); assert.ok(sp && sp.판정 === '위반' && Math.abs(sp.d - 30) < 0.2, JSON.stringify(sp));
+  const top = { id: 3, poly: box(100, 180, 40, 12), floors: 25, form: 'slab', angle: 0 }, sn = K.dims(site, [top], opt).find(d => d.kind === 'sun'); assert.ok(sn && sn.판정 === '위반' && sn.a[1] < sn.b[1]);
+  assert.ok(K.dims(site, blds, Object.assign({}, opt, { dimAll: true })).length >= K.dims(site, blds, opt).length);
+});
 console.log(`\n${n}개 모두 통과`);
 const v = K.verify(site, blds, opt);
 console.log(`자동 배치 ${blds.length}개동 검사: 규칙 위반 ${v.rules.length} · 위험 ${v.risks.length} (${v.risks.map(r => r.등급 + ' ' + r.항목).join(', ') || '없음'}) · 선호 점수 ${v.score.toFixed(2)}`);

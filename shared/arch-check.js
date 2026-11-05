@@ -44,15 +44,16 @@
   const sampOf = b => memo(b, '__samp', () => ringsOf(b).flatMap(q => q.flatMap((p, i) => { const r = q[(i + 1) % q.length], k = Math.max(1, Math.ceil(Math.hypot(r[0] - p[0], r[1] - p[1]) / 1.5)); return Array.from({ length: k }, (_, t) => [p[0] + (r[0] - p[0]) * t / k, p[1] + (r[1] - p[1]) * t / k]); })));
   const bbW = b => memo(b, '__bb', () => { const p = ringsOf(b).flat(); return [Math.min(...p.map(a => a[0])), Math.min(...p.map(a => a[1])), Math.max(...p.map(a => a[0])), Math.max(...p.map(a => a[1]))]; });
   // 벽면 w(동 X)가 '마주 보는' 상대 동 Y까지 직각 방향 거리: 벽 길이 범위 안(벽 앞 띠)에 든 Y 부분 중 가장 가까운 것. 띠 밖(비껴 놓임)이면 null
-  function wallDist(w, Y) {
+  function wallHit(w, Y) {
     const tx = w.b[0] - w.a[0], ty = w.b[1] - w.a[1], L = Math.hypot(tx, ty), t = [tx / L, ty / L];
-    let d = Infinity;
+    let d = Infinity, hp = null;
     for (const p of sampOf(Y)) {
       const vx = p[0] - w.a[0], vy = p[1] - w.a[1], s2 = vx * t[0] + vy * t[1]; if (s2 < 0.05 || s2 > L - 0.05) continue;
-      const dn = vx * w.n[0] + vy * w.n[1]; if (dn > 0.01 && dn < d) d = dn;
+      const dn = vx * w.n[0] + vy * w.n[1]; if (dn > 0.01 && dn < d) { d = dn; hp = p; }
     }
-    return d < Infinity ? d : null;
+    return hp ? { d, p: hp, foot: [hp[0] - w.n[0] * d, hp[1] - w.n[1] * d] } : null;
   }
+  const wallDist = (w, Y) => { const h = wallHit(w, Y); return h ? h.d : null; };
   // 벽면 하나가 요구하는 거리(건축법 시행령 제86조③2호). sp = 배수(인천 건축조례 제32조⑤ 정비사업 0.8)
   //  창 없는 옆벽(측벽) → 마목 4m(상대가 창 벽이면 그쪽 벽에서 가목으로 따로 걸림)
   //  남북으로 마주 보는 채광창 벽 → 북쪽 동이 같거나 높으면 나목(10m 이상, 낮은 동 높이 × 배수), 아니면 가목(높은 동 높이 × 배수)
@@ -70,7 +71,7 @@
   // 두 동의 마주 보는 벽면 목록: [{ X, Y, w, d(실제), need, law, kind, 근거 }]
   function facings(a, b, opt, sp) {
     const out = [];
-    [[a, b], [b, a]].forEach(([X, Y]) => wallsW(X).forEach(w => { const d = wallDist(w, Y); if (d !== null) out.push(Object.assign({ X, Y, w, d }, needOf(X, Y, w, opt, sp))); }));
+    [[a, b], [b, a]].forEach(([X, Y]) => wallsW(X).forEach(w => { const h = wallHit(w, Y); if (h) out.push(Object.assign({ X, Y, w, d: h.d, p0: h.foot, p1: h.p }, needOf(X, Y, w, opt, sp))); }));
     return out;
   }
   const collide = (a, b) => { const A = ringsOf(a), B = ringsOf(b); return A.some(p => B.some(q => overlapConvex(p, q))); };
@@ -208,6 +209,73 @@
     return Object.assign({}, q, { risks, prefs: ev.prefs, score: ev.score });
   }
 
-  const api = { quick, evaluate, verify, pairCheck, facings, minDist, gfaOf, unitsOf, overlapConvex, bboxIn };
+  /* ---------- 치수선(2026-11-05, 사용자 요구 '인동거리·일조권·통경축은 치수선을 그대로 표시하면 바로 보일 것') ----------
+     배치도에 그릴 치수선 목록: { kind, a, b(월드 좌표 양 끝), d(실제 m), need(기준 m), 판정('통과'|'위반'|'권고'|'참고'), 동, 글(짧은 이름표), 근거 }
+       spacing  동 사이(인동): 두 동마다 마주 보는 벽 중 기준 대비 가장 빠듯한 곳 하나(벽면 직각 방향)
+       sun      정북 일조: 동마다 정북 인접대지 경계까지 정북 방향으로 가장 가까운 곳(도로·공원이 있으면 반폭 더한 값으로 판정)
+       window   채광창 이격: 동마다 채광창 벽면 직각 방향 경계까지 가장 빠듯한 곳(여유 30% 안쪽만)
+       corridor 통경축: 구획(block)이 다른 이웃 동 사이 가장 좁은 틈(opt.corridor_m 가정 폭과 비교, 법정 아님)
+     기본은 빠듯한 곳(실제가 기준의 1.5배 이내)·위반·권고만 — 다 그리면 치수선이 겹쳐 안 보임. opt.dimAll = 전체 */
+  function dims(site, blds, opt) {
+    const out = [], A = opt.assume, sp = opt.spacing, PR = Object.assign({ nsRatio: 1.0 }, opt.practical || {});
+    const E = G.edges(site.pts), gapOf = i => { const ew = +((opt.edgeW || [])[i]) || 0, tg = site.tags[i]; return (ew > 0 ? ew : tg === 'park' ? (+opt.parkWidth || 0) : 0) / 2; };
+    const m1 = v => v.toFixed(1);
+    // ① 동 사이
+    for (let i = 0; i < blds.length; i++) for (let j = i + 1; j < blds.length; j++) {
+      const a = blds[i], b = blds[j], A2 = bbW(a), B2 = bbW(b);
+      if (Math.hypot(Math.max(0, B2[0] - A2[2], A2[0] - B2[2]), Math.max(0, B2[1] - A2[3], A2[1] - B2[3])) > Math.max(10, sp * H(opt, Math.max(a.floors, b.floors))) * 1.3) continue;
+      const f = facings(a, b, opt, sp).sort((x, y) => x.d / x.need - y.d / y.need)[0]; if (!f) continue;
+      const bad = f.d < f.need - 0.05, pn = f.kind === 'ns' ? Math.max(10, PR.nsRatio * H(opt, f.S.floors)) : 0, adv = !bad && f.kind === 'ns' && f.w.win && f.d < pn - 0.05;
+      out.push({ kind: 'spacing', a: f.p0, b: f.p1, d: f.d, need: f.need, 판정: bad ? '위반' : adv ? '권고' : '통과', 동: [f.X.id, f.Y.id],
+        글: `${m1(f.d)}m / 기준 ${m1(f.need)}m` + (adv ? ` (권고 ${m1(pn)}m)` : ''), 근거: f.근거 });
+    }
+    blds.forEach(b => {
+      const h = H(opt, b.floors), pts = ringsOf(b).flat();
+      // ② 정북 일조(시행령 제86조①): 10m 이하 부분 1.5m, 넘는 부분 높이의 1/2
+      if (!opt.southBase) {
+        let best = null;
+        E.forEach((e, i) => {
+          const tg = site.tags[i]; if (!(tg === 'north' || (tg === 'park' && e.out[1] > 0.5))) return;
+          const x0 = Math.min(e.a[0], e.b[0]), x1 = Math.max(e.a[0], e.b[0]); if (x1 - x0 < 1e-6) return;
+          pts.forEach(p => { if (p[0] < x0 || p[0] > x1) return; const y = e.a[1] + (e.b[1] - e.a[1]) * (p[0] - e.a[0]) / (e.b[0] - e.a[0]), d = y - p[1]; if (d >= 0 && (!best || d + gapOf(i) < best.d + best.g)) best = { d, g: gapOf(i), p, q: [p[0], y] }; });
+        });
+        if (best) {
+          const s2 = opt.sun || {}, need = h <= 10 ? (+s2.높이10m이하_m || 1.5) : h * (+s2.높이10m초과_높이비 || 0.5), dd = best.d + best.g;
+          out.push({ kind: 'sun', a: best.p, b: best.q, d: dd, need, 판정: dd < need - 0.05 ? '위반' : '통과', 동: [b.id], 글: `정북 ${m1(best.d)}m${best.g ? ` + 도로 반폭 ${m1(best.g)}m` : ''} / 기준 ${m1(need)}m`, 근거: '건축법 시행령 제86조①' });
+        }
+      }
+      // ③ 채광창 이격(시행령 제86조③1호·⑥): 높이 ≤ 배수 × (거리 + 도로·공원 반폭)
+      if (opt.winRatio) {
+        let best = null;
+        wallsW(b).forEach(w => { if (!w.win) return; E.forEach((e, i) => {
+          if (w.n[0] * e.out[0] + w.n[1] * e.out[1] <= 0.3) return;
+          const dd = G.dirDist([w.a, w.b], e.a, e.b, w.n); if (dd === null) return;
+          const need = h / opt.winRatio - gapOf(i); if (!best || dd / Math.max(need, 0.1) < best.r) {
+            const m = [(w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2]; best = { r: dd / Math.max(need, 0.1), d: dd, need, g: gapOf(i), a: m, b: [m[0] + w.n[0] * dd, m[1] + w.n[1] * dd] }; }
+        }); });
+        if (best && best.r < 1.3) out.push({ kind: 'window', a: best.a, b: best.b, d: best.d, need: Math.max(0, best.need), 판정: best.d < best.need - 0.05 ? '위반' : '통과', 동: [b.id], 글: `창 ${m1(best.d)}m${best.g ? ` + 반폭 ${m1(best.g)}m` : ''} / 기준 ${m1(Math.max(0, best.need + best.g))}m`, 근거: '건축법 시행령 제86조③1호·⑥' });
+      }
+    });
+    // ④ 통경축(가정 폭, 법정 아님): 구획이 다른 이웃 동 사이 가장 좁은 틈
+    const cw = +opt.corridor_m || 0;
+    if (cw > 0) {
+      const seen = {};
+      for (let i = 0; i < blds.length; i++) for (let j = i + 1; j < blds.length; j++) {
+        const a = blds[i], b = blds[j]; if (a.block == null || b.block == null || a.block === b.block) continue;
+        const k = [a.block, b.block].sort().join('-'), np = nearPair(a, b); if (!seen[k] || np.d < seen[k].d) seen[k] = Object.assign(np, { ids: [a.id, b.id] });
+      }
+      Object.values(seen).forEach(np => { if (np.d < cw * 3) out.push({ kind: 'corridor', a: np.p, b: np.q, d: np.d, need: cw, 판정: np.d < cw - 0.05 ? '권고' : '참고', 동: np.ids, 글: `통경 ${m1(np.d)}m / 가정 ${m1(cw)}m`, 근거: '통경축 폭(가정값) — 경관 심의 확인' }); });
+    }
+    // 기본은 빠듯한 곳만(실제 ≤ 기준 × 1.5) + 위반·권고·통경축. opt.dimAll이면 전부
+    return opt.dimAll ? out : out.filter(d => d.kind === 'corridor' || d.판정 !== '통과' || d.d <= Math.max(d.need, 1) * 1.5);
+  }
+  // 두 동 사이 가장 가까운 두 점
+  function nearPair(a, b) {
+    let best = { d: Infinity };
+    const f = (P, Q, sw) => P.flat().forEach(p => Q.forEach(q => q.forEach((x, i) => { const y = q[(i + 1) % q.length], dx = y[0] - x[0], dy = y[1] - x[1], t = Math.max(0, Math.min(1, ((p[0] - x[0]) * dx + (p[1] - x[1]) * dy) / (dx * dx + dy * dy || 1))), c = [x[0] + dx * t, x[1] + dy * t], d = Math.hypot(p[0] - c[0], p[1] - c[1]); if (d < best.d) best = sw ? { d, p: c, q: p } : { d, p, q: c }; })));
+    f(ringsOf(a), ringsOf(b), false); f(ringsOf(b), ringsOf(a), true); return best;
+  }
+
+  const api = { quick, evaluate, verify, pairCheck, facings, minDist, dims, nearPair, gfaOf, unitsOf, overlapConvex, bboxIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.JbsCheck = api;
 })(typeof window !== 'undefined' ? window : globalThis);

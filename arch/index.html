@@ -152,7 +152,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       <button role="tab" data-v="sum" aria-selected="false">개요·세대 구성</button>
       <button role="tab" data-v="unit" aria-selected="false">표준 평면</button>
     </div>
-    <div class="view" id="vplan"><div class="row"><button id="dlSvg">배치도 SVG</button><button id="dlPng">배치도 PNG</button><button id="dlDoc">개략 건축계획(.doc)</button></div><div id="planSvg"></div></div>
+    <div class="view" id="vplan"><div class="row"><button id="dlSvg">배치도 SVG</button><button id="dlPng">배치도 PNG</button><button id="dlDoc">개략 건축계획(.doc)</button><label style="margin-left:10px"><input type="checkbox" id="dimShow" checked> 치수선(인동·일조·채광, 실제 / 기준)</label><label style="margin-left:6px"><input type="checkbox" id="dimAll"> 여유 있는 곳도</label></div><div id="planSvg"></div></div>
     <div class="view" id="vsun" hidden>
       <div class="row"><button id="calcSun">일조 계산</button><button id="loadCtx">주변 건물 다시 불러오기</button><label class="tag">그림자 시각 <input type="range" id="sunT" min="8" max="16" step="0.25" value="12"> <b id="sunTv">12:00</b></label></div>
       <div id="sunNote" class="note"></div><div id="sunSvg"></div>
@@ -176,8 +176,9 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../shared/arch-geom.js?v=22"></script>
 <script src="../shared/mass3d.js?v=1"></script>
 <script src="../traffic/traffic-calc.js?v=4"></script>
-<script src="arch-draw.js?v=8"></script>
-<script src="arch.js?v=26"></script>
+<script src="../shared/arch-check.js?v=1"></script>
+<script src="arch-draw.js?v=9"></script>
+<script src="arch.js?v=27"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>
 </body>
