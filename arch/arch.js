@@ -407,9 +407,11 @@
         try { b.r = G.alternatives(I.site, Object.assign({}, I.opt, { angle: b.a, form })); } catch (e) { return null; }
         return b.r.length ? b : null;
       }
+      if (I.p.form === 'basic') { await runBasic(I); return; }
       const best = await searchAngle(I.opt.form, I.p.form === 'compare' ? '판상형' : '');
       if (!best) throw new Error('어느 방향으로도 동이 들어가지 않습니다');
       alts = best.r.map(x => Object.assign(x, { angle: best.a, form: I.opt.form }));
+      if ($('#basicCard')) $('#basicCard').hidden = true;
       if (I.p.form === 'compare') {
         // 형태 비교: 같은 방향에서 형태마다 대안을 만들고, 형태별로 최고 층수 25층에 가장 가까운 안 하나씩
         alts = [];
@@ -437,6 +439,53 @@
       $('#out').scrollIntoView({ behavior: 'smooth' });
     } catch (e) { console.error(e); msg('배치를 만들지 못했습니다: ' + e.message, true); }
     finally { $('#run').classList.remove('busy'); }
+  }
+  /* ---------- 기본형 8가지(2026-11-05 사용자 결정 '기본형부터 무조건 돌리고 무엇이 모자란지 보고 보완') ----------
+     shared/simple-plan.js(JbsSimple)를 arch/simple-worker.js로 돌려 동 타입마다 같은 모양·같은 간격 배치 → 진단 → 보완(줄 끝 채우기·평형 맞추기) + 성적표
+     결과 동은 지금 대안과 같은 꼴로 바꿔 배치도·일조·3D·개요·확정이 그대로 동작 */
+  let SW = null; const SWCB = {};
+  function simpleWorker() {
+    if (SW) return SW;
+    SW = new Worker('simple-worker.js?v=1');
+    SW.onmessage = e => { const f = SWCB[e.data.id]; delete SWCB[e.data.id]; if (f) f(e.data); };
+    SW.onerror = ev => { Object.values(SWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(SWCB).forEach(k => delete SWCB[k]); SW = null; };
+    return SW;
+  }
+  function toAlt(v, I, card) {
+    const As = I.opt.assume, H = f => f * As.floorHeight_m + As.groundExtra_m, th = (v.angle || 0) * Math.PI / 180;
+    const blds = v.buildings.map(b => {
+      const loc = b.parts.flat().map(p => G.rot(p, -th)), xs = loc.map(p => p[0]), ys = loc.map(p => p[1]);
+      const main = Object.keys(b.mixT).sort((x, y) => b.mixT[y] - b.mixT[x] || +y - +x)[0];
+      const cxy = G.rot([(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2], th);
+      return Object.assign({}, b, { t: main, n: b.n, L: Math.max(...xs) - Math.min(...xs), D: Math.max(...ys) - Math.min(...ys), center: cxy, cap: b.planF || b.floors, divs: [], vname: b.vname || '' });
+    });
+    const st = v.steps || [], name = v.label.replace('기본 배치 — ', '').replace('기본 + 보완 — ', '');
+    return { label: `기본형 · ${name}${st.length > 1 ? ' + 보완' : ''}`, buildings: blds, units: v.units, far: v.far, bcr: v.bcr, gfa: v.gfa, byType: v.byType, maxFloors: v.maxFloors,
+      maxHeight: H(v.maxFloors), H, angle: v.angle, form: blds[0] ? (blds[0].form === 'L' ? 'L' : blds[0].form) : 'slab', target: I.lot * I.opt.far / 100, basic: { dtype: v.dtype, steps: st, card, rules: v.rules, risks: v.risks } };
+  }
+  function cardHtml(card) {
+    if (!card) return '';
+    const r = card.rows.slice().sort((a, b) => b.units - a.units), w = card.win;
+    return `<details open class="card"><summary><b>기본형 성적표</b> — 같은 모양 동을 일정하게 놓아 본 결과(보완 후). 세대수 1위 ${esc(w.units.name)} · 일조 1위 ${esc(w.sun.name)} · 평형 1위 ${esc(w.mix.name)}</summary>
+      <table class="tbl"><tr><th>동 타입</th><th>세대</th><th>용적률</th><th>방향</th><th>평형 비율 차이</th><th>일조 부족 동</th><th>정북 일조로 깎인 세대·층</th><th>채광창으로 깎인</th><th>기본형 자투리</th><th>보완</th></tr>
+      ${r.map(x => `<tr><td>${esc(x.name)}</td><td>${fmt(x.units)}</td><td>${fmt(x.far, 0)}%</td><td>${x.angle}°</td><td>${x.mixErr.toFixed(2)}</td><td>${x.sunFail}/${x.n}</td><td>${x.cutSun}</td><td>${x.cutWin}</td><td>${x.empty == null ? '-' : x.empty + 'm'}</td><td>${esc(x.steps.join(' + ') || '-')}</td></tr>`).join('')}</table>
+      <ul>${card.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
+      <p class="note">평형 비율 차이: 목표 비율과 세대 비율 차이의 합(0이면 목표와 같음). 깎인 세대·층: 계획 층수에서 높이 제한으로 줄어든 층수 × 층당 세대. 자투리: 보완 전 줄 안에서 비어 남은 건축 가능 길이.</p></details>`;
+  }
+  async function runBasic(I) {
+    msg('기본형 8가지 계산 중… (같은 모양 동을 방향·층수·줄 위치를 바꿔 가며 놓고, 모자란 것을 보완합니다 — 구역에 따라 10~30초)');
+    const id = Date.now() + Math.random();
+    const res = await new Promise(ok => { SWCB[id] = ok; simpleWorker().postMessage({ id, site: I.site, opt: Object.assign({}, I.opt, { crit: C.items }) }); });
+    if (!res.r || !res.r.variants.length) throw new Error(res.err || '어느 동 타입도 들어가지 않습니다');
+    const card = res.r.card;
+    alts = res.r.variants.map(v => toAlt(v.improved || v, I, card));
+    cur = alts.reduce((bi, x, i) => x.units > alts[bi].units ? i : bi, 0);
+    sunRes = null; v3 = null;
+    $('#out').hidden = false; $('#confirm').disabled = false;
+    $('#basicCard').innerHTML = cardHtml(card); $('#basicCard').hidden = false;
+    renderAlts(); showView('plan'); drawBuildingsOnMap();
+    msg(`기본형 ${alts.length}가지를 만들었습니다(${(res.r.ms / 1000).toFixed(0)}초). 세대수가 가장 많은 ${alts[cur].label}을 골라 두었습니다. 아래 성적표에서 무엇이 막혔는지 보고, 다른 동 타입을 눌러 비교하세요.`);
+    $('#out').scrollIntoView({ behavior: 'smooth' });
   }
   function invalidate() { if (alts.length) { msg('조건이 바뀌었습니다. [배치안 만들기]를 다시 누르세요.'); } }
 
