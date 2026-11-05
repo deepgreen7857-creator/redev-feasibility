@@ -12,7 +12,7 @@ const I = require('./test-mix-site.json');
 const want = I.opt.mix, ws = Object.values(want).reduce((a, b) => a + b, 0);
 const err = bt => { const u = Object.values(bt).reduce((x, y) => x + y, 0) || 1; return Object.keys(want).reduce((e, t) => e + Math.abs((bt[t] || 0) / u - want[t] / ws), 0); };
 for (const form of ['mix', 'tower']) {
-  const alts = G.alternatives(I.site, Object.assign({}, I.opt, { units: C.평면, lib: C.평면_라이브러리, form, assume: Object.assign({}, C.가정, I.opt.assume) }));
+  const alts = G.alternatives(I.site, Object.assign({}, I.opt, { units: C.평면, lib: C.평면_라이브러리, form, assume: Object.assign({}, C.가정, I.opt.assume, { corner: { mode: 'off' } }) }));   // 법정 기준만(모서리 실무 기준은 test-check에서)
   const list = alts.list || alts;
   const best0 = list.map(a => ({ e: err(a.byType || {}), far: a.far, a })).sort((x, y) => x.e - y.e)[0];
   console.log(form, list.map(a => `${(+a.far).toFixed(1)}% 차이 ${err(a.byType || {}).toFixed(2)}`).join(' · '));

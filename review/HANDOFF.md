@@ -361,7 +361,7 @@
 - 크롬: d9c13fce…(표시명 "Browser 2") 선택. 대법원 사건검색 JS를 localStorage._S에 저장해 씀(법원 선택은 getItemCount/getItemText로 이름 찾아 setSelectedIndex).
 - 11.04 결과: 썬앤빌 915 매각 4,725만(+21.4%), 에프에이치브라운 203 매각 1억3,269만(+9.6%), 궁전 301 유찰(다음 기일 미게시), 포레스트빌 402 유찰 → 12.04 369.7만. 915 사용자 응찰 여부 기록 없음 — 정민님 확인.
 - 온비드 '마지막 수집 1102' 고정 원인: runOnbid가 상세 밀린 분(onbidDetailBacklog)을 받다 시간 제한으로 stopped → lastDay 안 씀. 목록은 매일 들어옴(listings.firstSeenAt 11.03 482·11.04 781). 실제 막힘 아님 — 표시만 오해 소지(lastDay 대신 listedDay도 화면에 보이게 고치면 좋음).
-- 우리 DB 공매(listings source=onbid)는 수도권+파산자산만. 충청 등 땅 공매는 온비드 사이트 통합검색(지명 입력)으로 찾음. 공매재산명세서는 상세 페이지의 버튼이 window 팝업 → form(action /clip/report.jsp, rptNm /crf/onbid/op/RT-OP3520-2R.crf, srchPbctYr·srchPbctNsq(회차)·srchPbctSbrNo(대전충남 50030)·srchMngNo(관리번호 숫자만)·srchUsrNo 0)을 같은 탭에 POST로 열면 보고서 화면 → 스크린샷으로 읽음.
+- 우리 DB 공매(listings source=onbid): 수도권 전부 + 파산자산 전국 + (2026-11-06부터) 수도권 밖 전국 땅·섬. 섬 물건은 island:true 표시. **사용자 결정(2026-11-06): 섬이 나오면 무조건 검토** — 종류·지역 범위와 관계없이 빼지 말고 판단기록장 검토 대상에 올릴 것(육지 연결 여부·배편·진입로·농막/이동식 주택 가능 여부 확인). 사이트 통합검색은 DB에 없는 것 확인용으로만. 공매재산명세서는 상세 페이지의 버튼이 window 팝업 → form(action /clip/report.jsp, rptNm /crf/onbid/op/RT-OP3520-2R.crf, srchPbctYr·srchPbctNsq(회차)·srchPbctSbrNo(대전충남 50030)·srchMngNo(관리번호 숫자만)·srchUsrNo 0)을 같은 탭에 POST로 열면 보고서 화면 → 스크린샷으로 읽음.
 - 공매 listings의 pnu가 틀린 경우 있음(일반/산 자리, 0/1) — 브이월드 req/search로 다시 PNU 받을 것.
 - 판단기록장 11.05: B 2건(공주 상왕동 518 통과, 부여 진호리 84 조건부: 간이창고 있는 상태 농취증 확답). A 0(호평동 다산그랑시아 401 수익 미달, 맘모스 103·참사랑 202 시세 관문 미통과).
 ## 다음 새벽 작업 우선 할 일 (2026.11.06)

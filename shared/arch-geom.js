@@ -652,6 +652,27 @@
         }
       }
     }
+    // 경계 안전장치(2026-11-06): 1m 격자로 어림해 놓다 보니 회전한 동 꼭짓점이 이격선 밖으로 20~30cm 나가는 일(숭의 시험 구역 혼합안 102·104동)
+    //  → 동 꼭짓점을 실제 경계 이격선으로 다시 보고, 나간 동은 0.25~1.5m 안으로 밀어 봄(다른 동과 부딪히지 않을 때만), 안 되면 뺌
+    {
+      const PC0 = opt.pairCheck || (typeof JbsCheck !== 'undefined' ? JbsCheck.pairCheck : null) || ((typeof module !== 'undefined' && module.exports && typeof require === 'function') ? (() => { try { return require('./arch-check.js').pairCheck; } catch (e) { return null; } })() : null);
+      const okW = (x, y) => { if (!testRaw(x, y) || insideAny(x, y, exclude)) return false; return !exS || exE.every(es => es.every(([a, b]) => segDist([x, y], a, b) >= exS - 0.02)); };
+      const ptsOf = b => (b.parts && b.parts.length ? b.parts : [b.poly]).flatMap(R2 => { const c = R2.reduce((a, q) => [a[0] + q[0] / R2.length, a[1] + q[1] / R2.length], [0, 0]);
+        return R2.flatMap((q, i) => { const r = R2[(i + 1) % R2.length]; return [q, [(q[0] + r[0]) / 2, (q[1] + r[1]) / 2]]; }).map(q => { const dx = c[0] - q[0], dy = c[1] - q[1], L = Math.hypot(dx, dy) || 1; return [q[0] + dx / L * 0.02, q[1] + dy / L * 0.02]; }); });
+      const mv = (q, v) => [q[0] + v[0], q[1] + v[1]], mvR = R2 => R2.map(q => mv(q, v0));
+      let v0 = [0, 0];
+      const shift = (b, v) => { v0 = v; b.parts = b.parts.map(mvR); b.cores = (b.cores || []).map(mvR); b.divs = (b.divs || []).map(mvR); b.units = (b.units || []).map(rs => rs.map(mvR)); b.poly = mvR(b.poly); if (b.center) b.center = mv(b.center, v);
+        if (b.walls) b.walls = b.walls.map(w => Object.assign({}, w, { a: mv(w.a, v), b: mv(w.b, v) })); const lv = rot(v, -th); b.rx += lv[0]; b.ry += lv[1]; };
+      for (const b of bl.slice()) {
+        if (ptsOf(b).every(q => okW(q[0], q[1]))) continue;
+        let done = false; const near = bl.filter(o => o !== b && Math.hypot(o.poly[0][0] - b.poly[0][0], o.poly[0][1] - b.poly[0][1]) < 200), badN = () => PC0 ? near.filter(o => PC0(b, o, opt)).length : 0, bad0 = badN();
+        for (const d of [0.25, 0.5, 0.75, 1, 1.5]) { for (let k = 0; k < 8 && !done; k++) {
+          const v = [Math.cos(k * Math.PI / 4) * d, Math.sin(k * Math.PI / 4) * d]; shift(b, v);
+          if (ptsOf(b).every(q => okW(q[0], q[1])) && badN() <= bad0) done = true; else shift(b, [-v[0], -v[1]]);
+        } if (done) break; }
+        if (!done) bl.splice(bl.indexOf(b), 1);
+      }
+    }
     // 마지막 안전장치(2026-11-05): 벽면별 동 사이 거리 검사(JbsCheck.pairCheck — 시행령 제86조③2호, 법제처 21-0403)에 걸리면 높은 동부터 한 층씩 낮춤(최저 층수 밑이면 뺌)
     {
       const PC = opt.pairCheck || (typeof JbsCheck !== 'undefined' ? JbsCheck.pairCheck : null) || ((typeof module !== 'undefined' && module.exports && typeof require === 'function') ? (() => { try { return require('./arch-check.js').pairCheck; } catch (e) { return null; } })() : null);
@@ -659,8 +680,12 @@
         bl.forEach((b, i) => { if (b.id == null) b.id = 101 + i; });
         for (let guard = 0; guard < 400; guard++) {
           let hit = null;
-          for (let i = 0; i < bl.length && !hit; i++) for (let j = i + 1; j < bl.length && !hit; j++) { const r = PC(bl[i], bl[j], opt); if (r && r.id !== 'collide') hit = [bl[i], bl[j]]; }
+          let hr = null;
+          for (let i = 0; i < bl.length && !hit; i++) for (let j = i + 1; j < bl.length && !hit; j++) { const r = PC(bl[i], bl[j], opt); if (r && r.id !== 'collide') { hit = [bl[i], bl[j]]; hr = r; } }
           if (!hit) break;
+          // 모서리 최소 거리(실무 기준 10m)는 층수를 낮춰도 안 풀림 → 세대가 적은 동을 뺌(2026-11-06)
+          const cn = opt.corner || A.corner || {};
+          if (hr.id === 'corner' && hr.d < (cn.min_m || 10) - 0.05) { const u = x => x.n * x.floors, sm = u(hit[0]) <= u(hit[1]) ? hit[0] : hit[1]; bl.splice(bl.indexOf(sm), 1); continue; }
           const b = hit[0].floors >= hit[1].floors ? hit[0] : hit[1];
           if (b.floors - 1 < A.minFloors) bl.splice(bl.indexOf(b), 1); else b.floors--;
         }
