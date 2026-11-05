@@ -261,7 +261,10 @@
       const w = WEIGHTS[wk];
       for (const th of wk === 'units' ? [0] : [0.85, 0.75, 0.6, 0]) {
         let best = null;
-        okAll.filter(x => x.far >= maxFar * th && !used.has(sig(x.R))).forEach(x => { const sc = score(site, opt, x.R, w); if (!best || sc.fit > best.s.fit) best = { gn: x.gn, R: x.R, s: sc }; });
+        // 세대수 우선안은 세대수가 가장 많은 안(같으면 점수), 나머지는 그 무게의 점수
+        okAll.filter(x => x.far >= maxFar * th && !used.has(sig(x.R))).forEach(x => { const sc = score(site, opt, x.R, w); x.units = x.q.units;
+          const better = !best || (wk === 'units' ? (x.units > best.units || (x.units === best.units && sc.fit > best.s.fit)) : sc.fit > best.s.fit);
+          if (better) best = { gn: x.gn, R: x.R, s: sc, units: x.units }; });
         if (best) { out[wk] = best; used.add(sig(best.R)); break; }
       }
     });
