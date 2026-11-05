@@ -299,15 +299,35 @@
     return { shapes: ok, msg: ok.length ? `그린 모양 ${ok.length}개를 읽었습니다` : '닫힌 모양을 찾지 못했습니다' };
   }
 
+  // 구역 경계에 붙이기(2026-11-06, 한 필지 재건축처럼 기준 시설이 없을 때): 그 방향 끝에서 안쪽으로 곧은 선을 밀어 면적을 맞춤
+  //  북 = 구역 북쪽 끝에서 남쪽으로 수평선, 동 = 동쪽 끝에서 서쪽으로 수직선 … 선 바깥쪽 빈 땅이 시설(구역 모양을 따라감)
+  function edge({ zone, occupied = [], dir = 'N', target }) {
+    zone = F(zone);
+    const free = occupied.length ? D(zone, U(occupied.map(F))) : zone;
+    if (!free || !(target > 0)) return { geom: null, area: 0, ok: false, msg: '구역 안에 남은 빈 땅이 없습니다' };
+    const [x0, y0, x1, y1] = T.bbox(free), big = 0.01;
+    const cut = t => I(free, T.bboxPolygon({ N: [x0 - big, t, x1 + big, y1 + big], S: [x0 - big, y0 - big, x1 + big, t], E: [t, y0 - big, x1 + big, y1 + big], W: [x0 - big, y0 - big, t, y1 + big] }[dir]));
+    const vert = dir === 'N' || dir === 'S', inner = vert ? (dir === 'N' ? [y1, y0] : [y0, y1]) : (dir === 'E' ? [x1, x0] : [x0, x1]);
+    let lo = inner[0], hi = inner[1], best = null;   // lo = 끝(면적 0), hi = 반대 끝(면적 전부)
+    if (A(cut(hi)) < target * 0.995) { const g = cut(hi); return { geom: g, area: A(g), ok: false, msg: `빈 땅이 ${fmt(target - A(g))}㎡ 부족합니다` }; }
+    for (let i = 0; i < 50; i++) {
+      const mid = (lo + hi) / 2, g = cut(mid), a = A(g);
+      if (a >= target) { hi = mid; best = g; } else lo = mid;
+      if (best && Math.abs(a - target) < target * 0.002) break;
+    }
+    const parts = best ? T.flatten(best).features.length : 0;
+    return { geom: best, area: A(best), ok: true, msg: `구역 ${NAME[dir]} 경계를 따라 ${fmt(A(best))}㎡ 배치${parts > 1 ? ` — 구역 모양 때문에 ${parts}조각으로 나뉨(스케치로 다듬기 권장)` : ''}` };
+  }
+
   // 정비계획 계산에서 부르는 입구: opt = z.infra.fit[kind] = { mode, dir, anchor, sketch, keepSize }
   function run(opt, { zone, anchorGeom, occupied, target }) {
     if (!opt || !opt.mode || opt.mode === 'auto') return null;
     if (opt.mode === 'sketch' || opt.mode === 'upload') return opt.sketch ? sketch({ zone, occupied: occupied.concat(anchorGeom ? [anchorGeom] : []), sketch: opt.sketch, target, keepSize: !!opt.keepSize, straight: opt.straight !== false }) : null;
-    if (!anchorGeom) return { geom: null, area: 0, ok: false, msg: '기준 시설이 지도에 없습니다 — 기준 시설을 다시 고르세요' };
+    if (opt.anchor === 'edge' || !anchorGeom) return edge({ zone, occupied, dir: opt.dir || 'N', target });   // 기준 시설이 없으면 구역 경계에 붙임
     return (opt.mode === 'clean' ? clean : wrap)({ zone, anchor: anchorGeom, occupied, dir: opt.dir || 'N', target });
   }
 
-  const api = { wrap, clean, sketch, makeSheet, readSheet, run };
+  const api = { wrap, clean, edge, sketch, makeSheet, readSheet, run };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PlaceFit = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1711,11 +1711,11 @@ const FITUI = {
     const kinds = ['park'].concat(inf.szSchool && inf.szSchool.A > 0 ? ['school'] : []);
     return `<div class="fit-wrap" style="margin-top:10px">` + kinds.map(k => {
       const o = this.get(key, k), m = o.mode || 'auto', fm = (inf.fitMsg || {})[k];
-      const anchors = [['rel', '종교용지']].concat(k === 'school' ? [['park', '공원·녹지']] : []);
-      const hasAnc = { rel: !!inf.relGeom, park: !!inf.parkGeom };
+      const anchors = [['edge', '구역 경계'], ['rel', '종교용지']].concat(k === 'school' ? [['park', '공원·녹지']] : []);
+      const hasAnc = { edge: true, rel: !!inf.relGeom, park: !!inf.parkGeom };
       let sub = '';
       if (m === 'wrap' || m === 'clean') {
-        sub = `<div style="margin-top:6px">기준 시설 <select data-fitanchor="${k}">${anchors.map(([v, t]) => `<option value="${v}" ${(o.anchor || 'rel') === v ? 'selected' : ''} ${hasAnc[v] ? '' : 'disabled'}>${t}${hasAnc[v] ? '' : '(없음)'}</option>`).join('')}</select>
+        sub = `<div style="margin-top:6px">기준 시설 <select data-fitanchor="${k}">${anchors.map(([v, t]) => `<option value="${v}" ${(o.anchor || (inf.relGeom ? 'rel' : 'edge')) === v ? 'selected' : ''} ${hasAnc[v] ? '' : 'disabled'}>${t}${hasAnc[v] ? '' : '(없음)'}</option>`).join('')}</select>
           &nbsp;방향 <span class="seg" role="group" aria-label="붙일 방향">${[['N', '북'], ['E', '동'], ['S', '남'], ['W', '서']].map(([d, t]) => `<button type="button" data-fitdir="${k}:${d}" aria-pressed="${(o.dir || 'N') === d}">${t}</button>`).join('')}</span></div>
           <span class="u">${m === 'wrap' ? '그 방향 빈 땅을 구역 모양대로 먼저 채우고, 모자라면 기준 시설 옆으로 감싸 이어 붙입니다.' : '기준 시설 변 폭 그대로 곧은 띠로 붙이고, 막히면 채울 만큼 채운 뒤 옆으로 곧게 꺾습니다(ㄱ자).'}</span>`;
       } else if (m === 'sketch') {
@@ -1739,7 +1739,7 @@ const FITUI = {
     }).join('') + `</div>`;
   },
   bind(side) {
-    side.querySelectorAll('[data-fitmode]').forEach(b => b.onclick = () => { const [k, v] = b.dataset.fitmode.split(':'); this.set(k, o => { o.mode = v; if (!o.anchor) o.anchor = 'rel'; if (!o.dir) o.dir = 'N'; }); });
+    side.querySelectorAll('[data-fitmode]').forEach(b => b.onclick = () => { const [k, v] = b.dataset.fitmode.split(':'); this.set(k, o => { o.mode = v; if (!o.anchor) o.anchor = (INFRA.memo && Object.values(INFRA.memo).some(x => x && x.relGeom)) ? 'rel' : 'edge'; if (!o.dir) o.dir = 'N'; }); });
     side.querySelectorAll('[data-fitdir]').forEach(b => b.onclick = () => { const [k, d] = b.dataset.fitdir.split(':'); this.set(k, o => { o.dir = d; }); });
     side.querySelectorAll('[data-fitanchor]').forEach(el => el.onchange = () => this.set(el.dataset.fitanchor, o => { o.anchor = el.value; }));
     side.querySelectorAll('[data-fitkeep]').forEach(el => el.onchange = () => this.set(el.dataset.fitkeep, o => { o.keepSize = el.checked; }));
