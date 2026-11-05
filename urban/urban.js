@@ -2359,7 +2359,7 @@ const ARCHLAY = {
   solve(I, done) {
     const c = this.cands(I);
     try {
-      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=12'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
+      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=13'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
       const id = (this.seq = (this.seq || 0) + 1); this.cb[id] = done;
       this.wk.postMessage({ id, site: I.site, opt: I.opt, cand: c.cand, F: c.F });
       // 90초가 넘으면 일꾼을 멈추고 예전 네모 그림으로(화면에 '계산 중'이 계속 남지 않게)

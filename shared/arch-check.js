@@ -159,7 +159,9 @@
     // ② 동끼리 겹침, ③ 동 사이 거리(시행령 제86조③2호) — pairCheck
     for (let i = 0; i < blds.length; i++) for (let j = i + 1; j < blds.length; j++) { const r = pairCheck(blds[i], blds[j], opt); if (r) add(r); }
     // ④ 높이 상한: 정북 일조(시행령 제86조①)·채광창 벽면(제86조③1호·⑥) — 정북만 켠 것과 모두 켠 것을 따로 재서 어느 조문인지 가림
-    const capAll = G.capper(site, opt), capSun = G.capper(site, Object.assign({}, opt, { winRatio: 0 }));
+    // 최고 층수 가정값(assume.maxFloors)은 법정 높이 제한이 아니므로 여기서는 풀어 둠(2026-11-06 — 올린 배치도 39층이 '정북 일조 위반'으로 잘못 나오던 것)
+    const optNoMax = Object.assign({}, opt, { assume: Object.assign({}, opt.assume, { maxFloors: 999 }) });
+    const capAll = G.capper(site, optNoMax), capSun = G.capper(site, Object.assign({}, optNoMax, { winRatio: 0 }));
     blds.forEach(b => {
       const cs = capSun(b), ca = capAll(b);
       if (b.floors > cs) add({ id: 'sun_north', 항목: '정북 일조 높이', 동: [b.id], 판정: '위반', 기준: `${cs}층 이하`, 값: `${b.floors}층`, 근거: (sunI.근거 || '건축법 시행령 제86조①') + (opt.southBase ? ' — 정남 기준(제86조④) 적용' : '') });
