@@ -10,7 +10,7 @@
   const NODE = typeof module !== 'undefined' && module.exports;
   const G = NODE ? require('./arch-geom.js') : g.ArchGeom, K = NODE ? require('./arch-check.js') : g.JbsCheck, DL = NODE ? require('./dong-lib.js') : g.JbsDong;
   const D2R = Math.PI / 180;
-  const TYPES = ['P4', 'P6', 'P8', 'P10', 'B3', 'T4'];
+  const TYPES = ['P4', 'P6', 'P8', 'P10', 'B3', 'B4', 'B5', 'T4'];
 
   // 방향 후보(2026-11-05 사용자 '정남향을 고집할거야?'): 정남(0°)·남동/남서 15°·30°와 긴 경계 변 두 개의 방향(±45° 안). 남향에서 멀어질수록 남향 점수·일조는 불리
   function angles(site) {
@@ -138,7 +138,7 @@
     };
     const steps = [Object.assign({ name: '기본형', why: '' }, diag())];
     // ① 줄 끝 채우기
-    const fillerIds = base.m.form === 'slab' ? ['P2', 'P4', 'P6', 'P8', 'P10'].filter(id => { const T = (opt.dongTypes.타입 || []).find(x => x.id === id); return T && T.호수 < base.m.n; }) : base.m.form === 'L' ? ['P2'] : [];
+    const fillerIds = base.m.form === 'slab' ? ['P2', 'P4', 'P6', 'P8', 'P10'].filter(id => { const T = (opt.dongTypes.타입 || []).find(x => x.id === id); return T && T.호수 < base.m.n; }) : base.m.form === 'L' ? ['P2', 'P4'] : [];
     if (fillerIds.length && steps[0].empty >= 15 && steps[0].short > 0) {
       const fillers = [];
       fillerIds.forEach(id => seqFor(id, opt).forEach(seq => { const m = DL.build(id, seq); if (m) fillers.push(m); }));

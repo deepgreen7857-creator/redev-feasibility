@@ -102,9 +102,11 @@
   }
   // 꺾인 판상(ㄱ자): 남쪽 날개 [끝 세대 | 코어 | 모서리 세대] + 모서리 위로 북쪽 날개(세대를 90° 돌려 동쪽 채광). B3 = 날개 1세대(코어 1), B4 = 날개 2세대 + 날개 코어(코어 2)
   //  mirror면 서쪽에서 꺾임
-  function bentMix(us, high, mirror) {
-    const cw = coreW(high), base = slabMix(us.slice(0, 2), high), y0 = base.D, L1 = base.L;
-    const wing = us.slice(2), dw = Math.max(...wing.map(u => u.깊이)) + backD();
+  //  bar = 남향 줄 세대 수(기본 2, B5는 4 — 2026-11-05 사용자 요구 'ㄱ자 4호·5호도')
+  function bentMix(us, high, mirror, bar) {
+    bar = bar || 2;
+    const cw = coreW(high), base = slabMix(us.slice(0, bar), high), y0 = base.D, L1 = base.L;
+    const wing = us.slice(bar), dw = Math.max(...wing.map(u => u.깊이)) + backD();
     let parts = base.parts.slice(), cores = base.cores.slice(), units = base.units.slice(), uw = base.uw.slice(), y = y0;
     wing.forEach((u, i) => {
       if (i === 1) { const c = R4(L1 - dw * 0.62, y, L1, y + cw); cores.push(c); parts.push(c); y += cw; }
@@ -206,7 +208,7 @@
     const us = seq.map(t => unitFor(t, kind, maxW[t])); if (us.some(u => !u)) return null;
     let m;
     if (T.형태 === 'slab') m = slabMix(us, opt.high);
-    else if (T.형태 === 'bent') m = bentMix(us, opt.high, opt.mirror);
+    else if (T.형태 === 'bent') m = bentMix(us, opt.high, opt.mirror, T.앞동);
     else if (T.형태 === 'T') m = tMix(us, T.앞동, opt.high);
     else if (T.형태 === 'tower') m = towerMix(us);
     else if (T.형태 === 'Y') m = yMix(us, T.날개);
