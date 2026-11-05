@@ -369,8 +369,11 @@
     const siteA = num(p.siteArea) || G.area(pts);
     const exA = exclude.reduce((s, ex) => { try { const g = turf.intersect(turf.polygon([ex.concat([ex[0]]).map(pr.back)]), site.geojson.geometry ? site.geojson : turf.feature(site.geojson)); return s + (g ? turf.area(g) : 0); } catch (e) { return s + Math.abs(G.area(ex)); } }, 0);
     const lot = exclude.length ? siteA - exA : siteA * (1 - (+p.infra || 0) / 100);
+    // 정북 일조(건축법 제61조①)는 전용·일반주거지역만 — 구역이 준주거·상업·공업지역뿐이면 '정북 인접대지' 변도 대지경계로 봄(2026-11-06, 용현동 유원아파트 시험에서 확인)
+    const zz = String(((site && site.profile) || {}).zoning || '') + ' ' + String(((site && site.v) || {}).zoning || '');
+    const noSun = /준주거|상업|공업/.test(zz) && !/전용주거|일반주거|제[123]종/.test(zz);
     return {
-      site: { pts, tags, setbacks: sb, exclude },
+      site: { pts, tags: noSun ? tags.map(t => (t === 'north' ? 'boundary' : t)) : tags, setbacks: sb, exclude, noSun },
       opt: { units: C.평면, lib: C.평면_라이브러리, winRatio: winRatio(), edgeW: edgeWidths(), assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'compare' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, parkWidth: +p.parkW || 0, southBase: p.sunBase === 'south', exSetback: +p.bndSb || 0 },
       lot, exA, p,
     };
@@ -783,7 +786,7 @@
       <h3>적용 기준</h3>
       <table><tr><th style="width:160px">인동간격</th><td>앞 동 높이 × ${I.p.spacing}${/확인필요/.test(sp.상태) ? ' <span class="chk">※ 기준 확인 필요</span>' : ''}<br><span class="note">${esc(sp.근거)} — ${esc(sp.상태)}</span></td></tr>
       ${(() => { const w = crit('window_setback'); return w ? `<tr><th>채광창 이격</th><td>채광창 벽면에서 인접 대지경계선까지 높이의 1/${winRatio()} 이상(도로·공원이 사이에 있으면 그 중심선까지 — 공동주택, 판상형 앞·뒤 벽면 · 탑상형 모든 벽면)<br><span class="note">${esc(w.근거)} — ${esc(w.상태)}</span></td></tr>` : ''; })()}
-      <tr><th>${I.p.sunBase === 'south' ? '정남 기준 일조' : '정북 일조'}</th><td>높이 10m 이하 ${sn.이격.높이10m이하_m}m, 초과 부분 높이의 1/2 이상(${I.p.sunBase === 'south' ? '남쪽을 향한 경계 변 — 구청장 등 고시가 있어야 적용' : '정북 인접대지 변'})<br><span class="note">${esc(sn.근거)}${I.p.sunBase === 'south' && crit('south_base') ? ' · ' + esc(crit('south_base').근거) : ''}</span></td></tr>
+      ${I.site && I.site.noSun ? `<tr><th>정북 일조</th><td>적용 안 함 — 건축법 제61조①은 전용·일반주거지역만(이 구역 용도지역: 준주거·상업·공업)</td></tr>` : ''}<tr${I.site && I.site.noSun ? ' style="display:none"' : ''}><th>${I.p.sunBase === 'south' ? '정남 기준 일조' : '정북 일조'}</th><td>높이 10m 이하 ${sn.이격.높이10m이하_m}m, 초과 부분 높이의 1/2 이상(${I.p.sunBase === 'south' ? '남쪽을 향한 경계 변 — 구청장 등 고시가 있어야 적용' : '정북 인접대지 변'})<br><span class="note">${esc(sn.근거)}${I.p.sunBase === 'south' && crit('south_base') ? ' · ' + esc(crit('south_base').근거) : ''}</span></td></tr>
       <tr><th>도로·공원 사이</th><td>경계에 닿은 도로(실제 폭)·공원(폭 ${I.p.parkW}m)의 중심선을 인접 대지경계선으로 봄(공동주택) — 채광창·일조 모두<br><span class="note">${esc(crit('sun_open_space').근거)} — ${esc(crit('sun_open_space').상태)}</span></td></tr>
       ${(() => { const r = crit('window_relief'); return r ? `<tr><th>정비사업 완화</th><td>${Object.entries(r.값).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join('<br>')}<br><span class="note">${esc(r.근거)} — ${esc(r.상태)}</span></td></tr>` : ''; })()}
       <tr><th>경계 이격</th><td>도로 ${I.p.roadSb}m · 간선도로 ${I.p.artSb}m · 대지경계 ${I.p.bndSb}m · 동 측면 ${I.p.sideGap}m <span class="note">(검토 가정값)</span></td></tr>
