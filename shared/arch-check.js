@@ -274,6 +274,65 @@
     return { ok: !bad.length, per, bad, 근거: '건축법 시행령 제86조③2호 단서(동지 9~15시 연속 2시간 이상)', floor: +opt.provisoFloor || 1, 메모: (+opt.provisoFloor > 1 ? opt.provisoFloor + '층(그 아래 필로티·비주거 가정)' : '1층') + ' 남쪽 창 앞 지점 기준 개략 — 정밀 일조 분석(세대별)으로 입증 필요' };
   }
 
+  /* ---------- 세대별 일조(2026-11-06, 사용자 '동별 배치는 일조점검과 연계해야 나오는 거네') ----------
+     시행령 제86조③2호 단서는 '그 대지의 모든 세대'가 동지 9~15시 연속 2시간 — 세대마다 주된 개구부(거실 창) 한 점을 층마다 봄
+       세대 = b.units(세대 조각)가 있으면 그 조각, 없으면(올린 도면) 남쪽 창 벽을 층당 세대 수로 나눈 칸
+       주된 개구부 = 그 세대 바깥 변 중 가장 남쪽을 향한 창(벽 밖 0.5m), 층 L은 다른 동 높이에서 (L−1)×층고를 뺀 그림자로 판정(자기 동 다른 날개 포함)
+       층을 아래에서 올라가며 처음 통과한 층(okFrom) — 그 아래 층 세대는 단서를 못 채움 → 필로티·비주거로 비우거나 동을 옮겨야 함
+     돌려주는 것 { ok, cols:[{id, k, okFrom}], lost(못 채우는 세대 수), total, per:{동: {lost, total}}, 근거, 메모 } */
+  function unitSun(site, blds, opt) {
+    const tol = { 연속_h: 2, 연속_구간: [9, 15], 합계_h: 99, 합계_구간: [8, 16] }, lat = +opt.lat || 37.46, fh = +opt.assume.floorHeight_m || 2.9, Hf = f => H(opt, f);
+    const LV = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 18, 22, 26, 30, 35, 40, 50, 60, 70];
+    const cols = [];
+    blds.forEach(b => {
+      const parts = ringsOf(b), inAny = (x, y) => parts.some(q => G.inside(x, y, q));
+      const outer = q => { const out = []; q.forEach((p, i) => { const r = q[(i + 1) % q.length], dx = r[0] - p[0], dy = r[1] - p[1], L = Math.hypot(dx, dy); if (L < 1) return;
+        // 바깥쪽은 무게중심이 아니라 변 양쪽 0.4m 점이 건물 안인지로 정함(오목한 올린 도면 외곽선도 맞게)
+        let n = [dy / L, -dx / L]; const m = [(p[0] + r[0]) / 2, (p[1] + r[1]) / 2], A1 = inAny(m[0] + n[0] * 0.4, m[1] + n[1] * 0.4), A2 = inAny(m[0] - n[0] * 0.4, m[1] - n[1] * 0.4);
+        if (A1 && A2) return; if (A1) n = [-n[0], -n[1]]; out.push({ a: p, b: r, m, n, L }); }); return out; };
+      if (b.units && b.units.length) b.units.forEach((rs, k) => {
+        const es = rs.flatMap(outer).filter(e => e.L >= 2); if (!es.length) return;
+        const e = es.sort((x, y) => x.n[1] - y.n[1] || y.L - x.L)[0];
+        cols.push({ b, id: b.id, k, pt: [e.m[0] + e.n[0] * 0.5, e.m[1] + e.n[1] * 0.5], north: e.n[1] > 0.3 });
+      });
+      else {
+        // 올린 도면(세대 구분 없음): 남쪽 반(남동~남서) 바깥 변을 2m마다 후보로 — 거실 창은 설계자가 유리한 면에 둔다고 보고, 층당 세대 수만큼 가장 좋은 후보(6m 이상 떨어진)를 고름(아래 cand 처리)
+        const ws = parts.flatMap(outer).filter(w => w.n[1] < -0.2 && w.L >= 1.5), cand = [];
+        ws.forEach(w => { const k = Math.max(1, Math.floor(w.L / 2)); for (let i = 0; i < k; i++) { const t = (i + 0.5) / k; cand.push([w.a[0] + (w.b[0] - w.a[0]) * t + w.n[0] * 0.5, w.a[1] + (w.b[1] - w.a[1]) * t + w.n[1] * 0.5]); } });
+        if (cand.length) cols.push({ b, id: b.id, cand, n: Math.max(1, b.n || 1) });
+      }
+    });
+    // 후보 묶음(cand)은 층마다 모든 후보를 보고 통과 층이 낮은 순으로 n개(6m 이상 간격)를 세대로 삼음
+    const LV0 = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 18, 22, 26, 30, 35, 40, 50, 60, 70];
+    cols.filter(c => c.cand).forEach(c => {
+      const ok = c.cand.map(() => null);
+      for (const L of LV0) { if (L > c.b.floors) break; const idx = ok.map((v, i) => (v == null ? i : -1)).filter(i => i >= 0); if (!idx.length) break;
+        const z = (L - 1) * fh, sh = blds.map(o => Object.assign({}, o, { h: Math.max(0, (o.h != null ? o.h : Hf(o.floors)) - z) })).filter(o => o.h > 0.5);
+        const r = G.sunHours(sh, Hf, lat, idx.map(i => c.cand[i]), tol); idx.forEach((ci, k) => { if (r[k].ok) ok[ci] = L; }); }
+      const ord = c.cand.map((p, i) => ({ p, f: ok[i] == null ? c.b.floors + 1 : ok[i] })).sort((x, y) => x.f - y.f), pick = [];
+      ord.forEach(o => { if (pick.length < c.n && pick.every(q => Math.hypot(q.p[0] - o.p[0], q.p[1] - o.p[1]) >= 6)) pick.push(o); });
+      ord.forEach(o => { if (pick.length < c.n && !pick.includes(o)) pick.push(o); });
+      c.picked = pick;
+    });
+    const flat = [];
+    cols.forEach(c => { if (c.cand) (c.picked || []).forEach((o, k) => flat.push({ b: c.b, id: c.id, k, pt: o.p, fixed: o.f })); else flat.push(c); });
+    cols.length = 0; flat.forEach(c => cols.push(c));
+    cols.forEach(c => { c.okFrom = c.fixed != null ? (c.fixed > c.b.floors ? null : c.fixed) : null; if (c.fixed != null && c.fixed > c.b.floors) c.done = true; });
+    for (const L of LV) {
+      const pend = cols.filter(c => c.okFrom == null && !c.done && L <= c.b.floors); if (!pend.length) break;
+      const z = (L - 1) * fh, sh = blds.map(o => Object.assign({}, o, { h: Math.max(0, (o.h != null ? o.h : Hf(o.floors)) - z) })).filter(o => o.h > 0.5);
+      const r = G.sunHours(sh, Hf, lat, pend.map(c => c.pt), tol);
+      pend.forEach((c, i) => { if (r[i].ok) c.okFrom = L; });
+    }
+    // 통과한 층 사이는 앞 단계(통과 못 한 마지막 단계 + 1)로 좁혀 봄 — 단계 사이 층은 한 층씩
+    cols.forEach(c => { if (c.okFrom == null) { c.okFrom = c.b.floors + 1; return; } const i = LV.indexOf(c.okFrom); if (i <= 0 || c.fixed != null) return;
+      for (let L = LV[i - 1] + 1; L < c.okFrom; L++) { const z = (L - 1) * fh, sh = blds.map(o => Object.assign({}, o, { h: Math.max(0, (o.h != null ? o.h : Hf(o.floors)) - z) })).filter(o => o.h > 0.5);
+        if (G.sunHours(sh, Hf, lat, [c.pt], tol)[0].ok) { c.okFrom = L; break; } } });
+    const per = {}; let lost = 0, total = 0;
+    cols.forEach(c => { const l = Math.min(c.b.floors, c.okFrom - 1); lost += l; total += c.b.floors; const q = per[c.id] || (per[c.id] = { lost: 0, total: 0, cols: 0, worst: 0 }); q.lost += l; q.total += c.b.floors; q.cols++; q.worst = Math.max(q.worst, l); });
+    return { ok: lost === 0, cols: cols.map(c => ({ id: c.id, k: c.k, okFrom: c.okFrom, north: c.north })), lost, total, per, 근거: '건축법 시행령 제86조③2호 단서(그 대지의 모든 세대 동지 9~15시 연속 2시간 이상)', 메모: '세대마다 가장 남쪽을 향한 창 한 점·층마다 개략(10분 간격) — 인허가는 정밀 일조분석' };
+  }
+
   /* ---------- 치수선(2026-11-05, 사용자 요구 '인동거리·일조권·통경축은 치수선을 그대로 표시하면 바로 보일 것') ----------
      배치도에 그릴 치수선 목록: { kind, a, b(월드 좌표 양 끝), d(실제 m), need(기준 m), 판정('통과'|'위반'|'권고'|'참고'), 동, 글(짧은 이름표), 근거 }
        spacing  동 사이(인동): 두 동마다 마주 보는 벽 중 기준 대비 가장 빠듯한 곳 하나(벽면 직각 방향)
@@ -344,6 +403,6 @@
     f(ringsOf(a), ringsOf(b), false); f(ringsOf(b), ringsOf(a), true); return best;
   }
 
-  const api = { quick, evaluate, verify, pairCheck, cornerCheck, facings, minDist, dims, nearPair, proviso, gfaOf, unitsOf, overlapConvex, bboxIn };
+  const api = { quick, evaluate, verify, pairCheck, cornerCheck, facings, minDist, dims, nearPair, proviso, unitSun, gfaOf, unitsOf, overlapConvex, bboxIn };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.JbsCheck = api;
 })(typeof window !== 'undefined' ? window : globalThis);
