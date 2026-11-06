@@ -5,7 +5,7 @@ const G=window.ArchGeom,K=window.JbsCheck,LAT=D.lat||37.46,fh=D.assume.floorHeig
 const $=s=>document.querySelector(s),svg=$('#map');
 let B=[],sel=null,nid=1,full=null,MODE='now';
 const clone=o=>JSON.parse(JSON.stringify(o));
-const prep=b=>{b.cores=b.cores||[];b.walls=b.walls||[];b.parts=b.parts||[b.poly];if(!b.units||!b.units.length){const cs=JSON.stringify(b.cores);b.units=b.parts.filter(q=>!cs.includes(JSON.stringify(q[0]))).map(q=>[q]);}b.n=b.n||b.units.length;b.mixT=b.mixT||{[b.t||'84']:b.n};return b;};
+const prep=b=>{b.cores=b.cores||[];b.walls=b.walls||[];b.parts=b.parts||[b.poly];b.units=b.units||[];b.n=b.n||Math.max(1,b.units.length);b.mixT=b.mixT||{[b.t||'84']:b.n};return b;};
 const load=arr=>{B=clone(arr).map(b=>Object.assign(prep(b),{id:nid++}));sel=null;full=null;draw();};
 // 좌표
 const P=D.site.pts,xs=P.map(p=>p[0]),ys=P.map(p=>p[1]),X0=Math.min(...xs)-60,X1=Math.max(...xs)+60,Y0=Math.min(...ys)-60,Y1=Math.max(...ys)+60;
@@ -17,6 +17,10 @@ const xf=(b,dx,dy,da)=>{const c=cen(b),r=da*Math.PI/180,T=p=>{const q=G.rot([p[0
   b.parts=b.parts.map(q=>q.map(T));b.cores=b.cores.map(q=>q.map(T));b.units=b.units.map(rs=>rs.map(q=>q.map(T)));b.walls=b.walls.map(w=>Object.assign(w,{a:T(w.a),b:T(w.b),n:G.rot(w.n,r)}));b.poly=G.hull(b.parts.flat());b.angle=(b.angle||0)+da;full=null;};
 // 세대 창 점(세대마다 가장 남쪽을 향한 바깥 변 가운데)
 const ptsOf=b=>{const parts=b.parts,inA=(x,y)=>parts.some(q=>G.inside(x,y,q)),out=[];
+  if(!b.units.length){// 세대 조각이 없는 동(올린 도면 등): 남쪽 반을 향한 바깥 벽을 층당 세대 수만큼 고르게 나눈 점
+    const es=[];parts.forEach(q=>q.forEach((p,i)=>{const r=q[(i+1)%q.length],dx=r[0]-p[0],dy=r[1]-p[1],L=Math.hypot(dx,dy);if(L<1.5)return;let n=[dy/L,-dx/L];const m=[(p[0]+r[0])/2,(p[1]+r[1])/2];const A1=inA(m[0]+n[0]*.4,m[1]+n[1]*.4),A2=inA(m[0]-n[0]*.4,m[1]-n[1]*.4);if(A1&&A2)return;if(A1)n=[-n[0],-n[1]];if(n[1]<-0.2)es.push({p,r,n,L});}));
+    const tot=es.reduce((a,e)=>a+e.L,0),k=Math.max(1,b.n||1);let acc=0,j=0;es.forEach(e=>{while(j<k&&(j+.5)*tot/k<=acc+e.L+1e-6){const t=((j+.5)*tot/k-acc)/e.L;out.push({b,k:j,p:[e.p[0]+(e.r[0]-e.p[0])*t+e.n[0]*.6,e.p[1]+(e.r[1]-e.p[1])*t+e.n[1]*.6]});j++;}acc+=e.L;});return out;}
+
   b.units.forEach((rs,k)=>{let best=null;rs.forEach(q=>q.forEach((p,i)=>{const r=q[(i+1)%q.length],dx=r[0]-p[0],dy=r[1]-p[1],L=Math.hypot(dx,dy);if(L<2)return;let n=[dy/L,-dx/L];const m=[(p[0]+r[0])/2,(p[1]+r[1])/2];const A1=inA(m[0]+n[0]*.4,m[1]+n[1]*.4),A2=inA(m[0]-n[0]*.4,m[1]-n[1]*.4);if(A1&&A2)return;if(A1)n=[-n[0],-n[1]];if(!best||n[1]<best.n[1])best={m,n};}));
     if(best)out.push({b,k,p:[best.m[0]+best.n[0]*.6,best.m[1]+best.n[1]*.6]});});return out;};
 const shadows=(t,z)=>{const s=G.sun(LAT,t);return B.flatMap(b=>b.parts.map(q=>G.shadow(q,Math.max(0,Hf(b.floors)-z),s))).filter(Boolean);};
