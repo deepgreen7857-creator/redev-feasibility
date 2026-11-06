@@ -57,7 +57,7 @@
       // /urban 4탭 단지 출입구(주·부·주차장) → /arch 차량 출입구 초기값
       site.urbanGates = ((it.zone.infra || {}).gates || []).map(g => ({ kind: g.kind, pt: g.pt }));
       site.plan = site.plan || {};
-      if (P.zone && !site.profile.zoning) site.profile.zoning = P.zone;
+      if (P.zone) site.profile.zoning = P.zone;   // 계획 용도지역(/urban 4탭)을 늘 따름(2026-11-06 — 예전에 넘긴 3종이 남아 준주거 구역이 3종으로 나오던 것)
       // 사업 유형: 사업성 화면에서 넘어온 구역이면 그 화면의 사업 유형(재건축·재개발·가로주택)을 따름
       if (it.zone.from === 'project') { try { const pj = JSON.parse(localStorage.getItem('jbsc.project.v1') || 'null'), st = pj && (pj.state || pj), t = st && st.meta && st.meta.type; if (t) site.plan.type = t === 'reconstruction' ? 'recon' : t === 'garo' ? 'garo' : 'redev'; } catch (e) { /* 무시 */ } }
       if (!site.plan.type) site.plan.type = 'redev';
