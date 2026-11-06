@@ -20,7 +20,7 @@
     const A = C.가정; let U = {}; try { U = JSON.parse(localStorage.getItem('jbs-urban-plan') || '{}'); } catch (e) { U = {}; }
     const v = site.v || {};
     return {
-      siteArea: v.siteArea || '', infra: U.infraRatio ?? 25, far: v.far || U.farCustom || 250, maxFloors: A.maxFloors,
+      siteArea: v.siteArea || '', infra: U.infraRatio ?? 25, far: v.far || U.farCustom || 250, maxFloors: (+v.floors > 0 ? +v.floors : A.maxFloors),
       angleMode: 'auto', angle: 0, form: 'slab',
       spacing: crit('spacing_ratio').값, sideGap: A.sideGap_m, roadSb: A.roadSetback_m, artSb: A.arterialSetback_m, bndSb: A.boundarySetback_m,
       lowCap: 15, lowDist: 30, parkPer: A.parkPerUnitPlan ?? 1.2, parkW: A.parkWidth_m ?? 20, sunBase: 'north', corner: (A.corner && A.corner.mode) || 'min10', minFloors: A.minFloors, ...defaultMix(), fh: A.floorHeight_m, sf: U.supplyFactor ?? A.supplyFactor,
