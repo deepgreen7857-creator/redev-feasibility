@@ -139,6 +139,9 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
         <label>대지경계 이격 m<input id="p_bndSb" inputmode="decimal"></label>
         <label>저층 주거 인접부 층수 상한<input id="p_lowCap" inputmode="numeric"></label>
         <label>층수 상한 적용 거리 m<input id="p_lowDist" inputmode="decimal"></label>
+        <label>통경축 방향(경관)<select id="p_axisB"><option value="0">남북 방향</option><option value="90">동서 방향</option><option value="45">북동–남서 방향</option><option value="135">북서–남동 방향</option></select></label>
+        <label>통경축 띠 개수(0 = 없음, 최대 3)<input id="p_axisN" inputmode="numeric"></label>
+        <label>통경축 띠 폭 m(15 이상)<input id="p_axisW" inputmode="decimal"></label>
         <label>계획 주차(세대당 대수, 법정보다 작으면 법정)<input id="p_parkPer" inputmode="decimal"></label>
         <label>공원·녹지 폭 m (중심선을 경계로 봄)<input id="p_parkW" inputmode="decimal"></label>
         <label>동 모서리 근접(실무 기준·가정)<select id="p_corner"><option value="min10">모든 동 사이 최소 10m(기본 — 실제 정비계획 수준)</option><option value="rec">최소 10m + 45° 안에서 보이면 높이 × 0.5(심의 대비 엄격안)</option><option value="all">모서리끼리 모두 높이 × 0.5</option><option value="off">안 봄(법정 기준만)</option></select></label>
@@ -195,7 +198,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../js/config.js?v=1"></script>
 <script src="../js/zonekit.js?v=79"></script>
 <script src="../shared/site-store.js?v=10"></script>
-<script src="../shared/arch-geom.js?v=28"></script>
+<script src="../shared/arch-geom.js?v=29"></script>
 <script src="../shared/arch-check.js?v=10"></script>
 <script src="../shared/sun-verify.js?v=1"></script>
 <script src="../shared/mass3d.js?v=1"></script>
@@ -203,7 +206,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../shared/feas.js?v=148"></script>
 <script src="../shared/plan-import.js?v=2"></script>
 <script src="arch-draw.js?v=10"></script>
-<script src="arch.js?v=47"></script>
+<script src="arch.js?v=48"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>
 </body>
