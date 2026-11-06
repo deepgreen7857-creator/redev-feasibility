@@ -283,8 +283,9 @@
   function unitSun(site, blds, opt) {
     const tol = { 연속_h: 2, 연속_구간: [9, 15], 합계_h: 99, 합계_구간: [8, 16] }, lat = +opt.lat || 37.46, fh = +opt.assume.floorHeight_m || 2.9, Hf = f => H(opt, f);
     const LV = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 18, 22, 26, 30, 35, 40, 50, 60, 70];
-    const cols = [];
+    const cols = [], only = opt.sunOnly ? new Set(opt.sunOnly) : null;   // sunOnly: 이 동들만 세대를 셈(그림자는 모든 동) — 하나씩 놓으며 고를 때 빠르게
     blds.forEach(b => {
+      if (only && !only.has(b.id)) return;
       const parts = ringsOf(b), inAny = (x, y) => parts.some(q => G.inside(x, y, q));
       const outer = q => { const out = []; q.forEach((p, i) => { const r = q[(i + 1) % q.length], dx = r[0] - p[0], dy = r[1] - p[1], L = Math.hypot(dx, dy); if (L < 1) return;
         // 바깥쪽은 무게중심이 아니라 변 양쪽 0.4m 점이 건물 안인지로 정함(오목한 올린 도면 외곽선도 맞게)
@@ -293,7 +294,10 @@
       if (b.units && b.units.length) b.units.forEach((rs, k) => {
         const es = rs.flatMap(outer).filter(e => e.L >= 2); if (!es.length) return;
         const e = es.sort((x, y) => x.n[1] - y.n[1] || y.L - x.L)[0];
-        cols.push({ b, id: b.id, k, pt: [e.m[0] + e.n[0] * 0.5, e.m[1] + e.n[1] * 0.5], north: e.n[1] > 0.3 });
+        // 창 폭(opt.sunWin: 'center' 가운데 한 점 / 'any' 창 폭 안 세 점 중 한 곳이라도 — 창 위치·폭이 판정에 주는 영향 시험용, 2026-11-06)
+        const t = [e.b[0] - e.a[0], e.b[1] - e.a[1]].map(v => v / e.L), ww = Math.min(e.L * 0.7, +opt.winW || e.L * 0.7) / 2;
+        const at = d => [e.m[0] + t[0] * d + e.n[0] * 0.5, e.m[1] + t[1] * d + e.n[1] * 0.5];
+        cols.push({ b, id: b.id, k, pt: at(0), pts: opt.sunWin === 'any' ? [at(-ww), at(0), at(ww)] : null, north: e.n[1] > 0.3 });
       });
       else {
         // 올린 도면(세대 구분 없음): 남쪽 반(남동~남서) 바깥 변을 2m마다 후보로 — 거실 창은 설계자가 유리한 면에 둔다고 보고, 층당 세대 수만큼 가장 좋은 후보(6m 이상 떨어진)를 고름(아래 cand 처리)
@@ -321,13 +325,14 @@
     for (const L of LV) {
       const pend = cols.filter(c => c.okFrom == null && !c.done && L <= c.b.floors); if (!pend.length) break;
       const z = (L - 1) * fh, sh = blds.map(o => Object.assign({}, o, { h: Math.max(0, (o.h != null ? o.h : Hf(o.floors)) - z) })).filter(o => o.h > 0.5);
-      const r = G.sunHours(sh, Hf, lat, pend.map(c => c.pt), tol);
-      pend.forEach((c, i) => { if (r[i].ok) c.okFrom = L; });
+      const flatP = []; pend.forEach(c => (c.pts || [c.pt]).forEach(q => flatP.push(q)));
+      const r = G.sunHours(sh, Hf, lat, flatP, tol); let k2 = 0;
+      pend.forEach(c => { const m = (c.pts || [c.pt]).length; if (r.slice(k2, k2 + m).some(x => x.ok)) c.okFrom = L; k2 += m; });
     }
     // 통과한 층 사이는 앞 단계(통과 못 한 마지막 단계 + 1)로 좁혀 봄 — 단계 사이 층은 한 층씩
     cols.forEach(c => { if (c.okFrom == null) { c.okFrom = c.b.floors + 1; return; } const i = LV.indexOf(c.okFrom); if (i <= 0 || c.fixed != null) return;
       for (let L = LV[i - 1] + 1; L < c.okFrom; L++) { const z = (L - 1) * fh, sh = blds.map(o => Object.assign({}, o, { h: Math.max(0, (o.h != null ? o.h : Hf(o.floors)) - z) })).filter(o => o.h > 0.5);
-        if (G.sunHours(sh, Hf, lat, [c.pt], tol)[0].ok) { c.okFrom = L; break; } } });
+        if (G.sunHours(sh, Hf, lat, c.pts || [c.pt], tol).some(x => x.ok)) { c.okFrom = L; break; } } });
     const per = {}; let lost = 0, total = 0;
     cols.forEach(c => { const l = Math.min(c.b.floors, c.okFrom - 1); lost += l; total += c.b.floors; const q = per[c.id] || (per[c.id] = { lost: 0, total: 0, cols: 0, worst: 0 }); q.lost += l; q.total += c.b.floors; q.cols++; q.worst = Math.max(q.worst, l); });
     return { ok: lost === 0, cols: cols.map(c => ({ id: c.id, k: c.k, okFrom: c.okFrom, north: c.north })), lost, total, per, 근거: '건축법 시행령 제86조③2호 단서(그 대지의 모든 세대 동지 9~15시 연속 2시간 이상)', 메모: '세대마다 가장 남쪽을 향한 창 한 점·층마다 개략(10분 간격) — 인허가는 정밀 일조분석' };

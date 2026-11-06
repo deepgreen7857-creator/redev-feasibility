@@ -343,8 +343,9 @@ function loadProject() { try { const raw = localStorage.getItem(PROJECT_KEY); re
 async function importProject(id) {
   const p = loadProject();
   if (!p || !p.area || !p.area.geojson) { toast('사업성 검토 화면에 그린 구역계가 없습니다'); return; }
-  const z = zoneOf(id);
   const g = p.area.geojson;
+  if (isNewSite(id, g.type === 'Feature' ? g.geometry : g)) { await resetForNewSite(id); id = ZONE_IDS[0]; }
+  const z = zoneOf(id);
   histOf(id).undo.push({ gj: z.geojson ? JSON.parse(JSON.stringify(z.geojson)) : null, label: '사업성 검토 구역 가져오기' }); histOf(id).redo = [];
   z.geojson = g.type === 'Feature' ? { type: 'Feature', properties: {}, geometry: g.geometry } : { type: 'Feature', properties: {}, geometry: g };
   z.inArea = {}; z.fetchedAt = '';
@@ -395,8 +396,34 @@ function undoZone(redo = false) {
   toast(`${redo ? '다시 했습니다' : '되돌렸습니다'}: ${it.label}`);
   statusMsg(`${id}안: ${redo ? '다시 했습니다' : '되돌렸습니다'} — ${it.label}`);
 }
+// 위치가 바뀌면(새 구역계가 지금까지 그린 어느 안과도 겹치지 않으면) 다른 사업으로 보고 기존 검토를 초기화(2026-11-06)
+//  자동 백업 → 겹치지 않는 안·구역명·기반시설·출입구·계획 가정(P)·계획 용도지역 모두 비우고, 새 구역계만 남김
+function isNewSite(id, geom) {
+  if (!window.turf || !geom) return false;
+  const g = { type: 'Feature', properties: {}, geometry: geom };
+  const olds = Object.keys(Z.zones).map(k => Z.zones[k] && Z.zones[k].geojson).filter(Boolean);
+  if (!olds.length) return false;
+  return !olds.some(o => { try { const x = turf.intersect(o, g); return !!x && turf.area(x) > 1; } catch (e) { return true; } });
+}
+function resetPlanState() {
+  Object.keys(P).forEach(k => delete P[k]); Object.assign(P, JSON.parse(JSON.stringify(P_DEFAULT))); P.v54road = true; saveP();
+  ['jbs-urban-infra-v1', 'jbs-urban-out'].forEach(k => { try { localStorage.removeItem(k); } catch (e) { /* 무시 */ } });
+}
+async function resetForNewSite(id) {
+  const label = Z.title || Object.keys(Z.zones).filter(k => Z.zones[k] && Z.zones[k].geojson).join('·') + '안';
+  if (window.JbsWork) { try { await JbsWork.backup(`정비계획 위치 변경 — 이전 사업(${label}) 초기화 전 자동 백업`); } catch (e) { /* 백업 실패해도 진행 */ } }
+  Object.keys(Z.zones).forEach(k => delete Z.zones[k]);
+  Object.keys(HIST).forEach(k => delete HIST[k]);
+  Z.title = ''; Z.count = 1;
+  resetPlanState();
+  saveZ(); syncTitle();
+  toast(`위치가 바뀌어 이전 사업(${label}) 검토를 초기화했습니다. 자동 백업은 [작업 저장·불러오기]에 있습니다`);
+}
 // label: 실행 취소에 남길 작업 이름(null이면 이력에 안 남김 — 되돌리기 자체)
-function setZoneGeom(id, gj, delay = 0, label = '구역계 변경') {
+async function setZoneGeom(id, gj, delay = 0, label = '구역계 변경') {
+  if (gj && label !== null && isNewSite(id, gj.type === 'Feature' ? gj.geometry : gj)) {
+    await resetForNewSite(id); id = ZONE_IDS[0]; S.region = id; label = null;
+  }
   const z = zoneOf(id);
   if (label !== null) {
     const h = histOf(id);
@@ -654,6 +681,7 @@ const P = {
   constCost: 700, basementRatio: 55, etcRatio: 20, priorMode: 'jiga', priorMult: 1.4, ghostIn: false,
   infraMode: 'proposal', parkMode: 'legal', sideRoadW: 8, schoolArea: 0, otherInfra: 0, greenInfra: 0, pubBldg: 0, parkCount: 0, valMult: 1.4, roadWork: 0, parkWork: 0, showFac: false, keepInnerRoads: false,
 };
+const P_DEFAULT = JSON.parse(JSON.stringify(P));   // 위치가 바뀌면(다른 사업) 이 값으로 되돌림
 try { const s = localStorage.getItem('jbs-urban-plan'); if (s) Object.assign(P, JSON.parse(s)); } catch (e) { /* 무시 */ }
 // v54: 주변 도로 최소 폭 기본 6m → 8m(소로2류 하한, 양방향 통행)
 if (!P.v54road) { if (num(P.sideRoadW) === 6) P.sideRoadW = 8; P.v54road = true; }
@@ -747,7 +775,34 @@ const TOWERS = {
   },
 };
 // 지도 화면이면 실제로 놓이는 배치로 동 수·층수를 맞춘 값을 씀(개략 규모·높이·소방 검토·지도가 모두 이 값)
+// 계획 용도지역은 안(구역)마다 따로 — Z.zones[안].planZone(사용자가 고른 값). 없으면 현황 용도지역으로 기본값을 정함
+//  (2026-11-06: 예전엔 P.zone 하나를 모든 구역이 같이 써서, 유원아파트 시험 때 고른 준주거가 학익장미 구역에도 남았음)
+function defaultPlanZone(a) {
+  const za = Object.entries((a && a.zoneArea) || {}).filter(([k]) => k !== '미확인').sort((x, y) => y[1] - x[1]);
+  if (za.length && RULES.far['준주거지역'] && za.every(([k]) => /준주거/.test(k))) return '준주거지역';
+  const top = za.length ? za[0][0] : '';
+  if (/제2종일반주거/.test(top) && RULES.far['제2종일반주거지역']) return '제2종일반주거지역';
+  return '제3종일반주거지역';   // 제3종·제1종·공업·기타 현황은 제3종 가정(공업지역은 용도지역 변경 전제 — 화면에 경고)
+}
+function planZoneStore(a) { return a && a.key && Z.zones[a.key] ? Z.zones[a.key] : null; }
+function industrialNote(a) {
+  const ks = Object.keys((a && a.zoneArea) || {}).filter(k => /공업/.test(k)); if (!ks.length) return '';
+  return `<span class="u warn" style="display:block;margin-top:2px">현황에 ${ks.map(esc).join('·')}이 있습니다 — 계획 용도지역(${esc(P.zone.replace('일반주거지역', ''))})은 용도지역 변경(정비계획 결정 시 주거지역 지정)을 전제로 한 가정입니다. 공업지역 그대로의 용적률은 이 목록에 없습니다.</span>`;
+}
+function syncPlanZone(a) {
+  if (!a || !a.key) return;
+  const st = planZoneStore(a), byKey = P.zoneBy || {};
+  const pick = st ? st.planZone : byKey[a.key];
+  const want = pick && RULES.far[pick] ? pick : defaultPlanZone(a);
+  if (P.zone !== want) { P.zone = want; saveP(); }
+}
+function setPlanZone(a, v) {
+  const st = planZoneStore(a);
+  if (st) { st.planZone = v; saveZ(); } else { P.zoneBy = Object.assign({}, P.zoneBy, { [a.key]: v }); }
+  P.zone = v; saveP();
+}
 function plan(a) {
+  syncPlanZone(a);
   const pl = planRaw(a);
   if (!D.map) return pl;
   try { return TOWERS.fit(a, pl); } catch (er) { console.warn('개략 배치 계산 실패', er); return pl; }
@@ -2147,11 +2202,19 @@ function renderSourceBar() {
       + (rt ? ` <button class="btn sm" id="roadBtn">도로접면 조회 (${rt}필지)</button>` : '')
       + (ledgerTargets().length ? ` <button class="btn sm" id="ledBtn" title="사용승인 연도가 빈 건물과 공동주택 세대수를 건축물대장 표제부로 채웁니다">건축물대장으로 연도·세대수 채우기 (${ledgerTargets().length}필지)</button>` : '')
       + (hasProj ? ` <button class="btn ghost sm" id="fromProj" title="사업성 검토 화면에 그린 구역계와 토지·건축물 조서를 지금 고른 안으로 가져옵니다">사업성 검토 구역 가져오기 → ${esc(S.region)}안</button>` : '')
+      + (used ? ` <button class="btn ghost sm" id="newSite" title="지금 보고 있는 안의 구역계만 남기고 구역명·다른 안·기반시설·출입구·계획 가정을 모두 초기화합니다(자동 백업)">이 구역계로 새로 검토</button>` : '')
       + ` <button class="btn ghost sm" id="toSample">예시 구역 보기</button>`;
   }
   const on = (id, fn) => { const b = $id(id); if (b) b.onclick = fn; };
   const zt = $id('zoneTitle'); if (zt) zt.onchange = () => { Z.title = zt.value.trim(); saveZ(); syncTitle(); render(); };
   on('toMap', () => setSource('map'));
+  on('newSite', async () => {
+    const g = Z.zones[S.region] && Z.zones[S.region].geojson; if (!g) return;
+    if (!confirm(`${S.region}안 구역계만 남기고 이전 검토(구역명·다른 안·기반시설·출입구·계획 가정)를 모두 초기화할까요?\n초기화 전 내용은 자동 백업됩니다.`)) return;
+    const keep = JSON.parse(JSON.stringify(g));
+    await resetForNewSite(S.region); S.region = ZONE_IDS[0];
+    setZoneGeom(ZONE_IDS[0], keep, 0, null);
+  });
   on('toSample', () => setSource('sample'));
   on('fromProj', () => {
     const R = D.regions[S.region];
@@ -2795,7 +2858,7 @@ function renderPlan(a) {
   side.innerHTML = `<h2>${regName()} 정비계획 (토지이용·밀도)</h2>
   ${D.map ? infraSection(a, pl) : ''}
   <div class="form">
-    <div class="field"><label for="zone">용도지역(계획)</label><select id="zone">${Object.keys(RULES.far).map(k => `<option>${k}</option>`).join('')}</select><span class="u">현황: ${Object.entries(a.zoneArea).map(([z, v]) => esc(z.replace('일반주거지역', '')) + ' ' + fmt(v) + '㎡').join(', ')}</span></div>
+    <div class="field"><label for="zone">용도지역(계획)</label><select id="zone">${Object.keys(RULES.far).map(k => `<option>${k}</option>`).join('')}</select><span class="u">현황: ${Object.entries(a.zoneArea).map(([z, v]) => esc(z.replace('일반주거지역', '')) + ' ' + fmt(v) + '㎡').join(', ')}</span>${industrialNote(a)}</div>
     ${prop ? '' : field('infraRatio', '정비기반시설 비율(도로·공원·학교 등)', P.infraRatio, D.map ? '구역 면적 대비 % · 직접 입력' : '구역 면적 대비 %, 예시 가정', 'min=0 max=60 step=1')}
     <div class="field"><label for="farMode">적용 용적률</label><select id="farMode"><option value="base">기준용적률 ${far.base}%</option><option value="allowed">허용용적률 ${far.allowed}%</option><option value="max">상한용적률 ${far.max}%</option>${pl.farCalc ? `<option value="calc">산식(공공시설 제공) ${pl.farCalc.v}%</option>` : ''}<option value="custom">직접 입력</option></select><span class="u">2030 기본계획 · ${pressBadge}</span></div>
     ${P.farMode === 'custom' ? field('farCustom', '계획 용적률', P.farCustom, `% (상한 ${far.max}% 이내로 제한)`) : ''}
@@ -2817,9 +2880,7 @@ function renderPlan(a) {
   ${D.map ? todoSection(a, pl) : ''}
   <p class="note">허용용적률은 인센티브 항목을, 상한용적률은 공공시설 부지 제공 등 공공기여를 전제로 합니다. 이 화면은 인센티브 배점과 공공기여 산식을 아직 계산하지 않고 단계만 고릅니다.</p>`;
   const z = document.getElementById('zone');
-  // 현황이 모두 준주거면(사용자가 직접 고르기 전까지) 계획 용도지역도 준주거로
-  if (!P.zoneUser && RULES.far['준주거지역'] && !/준주거/.test(P.zone) && a.zoneArea && Object.keys(a.zoneArea).length && Object.keys(a.zoneArea).every(k => /준주거/.test(k))) { P.zone = '준주거지역'; saveP(); setTimeout(render, 0); }
-  z.value = P.zone; z.onchange = () => { P.zone = z.value; P.zoneUser = true; saveP(); render(); };
+  z.value = P.zone; z.onchange = () => { setPlanZone(a, z.value); render(); };
   const f = document.getElementById('farMode'); f.value = P.farMode; f.onchange = () => { P.farMode = f.value; saveP(); render(); };
   bindNum(['infraRatio', 'farCustom', 'sideRoadW', 'schoolArea', 'otherInfra', 'greenInfra', 'pubBldg', 'valMult', 'roadWork', 'parkWork']);
   bindInfra(a);
@@ -3978,7 +4039,7 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
         keep.forEach((z, i) => { Z.zones[ZONE_IDS[i]] = z; });
         Object.keys(HIST).forEach(k => delete HIST[k]);
         Z.count = Math.max(1, keep.length);
-        if (!keep.length) Z.title = '';
+        if (!keep.length) { Z.title = ''; resetPlanState(); }   // 사업성 검토에서 다른 위치를 가져오면 계획 가정도 처음부터
         saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); S.region = D.keys[0];
         syncRegionChips(); renderSourceBar();
         toast(`다른 사업 구역(${other.length}개 안)은 자동 백업한 뒤 비웠습니다. [작업 저장·불러오기]에서 되돌릴 수 있습니다`);
