@@ -86,6 +86,14 @@ $('#time').oninput=draw;$('#floor').oninput=draw;$('#mNow').onclick=()=>{MODE='n
 const tog=id=>{const el=$(id),o=el.style.display==='block';$('#menu').style.display='none';$('#help').style.display='none';el.style.display=o?'none':'block';};$('#mBtn').onclick=()=>tog('#menu');$('#hBtn').onclick=()=>tog('#help');
 let timer=null;$('#play').onclick=()=>{if(timer){clearInterval(timer);timer=null;$('#play').textContent='▶';return;}$('#play').textContent='■';timer=setInterval(()=>{let v=+$('#time').value+1/6;if(v>15)v=9;$('#time').value=v;draw();},350);};
 $('#full').onclick=()=>{$('#full').textContent='검사 중…';setTimeout(()=>{full=K.unitSun(D.site,B,{units:D.units||{},assume:D.assume,lat:LAT,sunWin:'any'});$('#full').textContent='전 층 검사';draw();},30);};
+// 정밀 검산(2026-11-07): 전 층 검사(엔진)를 광선 방식으로 다시 판정 — shared/sun-verify.js
+$('#verify').onclick=async()=>{const bt=$('#verify'),box=$('#vout');if(!window.JbsSunVerify)return;bt.disabled=true;bt.textContent='검산 중…';
+  try{if(!full){full=K.unitSun(D.site,B,{units:D.units||{},assume:D.assume,lat:LAT,sunWin:'any'});draw();}
+    const vo={fh,groundExtra:D.assume.groundExtra_m,lat:LAT,lon:D.lon||126.65,onProgress:(i,n)=>{bt.textContent=`검산 중… ${i}/${n}`;}};
+    const r=await JbsSunVerify.check(B,full,vo),rk=await JbsSunVerify.check(B,full,Object.assign({},vo,{basis:'kst',onProgress:null}));
+    box.innerHTML=JbsSunVerify.html(r,rk)+'<button onclick="this.parentNode.style.display=\'none\'">닫기</button>';box.style.display='block';}
+  catch(e){box.textContent='정밀 검산을 하지 못했습니다: '+e.message;box.style.display='block';}
+  bt.disabled=false;bt.textContent='정밀 검산';};
 $('#ldStart').onclick=()=>load(D.start);$('#ldEmpty').onclick=()=>load([]);
 $('#ldBack').onclick=()=>{try{localStorage.setItem('jbs-sunsim-back-cache',JSON.stringify({at:Date.now(),buildings:B.map(b=>({id:b.id,dname:b.dname,form:b.form,floors:b.floors,n:b.n,mixT:b.mixT,poly:b.poly,parts:b.parts,cores:b.cores,units:b.units,walls:b.walls,angle:b.angle||0}))}));$('#ldBack').textContent='넘김 — 건축계획 화면에서 [시뮬레이터 배치 받기]';}catch(e){$('#ldBack').textContent='넘기기 실패(저장 공간)';}};
 load(D.start);

@@ -603,7 +603,7 @@
     if (!alts.length) { msg('먼저 배치안을 만드세요.', true); return; }
     const I = buildInput(), A = alts[cur], As = I.opt.assume;
     const plain = b => ({ id: b.id, dname: b.dname || b.vname || '', form: b.form, floors: b.floors, n: b.n, t: b.t, mixT: b.mixT || { [b.t]: b.n }, poly: b.poly, parts: b.parts || [b.poly], cores: b.cores || [], units: b.units || [], walls: b.walls || [], angle: b.angle || 0 });
-    const data = { name: (site && site.name) || '', lat: pr ? pr.lat0 : 37.46, lot: I.lot, site: { pts: I.site.pts, setbacks: I.site.setbacks }, exclude: (I.site.exclude || []).map(q => q.pts || q).filter(q => Array.isArray(q) && q.length > 2),
+    const data = { name: (site && site.name) || '', lat: pr ? pr.lat0 : 37.46, lon: pr ? pr.lon0 : 126.65, lot: I.lot, site: { pts: I.site.pts, setbacks: I.site.setbacks }, exclude: (I.site.exclude || []).map(q => q.pts || q).filter(q => Array.isArray(q) && q.length > 2),
       assume: { floorHeight_m: As.floorHeight_m, groundExtra_m: As.groundExtra_m, supplyFactor: As.supplyFactor }, units: C.평면,
       supply: Object.fromEntries(Object.keys(C.평면).filter(t => C.평면[t] && C.평면[t].전용).map(t => [t, +C.평면[t].공급 > 0 ? +C.평면[t].공급 : C.평면[t].전용 * As.supplyFactor])), start: A.buildings.map(plain) };
     try { localStorage.setItem('jbs-sunsim-cache', JSON.stringify(data)); } catch (e) { msg('브라우저 저장 공간이 모자라 시뮬레이터로 넘기지 못했습니다.', true); return; }
@@ -646,6 +646,20 @@
   const planOpts = extra => Object.assign({ site: pts, tags, setbacks: buildInput().site.setbacks, exclude, exKinds, entries, alt: alts[cur], title: site.name || '', coreW: C.가정.coreW_m, dims: planDims() }, extra || {});
   document.addEventListener('change', e => { if (e.target && (e.target.id === 'dimShow' || e.target.id === 'dimAll') && alts.length) renderPlan(); });
   function renderPlan() { $('#planSvg').innerHTML = D.sitePlan(planOpts()); renderRisk(); }
+  function riskOpt() { const I = buildInput(), legalSp = +((crit('spacing_ratio') || {}).값) || I.opt.spacing; return { I, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46, spacing: Math.max(legalSp, I.opt.spacing) }) }; }
+  // 일조 정밀 검산(2026-11-07): 엔진(10분·그림자 다각형)과 다른 방법(따로 계산한 태양 위치·1분·창에서 해 쪽 광선)으로 같은 창을 다시 판정 — shared/sun-verify.js
+  async function runSunVerify() {
+    const A = alts[cur], btn = $('#sunVerifyBtn'), out = $('#sunVerifyOut'); if (!A || !A.__risk || !window.JbsSunVerify || !btn) return;
+    btn.disabled = true; btn.textContent = '검산 중…';
+    try {
+      const { I, opt } = riskOpt();
+      if (!A.__risk.pv) A.__risk.pv = JbsCheck.unitSun(I.site, A.buildings, opt);
+      const vo = { fh: I.opt.assume.floorHeight_m, groundExtra: I.opt.assume.groundExtra_m, lat: pr ? pr.lat0 : 37.46, lon: pr ? pr.lon0 : 126.65, onProgress: (i, n) => { btn.textContent = `검산 중… ${i}/${n}`; } };
+      const r = await JbsSunVerify.check(A.buildings, A.__risk.pv, vo), rk = await JbsSunVerify.check(A.buildings, A.__risk.pv, Object.assign({}, vo, { basis: 'kst', onProgress: null }));
+      A.__risk.sv = JbsSunVerify.html(r, rk, esc); renderRisk();
+    } catch (e) { console.warn('정밀 검산', e); if (out) out.textContent = '정밀 검산을 하지 못했습니다: ' + e.message; btn.disabled = false; btn.textContent = '정밀 검산(1분 간격 광선)'; }
+  }
+  document.addEventListener('click', e => { if (e.target && e.target.id === 'sunVerifyBtn') runSunVerify(); });
   // 위험요소 카드(2026-11-05): 검사 부품 JbsCheck.verify — 규칙 위반(대안 포함)·동 사이 거리 단서(동지 2시간)·경험 항목(원인·영향·확인 자료·대안)
   function renderRisk() {
     const box = $('#riskCard'); if (!box) return;
@@ -653,7 +667,7 @@
     if (!A.__risk) {
       try {
         // 검사는 늘 법정 배수(인천 조례 0.8)로 — 배치 배수를 낮춰(단서 전제) 돌렸으면 동 사이 위반 + 단서(동지 2시간) 개략 확인이 같이 뜸(2026-11-06)
-        const I = buildInput(), legalSp = +((crit('spacing_ratio') || {}).값) || I.opt.spacing, opt = Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46, spacing: Math.max(legalSp, I.opt.spacing) }), v = JbsCheck.verify(I.site, A.buildings, opt);
+        const { I, opt } = riskOpt(), v = JbsCheck.verify(I.site, A.buildings, opt);
         const sp = v.rules.filter(r => ['spacing', 'side'].includes(r.id));
         Object.defineProperty(A, '__risk', { value: { v, pv: sp.length ? JbsCheck.unitSun(I.site, A.buildings, opt) : null }, enumerable: false, configurable: true });
       } catch (e) { console.warn('위험요소', e); box.innerHTML = ''; return; }
@@ -667,6 +681,7 @@
       ${hard.length ? `<h4>법정 기준 위반(이대로는 안 됨)</h4><ul>${hard.map(rule).join('')}</ul>` : `<p>법정 기준(대지 경계·${spR.length ? '' : '동 사이 거리·'}정북 일조·채광창 이격·용적률·건폐율) 위반 없음</p>`}
       ${spR.length ? `<h4>동 사이 거리 — 본문 거리 미달, 단서로 허용 가능</h4><p class="note">시행령 제86조③2호는 본문(가목 높이 × 조례 배수 등)과 단서(그 대지의 모든 세대가 동지 9~15시 연속 2시간 이상 일조를 확보하는 거리 이상)가 함께 있는 조문입니다. 본문 거리에 못 미쳐도 세대별 일조분석으로 단서를 입증하면 적법 — 실제 고층 정비계획 대부분이 이 방식입니다.</p><ul>${spR.map(rule).join('')}</ul>` : ''}
       ${pv ? `<h4>세대별 일조 — 단서 충족 여부(${esc(pv.근거)})</h4><p>${pv.ok ? `모든 세대(${fmt(pv.total)}세대)가 동지 연속 2시간 이상 — 단서 적용 검토 가능` : `${fmt(pv.total)}세대 중 <b>${fmt(pv.lost)}세대</b>가 2시간 미달 → 이대로면 단서 불충족. 미달 세대를 필로티·비주거로 비우면 순 ${fmt(A.units - pv.lost)}세대, 아니면 동 간격·엇갈림·옆 틈을 넓혀 다시 배치. 동별: ${Object.entries(pv.per).filter(([, q]) => q.lost).map(([k, q]) => `${esc(k)}동 ${q.lost}/${q.total}`).join(', ')}`}. <span class="note">${esc(pv.메모)}</span></p>` : ''}
+      ${window.JbsSunVerify ? (A.__risk.sv ? `<div id="sunVerifyOut">${A.__risk.sv}</div>` : `<p><button id="sunVerifyBtn" title="엔진과 다른 방법(따로 계산한 동지 태양 위치·1분 간격·창에서 해 쪽 광선)으로 세대별 일조를 다시 판정해 엔진 결과와 대조">정밀 검산(1분 간격 광선)</button> <span id="sunVerifyOut" class="note">세대별 일조 판정을 상용 일조분석 도구와 같은 광선 방식으로 다시 봐서 엔진 판정과 대조합니다${pv ? '' : '(세대별 일조도 함께 계산)'}.</span></p>`) : ''}
       ${risks.length ? `<h4>심의·민원 위험(경험 — 탈락 아님)</h4><ul>${risks.map(risk).join('')}</ul>` : ''}
       <p class="note">규칙은 법령·조례 숫자, 경험 항목은 심의·협의에서 지적되기 쉬운 것(가정값 포함). 인허가 및 심의 과정에서 변동될 수 있습니다.</p></details>`;
   }
