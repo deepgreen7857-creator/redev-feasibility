@@ -204,13 +204,56 @@ const Tabs = {
         $('#btnAddrKeep').onclick = () => { S.meta.addrZoneOk = S.meta.parcel; App.persist(); this.refresh(); };
         return;
       }
-      // 구역이 있으면: 필지 더하기·빼기를 바로 할 수 있게
+      // 구역이 있으면: 면적 두 가지(도형·대장)를 나란히 보이고, 필지 추가 → '더 넣을 필지 없음' 확인 → 구역 지정 완료 순서로 안내(2026-11-06)
       box.hidden = false;
-      box.innerHTML = `<div style="border:1px solid #c9d3dc;border-radius:8px;padding:8px 12px;margin-bottom:12px;background:#f7f9fb">
-        <p style="margin:0 0 6px">대표 지번 <b>${label}</b> · 구역 <b>${fmt(num(S.area.drawnArea))}㎡</b></p>
-        <button class="btn small${MapView.picking ? ' on' : ''}" id="btnAddrAdd">${MapView.picking ? '필지 추가·빼기 끄기' : '필지 추가하기'}</button>
-        ${MapView.picking ? '<span class="note"> 지도에서 더하거나 뺄 필지를 누르세요</span>' : ''}</div>`;
-      $('#btnAddrAdd').onclick = () => { const pz = $('#pickZone'); if (pz) pz.checked = true; MapView.setPicking(!MapView.picking); this.refresh(); };
+      const drawn = num(S.area.drawnArea), led = Calc.landTotal(S), nL = S.lands.length;
+      const diff = led > 0 ? drawn - led : 0, dPct = drawn > 0 ? Math.abs(diff) / drawn * 100 : 0;
+      const partial = S.lands.filter(l => l.inRatio != null && num(l.inRatio) < 0.999).length;
+      const areaLine = `<p style="margin:0 0 6px">대표 지번 <b>${label}</b></p>
+        <table style="width:100%;font-size:13px;border-collapse:collapse;margin:0 0 6px">
+          <tr><td>구역계 도형 면적(연속지적도로 잰 값)</td><td style="text-align:right"><b>${fmt(drawn)}㎡</b></td></tr>
+          <tr><td>토지대장 면적 합계(조서 ${fmt(nL)}필지${partial ? `, 걸친 필지 ${partial}개는 편입면적` : ''}) <span class="note">← 적용 면적</span></td><td style="text-align:right"><b>${led > 0 ? fmt(led) + '㎡' : '조회 전'}</b></td></tr>
+          ${led > 0 ? `<tr><td>차이</td><td style="text-align:right">${diff >= 0 ? '+' : '−'}${fmt(Math.abs(diff))}㎡ (${dPct.toFixed(1)}%)</td></tr>` : ''}
+        </table>
+        ${led > 0 ? `<p class="note" style="margin:0 0 8px">둘 다 맞는 값이고 재는 방법이 다릅니다. 도형 면적은 연속지적도(도면) 선으로 잰 넓이이고, 대장 면적은 토지대장에 등록된 면적의 합입니다. 연속지적도는 측량 성과가 아니어서 보통 수십~수백㎡ 어긋나며(지적 불부합), 사업성·조서·동의율은 <b>토지대장 합계</b>를 씁니다. 정비구역 지정 면적은 지형도면 고시 때 측량한 값으로 정해집니다.${dPct >= 3 ? ' <b class="warn">차이가 3% 이상입니다 — 빠지거나 남은 필지가 없는지 [필지·조서] 탭에서 확인하세요.</b>' : ''}</p>` : ''}`;
+      const sig = this.zoneSig();
+      const done = S.area.confirmedSig && S.area.confirmedSig === sig;
+      const holes = this.zoneHoles();
+      let act;
+      if (MapView.picking) {
+        act = `<button class="btn small on" id="btnAddrAdd">필지 추가·빼기 끝내기</button> <span class="note">지도에서 더하거나 뺄 필지를 누르세요</span>`;
+      } else if (done) {
+        act = `<p style="margin:0 0 6px"><b class="good">✓ 구역 지정 완료</b> <span class="note">${esc(S.area.confirmedAt || '')} · 필지 ${fmt(nL)}개</span></p>
+          <button class="btn small primary" id="btnZoneNext">다음: 빠른 사업성 →</button> <button class="btn small" id="btnZoneReopen">필지 다시 고치기</button>`;
+      } else {
+        act = `<p style="margin:0 0 6px"><b>더 넣을 필지가 있나요?</b></p>
+          ${holes ? `<p class="warn" style="margin:0 0 6px">구역 안에 빠진 빈칸이 ${holes}곳 있습니다 — 갇힌 필지가 아닌지 지도에서 확인하세요.</p>` : ''}
+          <button class="btn small" id="btnAddrAdd">네, 필지 더 넣기</button>
+          <button class="btn small primary" id="btnZoneDone">아니요, 구역 지정 완료</button>`;
+      }
+      box.innerHTML = `<div style="border:1px solid #c9d3dc;border-radius:8px;padding:8px 12px;margin-bottom:12px;background:#f7f9fb">${areaLine}${act}</div>`;
+      const on = (id, fn) => { const b = $('#' + id); if (b) b.onclick = fn; };
+      on('btnAddrAdd', () => { const pz = $('#pickZone'); if (pz) pz.checked = true; MapView.setPicking(!MapView.picking); this.refresh(); });
+      on('btnZoneDone', () => {
+        if (holes && !confirm(`구역 안에 빈칸이 ${holes}곳 있습니다. 그대로 구역 지정을 마칠까요?`)) return;
+        S.area.confirmedSig = sig; S.area.confirmedAt = new Date().toLocaleString('sv-SE').slice(0, 16); App.persist(); this.refresh();
+      });
+      on('btnZoneReopen', () => { S.area.confirmedSig = ''; App.persist(); MapView.setPicking(true); this.refresh(); });
+      on('btnZoneNext', () => App.go('quick'));
+    },
+    // 구역계가 바뀌었는지 알아보는 표시(면적·꼭짓점 수) — 바뀌면 '구역 지정 완료'가 풀림
+    zoneSig() {
+      const g = S.area.geojson; if (!g) return '';
+      const geom = g.type === 'Feature' ? g.geometry : g;
+      const n = JSON.stringify(geom.coordinates).split('],[').length;
+      return `${Math.round(num(S.area.drawnArea))}:${n}:${S.lands.length}`;
+    },
+    // 구역 다각형 안의 구멍(빠진 빈칸) 수
+    zoneHoles() {
+      const g = S.area.geojson; if (!g) return 0;
+      const geom = g.type === 'Feature' ? g.geometry : g;
+      const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.type === 'MultiPolygon' ? geom.coordinates : [];
+      return polys.reduce((a, p) => a + Math.max(0, p.length - 1), 0);
     },
     // 구역이 없을 때 대표 지번 필지를 지도에 빨간 선으로 보여 줌
     async repMark(pp) {
@@ -239,7 +282,7 @@ const Tabs = {
       $('#ledgerArea').textContent = S.lands.length ? `${fmt(Calc.landTotal(S), 1)}㎡` : '(조서 없음)';
       this.areaDiff();
       const site = Calc.siteArea(S);
-      $('#siteArea').innerHTML = `${fmt(site)}㎡ <em>${fmt(site / PY)}평</em>`;
+      $('#siteArea').innerHTML = `${fmt(site)}㎡ <em>${fmt(site / PY)}평</em><br><em style="font-size:12px;font-weight:400">${esc(modeName)}</em>`;
       $('#pickBox').hidden = !VWorld.enabled;
       $('#vworldOff').hidden = VWorld.enabled;
       refreshDocButtons();
