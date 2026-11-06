@@ -450,7 +450,7 @@
   let SW = null; const SWCB = {};
   function simpleWorker() {
     if (SW) return SW;
-    SW = new Worker('simple-worker.js?v=10');
+    SW = new Worker('simple-worker.js?v=11');
     SW.onmessage = e => { const f = SWCB[e.data.id]; delete SWCB[e.data.id]; if (f) f(e.data); };
     SW.onerror = ev => { Object.values(SWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(SWCB).forEach(k => delete SWCB[k]); SW = null; };
     return SW;
@@ -519,7 +519,7 @@
   let PW = null; const PWCB = {};
   async function runDeep(I) {
     msg('심화 배치 계산 중… 골격·구획·방향·높이·동 형태를 바꿔 가며 반복 탐색합니다(기본형 후보 포함, 탐색 90초 + 기본형 계산 — 보통 2~3분). 이 창을 닫지 마세요.');
-    if (!PW) { PW = new Worker('plan-worker.js?v=11'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
+    if (!PW) { PW = new Worker('plan-worker.js?v=12'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
     const id = Date.now() + Math.random();
     const res = await new Promise(ok => { PWCB[id] = ok; PW.postMessage({ id, site: I.site, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }) }); });
     if (!res.r || !res.r.variants.length) throw new Error(res.err || '심화 배치 안을 만들지 못했습니다');
@@ -576,6 +576,13 @@
     if (el.dataset && el.dataset.imp !== undefined && IMP) { const r = IMP.rows[+el.dataset.imp], k = el.dataset.k; r[k] = k === 'use' ? el.checked : (k === 'form' || k === 't') ? el.value : +el.value; }
   });
   document.addEventListener('click', e => { if (e.target && e.target.id === 'impRun') runImported(); });
+  // 사례 보정(2026-11-06): 실제 정비계획 대조로 맞춘 동 간격 — arch.json 가정.practice_calib
+  document.addEventListener('click', e => {
+    if (!e.target || e.target.id !== 'calibBtn') return; const P = C.가정.practice_calib; if (!P) return;
+    const set = (id, v) => { const el = $('#' + id); if (el) { el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); } };
+    set('p_spacing', P.spacing); set('p_sideGap', P.sideGap_m); set('p_corner', P.corner);
+    msg(`사례 보정 값으로 바꿨습니다: 앞뒤 ${P.spacing}배 · 옆 ${P.sideGap_m}m · 모서리 최소 10m. ${P.주의}`);
+  });
   function runImported() {
     if (!IMP) return;
     const I = buildInput(), As = I.opt.assume, H = f => f * As.floorHeight_m + As.groundExtra_m, sup = t => (+C.평면[t].공급 > 0 ? +C.평면[t].공급 : C.평면[t].전용 * As.supplyFactor);

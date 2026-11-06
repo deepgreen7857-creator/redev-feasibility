@@ -266,11 +266,12 @@
       wallsW(b).filter(w => w.win && w.n[1] < -0.3).forEach(w => { const L = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]), k = Math.max(1, Math.round(L / 6));
         for (let i = 0; i < k; i++) { const t = (i + 0.5) / k; pts.push([w.a[0] + (w.b[0] - w.a[0]) * t + w.n[0], w.a[1] + (w.b[1] - w.a[1]) * t + w.n[1]]); } });
       if (!pts.length) return;
-      const r = G.sunHours(blds.filter(o => o !== b), Hf, lat, pts, tol), bad = r.filter(x => !x.ok).length;
+      const z = Math.max(0, ((+opt.provisoFloor || 1) - 1) * (+opt.fh || 2.9)), others = blds.filter(o => o !== b).map(o => Object.assign({}, o, { h: Math.max(0, (o.h != null ? o.h : Hf(o.floors)) - z) }));
+      const r = G.sunHours(others, Hf, lat, pts, tol), bad = r.filter(x => !x.ok).length;
       per.push({ id: b.id, n: pts.length, bad, minCont: Math.min(...r.map(x => x.cont)) });
     });
     const bad = per.filter(x => x.bad);
-    return { ok: !bad.length, per, bad, 근거: '건축법 시행령 제86조③2호 단서(동지 9~15시 연속 2시간 이상)', 메모: '1층 남쪽 창 앞 지점 기준 개략 — 정밀 일조 분석(세대별)으로 입증 필요' };
+    return { ok: !bad.length, per, bad, 근거: '건축법 시행령 제86조③2호 단서(동지 9~15시 연속 2시간 이상)', floor: +opt.provisoFloor || 1, 메모: (+opt.provisoFloor > 1 ? opt.provisoFloor + '층(그 아래 필로티·비주거 가정)' : '1층') + ' 남쪽 창 앞 지점 기준 개략 — 정밀 일조 분석(세대별)으로 입증 필요' };
   }
 
   /* ---------- 치수선(2026-11-05, 사용자 요구 '인동거리·일조권·통경축은 치수선을 그대로 표시하면 바로 보일 것') ----------
