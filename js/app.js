@@ -241,6 +241,25 @@ const Tabs = {
       on('btnZoneReopen', () => { S.area.confirmedSig = ''; App.persist(); MapView.setPicking(true); this.refresh(); });
       on('btnZoneNext', () => App.go('quick'));
     },
+    // 이미 불러온 필지·건축물을 이 탭에서 바로 보이게(2026-11-06) — 전체 조서는 4단계 조서·요건
+    loadedBox() {
+      const box = $('#loadedBox'); if (!box) return;
+      const L = S.lands.filter(l => !l.sample), B = S.buildings.filter(b => !b.sample);
+      const btn = $('#btnImportArea'); if (btn) btn.textContent = L.length ? '구역 안 필지·건축물 다시 불러오기' : '구역 안 필지·건축물 불러오기';
+      if (!L.length && !B.length) { box.innerHTML = ''; return; }
+      const led = L.reduce((a, l) => a + num(l.area), 0), fa = B.reduce((a, b) => a + num(b.floorArea), 0);
+      const rows = L.slice(0, 30).map(l => {
+        const r = l.inRatio == null ? 1 : num(l.inRatio), la = num(l.ledgerArea) || num(l.area);
+        return `<tr><td>${esc(l.jibun || '')}</td><td>${esc(l.ledgerJimok || l.jimok || '')}</td><td style="text-align:right">${fmt(la, 1)}</td><td style="text-align:right">${r < 0.999 ? fmt(num(l.area), 1) + ` <span class="note">(${fmt(r * 100, 1)}%)</span>` : fmt(num(l.area), 1)}</td></tr>`;
+      }).join('');
+      box.innerHTML = `<div style="border:1px solid #c9d3dc;border-radius:8px;padding:8px 12px;margin:8px 0;background:#f7f9fb">
+        <p style="margin:0 0 6px"><b>이미 불러온 자료</b> — 필지 ${fmt(L.length)}개 · 토지대장 면적 합계 <b>${fmt(led, 1)}㎡</b>(위 적용 면적) · 건축물 ${fmt(B.length)}동 · 연면적 ${fmt(fa)}㎡</p>
+        <div style="max-height:220px;overflow:auto"><table style="width:100%;font-size:13px;border-collapse:collapse">
+          <thead><tr><th style="text-align:left">지번</th><th style="text-align:left">지목</th><th style="text-align:right">대장 면적㎡</th><th style="text-align:right">편입 면적㎡</th></tr></thead>
+          <tbody>${rows}</tbody></table>${L.length > 30 ? `<p class="note">외 ${L.length - 30}필지</p>` : ''}</div>
+        <button class="btn small" id="btnLoadedGo" style="margin-top:6px">토지·건축물 조서 전체 보기 (4단계 조서·요건) →</button></div>`;
+      $('#btnLoadedGo').onclick = () => App.go('survey');
+    },
     // 구역계가 바뀌었는지 알아보는 표시(면적·꼭짓점 수) — 바뀌면 '구역 지정 완료'가 풀림
     zoneSig() {
       const g = S.area.geojson; if (!g) return '';
@@ -295,6 +314,7 @@ const Tabs = {
       $('#btnParcelsToArea').textContent = `선택 필지 ${sel.length}개 → 구역계로 합치기`;
       $('#btnParcelsToArea').disabled = !sel.length;
       $('#showParcels').checked = !!S.area.showParcels;
+      this.loadedBox();
       this.summary();
     },
     // 토지대장 합계(조서 편입면적)와 연속지적 도형(그린 구역) 면적 차이
