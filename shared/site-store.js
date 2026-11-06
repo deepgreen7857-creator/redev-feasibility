@@ -71,6 +71,7 @@
     const site = this.fromUrban(key); if (!site || !plan) return null;
     const v = site.v = site.v || {}, n = x => (x === undefined || x === null || isNaN(+x)) ? '' : String(Math.round(+x * 10) / 10);
     const bt = plan.byType || {};
+    if (site.profile && site.profile.zoning) v.zoning = site.profile.zoning;   // 정비계획 값으로 넘길 때는 계획 용도지역으로 덮어씀(2026-11-06)
     v.units = n(plan.units); v.far = n(plan.far); v.bcr = n(plan.bcr); v.floors = n(plan.floors);
     v.aptGFA = n(plan.gfa); if (plan.retailGFA !== undefined) v.retailGFA = n(plan.retailGFA);
     if (Object.keys(bt).length) {
