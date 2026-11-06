@@ -405,14 +405,17 @@ function isNewSite(id, geom) {
   if (!olds.length) return false;
   return !olds.some(o => { try { const x = turf.intersect(o, g); return !!x && turf.area(x) > 1; } catch (e) { return true; } });
 }
+function resetPlanState() {
+  Object.keys(P).forEach(k => delete P[k]); Object.assign(P, JSON.parse(JSON.stringify(P_DEFAULT))); P.v54road = true; saveP();
+  ['jbs-urban-infra-v1', 'jbs-urban-out'].forEach(k => { try { localStorage.removeItem(k); } catch (e) { /* 무시 */ } });
+}
 async function resetForNewSite(id) {
   const label = Z.title || Object.keys(Z.zones).filter(k => Z.zones[k] && Z.zones[k].geojson).join('·') + '안';
   if (window.JbsWork) { try { await JbsWork.backup(`정비계획 위치 변경 — 이전 사업(${label}) 초기화 전 자동 백업`); } catch (e) { /* 백업 실패해도 진행 */ } }
   Object.keys(Z.zones).forEach(k => delete Z.zones[k]);
   Object.keys(HIST).forEach(k => delete HIST[k]);
   Z.title = ''; Z.count = 1;
-  Object.keys(P).forEach(k => delete P[k]); Object.assign(P, JSON.parse(JSON.stringify(P_DEFAULT))); P.v54road = true; saveP();
-  ['jbs-urban-infra-v1', 'jbs-urban-out'].forEach(k => { try { localStorage.removeItem(k); } catch (e) { /* 무시 */ } });
+  resetPlanState();
   saveZ(); syncTitle();
   toast(`위치가 바뀌어 이전 사업(${label}) 검토를 초기화했습니다. 자동 백업은 [작업 저장·불러오기]에 있습니다`);
 }
@@ -4036,7 +4039,7 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
         keep.forEach((z, i) => { Z.zones[ZONE_IDS[i]] = z; });
         Object.keys(HIST).forEach(k => delete HIST[k]);
         Z.count = Math.max(1, keep.length);
-        if (!keep.length) Z.title = '';
+        if (!keep.length) { Z.title = ''; resetPlanState(); }   // 사업성 검토에서 다른 위치를 가져오면 계획 가정도 처음부터
         saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); S.region = D.keys[0];
         syncRegionChips(); renderSourceBar();
         toast(`다른 사업 구역(${other.length}개 안)은 자동 백업한 뒤 비웠습니다. [작업 저장·불러오기]에서 되돌릴 수 있습니다`);
