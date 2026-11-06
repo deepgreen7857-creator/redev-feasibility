@@ -598,6 +598,32 @@
     msg(`올린 배치도 ${blds.length}개동을 같은 기준으로 검사했습니다. 배치도 아래 '위험요소 검토'와 치수선에서 법정 거리·일조를 확인하세요(세대·연면적은 표에 넣은 층당 세대 기준).`);
     $('#out').scrollIntoView({ behavior: 'smooth' });
   }
+  // 일조 시뮬레이터(2026-11-06, 사용자 '어떻게 되는지 시뮬레이션이 되나? 그래야 내가 스케치를 해주지') — 지금 대안을 브라우저 안에서만 넘김(저장소·서버로 안 감)
+  function openSunSim() {
+    if (!alts.length) { msg('먼저 배치안을 만드세요.', true); return; }
+    const I = buildInput(), A = alts[cur], As = I.opt.assume;
+    const plain = b => ({ id: b.id, dname: b.dname || b.vname || '', form: b.form, floors: b.floors, n: b.n, t: b.t, mixT: b.mixT || { [b.t]: b.n }, poly: b.poly, parts: b.parts || [b.poly], cores: b.cores || [], units: b.units || [], walls: b.walls || [], angle: b.angle || 0 });
+    const data = { name: (site && site.name) || '', lat: pr ? pr.lat0 : 37.46, lot: I.lot, site: { pts: I.site.pts, setbacks: I.site.setbacks }, exclude: (I.site.exclude || []).map(q => q.pts || q).filter(q => Array.isArray(q) && q.length > 2),
+      assume: { floorHeight_m: As.floorHeight_m, groundExtra_m: As.groundExtra_m, supplyFactor: As.supplyFactor }, units: C.평면,
+      supply: Object.fromEntries(Object.keys(C.평면).filter(t => C.평면[t] && C.평면[t].전용).map(t => [t, +C.평면[t].공급 > 0 ? +C.평면[t].공급 : C.평면[t].전용 * As.supplyFactor])), start: A.buildings.map(plain) };
+    try { localStorage.setItem('jbs-sunsim-cache', JSON.stringify(data)); } catch (e) { msg('브라우저 저장 공간이 모자라 시뮬레이터로 넘기지 못했습니다.', true); return; }
+    window.open('sunsim.html', '_blank');
+  }
+  function takeSunSim() {
+    let r = null; try { r = JSON.parse(localStorage.getItem('jbs-sunsim-back-cache') || 'null'); } catch (e) { r = null; }
+    if (!r || !r.buildings || !r.buildings.length) { msg('시뮬레이터에서 [이 배치를 건축계획 화면으로]를 먼저 누르세요.', true); return; }
+    const I = buildInput(), As = I.opt.assume, H = f => f * As.floorHeight_m + As.groundExtra_m, sup = t => (C.평면[t] ? (+C.평면[t].공급 > 0 ? +C.평면[t].공급 : C.평면[t].전용 * As.supplyFactor) : (+t || 84) * As.supplyFactor);
+    const blds = r.buildings.map((b, i) => { const mt = b.mixT || {}, t = Object.keys(mt).sort((x, y) => mt[y] - mt[x])[0] || '84', th = (b.angle || 0) * Math.PI / 180, loc = b.poly.map(p => G.rot(p, -th)), xs = loc.map(p => p[0]), ys = loc.map(p => p[1]);
+      return Object.assign({}, b, { id: i + 1, t, L: Math.max(...xs) - Math.min(...xs), D: Math.max(...ys) - Math.min(...ys), center: b.poly.reduce((a, p) => [a[0] + p[0] / b.poly.length, a[1] + p[1] / b.poly.length], [0, 0]), cap: b.floors, divs: [], vname: b.dname || '시뮬레이터' }); });
+    const byType = {}; blds.forEach(b => Object.keys(b.mixT).forEach(t => { byType[t] = (byType[t] || 0) + b.mixT[t] * b.floors; }));
+    const gfa = blds.reduce((s, b) => s + Object.keys(b.mixT).reduce((c, t) => c + b.mixT[t] * b.floors * sup(t), 0), 0), ba = blds.reduce((s, b) => s + Math.abs(G.area(b.poly)), 0), mf = Math.max(...blds.map(b => b.floors));
+    alts = [{ label: '일조 시뮬레이터에서 받은 배치', buildings: blds, units: blds.reduce((s, b) => s + b.n * b.floors, 0), gfa, far: gfa / I.lot * 100, bcr: ba / I.lot * 100, byType, maxFloors: mf, maxHeight: H(mf), H, angle: 0, form: 'mix', target: I.lot * I.opt.far / 100, imported: true }];
+    cur = 0; sunRes = null; v3 = null;
+    $('#out').hidden = false; $('#confirm').disabled = false; if ($('#basicCard')) $('#basicCard').hidden = true;
+    renderAlts(); showView('plan'); drawBuildingsOnMap();
+    msg(`시뮬레이터 배치 ${blds.length}개동을 받았습니다. 위험요소 검토·사업성·[이 안으로 확정]을 그대로 쓸 수 있습니다.`);
+  }
+  document.addEventListener('click', e => { const id = e.target && e.target.id; if (id === 'sunSimBtn') openSunSim(); else if (id === 'sunSimBack') takeSunSim(); });
   function invalidate() { if (alts.length) { msg('조건이 바뀌었습니다. [배치안 만들기]를 다시 누르세요.'); } }
 
   /* ---------- 결과 화면 ---------- */
