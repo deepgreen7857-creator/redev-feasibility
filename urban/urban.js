@@ -747,7 +747,34 @@ const TOWERS = {
   },
 };
 // 지도 화면이면 실제로 놓이는 배치로 동 수·층수를 맞춘 값을 씀(개략 규모·높이·소방 검토·지도가 모두 이 값)
+// 계획 용도지역은 안(구역)마다 따로 — Z.zones[안].planZone(사용자가 고른 값). 없으면 현황 용도지역으로 기본값을 정함
+//  (2026-11-06: 예전엔 P.zone 하나를 모든 구역이 같이 써서, 유원아파트 시험 때 고른 준주거가 학익장미 구역에도 남았음)
+function defaultPlanZone(a) {
+  const za = Object.entries((a && a.zoneArea) || {}).filter(([k]) => k !== '미확인').sort((x, y) => y[1] - x[1]);
+  if (za.length && RULES.far['준주거지역'] && za.every(([k]) => /준주거/.test(k))) return '준주거지역';
+  const top = za.length ? za[0][0] : '';
+  if (/제2종일반주거/.test(top) && RULES.far['제2종일반주거지역']) return '제2종일반주거지역';
+  return '제3종일반주거지역';   // 제3종·제1종·공업·기타 현황은 제3종 가정(공업지역은 용도지역 변경 전제 — 화면에 경고)
+}
+function planZoneStore(a) { return a && a.key && Z.zones[a.key] ? Z.zones[a.key] : null; }
+function industrialNote(a) {
+  const ks = Object.keys((a && a.zoneArea) || {}).filter(k => /공업/.test(k)); if (!ks.length) return '';
+  return `<span class="u warn" style="display:block;margin-top:2px">현황에 ${ks.map(esc).join('·')}이 있습니다 — 계획 용도지역(${esc(P.zone.replace('일반주거지역', ''))})은 용도지역 변경(정비계획 결정 시 주거지역 지정)을 전제로 한 가정입니다. 공업지역 그대로의 용적률은 이 목록에 없습니다.</span>`;
+}
+function syncPlanZone(a) {
+  if (!a || !a.key) return;
+  const st = planZoneStore(a), byKey = P.zoneBy || {};
+  const pick = st ? st.planZone : byKey[a.key];
+  const want = pick && RULES.far[pick] ? pick : defaultPlanZone(a);
+  if (P.zone !== want) { P.zone = want; saveP(); }
+}
+function setPlanZone(a, v) {
+  const st = planZoneStore(a);
+  if (st) { st.planZone = v; saveZ(); } else { P.zoneBy = Object.assign({}, P.zoneBy, { [a.key]: v }); }
+  P.zone = v; saveP();
+}
 function plan(a) {
+  syncPlanZone(a);
   const pl = planRaw(a);
   if (!D.map) return pl;
   try { return TOWERS.fit(a, pl); } catch (er) { console.warn('개략 배치 계산 실패', er); return pl; }
@@ -2795,7 +2822,7 @@ function renderPlan(a) {
   side.innerHTML = `<h2>${regName()} 정비계획 (토지이용·밀도)</h2>
   ${D.map ? infraSection(a, pl) : ''}
   <div class="form">
-    <div class="field"><label for="zone">용도지역(계획)</label><select id="zone">${Object.keys(RULES.far).map(k => `<option>${k}</option>`).join('')}</select><span class="u">현황: ${Object.entries(a.zoneArea).map(([z, v]) => esc(z.replace('일반주거지역', '')) + ' ' + fmt(v) + '㎡').join(', ')}</span></div>
+    <div class="field"><label for="zone">용도지역(계획)</label><select id="zone">${Object.keys(RULES.far).map(k => `<option>${k}</option>`).join('')}</select><span class="u">현황: ${Object.entries(a.zoneArea).map(([z, v]) => esc(z.replace('일반주거지역', '')) + ' ' + fmt(v) + '㎡').join(', ')}</span>${industrialNote(a)}</div>
     ${prop ? '' : field('infraRatio', '정비기반시설 비율(도로·공원·학교 등)', P.infraRatio, D.map ? '구역 면적 대비 % · 직접 입력' : '구역 면적 대비 %, 예시 가정', 'min=0 max=60 step=1')}
     <div class="field"><label for="farMode">적용 용적률</label><select id="farMode"><option value="base">기준용적률 ${far.base}%</option><option value="allowed">허용용적률 ${far.allowed}%</option><option value="max">상한용적률 ${far.max}%</option>${pl.farCalc ? `<option value="calc">산식(공공시설 제공) ${pl.farCalc.v}%</option>` : ''}<option value="custom">직접 입력</option></select><span class="u">2030 기본계획 · ${pressBadge}</span></div>
     ${P.farMode === 'custom' ? field('farCustom', '계획 용적률', P.farCustom, `% (상한 ${far.max}% 이내로 제한)`) : ''}
@@ -2817,9 +2844,7 @@ function renderPlan(a) {
   ${D.map ? todoSection(a, pl) : ''}
   <p class="note">허용용적률은 인센티브 항목을, 상한용적률은 공공시설 부지 제공 등 공공기여를 전제로 합니다. 이 화면은 인센티브 배점과 공공기여 산식을 아직 계산하지 않고 단계만 고릅니다.</p>`;
   const z = document.getElementById('zone');
-  // 현황이 모두 준주거면(사용자가 직접 고르기 전까지) 계획 용도지역도 준주거로
-  if (!P.zoneUser && RULES.far['준주거지역'] && !/준주거/.test(P.zone) && a.zoneArea && Object.keys(a.zoneArea).length && Object.keys(a.zoneArea).every(k => /준주거/.test(k))) { P.zone = '준주거지역'; saveP(); setTimeout(render, 0); }
-  z.value = P.zone; z.onchange = () => { P.zone = z.value; P.zoneUser = true; saveP(); render(); };
+  z.value = P.zone; z.onchange = () => { setPlanZone(a, z.value); render(); };
   const f = document.getElementById('farMode'); f.value = P.farMode; f.onchange = () => { P.farMode = f.value; saveP(); render(); };
   bindNum(['infraRatio', 'farCustom', 'sideRoadW', 'schoolArea', 'otherInfra', 'greenInfra', 'pubBldg', 'valMult', 'roadWork', 'parkWork']);
   bindInfra(a);
