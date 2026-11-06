@@ -211,11 +211,11 @@ const Tabs = {
       const partial = S.lands.filter(l => l.inRatio != null && num(l.inRatio) < 0.999).length;
       const areaLine = `<p style="margin:0 0 6px">대표 지번 <b>${label}</b></p>
         <table style="width:100%;font-size:13px;border-collapse:collapse;margin:0 0 6px">
-          <tr><td>구역계 도형 면적(연속지적도로 잰 값)</td><td style="text-align:right"><b>${fmt(drawn)}㎡</b></td></tr>
+          <tr><td>구역계 도형 면적(선택한 필지를 합한 연속지적도상 총면적)</td><td style="text-align:right"><b>${fmt(drawn)}㎡</b></td></tr>
           <tr><td>토지대장 면적 합계(조서 ${fmt(nL)}필지${partial ? `, 걸친 필지 ${partial}개는 편입면적` : ''}) <span class="note">← 적용 면적</span></td><td style="text-align:right"><b>${led > 0 ? fmt(led) + '㎡' : '조회 전'}</b></td></tr>
           ${led > 0 ? `<tr><td>차이</td><td style="text-align:right">${diff >= 0 ? '+' : '−'}${fmt(Math.abs(diff))}㎡ (${dPct.toFixed(1)}%)</td></tr>` : ''}
         </table>
-        ${led > 0 ? `<p class="note" style="margin:0 0 8px">둘 다 맞는 값이고 재는 방법이 다릅니다. 도형 면적은 연속지적도(도면) 선으로 잰 넓이이고, 대장 면적은 토지대장에 등록된 면적의 합입니다. 연속지적도는 측량 성과가 아니어서 보통 수십~수백㎡ 어긋나며(지적 불부합), 사업성·조서·동의율은 <b>토지대장 합계</b>를 씁니다. 정비구역 지정 면적은 지형도면 고시 때 측량한 값으로 정해집니다.${dPct >= 3 ? ' <b class="warn">차이가 3% 이상입니다 — 빠지거나 남은 필지가 없는지 [필지·조서] 탭에서 확인하세요.</b>' : ''}</p>` : ''}`;
+        ${led > 0 ? `<p class="note" style="margin:0 0 8px"><b>구역계 도형 면적</b>은 선택한 필지를 합한 연속지적도상 총면적이고, <b>토지대장 면적 합계</b>는 대표 지번을 포함한 토지조서 필지들의 토지대장 면적을 모두 더한 면적입니다. 두 값은 같을 수도 있지만 다를 수도 있습니다(연속지적도는 측량 성과가 아니라 대장 면적과 어긋나는 경우가 많음 — 지적 불부합). 사업성·조서·동의율에는 토지대장 면적 합계를 씁니다.${dPct >= 3 ? ' <b class="warn">차이가 3% 이상입니다 — 빠지거나 남은 필지가 없는지 [필지·조서] 탭에서 확인하세요.</b>' : ''}</p>` : ''}`;
       const sig = this.zoneSig();
       const done = S.area.confirmedSig && S.area.confirmedSig === sig;
       const holes = this.zoneHoles();
