@@ -23,7 +23,7 @@ const ptsOf=b=>{const parts=b.parts,inA=(x,y)=>parts.some(q=>G.inside(x,y,q)),ou
 
   b.units.forEach((rs,k)=>{let best=null;rs.forEach(q=>q.forEach((p,i)=>{const r=q[(i+1)%q.length],dx=r[0]-p[0],dy=r[1]-p[1],L=Math.hypot(dx,dy);if(L<2)return;let n=[dy/L,-dx/L];const m=[(p[0]+r[0])/2,(p[1]+r[1])/2];const A1=inA(m[0]+n[0]*.4,m[1]+n[1]*.4),A2=inA(m[0]-n[0]*.4,m[1]-n[1]*.4);if(A1&&A2)return;if(A1)n=[-n[0],-n[1]];if(!best||n[1]<best.n[1])best={m,n};}));
     if(best)out.push({b,k,p:[best.m[0]+best.n[0]*.6,best.m[1]+best.n[1]*.6]});});return out;};
-const shadows=(t,z)=>{const s=G.sun(LAT,t);return B.flatMap(b=>b.parts.map(q=>G.shadow(q,Math.max(0,Hf(b.floors)-z),s))).filter(Boolean);};
+const shadows=(t,z)=>{const s=G.sun(LAT,t);return B.flatMap(b=>b.parts.flatMap(q=>G.shadowParts(q,Math.max(0,Hf(b.floors)-z),s))).filter(Boolean);};
 const litAt=(pt,S)=>!S.some(q=>G.inside(pt[0],pt[1],q));
 function contHours(pts,z){const S=[];for(let t=9;t<15-1e-9;t+=1/6)S.push(shadows(t,z));return pts.map(q=>{let run=0,best=0;S.forEach(s=>{if(litAt(q.p,s)){run+=1/6;best=Math.max(best,run);}else run=0;});return best;});}
 // 검사: 대지 밖·공원 겹침, 동 사이 10m 미만

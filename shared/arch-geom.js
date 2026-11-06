@@ -761,11 +761,21 @@
     const dx = len * Math.sin(s.az), dy = len * Math.cos(s.az);
     return hull(poly.concat(poly.map(p => [p[0] + dx, p[1] + dy])));
   }
+  // 오목한 바닥(꺾인 동 외곽선 등)의 정확한 그림자 조각들(2026-11-07 독립 광선 검산에서 발견: 볼록 껍질은 꺾인 안쪽까지 그늘로 칠함)
+  //   그림자 = 바닥 ∪ 옮긴 바닥 ∪ 변마다 쓸고 간 사각형 — 볼록이면 껍질 하나 그대로
+  function isConvex(q) { const n = q.length; let sg = 0; for (let i = 0; i < n; i++) { const a = q[i], b = q[(i + 1) % n], c = q[(i + 2) % n], cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]); if (Math.abs(cr) < 1e-9) continue; const g = cr > 0 ? 1 : -1; if (sg && g !== sg) return false; sg = g; } return true; }
+  function shadowParts(poly, h, s) {
+    if (s.alt <= 0) return [];
+    if (poly.length <= 4 || isConvex(poly)) { const one = shadow(poly, h, s); return one ? [one] : []; }
+    const len = h / Math.tan(s.alt), dx = len * Math.sin(s.az), dy = len * Math.cos(s.az), mv = poly.map(p => [p[0] + dx, p[1] + dy]), out = [poly, mv];
+    poly.forEach((p, i) => { const r = poly[(i + 1) % poly.length]; out.push([p, r, mv[(i + 1) % poly.length], mv[i]]); });
+    return out;
+  }
   // 격자 점별 동지 일조 시간(합계 08~16, 최대 연속 09~15), 10분 간격
   function sunHours(blds, H, latDeg, pts, tol) {
     const times = []; for (let t = 8; t <= 16 + 1e-9; t += 1 / 6) times.push(t);
     // 시각별 그림자 + 외접사각형(점이 사각형 밖이면 다각형 검사를 건너뜀 — 주변 건물이 수천 동이어도 빠르게)
-    const shadowsAt = times.map(t => { const s = sun(latDeg, t); return blds.flatMap(b => (b.parts || [b.poly]).map(q => shadow(q, b.h != null ? b.h : H(b.floors), s))).filter(Boolean).map(sh => { const xs = sh.map(p => p[0]), ys = sh.map(p => p[1]); return { sh, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; }); });
+    const shadowsAt = times.map(t => { const s = sun(latDeg, t); return blds.flatMap(b => (b.parts || [b.poly]).flatMap(q => shadowParts(q, b.h != null ? b.h : H(b.floors), s))).filter(Boolean).map(sh => { const xs = sh.map(p => p[0]), ys = sh.map(p => p[1]); return { sh, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; }); });
     return pts.map(p => {
       let total = 0, run = 0, best = 0;
       times.forEach((t, k) => {
@@ -777,6 +787,6 @@
     });
   }
 
-  const api = { FORM_NAME, caseOf: id => caseOf(id), modulesFor, capper, wallsOf, wallsTo, northDist, southDist, projector, rot, area, ccw, openRing, inside, segDist, dirDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
+  const api = { FORM_NAME, caseOf: id => caseOf(id), modulesFor, capper, wallsOf, wallsTo, northDist, southDist, projector, rot, area, ccw, openRing, inside, segDist, dirDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, shadowParts, isConvex, hull, sunHours };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.ArchGeom = api;
 })(typeof window !== 'undefined' ? window : globalThis);
