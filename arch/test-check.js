@@ -71,6 +71,13 @@ t('모서리 근접(실무 기준, 가정): 비껴 놓인 30층 두 동 — 끄�
   // 치수선에도 '모서리' 선
   assert.ok(K.dims(site, mk(5.7), Object.assign({}, opt, { corner: { mode: 'rec' } })).some(d => d.kind === 'corner' && d.판정 === '위반'));
 });
+t('세대별 일조(단서): 혼자 놓은 판상은 모두 통과, 바로 북쪽에 붙인 판상은 저층 미달', () => {
+  const A2 = Object.assign({}, opt, { lat: 37.46 });
+  const one = [{ id: 1, poly: box(50, 40, 40, 12), floors: 20, form: 'slab', angle: 0, n: 4 }];
+  const r1 = K.unitSun(site, one, A2); assert.strictEqual(r1.lost, 0, JSON.stringify(r1.per)); assert.strictEqual(r1.total, 80);
+  const two = one.concat([{ id: 2, poly: box(50, 40 + 12 + 20, 40, 12), floors: 20, form: 'slab', angle: 0, n: 4 }]);
+  const r2 = K.unitSun(site, two, A2); assert.ok(r2.per[2].lost > 0 && r2.per[1].lost === 0, JSON.stringify(r2.per));
+});
 console.log(`\n${n}개 모두 통과`);
 const v = K.verify(site, blds, opt);
 console.log(`자동 배치 ${blds.length}개동 검사: 규칙 위반 ${v.rules.length} · 위험 ${v.risks.length} (${v.risks.map(r => r.등급 + ' ' + r.항목).join(', ') || '없음'}) · 선호 점수 ${v.score.toFixed(2)}`);

@@ -20,10 +20,10 @@
     const A = C.가정; let U = {}; try { U = JSON.parse(localStorage.getItem('jbs-urban-plan') || '{}'); } catch (e) { U = {}; }
     const v = site.v || {};
     return {
-      siteArea: v.siteArea || '', infra: U.infraRatio ?? 25, far: v.far || U.farCustom || 250, maxFloors: A.maxFloors,
+      siteArea: v.siteArea || '', infra: U.infraRatio ?? 25, far: v.far || U.farCustom || 250, maxFloors: (+v.floors > 0 ? +v.floors : A.maxFloors),
       angleMode: 'auto', angle: 0, form: 'slab',
       spacing: crit('spacing_ratio').값, sideGap: A.sideGap_m, roadSb: A.roadSetback_m, artSb: A.arterialSetback_m, bndSb: A.boundarySetback_m,
-      lowCap: 15, lowDist: 30, parkPer: A.parkPerUnitPlan ?? 1.2, parkW: A.parkWidth_m ?? 20, sunBase: 'north', corner: (A.corner && A.corner.mode) || 'rec', minFloors: A.minFloors, ...defaultMix(), fh: A.floorHeight_m, sf: U.supplyFactor ?? A.supplyFactor,
+      lowCap: 15, lowDist: 30, parkPer: A.parkPerUnitPlan ?? 1.2, parkW: A.parkWidth_m ?? 20, sunBase: 'north', corner: (A.corner && A.corner.mode) || 'min10', minFloors: A.minFloors, ...defaultMix(), fh: A.floorHeight_m, sf: U.supplyFactor ?? A.supplyFactor,
     };
   }
   const TYPES = () => Object.keys(C.평면).filter(k => /^\d+$/.test(k));
@@ -364,13 +364,16 @@
   }
   /* ---------- 배치 계산 ---------- */
   function buildInput() {
-    const p = P(), A = Object.assign({}, C.가정, { floorHeight_m: +p.fh || C.가정.floorHeight_m, sideGap_m: +p.sideGap, supplyFactor: +p.sf, minFloors: +p.minFloors, maxFloors: +p.maxFloors, corner: Object.assign({}, C.가정.corner || {}, { mode: p.corner || 'rec' }) });
+    const p = P(), A = Object.assign({}, C.가정, { floorHeight_m: +p.fh || C.가정.floorHeight_m, sideGap_m: +p.sideGap, supplyFactor: +p.sf, minFloors: +p.minFloors, maxFloors: +p.maxFloors, corner: Object.assign({}, C.가정.corner || {}, { mode: p.corner || 'min10' }) });
     const sb = tags.map(t => t === 'road' ? +p.roadSb : t === 'arterial' ? +p.artSb : +p.bndSb);
     const siteA = num(p.siteArea) || G.area(pts);
     const exA = exclude.reduce((s, ex) => { try { const g = turf.intersect(turf.polygon([ex.concat([ex[0]]).map(pr.back)]), site.geojson.geometry ? site.geojson : turf.feature(site.geojson)); return s + (g ? turf.area(g) : 0); } catch (e) { return s + Math.abs(G.area(ex)); } }, 0);
     const lot = exclude.length ? siteA - exA : siteA * (1 - (+p.infra || 0) / 100);
+    // 정북 일조(건축법 제61조①)는 전용·일반주거지역만 — 구역이 준주거·상업·공업지역뿐이면 '정북 인접대지' 변도 대지경계로 봄(2026-11-06, 용현동 유원아파트 시험에서 확인)
+    const zz = String(((site && site.profile) || {}).zoning || '') + ' ' + String(((site && site.v) || {}).zoning || '');
+    const noSun = /준주거|상업|공업/.test(zz) && !/전용주거|일반주거|제[123]종/.test(zz);
     return {
-      site: { pts, tags, setbacks: sb, exclude },
+      site: { pts, tags: noSun ? tags.map(t => (t === 'north' ? 'boundary' : t)) : tags, setbacks: sb, exclude, noSun },
       opt: { units: C.평면, lib: C.평면_라이브러리, winRatio: winRatio(), edgeW: edgeWidths(), assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'compare' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, parkWidth: +p.parkW || 0, southBase: p.sunBase === 'south', exSetback: +p.bndSb || 0 },
       lot, exA, p,
     };
@@ -447,7 +450,7 @@
   let SW = null; const SWCB = {};
   function simpleWorker() {
     if (SW) return SW;
-    SW = new Worker('simple-worker.js?v=6');
+    SW = new Worker('simple-worker.js?v=12');
     SW.onmessage = e => { const f = SWCB[e.data.id]; delete SWCB[e.data.id]; if (f) f(e.data); };
     SW.onerror = ev => { Object.values(SWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(SWCB).forEach(k => delete SWCB[k]); SW = null; };
     return SW;
@@ -467,7 +470,7 @@
   function cardHtml(card) {
     if (!card) return '';
     const r = card.rows.slice().sort((a, b) => b.units - a.units), w = card.win;
-    return `<details open class="card"><summary><b>기본형 성적표</b> — 같은 모양 동을 일정하게 놓아 본 결과(보완 후). 세대수 1위 ${esc(w.units.name)} · 일조 1위 ${esc(w.sun.name)} · 평형 1위 ${esc(w.mix.name)}</summary>
+    return `<details open class="card"><summary><b>기본형 성적표</b> — 같은 모양 동을 일정하게 놓아 본 결과(보완 후). 세대수 1위 ${esc(w.units.name)} · 용적률 1위 ${esc((w.far || w.units).name)} · 일조 1위 ${esc(w.sun.name)} · 평형 1위 ${esc(w.mix.name)}</summary>
       <table class="tbl"><tr><th>동 타입</th><th>세대</th><th>용적률</th><th>방향</th><th>평형 비율 차이</th><th>일조 부족 동</th><th>정북 일조로 깎인 세대·층</th><th>채광창으로 깎인</th><th>기본형 자투리</th><th>보완</th></tr>
       ${r.map(x => `<tr><td>${esc(x.name)}</td><td>${fmt(x.units)}</td><td>${fmt(x.far, 0)}%</td><td>${x.angle}°</td><td>${x.mixErr.toFixed(2)}</td><td>${x.sunFail}/${x.n}</td><td>${x.cutSun}</td><td>${x.cutWin}</td><td>${x.empty == null ? '-' : x.empty + 'm'}</td><td>${esc(x.steps.join(' + ') || '-')}</td></tr>`).join('')}</table>
       <ul>${card.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
@@ -516,7 +519,7 @@
   let PW = null; const PWCB = {};
   async function runDeep(I) {
     msg('심화 배치 계산 중… 골격·구획·방향·높이·동 형태를 바꿔 가며 반복 탐색합니다(기본형 후보 포함, 탐색 90초 + 기본형 계산 — 보통 2~3분). 이 창을 닫지 마세요.');
-    if (!PW) { PW = new Worker('plan-worker.js?v=7'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
+    if (!PW) { PW = new Worker('plan-worker.js?v=13'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
     const id = Date.now() + Math.random();
     const res = await new Promise(ok => { PWCB[id] = ok; PW.postMessage({ id, site: I.site, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }) }); });
     if (!res.r || !res.r.variants.length) throw new Error(res.err || '심화 배치 안을 만들지 못했습니다');
@@ -573,6 +576,13 @@
     if (el.dataset && el.dataset.imp !== undefined && IMP) { const r = IMP.rows[+el.dataset.imp], k = el.dataset.k; r[k] = k === 'use' ? el.checked : (k === 'form' || k === 't') ? el.value : +el.value; }
   });
   document.addEventListener('click', e => { if (e.target && e.target.id === 'impRun') runImported(); });
+  // 사례 보정(2026-11-06): 실제 정비계획 대조로 맞춘 동 간격 — arch.json 가정.practice_calib
+  document.addEventListener('click', e => {
+    if (!e.target || e.target.id !== 'calibBtn') return; const P = C.가정.practice_calib; if (!P) return;
+    const set = (id, v) => { const el = $('#' + id); if (el) { el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); } };
+    set('p_spacing', P.spacing); set('p_sideGap', P.sideGap_m); set('p_corner', P.corner);
+    msg(`사례 보정 값으로 바꿨습니다: 앞뒤 ${P.spacing}배 · 옆 ${P.sideGap_m}m · 모서리 최소 10m. ${P.주의}`);
+  });
   function runImported() {
     if (!IMP) return;
     const I = buildInput(), As = I.opt.assume, H = f => f * As.floorHeight_m + As.groundExtra_m, sup = t => (+C.평면[t].공급 > 0 ? +C.평면[t].공급 : C.평면[t].전용 * As.supplyFactor);
@@ -616,17 +626,21 @@
     const A = alts[cur]; if (!A || !window.JbsCheck) { box.innerHTML = ''; return; }
     if (!A.__risk) {
       try {
-        const I = buildInput(), opt = Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }), v = JbsCheck.verify(I.site, A.buildings, opt);
+        // 검사는 늘 법정 배수(인천 조례 0.8)로 — 배치 배수를 낮춰(단서 전제) 돌렸으면 동 사이 위반 + 단서(동지 2시간) 개략 확인이 같이 뜸(2026-11-06)
+        const I = buildInput(), legalSp = +((crit('spacing_ratio') || {}).값) || I.opt.spacing, opt = Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46, spacing: Math.max(legalSp, I.opt.spacing) }), v = JbsCheck.verify(I.site, A.buildings, opt);
         const sp = v.rules.filter(r => ['spacing', 'side'].includes(r.id));
-        Object.defineProperty(A, '__risk', { value: { v, pv: sp.length ? JbsCheck.proviso(I.site, A.buildings, opt) : null }, enumerable: false, configurable: true });
+        Object.defineProperty(A, '__risk', { value: { v, pv: sp.length ? JbsCheck.unitSun(I.site, A.buildings, opt) : null }, enumerable: false, configurable: true });
       } catch (e) { console.warn('위험요소', e); box.innerHTML = ''; return; }
     }
     const { v, pv } = A.__risk, G1 = { 고위험: 0, 주의: 1, 권고: 2 }, risks = v.risks.slice().sort((a, b) => (G1[a.등급] ?? 3) - (G1[b.등급] ?? 3));
     const rule = r => `<li class="bad"><b>${esc(r.항목)}</b> ${r.동 && r.동.length ? `(${r.동.join('·')}동)` : ''} — ${esc(r.값 || '')}${r.기준 ? ` / 기준 ${esc(r.기준)}` : ''}<br><span class="note">${esc(r.근거 || '')}</span>${r.대안 ? `<br>대안: ${esc(r.대안)}` : ''}</li>`;
     const risk = r => `<li class="${r.등급 === '고위험' ? 'bad' : r.등급 === '주의' ? 'warn' : ''}"><b>[${esc(r.등급)}] ${esc(r.항목)}</b><br>원인: ${esc(r.원인 || '')}<br>영향: ${esc(r.영향 || '')}${r.확인자료 ? `<br>확인 자료: ${esc(r.확인자료)}` : ''}${r.대안 ? `<br>대안: ${esc(r.대안)}` : ''}<br><span class="note">${esc(r.근거 || '')}</span></li>`;
-    box.innerHTML = `<details open class="card"><summary><b>위험요소 검토</b> — 법정 위반 ${v.rules.length}건 · 경험 항목 ${risks.length}건(고위험 ${risks.filter(r => r.등급 === '고위험').length} · 주의 ${risks.filter(r => r.등급 === '주의').length} · 권고 ${risks.filter(r => r.등급 === '권고').length})</summary>
-      ${v.rules.length ? `<h4>법정 기준 위반(이대로는 안 됨)</h4><ul>${v.rules.map(rule).join('')}</ul>` : '<p>법정 기준(대지 경계·동 사이 거리·정북 일조·채광창 이격·용적률·건폐율) 위반 없음</p>'}
-      ${pv ? `<h4>동 사이 거리 단서(${esc(pv.근거)})</h4><p>${pv.ok ? '개략 확인으로는 모든 동의 1층 남쪽 창 앞이 동지 연속 2시간 이상 — 단서 적용 검토 가능' : `개략 확인으로 ${pv.bad.map(x => `${x.id}동(재 본 ${x.n}곳 중 ${x.bad}곳 미달, 최소 연속 ${x.minCont}시간)`).join(', ')} — 단서로도 어려움`}. <span class="note">${esc(pv.메모)}</span></p>` : ''}
+    // 동 사이 거리 본문(가·나·마목) 미달은 '위반'이 아니라 같은 호 단서(동지 2시간 일조) 경로 — 2026-11-06 사용자 지적 '법정이 아닌 거 아냐?'
+    const spR = v.rules.filter(r => ['spacing', 'side'].includes(r.id)), hard = v.rules.filter(r => !['spacing', 'side'].includes(r.id));
+    box.innerHTML = `<details open class="card"><summary><b>위험요소 검토</b> — 법정 위반 ${hard.length}건${spR.length ? ` · 동 사이 본문 거리 미달 ${spR.length}곳(단서 적용 대상)` : ''} · 경험 항목 ${risks.length}건(고위험 ${risks.filter(r => r.등급 === '고위험').length} · 주의 ${risks.filter(r => r.등급 === '주의').length} · 권고 ${risks.filter(r => r.등급 === '권고').length})</summary>
+      ${hard.length ? `<h4>법정 기준 위반(이대로는 안 됨)</h4><ul>${hard.map(rule).join('')}</ul>` : `<p>법정 기준(대지 경계·${spR.length ? '' : '동 사이 거리·'}정북 일조·채광창 이격·용적률·건폐율) 위반 없음</p>`}
+      ${spR.length ? `<h4>동 사이 거리 — 본문 거리 미달, 단서로 허용 가능</h4><p class="note">시행령 제86조③2호는 본문(가목 높이 × 조례 배수 등)과 단서(그 대지의 모든 세대가 동지 9~15시 연속 2시간 이상 일조를 확보하는 거리 이상)가 함께 있는 조문입니다. 본문 거리에 못 미쳐도 세대별 일조분석으로 단서를 입증하면 적법 — 실제 고층 정비계획 대부분이 이 방식입니다.</p><ul>${spR.map(rule).join('')}</ul>` : ''}
+      ${pv ? `<h4>세대별 일조 — 단서 충족 여부(${esc(pv.근거)})</h4><p>${pv.ok ? `모든 세대(${fmt(pv.total)}세대)가 동지 연속 2시간 이상 — 단서 적용 검토 가능` : `${fmt(pv.total)}세대 중 <b>${fmt(pv.lost)}세대</b>가 2시간 미달 → 이대로면 단서 불충족. 미달 세대를 필로티·비주거로 비우면 순 ${fmt(A.units - pv.lost)}세대, 아니면 동 간격·엇갈림·옆 틈을 넓혀 다시 배치. 동별: ${Object.entries(pv.per).filter(([, q]) => q.lost).map(([k, q]) => `${esc(k)}동 ${q.lost}/${q.total}`).join(', ')}`}. <span class="note">${esc(pv.메모)}</span></p>` : ''}
       ${risks.length ? `<h4>심의·민원 위험(경험 — 탈락 아님)</h4><ul>${risks.map(risk).join('')}</ul>` : ''}
       <p class="note">규칙은 법령·조례 숫자, 경험 항목은 심의·협의에서 지적되기 쉬운 것(가정값 포함). 인허가 및 심의 과정에서 변동될 수 있습니다.</p></details>`;
   }
@@ -783,11 +797,11 @@
       <h3>적용 기준</h3>
       <table><tr><th style="width:160px">인동간격</th><td>앞 동 높이 × ${I.p.spacing}${/확인필요/.test(sp.상태) ? ' <span class="chk">※ 기준 확인 필요</span>' : ''}<br><span class="note">${esc(sp.근거)} — ${esc(sp.상태)}</span></td></tr>
       ${(() => { const w = crit('window_setback'); return w ? `<tr><th>채광창 이격</th><td>채광창 벽면에서 인접 대지경계선까지 높이의 1/${winRatio()} 이상(도로·공원이 사이에 있으면 그 중심선까지 — 공동주택, 판상형 앞·뒤 벽면 · 탑상형 모든 벽면)<br><span class="note">${esc(w.근거)} — ${esc(w.상태)}</span></td></tr>` : ''; })()}
-      <tr><th>${I.p.sunBase === 'south' ? '정남 기준 일조' : '정북 일조'}</th><td>높이 10m 이하 ${sn.이격.높이10m이하_m}m, 초과 부분 높이의 1/2 이상(${I.p.sunBase === 'south' ? '남쪽을 향한 경계 변 — 구청장 등 고시가 있어야 적용' : '정북 인접대지 변'})<br><span class="note">${esc(sn.근거)}${I.p.sunBase === 'south' && crit('south_base') ? ' · ' + esc(crit('south_base').근거) : ''}</span></td></tr>
+      ${I.site && I.site.noSun ? `<tr><th>정북 일조</th><td>적용 안 함 — 건축법 제61조①은 전용·일반주거지역만(이 구역 용도지역: 준주거·상업·공업)</td></tr>` : ''}<tr${I.site && I.site.noSun ? ' style="display:none"' : ''}><th>${I.p.sunBase === 'south' ? '정남 기준 일조' : '정북 일조'}</th><td>높이 10m 이하 ${sn.이격.높이10m이하_m}m, 초과 부분 높이의 1/2 이상(${I.p.sunBase === 'south' ? '남쪽을 향한 경계 변 — 구청장 등 고시가 있어야 적용' : '정북 인접대지 변'})<br><span class="note">${esc(sn.근거)}${I.p.sunBase === 'south' && crit('south_base') ? ' · ' + esc(crit('south_base').근거) : ''}</span></td></tr>
       <tr><th>도로·공원 사이</th><td>경계에 닿은 도로(실제 폭)·공원(폭 ${I.p.parkW}m)의 중심선을 인접 대지경계선으로 봄(공동주택) — 채광창·일조 모두<br><span class="note">${esc(crit('sun_open_space').근거)} — ${esc(crit('sun_open_space').상태)}</span></td></tr>
       ${(() => { const r = crit('window_relief'); return r ? `<tr><th>정비사업 완화</th><td>${Object.entries(r.값).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join('<br>')}<br><span class="note">${esc(r.근거)} — ${esc(r.상태)}</span></td></tr>` : ''; })()}
       <tr><th>경계 이격</th><td>도로 ${I.p.roadSb}m · 간선도로 ${I.p.artSb}m · 대지경계 ${I.p.bndSb}m · 동 측면 ${I.p.sideGap}m <span class="note">(검토 가정값)</span></td></tr>
-      <tr><th>동 모서리 근접</th><td>${({ off: '안 봄', min10: '모든 동 사이 최소 10m', rec: '최소 10m + 채광창 벽 직각선 좌우 45° 안에서 보이면 높은 동 높이 × 0.5', all: '모서리끼리 모두 높은 동 높이 × 0.5(최소 10m)' })[I.p.corner || 'rec']} <span class="note">(실무 기준·가정값 — 법정 아님. 시행령 제86조③2호는 직각 방향으로 마주 보는 부분만 적용, 서울 건축조례 최소 이격 10m·0.5배 차용)</span></td></tr>
+      <tr><th>동 모서리 근접</th><td>${({ off: '안 봄', min10: '모든 동 사이 최소 10m', rec: '최소 10m + 채광창 벽 직각선 좌우 45° 안에서 보이면 높은 동 높이 × 0.5', all: '모서리끼리 모두 높은 동 높이 × 0.5(최소 10m)' })[I.p.corner || 'min10']} <span class="note">(실무 기준·가정값 — 법정 아님. 시행령 제86조③2호는 직각 방향으로 마주 보는 부분만 적용, 서울 건축조례 최소 이격 10m·0.5배 차용)</span></td></tr>
       <tr><th>층수 배분</th><td>북쪽 줄을 높게, 남쪽 줄을 낮게(남저북고). 저층 주거 인접 변 ${I.p.lowDist}m 안은 ${I.p.lowCap}층 이하</td></tr></table>`;
   }
   function renderUnits() {

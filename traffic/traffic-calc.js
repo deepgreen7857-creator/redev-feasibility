@@ -98,7 +98,7 @@
     if (res.tia.unconfirmed) need.push(T.need_ordinance);
     const constraints = {
       진입도로_필요폭_m: ar.required ?? null,
-      진입_가능_도로: (ar.ok || []).map(r => r.name),
+      진입_가능_도로: ((ar.ok || []).length ? ar.ok : /합계/.test(ar.result || '') ? (ar.two || []) : []).map(r => r.name),   // 2개 합계로 충족이면 그 두 도로(2026-11-06)
       확폭_검토_도로: ar.result === '미충족' ? (ar.short || []).map(r => ({ 도로: r.name, 현재_m: r.w, 필요_m: ar.required })) : [],
       법정_주차대수: res.parking.legal,
       교통영향평가: res.tia.result,

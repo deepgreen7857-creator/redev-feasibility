@@ -49,14 +49,18 @@ const RefOverlay = {
     return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.append(s); });
   },
 
-  // PDF 첫 페이지를 긴 변 약 3,000px 그림으로
-  async pdfToUrl(file) {
+  // PDF 한 쪽을 긴 변 약 3,000px 그림으로
+  async pdfToUrl(file, pageNo) {
     if (!window.pdfjsLib) {
       await this.loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
     const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-    const page = await pdf.getPage(1);
+    // 여러 쪽 PDF(2026-11-06): 쪽을 고를 수 있게 — 고르지 않았으면 도형(경로)이 가장 많은 쪽(표지·개요표보다 도면 쪽)을 먼저
+    this.numPages = pdf.numPages; let pn = +pageNo || 0;
+    if (!pn) { pn = 1; if (pdf.numPages > 1) { let best = -1; for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) { try { const ol = await (await pdf.getPage(i)).getOperatorList(); const n = ol.fnArray.filter(f => f === pdfjsLib.OPS.constructPath).length; if (n > best) { best = n; pn = i; } } catch (e) { /* 건너뜀 */ } } } }
+    this.pageNo = pn;
+    const page = await pdf.getPage(pn);
     const v1 = page.getViewport({ scale: 1 });
     const vp = page.getViewport({ scale: 3000 / Math.max(v1.width, v1.height) });
     const c = document.createElement('canvas');
@@ -129,11 +133,11 @@ const RefOverlay = {
     if (file) await this.useFile(file);
   },
 
-  async useFile(file) {
+  async useFile(file, pageNo) {
     this.host.ensure();
     this.say('도면을 불러오는 중…');
-    let url;
-    try { url = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name) ? await this.pdfToUrl(file) : URL.createObjectURL(file); }
+    let url; const isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name); this.file = file;
+    try { url = isPdf ? await this.pdfToUrl(file, pageNo) : URL.createObjectURL(file); }
     catch (e) { this.say('도면을 열지 못했습니다: ' + e.message); return; }
     const img = new Image();
     try { await new Promise((ok, bad) => { img.onload = ok; img.onerror = bad; img.src = url; }); }
@@ -160,7 +164,18 @@ const RefOverlay = {
     this.visible = true;
     this.render();
     this.refreshUi();
-    this.say(`<b>${this.esc(file.name)}</b>를 겹쳤습니다. 이제 <b>두 점으로 맞추기</b>를 눌러 위치를 맞추세요.`);
+    const pages = isPdf && this.numPages > 1 ? ` <span class="ref-pages">쪽 ${Array.from({ length: Math.min(this.numPages, 20) }, (_, i) => `<button type="button" class="btn ghost sm" data-refpage="${i + 1}"${i + 1 === this.pageNo ? ' aria-pressed="true" style="font-weight:700"' : ''}>${i + 1}</button>`).join('')}</span> — 지금 ${this.pageNo}쪽(도형이 가장 많은 쪽을 먼저 골랐습니다)` : '';
+    this.say(`<b>${this.esc(file.name)}</b>를 겹쳤습니다.${pages} 이제 <b>두 점으로 맞추기</b>를 눌러 위치를 맞추세요.`);
+    const mg = this.el('msg'); if (mg) mg.querySelectorAll('[data-refpage]').forEach(b => b.onclick = () => this.useFile(this.file, +b.dataset.refpage));
+  },
+  // 맞춤 값을 직접 넣기(두 점을 계산으로 이미 알 때): 도면 픽셀 q1·q2 ↔ 경위도 ll1·ll2
+  alignTo(q1, ll1, q2, ll2) {
+    const m = this.host.map(), P1 = m.project(L.latLng(ll1[1], ll1[0]), this.Z0), P2 = m.project(L.latLng(ll2[1], ll2[0]), this.Z0);
+    const dqx = q2[0] - q1[0], dqy = q2[1] - q1[1], dPx = P2.x - P1.x, dPy = P2.y - P1.y;
+    this.s = Math.hypot(dPx, dPy) / Math.hypot(dqx, dqy); this.th = Math.atan2(dPy, dPx) - Math.atan2(dqy, dqx);
+    const c = Math.cos(this.th), sn = Math.sin(this.th);
+    this.tx = P1.x - this.s * (c * q1[0] - sn * q1[1]); this.ty = P1.y - this.s * (sn * q1[0] + c * q1[1]);
+    this.aligned = true; this.step = 0; this.render(); this.refreshUi();
   },
 
   render() {

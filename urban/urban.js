@@ -37,6 +37,9 @@ function applyJson(j) {
     RULES.expansion = j.designation_requirements.expansion.max_ratio;
     const bz = j.far.by_zone;
     RULES.far = { '제2종일반주거지역': bz['제2종일반주거지역'], '제3종일반주거지역': bz['제3종일반주거지역'] };
+    // 준주거(순수 공동주택) — 2030 기본계획 변경 고시 제2026-96호 원문 대조값(2026-11-06 계획 용도지역에 추가, 용현동 유원아파트 시험)
+    if (bz['준주거지역_순수공동주택']) RULES.far['준주거지역'] = bz['준주거지역_순수공동주택'];
+    if (bz['역세권_준주거지역_순수공동주택']) RULES.far['준주거지역(역세권)'] = bz['역세권_준주거지역_순수공동주택'];
     RULES.natHousing = { redevelopment: j.national_housing_ratio.redevelopment };
     RULES.status = { far: j.far.status };
     RULES.farFormula = j.far.max_incentive_formula || null;
@@ -1708,11 +1711,11 @@ const FITUI = {
     const kinds = ['park'].concat(inf.szSchool && inf.szSchool.A > 0 ? ['school'] : []);
     return `<div class="fit-wrap" style="margin-top:10px">` + kinds.map(k => {
       const o = this.get(key, k), m = o.mode || 'auto', fm = (inf.fitMsg || {})[k];
-      const anchors = [['rel', '종교용지']].concat(k === 'school' ? [['park', '공원·녹지']] : []);
-      const hasAnc = { rel: !!inf.relGeom, park: !!inf.parkGeom };
+      const anchors = [['edge', '구역 경계'], ['rel', '종교용지']].concat(k === 'school' ? [['park', '공원·녹지']] : []);
+      const hasAnc = { edge: true, rel: !!inf.relGeom, park: !!inf.parkGeom };
       let sub = '';
       if (m === 'wrap' || m === 'clean') {
-        sub = `<div style="margin-top:6px">기준 시설 <select data-fitanchor="${k}">${anchors.map(([v, t]) => `<option value="${v}" ${(o.anchor || 'rel') === v ? 'selected' : ''} ${hasAnc[v] ? '' : 'disabled'}>${t}${hasAnc[v] ? '' : '(없음)'}</option>`).join('')}</select>
+        sub = `<div style="margin-top:6px">기준 시설 <select data-fitanchor="${k}">${anchors.map(([v, t]) => `<option value="${v}" ${(o.anchor || (inf.relGeom ? 'rel' : 'edge')) === v ? 'selected' : ''} ${hasAnc[v] ? '' : 'disabled'}>${t}${hasAnc[v] ? '' : '(없음)'}</option>`).join('')}</select>
           &nbsp;방향 <span class="seg" role="group" aria-label="붙일 방향">${[['N', '북'], ['E', '동'], ['S', '남'], ['W', '서']].map(([d, t]) => `<button type="button" data-fitdir="${k}:${d}" aria-pressed="${(o.dir || 'N') === d}">${t}</button>`).join('')}</span></div>
           <span class="u">${m === 'wrap' ? '그 방향 빈 땅을 구역 모양대로 먼저 채우고, 모자라면 기준 시설 옆으로 감싸 이어 붙입니다.' : '기준 시설 변 폭 그대로 곧은 띠로 붙이고, 막히면 채울 만큼 채운 뒤 옆으로 곧게 꺾습니다(ㄱ자).'}</span>`;
       } else if (m === 'sketch') {
@@ -1736,7 +1739,7 @@ const FITUI = {
     }).join('') + `</div>`;
   },
   bind(side) {
-    side.querySelectorAll('[data-fitmode]').forEach(b => b.onclick = () => { const [k, v] = b.dataset.fitmode.split(':'); this.set(k, o => { o.mode = v; if (!o.anchor) o.anchor = 'rel'; if (!o.dir) o.dir = 'N'; }); });
+    side.querySelectorAll('[data-fitmode]').forEach(b => b.onclick = () => { const [k, v] = b.dataset.fitmode.split(':'); this.set(k, o => { o.mode = v; if (!o.anchor) o.anchor = (INFRA.memo && Object.values(INFRA.memo).some(x => x && x.relGeom)) ? 'rel' : 'edge'; if (!o.dir) o.dir = 'N'; }); });
     side.querySelectorAll('[data-fitdir]').forEach(b => b.onclick = () => { const [k, d] = b.dataset.fitdir.split(':'); this.set(k, o => { o.dir = d; }); });
     side.querySelectorAll('[data-fitanchor]').forEach(el => el.onchange = () => this.set(el.dataset.fitanchor, o => { o.anchor = el.value; }));
     side.querySelectorAll('[data-fitkeep]').forEach(el => el.onchange = () => this.set(el.dataset.fitkeep, o => { o.keepSize = el.checked; }));
@@ -2334,7 +2337,7 @@ const ARCHLAY = {
       const m = [(e.a[0] + e.b[0]) / 2 + e.out[0] * 3, (e.a[1] + e.b[1]) / 2 + e.out[1] * 3];
       const hit = roads.find(r => r.polys.some(pl2 => G.inside(m[0], m[1], pl2) || pl2.some((q, k) => G.segDist(m, q, pl2[(k + 1) % pl2.length]) < 4)));
       if (hit) return hit.w >= 20 ? 'arterial' : 'road';
-      return e.out[1] > 0.6 ? 'north' : 'boundary';
+      return e.out[1] > 0.6 && !/준주거|상업|공업/.test(String(a.zone || P.zone || '')) ? 'north' : 'boundary';   // 정북 일조는 전용·일반주거지역만(건축법 제61조①)
     });
     const A0 = C.가정, sb = tags.map(t => t === 'road' ? A0.roadSetback_m : t === 'arterial' ? A0.arterialSetback_m : A0.boundarySetback_m);
     const inf = pl.infra || {}, exclude = [];
@@ -2356,7 +2359,7 @@ const ARCHLAY = {
   solve(I, done) {
     const c = this.cands(I);
     try {
-      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=11'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
+      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=13'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
       const id = (this.seq = (this.seq || 0) + 1); this.cb[id] = done;
       this.wk.postMessage({ id, site: I.site, opt: I.opt, cand: c.cand, F: c.F });
       // 90초가 넘으면 일꾼을 멈추고 예전 네모 그림으로(화면에 '계산 중'이 계속 남지 않게)
@@ -2792,7 +2795,7 @@ function renderPlan(a) {
   side.innerHTML = `<h2>${regName()} 정비계획 (토지이용·밀도)</h2>
   ${D.map ? infraSection(a, pl) : ''}
   <div class="form">
-    <div class="field"><label for="zone">용도지역(계획)</label><select id="zone"><option>제2종일반주거지역</option><option>제3종일반주거지역</option></select><span class="u">현황: ${Object.entries(a.zoneArea).map(([z, v]) => esc(z.replace('일반주거지역', '')) + ' ' + fmt(v) + '㎡').join(', ')}</span></div>
+    <div class="field"><label for="zone">용도지역(계획)</label><select id="zone">${Object.keys(RULES.far).map(k => `<option>${k}</option>`).join('')}</select><span class="u">현황: ${Object.entries(a.zoneArea).map(([z, v]) => esc(z.replace('일반주거지역', '')) + ' ' + fmt(v) + '㎡').join(', ')}</span></div>
     ${prop ? '' : field('infraRatio', '정비기반시설 비율(도로·공원·학교 등)', P.infraRatio, D.map ? '구역 면적 대비 % · 직접 입력' : '구역 면적 대비 %, 예시 가정', 'min=0 max=60 step=1')}
     <div class="field"><label for="farMode">적용 용적률</label><select id="farMode"><option value="base">기준용적률 ${far.base}%</option><option value="allowed">허용용적률 ${far.allowed}%</option><option value="max">상한용적률 ${far.max}%</option>${pl.farCalc ? `<option value="calc">산식(공공시설 제공) ${pl.farCalc.v}%</option>` : ''}<option value="custom">직접 입력</option></select><span class="u">2030 기본계획 · ${pressBadge}</span></div>
     ${P.farMode === 'custom' ? field('farCustom', '계획 용적률', P.farCustom, `% (상한 ${far.max}% 이내로 제한)`) : ''}
@@ -2813,7 +2816,10 @@ function renderPlan(a) {
   ${pl.farCalc ? (() => { const c = pl.farCalc, f2 = RULES.far[P.zone]; return `<p class="note"><b>상한용적률 산식</b>(2030 기본계획 변경 고시 제2026-96호): 허용 ${f2.allowed}% + [1.5 × 공공시설 제공 ${fmt(c.pa)}㎡${c.pb ? ` + 1.0 × 학교·공공청사 부지 ${fmt(c.pb)}㎡` : ''} ÷ 획지 ${fmt(c.site)}㎡ × 기준 ${f2.base}%] = <b>${c.raw.toFixed(1)}%</b>${c.capped ? ` → 상한 ${f2.max}%로 제한` : ''}. 공공시설 제공 면적 = 새로 설치하는 공공시설 ${fmt(c.newPub)}㎡ − 용도폐지되는 설치된 기존 공공시설 ${fmt(c.fac)}㎡(사용 중 면적). 존치 시설과 미집행 결정선은 빼지 않습니다(기본계획 원문은 '기정 도시계획시설 차감' — 인천시 산정 사례로 확인 필요). ${c.pa < 1 ? '<b class="warn">새 공공시설이 용도폐지되는 기존 시설보다 작아 산식 인센티브가 없음</b>' : ''}${!c.capped ? (() => { const needPa = Math.max(0, (f2.max - f2.allowed) / (1.5 * f2.base) * c.site - (c.pb / 1.5)); return ` 상한 ${f2.max}%까지 받으려면 공공시설 제공 약 ${fmt(needPa)}㎡(새 공공시설 약 ${fmt(needPa + c.fac)}㎡, 지금보다 ${fmt(Math.max(0, needPa + c.fac - c.newPub))}㎡ 더) 필요 — 획지가 줄어드는 만큼은 반영 안 한 개략값.`; })() : ''} 허용용적률 인센티브(9개 항목, 최대 20%·지역업체 참여 시 40%)를 다 받는다고 가정한 값입니다.</p>`; })() : ''}
   ${D.map ? todoSection(a, pl) : ''}
   <p class="note">허용용적률은 인센티브 항목을, 상한용적률은 공공시설 부지 제공 등 공공기여를 전제로 합니다. 이 화면은 인센티브 배점과 공공기여 산식을 아직 계산하지 않고 단계만 고릅니다.</p>`;
-  const z = document.getElementById('zone'); z.value = P.zone; z.onchange = () => { P.zone = z.value; saveP(); render(); };
+  const z = document.getElementById('zone');
+  // 현황이 모두 준주거면(사용자가 직접 고르기 전까지) 계획 용도지역도 준주거로
+  if (!P.zoneUser && RULES.far['준주거지역'] && !/준주거/.test(P.zone) && a.zoneArea && Object.keys(a.zoneArea).length && Object.keys(a.zoneArea).every(k => /준주거/.test(k))) { P.zone = '준주거지역'; saveP(); setTimeout(render, 0); }
+  z.value = P.zone; z.onchange = () => { P.zone = z.value; P.zoneUser = true; saveP(); render(); };
   const f = document.getElementById('farMode'); f.value = P.farMode; f.onchange = () => { P.farMode = f.value; saveP(); render(); };
   bindNum(['infraRatio', 'farCustom', 'sideRoadW', 'schoolArea', 'otherInfra', 'greenInfra', 'pubBldg', 'valMult', 'roadWork', 'parkWork']);
   bindInfra(a);

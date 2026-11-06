@@ -10,7 +10,7 @@
   const NODE = typeof module !== 'undefined' && module.exports;
   const G = NODE ? require('./arch-geom.js') : g.ArchGeom, K = NODE ? require('./arch-check.js') : g.JbsCheck, DL = NODE ? require('./dong-lib.js') : g.JbsDong;
   const D2R = Math.PI / 180;
-  const TYPES = ['P4', 'P6', 'P8', 'P10', 'B3', 'B4', 'B5', 'T4'];
+  const TYPES = ['P2', 'P4', 'P6', 'P8', 'P10', 'B3', 'B4', 'B5', 'T4'];
 
   // 방향 후보(2026-11-05 사용자 '정남향을 고집할거야?'): 정남(0°)·남동/남서 15°·30°와 긴 경계 변 두 개의 방향(±45° 안). 남향에서 멀어질수록 남향 점수·일조는 불리
   function angles(site) {
@@ -67,7 +67,10 @@
       const side = mLow.form === 'slab' ? 'slab' : 'win';
       // ㄱ자 날개 방향 맞추기(2026-11-05): 두 동씩 짝지어 왼쪽 동은 날개를 서쪽(거울상), 오른쪽 동은 동쪽으로 → 짝 안쪽은 창 없는 옆벽끼리(가정 옆 간격), 짝과 짝 사이만 날개 창 기준(높이 × 배수)
       const isL = mLow.form === 'L', mLowM = isL ? DL.build(id, seq, { mirror: true }) : null, mHighM = isL ? DL.build(id, seq, { high: true, mirror: true }) : null;
-      for (const pair of (isL && mLowM ? [false, true] : [false]))
+      // 엇갈려 놓기(2026-11-06, 실제 정비계획 대조 — 2세대 판상 39층을 25~30m 간격으로 비껴 놓은 배치): 판상만, 줄마다 반 칸씩 밀어
+      //  위아래 줄 동이 좌우로 겹치지 않게(벽면 직각 방향으로 마주 보지 않음 → 법정 동 사이 거리 대상 아님) → 줄 간격은 모서리 근접 기준과 두 줄 건너(같은 칸) 앞뒤 거리로
+      for (const stag of (mLow.form === 'slab' && o.stagger !== false ? [false, true] : [false]))
+      for (const pair of (isL && mLowM && !stag ? [false, true] : [false]))
       for (const th of o.angles || angles(site)) {
         const Gd = gridAt(site, opt, th), ROWC = new Map();   // 줄 결과 기억(같은 높이·층수 줄은 한 번만)
         // 층수: 줄마다 남쪽 낮게 → 북쪽 높게(Flo → Fhi, 같으면 모두 같은 층수). 줄 간격은 남쪽 줄 층수로(북쪽 줄이 같거나 높음 → 나목: 10m 이상, 남쪽 동 높이 × 배수)
@@ -85,15 +88,37 @@
             else { const mm = mirOf(f), gS = A.sideGap_m, gB = Math.max(A.sideGap_m, sp * H(f)), pP = 2 * m.L + gS + gB;
               for (let ox = 0; ox < pP; ox += 2) { const xs = []; let k2 = 0; for (let x = Gd.xmin + ox; x + m.L <= Gd.xmax; k2++) { const mk = k2 % 2 ? m : mm; if (fits(Gd, mk, x, y)) xs.push({ x, m: mk }); x += m.L + (k2 % 2 ? gB : gS); } if (!bx || xs.length > bx.length) bx = xs; } }
             ROWC.set(k, bx); return bx; };
+          const CN = (A.corner && A.corner.mode) || 'off';
+          // 엇갈림 줄 간격: 옆 틈(반 칸 − 동 길이) dx, 모서리 기준을 만족하는 가장 작은 앞뒤 틈 dy + 두 줄 건너(같은 칸) 법정 앞뒤 거리
+          const stagDy = (m, f, dx) => { const big = Math.max(10, 0.5 * H(f)); let dy = 0;
+            if (CN === 'min10') dy = Math.sqrt(Math.max(0, 100 - dx * dx));
+            else if (CN === 'rec') { const a = Math.sqrt(Math.max(0, 100 - dx * dx)); dy = a < dx - 0.01 ? a : Math.max(dx, Math.sqrt(Math.max(0, big * big - dx * dx))); }
+            else if (CN === 'all') dy = Math.sqrt(Math.max(0, big * big - dx * dx));
+            return Math.max(dy, (Math.max(10, sp * H(f)) - m.D) / 2, 6); };
           for (let oy = 0; oy < p0; oy += 2) {
-            const rows = []; let est = 0;
-            for (let y = Gd.ymin + oy; ;) {
-              const f = fAt(y), m = modOf(f); if (y + m.D > Gd.ymax) break;
-              const pX = m.L + gapXOf(f), bx = rowAt(y, f, m, pX);
-              if (bx && bx.length) { rows.push({ y, items: bx, f, m }); est += bx.length * gfaDong(m, f); y += m.D + Math.max(10, sp * H(f)); }
-              else y += 2;   // 이 높이엔 안 들어감 → 2m 위로
+            if (!stag) {
+              const rows = []; let est = 0;
+              for (let y = Gd.ymin + oy; ;) {
+                const f = fAt(y), m = modOf(f); if (y + m.D > Gd.ymax) break;
+                const pX = m.L + gapXOf(f), bx = rowAt(y, f, m, pX);
+                if (bx && bx.length) { rows.push({ y, items: bx, f, m }); est += bx.length * gfaDong(m, f); y += m.D + Math.max(10, sp * H(f)); }
+                else y += 2;   // 이 높이엔 안 들어감 → 2m 위로
+              }
+              if (!bestY || Math.min(est, target) > Math.min(bestY.est, target) + 1) bestY = { oy, rows, est };
+            } else {
+              const m0 = modOf(Fhi), gX = Math.max(A.sideGap_m, m0.L) + 2, pX = m0.L + gX, dx = pX / 2 - m0.L;
+              for (let ox = 0; ox < pX; ox += 8) {
+                if (oy % 4) break;   // 엇갈림은 4m 간격만(속도)
+                const rows = []; let est = 0, k = 0;
+                for (let y = Gd.ymin + oy; ;) {
+                  const f = fAt(y), m = modOf(f); if (y + m.D > Gd.ymax) break;
+                  const xs = []; for (let x = Gd.xmin + ox + (k % 2) * pX / 2; x + m.L <= Gd.xmax; x += pX) if (fits(Gd, m, x, y)) xs.push({ x, m });
+                  if (xs.length) { rows.push({ y, items: xs, f, m }); est += xs.length * gfaDong(m, f); y += m.D + stagDy(m, f, dx); k++; }
+                  else y += 2;
+                }
+                if (!bestY || Math.min(est, target) > Math.min(bestY.est, target) + 1) bestY = { oy, rows, est };
+              }
             }
-            if (!bestY || Math.min(est, target) > Math.min(bestY.est, target) + 1) bestY = { oy, rows, est };
           }
           if (!bestY || !bestY.rows.length) continue;
           // 실제 동 만들기: 높이 상한(정북·채광창)에 걸리는 동만 낮추고, 최저 층수 밑이면 뺌
@@ -107,7 +132,7 @@
           }); });
           if (!blds.length) continue;
           // 짝 배치는 날개 창끼리 마주 볼 수 있어(왼쪽 동 날개 동쪽 창 ↔ 오른쪽 동 날개) 벽면별 동 사이 검사를 통과한 것만
-          if (pair) { let bad = false; for (let i = 0; i < blds.length && !bad; i++) for (let j = i + 1; j < blds.length && !bad; j++) if (Math.abs(blds[i].row - blds[j].row) <= 1 && K.pairCheck(blds[i], blds[j], opt)) bad = true; if (bad) continue; }
+          if (pair || stag) { let bad = false; for (let i = 0; i < blds.length && !bad; i++) for (let j = i + 1; j < blds.length && !bad; j++) if (Math.abs(blds[i].row - blds[j].row) <= (stag ? 2 : 1) && K.pairCheck(blds[i], blds[j], opt)) bad = true; if (bad) continue; }
           // 목표 연면적을 넘으면 남쪽 줄·가장자리 동부터 뺌(남측 개방) — 같은 모양·같은 간격은 그대로
           const gfaOf = bs => bs.reduce((a, b) => a + Object.keys(b.mixT).reduce((c, t) => c + b.mixT[t] * b.floors * sup(t), 0), 0);
           let bl = blds.slice();
@@ -115,7 +140,7 @@
           const v = Math.min(gfaOf(bl), target), spread = Fhi - Flo;
           // 연면적(목표까지) 큰 것 → 같으면 층수 차이 작은 것(더 일정) → 낮은 최고 층수
           if (!best || v > best.val + 1 || (Math.abs(v - best.val) <= 1 && (spread < best.spread || (spread === best.spread && Fhi < best.Fhi))))
-            best = { val: v, Flo, Fhi, spread, F: Fhi, th, seq, m: mLow, blds: bl, gapX: pair ? A.sideGap_m : gapXOf(Flo), gapY: Math.max(10, sp * H(Flo)), rows: bestY.rows, Gd, pair };
+            best = { val: v, Flo, Fhi, spread, F: Fhi, th, seq, m: mLow, blds: bl, gapX: pair ? A.sideGap_m : gapXOf(Flo), gapY: Math.max(10, sp * H(Flo)), rows: bestY.rows, Gd, pair, stag };
         }
       }
       if (best) per.push(Object.assign(best, { e: mixErrOf(best.blds, opt) }));
@@ -255,7 +280,7 @@
         rules: v.rules.length, n: B.length, maxF: v.maxFloors, cutSun, cutWin, empty: st.length ? st[0].empty : null, sideWin: v0.gapX > (opt.assume.sideGap_m || 10) + 0.1, gapX: v0.gapX };
     });
     const best = k => rows.slice().sort(k)[0];
-    const win = { units: best((a, b) => b.units - a.units), sun: best((a, b) => a.sunFail / Math.max(1, a.n) - b.sunFail / Math.max(1, b.n) || b.units - a.units), mix: best((a, b) => a.mixErr - b.mixErr || b.units - a.units) };
+    const win = { units: best((a, b) => b.units - a.units), far: best((a, b) => b.far - a.far || b.units - a.units), sun: best((a, b) => a.sunFail / Math.max(1, a.n) - b.sunFail / Math.max(1, b.n) || b.units - a.units), mix: best((a, b) => a.mixErr - b.mixErr || b.units - a.units) };
     // 이 구역에서 공통으로 막힌 것(모든 타입 평균) — 문장 한 줄씩
     const avg = f => rows.reduce((s, r) => s + f(r), 0) / (rows.length || 1), notes = [];
     if (avg(r => r.ofTarget) < 0.8) notes.push(`어떤 동 타입으로도 목표 용적률의 ${Math.round(Math.max(...rows.map(r => r.ofTarget)) * 100)}%까지만 들어감 — 목표(${opt.far}%) 자체가 이 대지에 무리일 수 있음`);
@@ -280,7 +305,7 @@
         return Object.assign({ key: id, label, mixErr: mixErrOf(blds, opt), dtype: id, seq: r.seq, angle: r.th, F: r.F, Flo: r.Flo, Fhi: r.Fhi, gapX: r.gapX, gapY: r.gapY, buildings: blds,
           far: v.far, bcr: v.bcr, gfa: v.gfa, units: v.units, rules: v.rules, risks: v.risks, prefs: v.prefs, byType, maxFloors: Math.max(...blds.map(b => b.floors)) }, extra || {}); };
       const im = o.improve === false ? null : improve(site, opt, r, o);
-      out.push(pack(r.blds, `기본 배치 — ${r.m.dname}${r.pair ? '(날개 마주 놓기)' : ''}`, { improved: im && im.steps.length > 1 ? pack(im.blds, `기본 + 보완 — ${r.m.dname}`, { steps: im.steps }) : null, steps: im ? im.steps.slice(0, 1) : [] }));
+      out.push(pack(r.blds, `기본 배치 — ${r.m.dname}${r.pair ? '(날개 마주 놓기)' : ''}${r.stag ? '(엇갈려 놓기)' : ''}`, { improved: im && im.steps.length > 1 ? pack(im.blds, `기본 + 보완 — ${r.m.dname}${r.stag ? '(엇갈려 놓기)' : ''}`, { steps: im.steps }) : null, steps: im ? im.steps.slice(0, 1) : [] }));
     });
     return { variants: out, ms: Date.now() - t0, card: o.card === false ? null : scorecard(site, opt, out) };
   }

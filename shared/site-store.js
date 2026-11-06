@@ -57,7 +57,7 @@
       // /urban 4탭 단지 출입구(주·부·주차장) → /arch 차량 출입구 초기값
       site.urbanGates = ((it.zone.infra || {}).gates || []).map(g => ({ kind: g.kind, pt: g.pt }));
       site.plan = site.plan || {};
-      if (P.zone && !site.profile.zoning) site.profile.zoning = P.zone;
+      if (P.zone) site.profile.zoning = P.zone;   // 계획 용도지역(/urban 4탭)을 늘 따름(2026-11-06 — 예전에 넘긴 3종이 남아 준주거 구역이 3종으로 나오던 것)
       // 사업 유형: 사업성 화면에서 넘어온 구역이면 그 화면의 사업 유형(재건축·재개발·가로주택)을 따름
       if (it.zone.from === 'project') { try { const pj = JSON.parse(localStorage.getItem('jbsc.project.v1') || 'null'), st = pj && (pj.state || pj), t = st && st.meta && st.meta.type; if (t) site.plan.type = t === 'reconstruction' ? 'recon' : t === 'garo' ? 'garo' : 'redev'; } catch (e) { /* 무시 */ } }
       if (!site.plan.type) site.plan.type = 'redev';
@@ -71,6 +71,7 @@
     const site = this.fromUrban(key); if (!site || !plan) return null;
     const v = site.v = site.v || {}, n = x => (x === undefined || x === null || isNaN(+x)) ? '' : String(Math.round(+x * 10) / 10);
     const bt = plan.byType || {};
+    if (site.profile && site.profile.zoning) v.zoning = site.profile.zoning;   // 정비계획 값으로 넘길 때는 계획 용도지역으로 덮어씀(2026-11-06)
     v.units = n(plan.units); v.far = n(plan.far); v.bcr = n(plan.bcr); v.floors = n(plan.floors);
     v.aptGFA = n(plan.gfa); if (plan.retailGFA !== undefined) v.retailGFA = n(plan.retailGFA);
     if (Object.keys(bt).length) {
