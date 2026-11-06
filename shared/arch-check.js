@@ -283,8 +283,9 @@
   function unitSun(site, blds, opt) {
     const tol = { 연속_h: 2, 연속_구간: [9, 15], 합계_h: 99, 합계_구간: [8, 16] }, lat = +opt.lat || 37.46, fh = +opt.assume.floorHeight_m || 2.9, Hf = f => H(opt, f);
     const LV = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 18, 22, 26, 30, 35, 40, 50, 60, 70];
-    const cols = [];
+    const cols = [], only = opt.sunOnly ? new Set(opt.sunOnly) : null;   // sunOnly: 이 동들만 세대를 셈(그림자는 모든 동) — 하나씩 놓으며 고를 때 빠르게
     blds.forEach(b => {
+      if (only && !only.has(b.id)) return;
       const parts = ringsOf(b), inAny = (x, y) => parts.some(q => G.inside(x, y, q));
       const outer = q => { const out = []; q.forEach((p, i) => { const r = q[(i + 1) % q.length], dx = r[0] - p[0], dy = r[1] - p[1], L = Math.hypot(dx, dy); if (L < 1) return;
         // 바깥쪽은 무게중심이 아니라 변 양쪽 0.4m 점이 건물 안인지로 정함(오목한 올린 도면 외곽선도 맞게)
