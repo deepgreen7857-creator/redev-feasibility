@@ -282,7 +282,7 @@ const Tabs = {
       $('#ledgerArea').textContent = S.lands.length ? `${fmt(Calc.landTotal(S), 1)}㎡` : '(조서 없음)';
       this.areaDiff();
       const site = Calc.siteArea(S);
-      $('#siteArea').innerHTML = `${fmt(site)}㎡ <em>${fmt(site / PY)}평</em><br><em style="font-size:12px;font-weight:400">${esc(modeName)}</em>`;
+      $('#siteArea').innerHTML = `${fmt(site)}㎡ <em>${fmt(site / PY)}평</em><br><em style="font-size:12px;font-weight:400">${esc(S.area.mode === 'ledger' ? (Calc.landTotal(S) > 0 ? '토지대장 면적 합계(편입면적 기준)' : '토지조서가 없어 연속지적도상 면적') : ({ drawn: '연속지적 도형 면적(참고)', manual: '직접 입력' }[S.area.mode] || ''))}</em>`;
       $('#pickBox').hidden = !VWorld.enabled;
       $('#vworldOff').hidden = VWorld.enabled;
       refreshDocButtons();
