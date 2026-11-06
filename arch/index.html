@@ -174,7 +174,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       <button role="tab" data-v="sum" aria-selected="false">개요·세대 구성</button>
       <button role="tab" data-v="unit" aria-selected="false">표준 평면</button>
     </div>
-    <div class="view" id="vplan"><div class="row"><button id="dlSvg">배치도 SVG</button><button id="dlPng">배치도 PNG</button><button id="dlDoc">개략 건축계획(.doc)</button><label style="margin-left:10px"><input type="checkbox" id="dimShow" checked> 치수선(인동·일조·채광, 실제 / 기준)</label><label style="margin-left:6px"><input type="checkbox" id="dimAll"> 여유 있는 곳도</label></div><div id="planSvg"></div><div id="riskCard"></div></div>
+    <div class="view" id="vplan"><div class="row"><button id="dlSvg">배치도 SVG</button><button id="dlPng">배치도 PNG</button><button id="dlDoc">개략 건축계획(.doc)</button><button id="sunSimBtn" title="동을 끌고 돌리며 동지 그림자·세대별 일조를 바로 보는 화면(새 창)">일조 시뮬레이터</button><button id="sunSimBack" title="시뮬레이터에서 [이 배치를 건축계획 화면으로] 누른 배치를 대안으로 받기">시뮬레이터 배치 받기</button><label style="margin-left:10px"><input type="checkbox" id="dimShow" checked> 치수선(인동·일조·채광, 실제 / 기준)</label><label style="margin-left:6px"><input type="checkbox" id="dimAll"> 여유 있는 곳도</label></div><div id="planSvg"></div><div id="riskCard"></div></div>
     <div class="view" id="vsun" hidden>
       <div class="row"><button id="calcSun">일조 계산</button><button id="loadCtx">주변 건물 다시 불러오기</button><label class="tag">그림자 시각 <input type="range" id="sunT" min="8" max="16" step="0.25" value="12"> <b id="sunTv">12:00</b></label></div>
       <div id="sunNote" class="note"></div><div id="sunSvg"></div>
@@ -202,7 +202,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../shared/feas.js?v=148"></script>
 <script src="../shared/plan-import.js?v=2"></script>
 <script src="arch-draw.js?v=10"></script>
-<script src="arch.js?v=45"></script>
+<script src="arch.js?v=46"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>
 </body>
