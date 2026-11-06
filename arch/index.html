@@ -132,7 +132,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       </div>
       <details><summary>이격·인동간격 등 세부 조건</summary>
       <div class="grid" style="margin-top:8px">
-        <label>인동간격(높이 대비 배수)<input id="p_spacing" inputmode="decimal"><span class="note">법정 0.8(인천 조례 제32조⑤). 0.4~0.5로 낮추면 정비계획 도면 수준 밀도 — 대신 동지 2시간 일조 단서(시행령 제86조③2호 단서)를 일조분석으로 입증해야 함, 위험요소 카드는 늘 0.8로 검사 <button type="button" id="calibBtn">실제 정비계획 수준(사례 보정: 앞뒤 0.45 · 옆 4m)</button></span></label>
+        <label>인동간격(높이 대비 배수)<input id="p_spacing" inputmode="decimal"><span class="note">법정 0.8(인천 조례 제32조⑤). 0.4~0.5로 낮추면 정비계획 도면 수준 밀도 — 같은 조문 단서(모든 세대 동지 9~15시 연속 2시간 일조)로 허용되는 적법 경로, 일조분석으로 입증. 위험요소 카드는 0.8 본문 거리와 단서를 함께 보여 줌 <button type="button" id="calibBtn">실제 정비계획 수준(사례 보정: 앞뒤 0.45 · 옆 4m)</button></span></label>
         <label>동 측면 간격 m<input id="p_sideGap" inputmode="decimal"></label>
         <label>도로 경계 이격 m<input id="p_roadSb" inputmode="decimal"></label>
         <label>간선도로 이격(소음) m<input id="p_artSb" inputmode="decimal"></label>
@@ -202,7 +202,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../shared/feas.js?v=148"></script>
 <script src="../shared/plan-import.js?v=2"></script>
 <script src="arch-draw.js?v=10"></script>
-<script src="arch.js?v=43"></script>
+<script src="arch.js?v=44"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>
 </body>

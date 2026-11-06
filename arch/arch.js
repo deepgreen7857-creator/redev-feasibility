@@ -635,9 +635,12 @@
     const { v, pv } = A.__risk, G1 = { 고위험: 0, 주의: 1, 권고: 2 }, risks = v.risks.slice().sort((a, b) => (G1[a.등급] ?? 3) - (G1[b.등급] ?? 3));
     const rule = r => `<li class="bad"><b>${esc(r.항목)}</b> ${r.동 && r.동.length ? `(${r.동.join('·')}동)` : ''} — ${esc(r.값 || '')}${r.기준 ? ` / 기준 ${esc(r.기준)}` : ''}<br><span class="note">${esc(r.근거 || '')}</span>${r.대안 ? `<br>대안: ${esc(r.대안)}` : ''}</li>`;
     const risk = r => `<li class="${r.등급 === '고위험' ? 'bad' : r.등급 === '주의' ? 'warn' : ''}"><b>[${esc(r.등급)}] ${esc(r.항목)}</b><br>원인: ${esc(r.원인 || '')}<br>영향: ${esc(r.영향 || '')}${r.확인자료 ? `<br>확인 자료: ${esc(r.확인자료)}` : ''}${r.대안 ? `<br>대안: ${esc(r.대안)}` : ''}<br><span class="note">${esc(r.근거 || '')}</span></li>`;
-    box.innerHTML = `<details open class="card"><summary><b>위험요소 검토</b> — 법정 위반 ${v.rules.length}건 · 경험 항목 ${risks.length}건(고위험 ${risks.filter(r => r.등급 === '고위험').length} · 주의 ${risks.filter(r => r.등급 === '주의').length} · 권고 ${risks.filter(r => r.등급 === '권고').length})</summary>
-      ${v.rules.length ? `<h4>법정 기준 위반(이대로는 안 됨)</h4><ul>${v.rules.map(rule).join('')}</ul>` : '<p>법정 기준(대지 경계·동 사이 거리·정북 일조·채광창 이격·용적률·건폐율) 위반 없음</p>'}
-      ${pv ? `<h4>동 사이 거리 단서(${esc(pv.근거)})</h4><p>${pv.ok ? '개략 확인으로는 모든 동의 1층 남쪽 창 앞이 동지 연속 2시간 이상 — 단서 적용 검토 가능' : `개략 확인으로 ${pv.bad.map(x => `${x.id}동(재 본 ${x.n}곳 중 ${x.bad}곳 미달, 최소 연속 ${x.minCont}시간)`).join(', ')} — 단서로도 어려움`}. <span class="note">${esc(pv.메모)}</span></p>` : ''}
+    // 동 사이 거리 본문(가·나·마목) 미달은 '위반'이 아니라 같은 호 단서(동지 2시간 일조) 경로 — 2026-11-06 사용자 지적 '법정이 아닌 거 아냐?'
+    const spR = v.rules.filter(r => ['spacing', 'side'].includes(r.id)), hard = v.rules.filter(r => !['spacing', 'side'].includes(r.id));
+    box.innerHTML = `<details open class="card"><summary><b>위험요소 검토</b> — 법정 위반 ${hard.length}건${spR.length ? ` · 동 사이 본문 거리 미달 ${spR.length}곳(단서 적용 대상)` : ''} · 경험 항목 ${risks.length}건(고위험 ${risks.filter(r => r.등급 === '고위험').length} · 주의 ${risks.filter(r => r.등급 === '주의').length} · 권고 ${risks.filter(r => r.등급 === '권고').length})</summary>
+      ${hard.length ? `<h4>법정 기준 위반(이대로는 안 됨)</h4><ul>${hard.map(rule).join('')}</ul>` : `<p>법정 기준(대지 경계·${spR.length ? '' : '동 사이 거리·'}정북 일조·채광창 이격·용적률·건폐율) 위반 없음</p>`}
+      ${spR.length ? `<h4>동 사이 거리 — 본문 거리 미달, 단서로 허용 가능</h4><p class="note">시행령 제86조③2호는 본문(가목 높이 × 조례 배수 등)과 단서(그 대지의 모든 세대가 동지 9~15시 연속 2시간 이상 일조를 확보하는 거리 이상)가 함께 있는 조문입니다. 본문 거리에 못 미쳐도 세대별 일조분석으로 단서를 입증하면 적법 — 실제 고층 정비계획 대부분이 이 방식입니다.</p><ul>${spR.map(rule).join('')}</ul>` : ''}
+      ${pv ? `<h4>동 사이 거리 단서(${esc(pv.근거)})</h4><p>${pv.ok ? '개략 확인으로는 모든 동의 1층 남쪽 창 앞이 동지 연속 2시간 이상 — 단서 적용 검토 가능' : `개략 확인으로 ${pv.bad.map(x => `${x.id}동(재 본 ${x.n}곳 중 ${x.bad}곳 미달, 최소 연속 ${x.minCont}시간)`).join(', ')} — 개략 점검 미달(남쪽 벽을 모두 창으로 보는 엄격한 개략이라 실제보다 불리할 수 있음, 세대별 주된 개구부 기준 정밀 일조분석으로 확인)`}. <span class="note">${esc(pv.메모)}</span></p>` : ''}
       ${risks.length ? `<h4>심의·민원 위험(경험 — 탈락 아님)</h4><ul>${risks.map(risk).join('')}</ul>` : ''}
       <p class="note">규칙은 법령·조례 숫자, 경험 항목은 심의·협의에서 지적되기 쉬운 것(가정값 포함). 인허가 및 심의 과정에서 변동될 수 있습니다.</p></details>`;
   }
