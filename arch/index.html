@@ -61,10 +61,15 @@
 .btnlink{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:6px 12px;color:var(--ink);text-decoration:none;background:var(--sheet)}
 .btnlink.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 #birdBar button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:600}
-#birdBar{flex-wrap:nowrap;gap:4px;overflow-x:auto;white-space:nowrap;padding-bottom:2px}
-#birdBar button{padding:5px 9px;font-size:13px;flex:none}
-#birdBar .tag{margin-left:6px;font-size:12px;flex:none}
-#birdBar .tag:first-child{margin-left:0}
+#birdBar{flex-wrap:wrap;gap:6px 14px;align-items:center}
+#birdBar .bgrp{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+#birdBar .bgrp.act{gap:6px;margin-left:auto}
+#birdBar .tag{margin:0;font-size:12px;color:var(--muted,#6b7280)}
+#birdBar .seg{display:inline-flex}
+#birdBar .seg button{border-radius:0;margin-left:-1px;padding:6px 11px;font-size:13px}
+#birdBar .seg button:first-child{border-radius:6px 0 0 6px;margin-left:0}
+#birdBar .seg button:last-child{border-radius:0 6px 6px 0}
+#birdBar .act button{padding:6px 11px;font-size:13px}
 .bar button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:600}
 .modehint{font-size:13px;margin:6px 0 0;padding:6px 10px;border-radius:6px;background:var(--accent-soft)}
 details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px}
@@ -196,10 +201,11 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
     </div>
     <div class="view" id="vbird" hidden>
       <div class="row" id="birdBar">
-        <span class="tag">시점</span><button data-bk="view" data-bv="wide" title="광역조감도">광역</button><button data-bk="view" data-bv="semi" title="반조감도">반조감</button><button data-bk="view" data-bv="bird">조감도</button><button data-bk="view" data-bv="persp">투시도</button>
-        <span class="tag">빛</span><button data-bk="look" data-bv="day">낮</button><button data-bk="look" data-bv="dusk">해질녘</button>
-        <span class="tag">주변</span><button data-bk="mode" data-bv="model" title="주변 건물을 낮춘 모형">모형</button><button data-bk="mode" data-bv="review" title="주변 건물 실제 높이(검토용)">실제 높이</button>
-        <span class="tag">돌리기</span><button data-rot="-45" title="단지 둘레로 시점을 왼쪽으로 45° 돌림">↺ 45°</button><button data-rot="45" title="단지 둘레로 시점을 오른쪽으로 45° 돌림">↻ 45°</button><button data-rot="0" title="처음 각도(남쪽에서 봄)">정면</button><button data-bk="labels" data-bv="1">동 번호</button><button id="birdPng" title="지금 화면에 보이는 그림 그대로 PNG로 내려받습니다">다운로드</button><button id="birdToPanel" title="지금 보이는 조감도(2배)를 이 구역의 판넬 그림으로 보내고 판넬·팸플릿 화면을 새 창으로 엽니다">판넬로</button>
+        <span class="bgrp"><span class="tag">시점</span><span class="seg"><button data-bk="view" data-bv="wide">광역조감도</button><button data-bk="view" data-bv="semi">반조감도</button><button data-bk="view" data-bv="bird">조감도</button><button data-bk="view" data-bv="persp">투시도</button></span></span>
+        <span class="bgrp"><span class="tag">빛</span><span class="seg"><button data-bk="look" data-bv="day">낮</button><button data-bk="look" data-bv="dusk">해질녘</button></span></span>
+        <span class="bgrp"><span class="tag">주변</span><span class="seg"><button data-bk="mode" data-bv="model">모형(낮춤)</button><button data-bk="mode" data-bv="review">검토(실제 높이)</button></span></span>
+        <span class="bgrp"><span class="tag">돌리기</span><span class="seg"><button data-rot="-45" title="단지 둘레로 시점을 왼쪽으로 45° 돌림">↺ 45°</button><button data-rot="45" title="단지 둘레로 시점을 오른쪽으로 45° 돌림">↻ 45°</button><button data-rot="0" title="처음 각도(남쪽에서 봄)">정면</button></span></span>
+        <span class="bgrp act"><button data-bk="labels" data-bv="1">동 번호</button><button id="birdPng" title="지금 화면에 보이는 그림 그대로 PNG로 내려받습니다">다운로드</button><button id="birdToPanel" title="지금 보이는 조감도(2배)를 이 구역의 판넬 그림으로 보내고 판넬·팸플릿 화면을 새 창으로 엽니다">판넬로 보내기</button></span>
       </div>
       <div id="vbirdCanvas" style="width:100%;height:620px;border-radius:6px;overflow:hidden;border:1px solid var(--line);background:#1b2028"></div>
       <p class="note" id="birdNote">이해를 돕기 위한 이미지이며 정비계획 수립 과정에서 변경될 수 있습니다.</p>
