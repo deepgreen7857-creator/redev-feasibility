@@ -34,7 +34,7 @@
       <label>문의처<input id="contact" placeholder="예: ○○구청 도시정비과 032-000-0000"></label>
       <label>일시·장소(팸플릿)<input id="when" placeholder="예: 2027. 1. 15.(금) 19:00, ○○동 행정복지센터"></label>
       <label>조감도 그림(PNG·JPG)<input id="birdFile" type="file" accept="image/*"></label>
-      <p class="note">조감도는 /arch 결과의 [조감도] 탭에서 [PNG 2배]로 저장한 그림을 올리면 됩니다. 올린 그림은 이 화면 안에서만 쓰고 저장·전송하지 않습니다.</p>
+      <p class="note">조감도는 /arch 결과 [조감도] 탭의 [판넬로 보내기]를 누르면 자동으로 들어옵니다(또는 PNG를 직접 올림). 올린 그림은 이 화면 안에서만 쓰고 저장·전송하지 않습니다.</p>
       <label class="chk"><input id="showFeas" type="checkbox"> 판넬에 개략 사업성(비례율) 넣기</label>
     </section>
     <section>
@@ -45,7 +45,8 @@
   <main class="stage"><div id="sheets"></div></main>
 </div>
 <script src="../shared/site-store.js?v=155"></script>
-<script src="panel.js?v=2"></script>
+<script src="../shared/panel-img.js?v=1"></script>
+<script src="panel.js?v=3"></script>
 <script src="../shared/workfile.js?v=8"></script>
 </body>
 </html>

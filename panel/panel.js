@@ -104,7 +104,7 @@
     const ttl = esc($('#title').value || site.name || '정비사업'), sub = esc($('#subtitle').value || '정비계획(안)'), contact = esc($('#contact').value);
     const flow = CR.판넬.단계_흐름, curIdx = Math.max(0, flow.findIndex(x => sub.includes(x.slice(0, 4))));
     const flowH = `<div class="flow">${flow.map((x, i) => `${i ? '<i>›</i>' : ''}<span class="${i === curIdx && curIdx > 0 ? 'on' : ''}">${esc(x)}</span>`).join('')}</div>${isRecon(site) ? `<p class="note" style="font-size:6mm;margin:3mm 0 0">${esc(CR.판넬.재건축_추가)}</p>` : ''}`;
-    const bird = `<div class="bird">${birdURL ? `<img src="${birdURL}" alt="조감도">` : '조감도 그림을 올리세요(/arch → 조감도 탭 → PNG 2배)'}</div>`;
+    const bird = `<div class="bird">${birdURL ? `<img src="${birdURL}" alt="조감도">` : '조감도 그림이 없습니다 — /arch 조감도 탭에서 [판넬로 보내기]'}</div>`;
     const rv = reviewLines(site), lr = landRows(F);
     const feas = $('#showFeas').checked && site.quick && site.quick.ratio ? `<div class="box"><h3>개략 사업성</h3>${tbl([['비례율(1회차 개략)', `${fmt(site.quick.ratio, 1)}%`]])}<p class="note" style="font-size:5.5mm;margin:2mm 0 0">공사비·분양가 등 가정값으로 계산한 참고값입니다.</p></div>` : '';
     const boxes = `<div class="box"><h3>건축 개요</h3>${tbl(overviewRows(F))}</div>${lr.length > 1 ? `<div class="box"><h3>토지이용계획</h3>${tbl(lr)}</div>` : ''}${rv.length ? `<div class="box"><h3>검토 반영 사항</h3><ul>${rv.map(x => `<li>${x}</li>`).join('')}</ul></div>` : ''}${feas}`;
@@ -153,7 +153,10 @@
     $('#title').value = sv.title || `${site.name || ''}${site.name && !/정비사업|재개발|재건축/.test(site.name) ? (recon ? ' 주택재건축 정비사업' : ' 주택재개발 정비사업') : ''}`;
     $('#subtitle').value = sv.subtitle || '정비계획(안)'; $('#contact').value = sv.contact || ''; $('#when').value = sv.when || ''; $('#showFeas').checked = !!sv.showFeas;
     try { localStorage.setItem('jbs.sites.current', site.id); } catch (e) { /* 무시 */ }
+    if (birdURL) { URL.revokeObjectURL(birdURL); birdURL = ''; }
     render();
+    // /arch [판넬로 보내기]로 보낸 조감도(이 브라우저 IndexedDB)
+    if (window.JbsPanelImg) { const id0 = site.id; JbsPanelImg.get(id0).then(r => { if (r && r.blob && site && site.id === id0 && !birdURL) { birdURL = URL.createObjectURL(r.blob); render(); } }); }
   }
   function init() {
     const list = (typeof JbsSite !== 'undefined' ? JbsSite.list() : []).filter(s => ringOf(s));

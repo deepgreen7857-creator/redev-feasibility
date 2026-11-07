@@ -941,6 +941,12 @@
   }
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('#birdBar button'); if (!b) return;
+    if (b.id === 'birdToPanel') {   // 2026-11-07: 판넬로 바로 보내기(/panel이 IndexedDB에서 읽음)
+      if (!BIRD.data || !window.JbsPanelImg || !site || !site.id) { msg('조감도를 먼저 그리고, 구역이 저장되어 있어야 합니다.', true); return; } const el = $('#vbirdCanvas');
+      const r = JbsBird.render(el, BIRD.data, Object.assign({}, BIRD.st, { w: el.clientWidth || 1200, h: el.clientHeight || 620, pr: 2 }));
+      fetch(r.png()).then(x => x.blob()).then(bl => JbsPanelImg.put(site.id, bl, { view: BIRD.st.view })).then(() => { renderBird(); msg('조감도를 판넬로 보냈습니다. 새 창의 판넬·팸플릿 화면에 들어가 있습니다.'); window.open('/panel/?site=' + encodeURIComponent(site.id), '_blank'); }).catch(er => msg('판넬로 보내지 못했습니다: ' + er.message, true));
+      return;
+    }
     if (b.id === 'birdPng') {
       if (!BIRD.data) return; const el = $('#vbirdCanvas');
       const r = JbsBird.render(el, BIRD.data, Object.assign({}, BIRD.st, { w: el.clientWidth || 1200, h: el.clientHeight || 620, pr: 2 }));
