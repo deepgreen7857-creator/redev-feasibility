@@ -698,6 +698,8 @@
     msg(`일조 연계 다듬기: '${A.label}'에서 출발 — 순 ${fmt(S0.net)} → ${fmt(B.net)}세대(세대 ${fmt(B.gross)} 중 저층 비움 ${fmt(B.low)} · 못 쓰는 줄 ${fmt(B.dead)}), ${r.blds.length}개동, ${fmt(r.tries)}번 시도 ${Math.round(r.ms / 1000)}초${B.legal ? '' : ' · 규칙 위반 남음: ' + B.bad.join(', ')}. 동 사이 본문 거리는 단서(모든 세대 동지 2시간)로 갈음한 배치입니다.`);
   }
   document.addEventListener('click', e => { if (e.target && e.target.id === 'refineBtn') runRefine(); });
+  // 판넬·팸플릿(2026-11-07, 사용자 목록 8·9): 확정안이 있는 이 구역으로 /panel
+  document.addEventListener('click', e => { if (!e.target || e.target.id !== 'toPanel') return; if (site && site.id) { if (!(site.arch && site.arch.chosen) && !confirm('아직 [이 안으로 확정]을 하지 않았습니다. 확정 전이면 판넬에 배치도·건축 개요가 비어 나옵니다. 그래도 열까요?')) return; location.href = '/panel/?site=' + encodeURIComponent(site.id); } else location.href = '/panel/'; });
   function takeSunSim() {
     let r = null; try { r = JSON.parse(localStorage.getItem('jbs-sunsim-back-cache') || 'null'); } catch (e) { r = null; }
     if (!r || !r.buildings || !r.buildings.length) { msg('시뮬레이터에서 [이 배치를 건축계획 화면으로]를 먼저 누르세요.', true); return; }
