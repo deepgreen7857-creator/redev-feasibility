@@ -122,7 +122,7 @@
     renderer.setPixelRatio(opt.pr); renderer.setSize(W, H);
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = dusk ? 0.95 : 0.78;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = dusk ? 0.95 : 0.82;
     renderer.physicallyCorrectLights = false;
     el.innerHTML = ''; el.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
@@ -151,8 +151,8 @@
     scene.fog = new THREE.Fog(fogCol, span * 3, span * 10); // 카메라 정한 뒤 다시 맞춤
 
     // 빛
-    const hemi = new THREE.HemisphereLight(dusk ? 0x8a9cc6 : 0xdfeaf5, dusk ? 0x2e2620 : 0x8a8270, dusk ? 0.55 : 0.5); scene.add(hemi);
-    const sun = new THREE.DirectionalLight(dusk ? 0xffa868 : 0xfff1dc, dusk ? 0.75 : 0.95); sun.castShadow = true;
+    const hemi = new THREE.HemisphereLight(dusk ? 0x8a9cc6 : 0xdfeaf5, dusk ? 0x2e2620 : 0x8a8270, dusk ? 0.42 : 0.3); scene.add(hemi);
+    const sun = new THREE.DirectionalLight(dusk ? 0xffa868 : 0xfff1dc, dusk ? 1.0 : 1.45); sun.castShadow = true;
     sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.5;
     const sc = sun.shadow.camera, R = span * 1.3; sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 1; sc.far = span * 12;
     const tgt = new THREE.Vector3(cx, 0, -cy), dd = span * 4;
@@ -250,7 +250,10 @@
       const band = (p, q, L, z0, z1, pair, nF, side) => {
         const nB = Math.max(1, Math.round(L / 3.3));
         const mat = new THREE.MeshStandardMaterial({ map: tex(pair[0], nB / 4, nF / 4), emissive: 0xffffff, emissiveMap: tex(pair[1], nB / 4, nF / 4), emissiveIntensity: dusk ? 1.0 : 0, envMap: ENV, roughness: side ? 0.85 : 0.5, metalness: side ? 0 : 0.15, envMapIntensity: dusk ? (side ? 0.15 : 0.45) : (side ? 0.3 : 0.6), color: dusk ? 0xdcd8d0 : 0xe6e6e6 });
-        const m = new THREE.Mesh(new THREE.PlaneGeometry(L, z1 - z0), mat);
+        const pg = new THREE.PlaneGeometry(L, z1 - z0, 1, 4), pp = pg.attributes.position, vc = new Float32Array(pp.count * 3);
+        for (let k = 0; k < pp.count; k++) { const z = (z0 + z1) / 2 + pp.getY(k), f = 0.62 + 0.38 * Math.min(1, z / 45); vc[k * 3] = vc[k * 3 + 1] = vc[k * 3 + 2] = f; } // 아래층일수록 어둡게(땅 가까운 그늘)
+        pg.setAttribute('color', new THREE.BufferAttribute(vc, 3)); mat.vertexColors = true;
+        const m = new THREE.Mesh(pg, mat);
         const nx = (q[1] - p[1]) / L, ny = -(q[0] - p[0]) / L;
         m.position.set((p[0] + q[0]) / 2 + nx * 0.02, (z0 + z1) / 2, -((p[1] + q[1]) / 2 + ny * 0.02)); m.rotation.y = Math.atan2(nx, -ny);
         m.castShadow = true; m.receiveShadow = true; scene.add(m);
@@ -307,12 +310,48 @@
     if (fore) { const fb2 = turf.bbox(foreF); for (let x = fb2[0]; x <= fb2[2]; x += 7) for (let y = fb2[1]; y <= fb2[3]; y += 7) { const px = x + (rnd() - .5) * 6, py = y + (rnd() - .5) * 6; if (!inPoly(px, py, foreF)) continue; const de = Math.hypot(px - EYE[0], py - EYE[1]); if (de < 30) continue; const rr = rnd(); if (rr < (de < 110 ? 0.04 : 0.3)) trees.push([px, py, 0.8 + rnd() * 0.9]); else if (rr < 0.6) shrubs.push([px, py, 0.8 + rnd() * 1.2]); } }
     // 동 둘레 관목
     foot.forEach(Rg => { const ring = mBuf(Rg, 2.5); if (!ring) return; for (let i = 0; i < ring.length; i += 2) if (rnd() < 0.7) shrubs.push([ring[i][0], ring[i][1], 0.5 + rnd() * 0.5]); });
-    // 둘레 가로수
+    // 단지 안쪽 둘레 나무
     for (let i = 0; i < S.length; i++) {
       const a = S[i], b = S[(i + 1) % S.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 6) continue;
       const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L;
-      for (let t = 3; t < L - 2; t += 8) { const px = a[0] + (b[0] - a[0]) * t / L, py = a[1] + (b[1] - a[1]) * t / L; for (const o of [3, -2]) { const qx = px + nx * o, qy = py + ny * o; if (o < 0 ? inPoly(qx, qy, siteF) : !inPoly(qx, qy, siteF)) trees.push([qx, qy, 0.95]); } }
+      for (let t = 3; t < L - 2; t += 8) { const qx = a[0] + (b[0] - a[0]) * t / L - nx * 2, qy = a[1] + (b[1] - a[1]) * t / L - ny * 2; if (inPoly(qx, qy, siteF)) trees.push([qx, qy, 0.95]); }
     }
+    /* ----- 경계 가로(정비기반시설): 변마다 바깥 도로 폭을 재서 보도·차도·차선·가로수·가로등 ----- */
+    const roadF = (D.roads || []).filter(r => r.length > 2).map(r => { try { return tp(r); } catch (e) { return null; } }).filter(Boolean);
+    const rbb = roadF.map(f => turf.bbox(f));
+    const inRoad = (x, y) => roadF.some((f, i) => x >= rbb[i][0] && x <= rbb[i][2] && y >= rbb[i][1] && y <= rbb[i][3] && inPoly(x, y, f));
+    const streetLamps = [], streetRings = [], streets = [];
+    const sideM = STD(dusk ? 0x76706a : 0xbdb6a8), curbM = STD(dusk ? 0x9a948c : 0xe2ded6), asphM = STD(dusk ? 0x26282c : 0x45484c, { roughness: 0.8 });
+    const yelM = new THREE.MeshBasicMaterial({ color: dusk ? 0xa8851a : 0xe3b21c }), whM = new THREE.MeshBasicMaterial({ color: dusk ? 0xb8b8b8 : 0xf4f4f4 });
+    const quad = (A, B, n, o1, o2, t1, t2) => { const L = Math.hypot(B[0] - A[0], B[1] - A[1]), ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L; const P0 = [A[0] + ux * t1, A[1] + uy * t1], P1 = [A[0] + ux * t2, A[1] + uy * t2]; return [[P0[0] + n[0] * o1, P0[1] + n[1] * o1], [P1[0] + n[0] * o1, P1[1] + n[1] * o1], [P1[0] + n[0] * o2, P1[1] + n[1] * o2], [P0[0] + n[0] * o2, P0[1] + n[1] * o2]]; };
+    for (let i = 0; i < S.length; i++) {
+      const A = S[i], B = S[(i + 1) % S.length], L = Math.hypot(B[0] - A[0], B[1] - A[1]); if (L < 3) continue;
+      let n = [(B[1] - A[1]) / L, -(B[0] - A[0]) / L]; const mx0 = (A[0] + B[0]) / 2, my0 = (A[1] + B[1]) / 2;
+      if (inPoly(mx0 + n[0] * 1.5, my0 + n[1] * 1.5, siteF)) n = [-n[0], -n[1]];
+      const widthAt = t => { const px = A[0] + (B[0] - A[0]) * t, py = A[1] + (B[1] - A[1]) * t; let w = 0; for (let d = 1; d <= 60; d++) { if (inRoad(px + n[0] * d, py + n[1] * d)) w = d; else if (d - w > 3) break; } return w; };
+      const ws = [0.25, 0.5, 0.75].map(widthAt).sort((x, y) => x - y), w = ws[1];
+      if (w < 4) continue;
+      streets.push({ A, B, L, n, w });
+    }
+    streets.forEach(({ A, B, L, n, w }) => {
+      const sw = w >= 25 ? 5 : w >= 12 ? 3.5 : 2, far = w >= 12, cw0 = sw, cw1 = far ? w - sw : w, ext = Math.min(6, sw + 2);
+      const r1 = quad(A, B, n, 0, sw, -ext, L + ext), r2 = quad(A, B, n, cw0, cw1, -ext, L + ext);
+      flat(r1, sideM, 0.16); flat(quad(A, B, n, sw - 0.25, sw, -ext, L + ext), curbM, 0.2); flat(r2, asphM, 0.12);
+      streetRings.push(r1, r2);
+      if (far) { flat(quad(A, B, n, w - sw, w, -ext, L + ext), sideM, 0.16); flat(quad(A, B, n, w - sw, w - sw + 0.25, -ext, L + ext), curbM, 0.2); streetRings.push(quad(A, B, n, w - sw, w, -ext, L + ext)); }
+      const cwW = cw1 - cw0, mid = cw0 + cwW / 2;
+      if (cwW >= 9) { flat(quad(A, B, n, mid - 0.3, mid - 0.15, -ext, L + ext), yelM, 0.19); flat(quad(A, B, n, mid + 0.15, mid + 0.3, -ext, L + ext), yelM, 0.19); }
+      const dashAt = o => { for (let t = -ext; t < L + ext; t += 8) flat(quad(A, B, n, o - 0.08, o + 0.08, t, Math.min(t + 3, L + ext)), whM, 0.19); };
+      if (cwW < 9) dashAt(mid);
+      else for (let k = 1; cw0 + k * 3.3 < mid - 1.2; k++) { dashAt(cw0 + k * 3.3); dashAt(cw1 - k * 3.3); }
+      // 보도 가로수·가로등
+      for (let t = 2; t < L; t += 8) { const px = A[0] + (B[0] - A[0]) * t / L, py = A[1] + (B[1] - A[1]) * t / L; trees.push([px + n[0] * sw * 0.45, py + n[1] * sw * 0.45, 0.85]); if (far && w < 40) trees.push([px + n[0] * (w - sw * 0.45), py + n[1] * (w - sw * 0.45), 0.85]); }
+      for (let t = 6; t < L; t += 24) { const px = A[0] + (B[0] - A[0]) * t / L, py = A[1] + (B[1] - A[1]) * t / L; streetLamps.push([px + n[0] * (sw - 0.5), py + n[1] * (sw - 0.5), 9]); if (far) streetLamps.push([px + n[0] * (w - sw + 0.5), py + n[1] * (w - sw + 0.5), 9]); }
+    });
+    // 화면 위 동 윤곽(투시도에서 나무가 건물 가리는지 볼 때·초점 판에 씀)
+    const hullOf = pts => { pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; pts.forEach(p => { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }); pts.slice().reverse().forEach(p => { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }); return lo.slice(0, -1).concat(up.slice(0, -1)); };
+    const ndc = (cam, x, h, y) => { const v = new THREE.Vector3(x, h, -y).project(cam); return [v.x, v.y]; };
+    const inHull = (H2, p) => { let c = false; for (let i = 0, j = H2.length - 1; i < H2.length; j = i++) { const a = H2[i], b = H2[j]; if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
     // 그림자만 드리우는 보이지 않는 덩어리(그림 나무는 카메라를 정한 뒤 세움)
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Sc = new THREE.Vector3(), P = new THREE.Vector3(), col = new THREE.Color();
     const ghost = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
@@ -323,6 +362,12 @@
     const toneAt = (x, y) => Math.sin(x / 23 + 1.3) + Math.cos(y / 29) + Math.sin((x + y) / 17 + 0.5) * 0.7;
     const plantTrees = cam => {
       const types = { round: [], tall: [], cone: [], flower: [], bush: [] };
+      if (opt.view === 'persp' || opt.view === 'semi') {
+        // 동 앞(카메라 쪽)에 서서 화면에서 동을 가리는 나무는 뺌
+        const camP = cam.position, bh = D.blds.map(b => { const zT = Z0 + (b.floors || 15) * FH; const c = turf.centroid(tp(b.ring)).geometry.coordinates; return { H: hullOf(b.ring.map(p => ndc(cam, p[0], Z0 + 3, p[1])).concat(b.ring.map(p => ndc(cam, p[0], zT, p[1])))), d: Math.hypot(c[0] - camP.x, c[1] + camP.z) }; });
+        const keep = t => { const h = (t.length > 3 ? 2 : 9) * t[2] * 1.15, top = ndc(cam, t[0], h, t[1]), d = Math.hypot(t[0] - camP.x, t[1] + camP.z); return !bh.some(b => d < b.d - 3 && inHull(b.H, top)); };
+        for (let i = trees.length - 1; i >= 0; i--) if (!keep(trees[i])) trees.splice(i, 1);
+      }
       trees.forEach(t => {
         const inSite = inPoly(t[0], t[1], siteF), r = rnd();
         const ty = !inSite ? (r < 0.75 ? 'tall' : 'round') : r < 0.07 ? 'flower' : r < 0.2 ? 'cone' : r < 0.42 ? 'tall' : 'round';
@@ -353,7 +398,7 @@
     /* ----- 가로등·조명 점 ----- */
     const lampPts = [];
     if (ring2) { const rr = mBuf(S, -12.5) || ring2; let acc = 0; for (let i = 0; i < rr.length; i++) { const a = rr[i], b = rr[(i + 1) % rr.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); for (let t = 0; t < L; t += 1) { acc += 1; if (acc >= 14) { acc = 0; lampPts.push([a[0] + (b[0] - a[0]) * t / L, a[1] + (b[1] - a[1]) * t / L, 4.5]); } } } }
-    for (let i = 0; i < S.length; i++) { const a = S[i], b = S[(i + 1) % S.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L; for (let t = 5; t < L; t += 22) lampPts.push([a[0] + (b[0] - a[0]) * t / L + nx * 6, a[1] + (b[1] - a[1]) * t / L + ny * 6, 8]); }
+    streetLamps.forEach(l => lampPts.push(l));
     // 단지 안 보행등(나무 사이)
     trees.forEach(t => { if (rnd() < 0.08 && inPoly(t[0], t[1], siteF)) lampPts.push([t[0] + 1.5, t[1] + 1.5, 1.2]); });
     const poleG = new THREE.CylinderGeometry(0.08, 0.1, 1, 5);
@@ -416,8 +461,8 @@
     if (opt.view === 'persp') {
       // 투시도: 남쪽 멀리(구역 폭의 1.5배) 높이 12m에서, 하늘이 화면 절반
       const ep = EYE;
-      camera.fov = 42; camera.position.set(ep[0], 6, -ep[1]);
-      camera.lookAt(new THREE.Vector3(cx, 48, -cy));
+      camera.fov = 40; camera.position.set(ep[0], 16, -ep[1]);
+      camera.lookAt(new THREE.Vector3(cx, 52, -cy));
     } else {
       const v = views[opt.view] || views.bird, look = new THREE.Vector3(cx, v.y, -cy), dist = span * v.d;
       camera.fov = v.fov; camera.position.set(look.x + dist * Math.cos(v.el) * Math.sin(v.az), look.y + dist * Math.sin(v.el), look.z + dist * Math.cos(v.el) * Math.cos(v.az)); camera.lookAt(look);
@@ -437,11 +482,11 @@
         // 단지 범위(바닥 + 동 기둥 + 옥탑)를 화면에 비춘 그림 → 흐릿한 경계의 '초점 판'
         const [mc, mx] = cv(Math.round(W / 2), Math.round(H / 2)), sx = mc.width, sy = mc.height;
         const prj = (x, h, y) => { const v = new THREE.Vector3(x, h, -y).project(camera); return [(v.x + 1) / 2 * sx, (1 - v.y) / 2 * sy]; };
-        const hullOf = pts => { pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; pts.forEach(p => { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }); pts.slice().reverse().forEach(p => { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }); return lo.slice(0, -1).concat(up.slice(0, -1)); };
         const fillPts = pts => { if (pts.length < 3) return; mx.beginPath(); pts.forEach((p, i) => i ? mx.lineTo(p[0], p[1]) : mx.moveTo(p[0], p[1])); mx.closePath(); mx.fill(); };
         mx.fillStyle = '#000'; mx.fillRect(0, 0, sx, sy); mx.fillStyle = '#fff';
         const inFront = (x, h, y) => new THREE.Vector3(x, h, -y).applyMatrix4(camera.matrixWorldInverse).z < 0;
         fillPts(S.map(p => prj(p[0], 0, p[1]))); fillPts(S.map(p => prj(p[0], 10, p[1])));
+        mx.fillStyle = '#ccc'; streetRings.forEach(r => fillPts(r.map(p => prj(p[0], 0, p[1])))); mx.fillStyle = '#fff';
         D.blds.forEach(b => { const zT = Z0 + (b.floors || 15) * FH + 9; fillPts(hullOf(b.ring.map(p => prj(p[0], 0, p[1])).concat(b.ring.map(p => prj(p[0], zT, p[1]))))); });
         if (fore) fillPts(fore.filter(p => inFront(p[0], 0, p[1])).map(p => prj(p[0], 0, p[1])));
         const [bc, bx] = cv(sx, sy); bx.filter = `blur(${Math.round(sx / 60)}px)`; bx.drawImage(mc, 0, 0);
