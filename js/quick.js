@@ -690,7 +690,7 @@ Tabs.quick = {
     if (!num(q.members)) warn.push('조합원 수가 0입니다. 토지등소유자 수(추정)를 넣으세요.');
     if (p.short) warn.push(`조합원 ${fmt(q.members)}명보다 분양 세대가 ${fmt(p.short)}세대 부족합니다.`);
     // 현황이 공업지역(준공업·일반공업)인데 계획 용도지역 목록은 주거·준주거뿐 — 용도지역 변경을 전제로 한 가정임을 밝힘(2026-11-06 학익장미)
-    if (/공업/.test(String(S.meta.zoning || ''))) warn.push(/준공업/.test(String(q.zone)) ? '준공업지역 용적률 300%는 인천 첫 준공업 재건축 구역의 정비계획 적용값(사례값)입니다. 정비기본계획의 준공업 기준·허용·상한 단계는 아직 확인되지 않아 세 단계가 같게 들어가 있습니다.' : `현황 용도지역이 ${esc(String(S.meta.zoning))}입니다. 위 용적률은 정비계획 결정 때 ${esc(String(q.zone).replace(/_/g, ' '))}으로 바꾸는 것을 전제로 한 가정입니다. 준공업 그대로 계획하면 용도지역에서 '준공업지역 공동주택'을 고르세요.`);
+    if (/공업/.test(String(S.meta.zoning || ''))) warn.push(/준공업/.test(String(q.zone)) ? '준공업지역 300%는 인천 첫 준공업 재건축 구역이 인센티브·공공시설 제공으로 도달한 상한용적률(사례값)입니다. 준공업의 기준·허용용적률은 확인 중이라 지금은 세 단계 모두 300%로 들어가 있습니다.' : `현황 용도지역이 ${esc(String(S.meta.zoning))}입니다. 위 용적률은 정비계획 결정 때 ${esc(String(q.zone).replace(/_/g, ' '))}으로 바꾸는 것을 전제로 한 가정입니다. 준공업 그대로 계획하면 용도지역에서 '준공업지역 공동주택'을 고르세요.`);
     if (q.farStep === 'calc' && !S.lands.length) warn.push('토지조서가 없어 기존 공공시설(도로 등) 면적을 0으로 보고 산식 용적률을 냈습니다. 실제로는 기존 도로를 빼야 해서 용적률이 더 낮을 수 있습니다.');
     const tgt = num(q.target) || 100;
     out.innerHTML = this.layoutLine(q0, f) + `

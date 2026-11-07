@@ -815,7 +815,7 @@ function defaultPlanZone(a) {
 function planZoneStore(a) { return a && a.key && Z.zones[a.key] ? Z.zones[a.key] : null; }
 function industrialNote(a) {
   const ks = Object.keys((a && a.zoneArea) || {}).filter(k => /공업/.test(k)); if (!ks.length) return '';
-  if (/준공업/.test(P.zone)) return `<span class="u warn" style="display:block;margin-top:2px">준공업지역 300%는 인천 첫 준공업 재건축 구역의 정비계획 적용값(사례값)입니다 — 정비기본계획의 준공업 기준·허용·상한 단계는 아직 확인되지 않아 세 단계가 같게 들어가 있습니다.</span>`;
+  if (/준공업/.test(P.zone)) return `<span class="u warn" style="display:block;margin-top:2px">준공업지역 300%는 인천 첫 준공업 재건축 구역이 인센티브·공공시설 제공으로 도달한 상한용적률(사례값)입니다 — 준공업의 기준·허용용적률은 확인 중이라 지금은 세 단계 모두 300%로 들어가 있습니다.</span>`;
   return `<span class="u warn" style="display:block;margin-top:2px">현황에 ${ks.map(esc).join('·')}이 있습니다 — 계획 용도지역(${esc(P.zone.replace('일반주거지역', ''))})은 용도지역 변경(정비계획 결정 시 주거지역 지정)을 전제로 한 가정입니다. 준공업 그대로 계획하면 '준공업지역'을 고르세요.</span>`;
 }
 function syncPlanZone(a) {
