@@ -1,7 +1,7 @@
 // 공매(온비드) 일괄 수집기 — 2026-11-07 사용자 결정: "공매는 경매수집기(서버 20분 수집)에서 빼고 한 번에 따로 받아 정리"
 //
 //  공공데이터포털 온비드 API(운영계정, 하루 10만 건)로 목록 → 원문(상세) → 입찰결과를 끝까지 한 번에 받는다.
-//  받은 원자료는 먼저 이 PC 파일로 저장(D:\공매원본\YYYYMMDD\, 없으면 state\onbid\YYYYMMDD\)하고,
+//  받은 원자료는 미니PC 외장하드 E:\공매원본\YYYYMMDD\ 에 저장하고(E: 없는 노트북에서는 저장 안 함),
 //  사이트 DB에는 수집 서버(ingestCourt, .env 의 INGEST_URL·INGEST_TOKEN)로 묶어서 올린다.
 //
 //  실행:  node src\onbid-bulk.cjs            (매일: 목록 전체 + 바뀐 물건 원문 + 끝난 물건 결과)
@@ -39,9 +39,10 @@ const KEY = env.DATA_GO_KR_KEY || ((fs.existsSync(cfgJs) ? fs.readFileSync(cfgJs
 const kst = (d = new Date()) => new Date(d.getTime() + 9 * 3600e3);
 const TODAY = kst().toISOString().slice(0, 10).replace(/-/g, '');
 const NOW_TEXT = kst().toISOString().slice(0, 16).replace('T', ' ');
-const OUT_BASE = env.ONBID_DIR || (fs.existsSync('D:\\') ? 'D:\\공매원본' : path.join(ROOT, 'state', 'onbid'));
-const OUT = path.join(OUT_BASE, TODAY);
-fs.mkdirSync(OUT, { recursive: true });
+// 원자료는 미니PC 외장하드(E:)에만 저장(2026-11-07 사용자: 노트북은 저장용량이 작음). E:가 없는 PC(노트북)에서는 원자료 파일을 남기지 않고 사이트에만 올린다.
+const OUT_BASE = env.ONBID_DIR || (fs.existsSync('E:\\') ? 'E:\\공매원본' : null);
+const OUT = OUT_BASE ? path.join(OUT_BASE, TODAY) : null;
+if (OUT) fs.mkdirSync(OUT, { recursive: true });
 fs.mkdirSync(path.join(ROOT, 'logs'), { recursive: true });
 const LOG = path.join(ROOT, 'logs', `onbid-${TODAY}.log`);
 function log(...a) {
@@ -50,7 +51,7 @@ function log(...a) {
   fs.appendFileSync(LOG, `${line}\n`);
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const appendJsonl = (name, rows) => { if (rows.length) fs.appendFileSync(path.join(OUT, name), rows.map((r) => JSON.stringify(r)).join('\n') + '\n'); };
+const appendJsonl = (name, rows) => { if (OUT && rows.length) fs.appendFileSync(path.join(OUT, name), rows.map((r) => JSON.stringify(r)).join('\n') + '\n'); };
 
 // ── 수집 서버로 보내기 ─────────────────────────────────
 async function post(body, tries = 4) {
@@ -93,7 +94,7 @@ async function main() {
   const t0 = Date.now();
   if (!KEY) throw new Error('공공데이터포털 인증키(DATA_GO_KR_KEY)를 js\\config.js 나 .env 에서 찾지 못함');
   if (!DRY && (!env.INGEST_URL || !env.INGEST_TOKEN)) throw new Error('.env 에 INGEST_URL, INGEST_TOKEN 이 없음(법원경매 수집기와 같은 값)');
-  log(`=== 공매 일괄 수집 시작${DRY ? ' (시험: 서버에 안 올림)' : ''} — 원자료 폴더 ${OUT}`);
+  log(`=== 공매 일괄 수집 시작${DRY ? ' (시험: 서버에 안 올림)' : ''} — 원자료 폴더 ${OUT || '없음(E: 없음 — 사이트에만 올림)'}`);
   const stats = { listPages: 0, listRows: 0, saved: 0, needDetail: 0, details: 0, detailEmpty: 0, results: 0, resultPending: 0, resultRows: 0, errors: [] };
   const err = (m) => { stats.errors.push(m); if (stats.errors.length <= 30) log('오류', m); };
 
@@ -232,7 +233,7 @@ async function main() {
   if (!stopped && !quotaHit) { state.lastDay = TODAY; state.lastFullDay = TODAY; }
   try { await post({ action: 'onbidState', state }); } catch (e) { log('수집 기록 저장 실패', e.message); }
   if (!DRY && !stopped) { try { await post({ action: 'onbidState', name: 'onbidResults', state: { lastDay: TODAY } }); } catch { /* 무시 */ } }
-  fs.writeFileSync(path.join(OUT, '요약.json'), JSON.stringify(state, null, 1));
+  if (OUT) fs.writeFileSync(path.join(OUT, '요약.json'), JSON.stringify(state, null, 1));
   log(`=== 끝 (${min}분) 목록 ${stats.listRows} · 원문 ${stats.details}/${stats.needDetail} · 결과 ${stats.results} · 결과목록 ${stats.resultRows} · 오류 ${stats.errors.length}`);
 }
 
