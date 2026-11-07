@@ -72,7 +72,10 @@
     let cur = attachCols(site, blds0, opt), L0 = legal(site, cur, opt);
     const S0 = netOf(site, cur, opt, keepLow);
     let S = fastNet(cur, TR, opt, keepLow); const start = { net: S0.net, gross: S0.gross, low: S0.low, dead: S0.dead, legal: L0.ok, fast: S.net };
-    const steps = [], shapes = cur.slice();           // 끼워 넣기에 쓸 동 모양
+    const steps = [], shapes = cur.slice();
+    // 섞을 동 틀(o.shapes — JbsShapes.templates: V자 꼭짓점형·일자 2·4·6호). 창 점은 틀마다 한 번 구해 둠(가운데 0,0 기준)
+    const extra = (o.shapes || []).map(tp => attachCols(site, [Object.assign({}, tp, { id: 1, floors: 10 })], opt)[0]).filter(tp => tp.sc && tp.sc.length);
+    const pool = shapes.concat(extra);           // 끼워 넣기에 쓸 동 모양
     let tries = 0, nextId = Math.max(0, ...blds0.map(b => +b.id || 0)) + 1;
     const xs = site.pts.map(p => p[0]), ys = site.pts.map(p => p[1]), X0 = Math.min(...xs), X1 = Math.max(...xs), Y0 = Math.min(...ys), Y1 = Math.max(...ys);
     const accept = (cand, kind, id) => {
@@ -103,12 +106,16 @@
         } else if (r < 0.85) {                            // 층수: 미달 줄이 있으면 낮추기 먼저, 아니면 올리기
           const lostHere = per[id] || 0, up = lostHere === 0 ? R() < 0.75 : R() < 0.25, st = [1, 2, 4][Math.floor(R() * 3)];
           const f = Math.max(minF, Math.min(capOf(b), b.floors + (up ? st : -st))); if (f !== b.floors && accept(put(Object.assign({}, b, { floors: f })), up ? '층수 올리기' : '층수 낮추기', id)) gained = true;
-        } else if (r < 0.92) {                            // 빼기
+        } else if (r < 0.88 && extra.length) {            // 바꿔 끼우기: 이 동 자리(가운데·방향)에 다른 틀(V자·2호 판상 등)
+          const tp = extra[Math.floor(R() * extra.length)], c = b.center || b.poly[0];
+          const nb = moved(tp, c, (+b.angle || 0) * D2R); nb.id = b.id; nb.floors = Math.min(capOf(nb), b.floors);
+          if (nb.floors >= minF && accept(put(nb), '바꿔 끼우기(' + (tp.dname || tp.form) + ')', id)) gained = true;
+        } else if (r < 0.93) {                            // 빼기
           if (cur.length > 1 && accept(cur.filter((x, k) => k !== i), '빼기', id)) gained = true;
         } else {                                          // 끼워 넣기: 아무 동 모양을 빈 곳에
-          const sh = shapes[Math.floor(R() * shapes.length)], c0 = sh.center || sh.poly[0], at = [X0 + R() * (X1 - X0), Y0 + R() * (Y1 - Y0)];
+          const sh = pool[Math.floor(R() * pool.length)], c0 = sh.center || sh.poly[0], at = [X0 + R() * (X1 - X0), Y0 + R() * (Y1 - Y0)];
           if (!G.inside(at[0], at[1], site.pts)) continue;
-          const nb = moved(sh, [at[0] - c0[0], at[1] - c0[1]], 0); nb.id = nextId; nb.floors = Math.min(capOf(nb), sh.floors);
+          const nb = moved(sh, [at[0] - c0[0], at[1] - c0[1]], [0, -15, 15, -30, 30][Math.floor(R() * 5)] * D2R); nb.id = nextId; nb.floors = Math.min(capOf(nb), Math.max(sh.floors || 0, maxF));
           if (nb.floors >= minF && accept(cur.concat([nb]), '끼워 넣기', nb.id)) { gained = true; nextId++; }
         }
       }
