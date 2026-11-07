@@ -575,7 +575,7 @@ ${[['59', p.u59], ['84', p.u84], ['114', p.u114]].filter(([, n]) => n > 0).map((
 Tabs.quick = {
   // 재건축: 구역 필지의 공동주택가격(브이월드 getApartHousingPriceAttr)을 한 번 조회해 필지별 합계를 l.housePrice(만원)에 둠
   async fetchHousePrices() {
-    if (this._hpBusy || S.meta.type !== 'reconstruction' || !window.VWorld || !VWorld.enabled) return;
+    if (this._hpBusy || S.meta.type !== 'reconstruction' || typeof VWorld === 'undefined' || !VWorld.enabled) return;
     const todo = S.lands.filter(l => l.pnu && !l.sample && !l.houseAt);
     if (!todo.length) return;
     this._hpBusy = true;
