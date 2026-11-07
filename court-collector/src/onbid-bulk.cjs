@@ -66,7 +66,7 @@ async function post(body, tries = 4) {
       if (res.status === 401) throw Object.assign(new Error('토큰이 맞지 않음(.env INGEST_TOKEN 확인)'), { fatal: true });
       if (!res.ok) throw new Error(`서버 ${res.status} ${t.slice(0, 200)}`);
       const j = JSON.parse(t);
-      if (j.ok === false) throw new Error(`서버 거절: ${j.error || t.slice(0, 200)}`);
+      if (j.ok === false) throw Object.assign(new Error(`서버 거절: ${j.error || t.slice(0, 200)}${j.error === '모르는 동작' ? ' [SERVER_OLD] 서버에 새 공매 저장 동작이 아직 배포되지 않음' : ''}`), { fatal: j.error === '모르는 동작' });
       return j;
     } catch (e) {
       last = e;
@@ -236,4 +236,4 @@ async function main() {
   log(`=== 끝 (${min}분) 목록 ${stats.listRows} · 원문 ${stats.details}/${stats.needDetail} · 결과 ${stats.results} · 결과목록 ${stats.resultRows} · 오류 ${stats.errors.length}`);
 }
 
-main().catch((e) => { log('멈춤:', e.message); process.exitCode = 1; });
+main().catch((e) => { log('멈춤:', e.message); process.exitCode = /SERVER_OLD/.test(e.message) ? 3 : 1; });
