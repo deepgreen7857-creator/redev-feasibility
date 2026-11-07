@@ -1,5 +1,31 @@
 [
  {
+  "time": "2026-11-08 05:08",
+  "onbid": {
+   "status": "정상 — 01:10 일괄 수집 끝까지 돎(64분, 오류 0), 다음 13:10",
+   "calls": "02:17 점검 이후 새 공매 호출 없음(정상: 일괄 수집은 01:10·13:10만). state/onbid.lastBulk: 목록 830쪽 45,964행, 원문 2/2, 입찰결과목록 2,006행",
+   "items": "진행 중 물건 원문 빈칸 0(needDetail 2·details 2·detailEmpty 0). listedDay·lastFullDay 20261108 — 사이트 DB 반영 확인",
+   "error": "없음. 직접 조회(05:10, 물건목록 API 인천 1건): resultCode 00 NORMAL_CODE, 인천 진행 물건 totalCount 2,223 — 키 정상, 한도 초과 없음. 끝난 물건 결과 대기 11,245는 '자료 없음' 응답 때문(이전 기록과 같음)"
+  },
+  "rtms": {
+   "status": "정상",
+   "note": "11.08 03:10 수집 끝(03:21, 중단 자료 없음). 토지매매 429는 11.05부터 안 나옴"
+  },
+  "court": {
+   "status": "정상 — 수집 진행 중",
+   "lastCollected": "2026-11-08 04:54(state/court lastRun, 목록 300·상세 75·올림 280·파일 414, 오류 0, stoppedBy 없음)"
+  },
+  "conflicts": [],
+  "schedule": {
+   "status": "이상 없음 — 판단기록장 매일 5건은 05:17 실행 예정(picks.json 맨 앞 2026-11-07, 로컬=사이트 — 오늘 실행 전이라 정상). 정비경매 04:21 실행 중(PENDING). autopush 02:18 푸시 성공"
+  },
+  "fixed": [],
+  "todo": [
+   "서버 함수 배포·auction-server 커밋은 사용자 몫(cd C:\\notedata\\auction-server && firebase deploy --only functions) — 이전과 같음, 급하지 않음",
+   "관리자 '미니PC 수집기 상태' 쉬는 시간 표시 오류(MiniPcStatus.jsx) — 이전과 같음"
+  ]
+ },
+ {
   "time": "2026-11-08 02:17",
   "onbid": {
    "status": "정상 — 01:10 일괄 수집 끝까지 돎(02:14 끝, 64분), 오류 0건",
