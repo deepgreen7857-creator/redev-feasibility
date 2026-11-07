@@ -82,6 +82,8 @@ aside.rail{position:sticky;top:80px;align-self:start;display:flex;flex-direction
 .map td.both{background:var(--link-soft)}
 .csi-steps{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 10px}.csi-steps div{flex:1 1 92px;border:1px solid var(--rule);padding:6px 6px 7px;font-size:11.5px;line-height:1.35;text-align:center;color:var(--ink2)}.csi-steps b{display:block;font-family:Fraunces,serif;font-size:15px}.csi-steps .done{background:var(--ok-soft);color:var(--ok)}.csi-steps .now{border:2px solid var(--accent);color:var(--accent);font-weight:600}.csi-steps .skip{opacity:.45;text-decoration:line-through}
 .fn{font-family:Consolas,monospace;font-size:11.5px;word-break:break-all}
+.ch{font-size:13.5px;margin:16px 0 6px;font-weight:600}.lst input,.lst select{width:100%;border:0;border-bottom:1px solid var(--rule);background:transparent;font:inherit;padding:4px 2px}.lst td{padding:3px 4px}.lst .x{border:0;background:none;color:var(--ink2);cursor:pointer}
+select.cell{width:100%}.unit select.cell{width:auto}
 #e-hist td:nth-child(-n+2){white-space:nowrap}
 .warn{border-left:3px solid var(--accent);background:var(--accent-soft);padding:8px 12px;font-size:12.5px;margin:10px 0}
 .foot{color:var(--ink2);font-size:11.5px;margin-top:30px;border-top:1px solid var(--rule);padding-top:10px}
@@ -234,6 +236,58 @@ aside.rail{position:sticky;top:80px;align-self:start;display:flex;flex-direction
   <h2>공종별 세부 안전관리계획 <span class="auto">매뉴얼 표 8 · 수립 대상별</span></h2>
   <ul class="toc" id="c-work"></ul>
   <p class="note">공종마다 본편에 공사 개요서 · 시공상세 · 안전성 계산서(요약표) · <b>자체안전점검표(Hold Point, 별지 제10호)</b>를 넣고, 전체 계산서·도면은 부록편으로 분리합니다. 자체안전점검표 누락은 반려 사유(2.4 아)입니다.</p>
+
+  <h2>공종별 CSI 입력값 <span class="auto">CSI 검토의뢰 → 안전관리계획서 탭 입력 항목</span></h2>
+  <p class="note">CSI 화면에 그대로 옮겨 적는 값입니다. 계획서 본문·안전성 계산서와 같아야 합니다(다르면 보완 요청 대상). 수립 대상 공종만 보입니다.</p>
+  <div id="c-csi-empty" class="note"></div>
+  <div class="csiw" data-w="가설공사">
+    <h3 class="ch">2.1 가설공사 — 1. 가설비계</h3>
+    <table class="form">
+      <tr><th>공사기간</th><td colspan="3"><div class="unit"><input class="cell" type="date" data-k="sc_s"><span>~</span><input class="cell" type="date" data-k="sc_e"></div></td></tr>
+      <tr><th>최고 설치높이</th><td><div class="unit"><input class="cell " data-k="sc_h" inputmode="decimal"><span>m</span></div></td><th>비계 종류</th><td><select class="cell " data-k="sc_type"><option value=""></option><option>시스템비계</option><option>강관비계</option><option>강관틀비계</option><option>달비계</option><option>기타</option></select></td></tr>
+      <tr><th>벽이음 구간명</th><td><input class="cell" data-k="sc_zone" placeholder="예: 건물외부"></td><th>벽이음(버팀대) 간격</th><td><div class="unit"><input class="cell" data-k="sc_tv" inputmode="numeric"><span>mm ×</span><input class="cell" data-k="sc_th" inputmode="numeric"><span>mm</span></div></td></tr>
+      <tr><th>벽체 브라켓</th><td colspan="3"><select class="cell " data-k="sc_br"><option value=""></option><option>설치 안함</option><option>설치함</option></select></td></tr>
+    </table>
+    <h3 class="ch">2.1 가설공사 — 3. 가설장비</h3>
+    <table class="form"><tr><th>공사기간</th><td><div class="unit"><input class="cell" type="date" data-k="eq_s"><span>~</span><input class="cell" type="date" data-k="eq_e"></div></td></tr></table>
+    <table class="map lst"><thead><tr><th>장비</th><th>기종</th><th>용량(ton) 또는 높이(m)</th><th></th></tr></thead><tbody id="l-eqs"></tbody></table>
+    <button class="btn" data-add="eqs">장비 추가</button>
+  </div>
+  <div class="csiw" data-w="굴착 및 발파공사">
+    <h3 class="ch">2.2 굴착공사 및 발파공사 — 굴착공사 및 흙막이 공사</h3>
+    <table class="form">
+      <tr><th>공사기간</th><td colspan="3"><div class="unit"><input class="cell" type="date" data-k="ex_s"><span>~</span><input class="cell" type="date" data-k="ex_e"></div></td></tr>
+      <tr><th>최대 굴착깊이</th><td><div class="unit"><input class="cell linked" data-k="dig" inputmode="decimal"><span>m</span></div></td><th>지하안전 영향성 검토</th><td><div id="c-ug" style="padding:6px 4px;font-size:12.5px"></div></td></tr>
+      <tr><th>적용공법</th><td colspan="3"><div class="chk"><label><input type="checkbox" data-k="ex_m1"> 순타</label><label><input type="checkbox" data-k="ex_m2"> 역타</label><label><input type="checkbox" data-k="ex_m3"> 합성형식</label></div></td></tr>
+      <tr><th>흙막이벽 종류</th><td><input class="cell" data-k="ex_wall" placeholder="예: H-Pile+토류판, S.C.W, CIP"></td><th>지지형식</th><td><select class="cell " data-k="ex_sup"><option value=""></option><option>Earth Anchor(어스앵커)</option><option>Strut(버팀보)</option><option>Raker(경사버팀)</option><option>Soil Nail</option><option>자립식</option><option>기타</option></select></td></tr>
+      <tr><th>지하수위 영향</th><td><div class="unit"><input class="cell " data-k="ex_gwl" inputmode="decimal"><span>m (G.L −)</span></div></td><th>복공 · 동시굴착</th><td><div class="unit"><select class="cell " data-k="ex_deck"><option value=""></option><option>복공 해당 없음</option><option>복공 있음</option></select><select class="cell " data-k="ex_sim"><option value=""></option><option>동시굴착 해당 없음</option><option>동시굴착 있음</option></select></div></td></tr>
+      <tr><th>굴착공사 기간</th><td><div class="unit"><input class="cell" type="date" data-k="ex1_s"><span>~</span><input class="cell" type="date" data-k="ex1_e"></div></td><th>흙막이공사 기간</th><td><div class="unit"><input class="cell" type="date" data-k="ex2_s"><span>~</span><input class="cell" type="date" data-k="ex2_e"></div></td></tr>
+    </table>
+  </div>
+  <div class="csiw" data-w="콘크리트 공사">
+    <h3 class="ch">2.3 콘크리트공사(PC 구조 포함) — 건축물</h3>
+    <table class="form">
+      <tr><th>건축물 공사기간</th><td colspan="3"><div class="unit"><input class="cell" type="date" data-k="co_s"><span>~</span><input class="cell" type="date" data-k="co_e"></div></td></tr>
+      <tr><th>공법</th><td colspan="3"><div class="chk"><label><input type="checkbox" data-k="co_rc"> RC조</label><label><input type="checkbox" data-k="co_pc"> PC조</label><label><input type="checkbox" data-k="co_sc"> 철골(SRC·S)조</label></div></td></tr>
+      <tr><th>거푸집</th><td colspan="3"><div class="chk"><label><input type="checkbox" data-k="fm_gen"> 일반거푸집</label><label><input type="checkbox" class="linked" data-k="g_gang"> 작업발판 일체형 거푸집</label><label><input type="checkbox" data-k="fm_wall"> 합벽거푸집</label><label><input type="checkbox" class="linked" data-k="g_form5"> 높이 5m 이상 거푸집</label><label><input type="checkbox" data-k="fm_deck"> 데크플레이트</label></div></td></tr>
+      <tr><th>일체형 거푸집 종류</th><td><select class="cell " data-k="fm_gtype"><option value=""></option><option>갱폼</option><option>RCS</option><option>ACS</option><option>갱폼+RCS</option><option>기타</option></select></td><th>전이구조</th><td><select class="cell " data-k="co_tr"><option value=""></option><option>해당 없음</option><option>있음</option></select></td></tr>
+      <tr><th>동바리 종류</th><td><select class="cell " data-k="sh_type"><option value=""></option><option>시스템 동바리</option><option>강관 동바리</option><option>알루미늄 동바리</option><option>기타</option></select></td><th>동바리 설치높이</th><td><div class="unit"><input class="cell linked" data-k="shore_h" inputmode="decimal"><span>m</span></div></td></tr>
+      <tr><th>외부작업 일체형 가설구조물</th><td colspan="3"><div class="chk"><label><input type="checkbox" class="linked" data-k="g_ext10"> 높이 10m 이상 외부작업용 작업발판·안전시설 일체형(SWC 등) 해당 있음</label></div></td></tr>
+    </table>
+  </div>
+  <div class="csiw" data-w="건축설비공사">
+    <h3 class="ch">2.7 건축설비공사</h3>
+    <table class="form"><tr><th>공사기간</th><td><div class="unit"><input class="cell" type="date" data-k="me_s"><span>~</span><input class="cell" type="date" data-k="me_e"></div></td></tr></table>
+  </div>
+  <div class="csiw" data-w="타워크레인 사용공사">
+    <h3 class="ch">2.8 타워크레인 사용공사</h3>
+    <table class="form"><tr><th>공사기간</th><td><div class="unit"><input class="cell" type="date" data-k="tc_s"><span>~</span><input class="cell" type="date" data-k="tc_e"></div></td><th>브레이싱</th><td><select class="cell " data-k="tc_br"><option value=""></option><option>설치 안함</option><option>설치함</option></select></td></tr></table>
+    <table class="map lst"><thead><tr><th>기종</th><th>용량(ton)</th><th>작업반경(m)</th><th>설치단수</th><th>설치높이(m)</th><th>기초타입</th><th></th></tr></thead><tbody id="l-tcs"></tbody></table>
+    <button class="btn" data-add="tcs">타워크레인 추가</button>
+  </div>
+  <div class="csiw" data-w="강구조물 공사|성토 및 절토공사|해체공사"><p class="note">강구조물·성토 및 절토·해체 공종의 CSI 입력 항목은 등록 사례를 확인하는 대로 추가합니다.</p></div>
+  <div id="c-csichk"></div>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn primary" id="csiValCopy">CSI 입력값 복사</button><span class="note" id="csiValMsg" style="margin:0"></span></div>
   <h2>1. 건설공사 개요 <span class="auto">공사 개요에서 연결</span></h2>
   <textarea class="cell linked" data-k="summary" style="border:1px solid var(--rule)"></textarea>
   <div class="warn">제출: 착공 전 발주자에게 제출하여 승인(법 제62조제1항). 검토 결과는 적정·조건부 적정·부적정으로 판정(영 제98조제5항).</div>
@@ -540,7 +594,7 @@ function render(){
   const pt=num('pg_total'),pw=num('pg_work');
   const pgMsg=[pt>80&&`총괄 본편 ${pt}쪽 — 80쪽 초과`,pw>430&&`공종별 본편 ${pw}쪽 — 430쪽 초과`].filter(Boolean);
   $('#d-pg').innerHTML=pgMsg.length?`<div class="warn">${pgMsg.join('<br>')} · 반려 사유(2.4 사). 설계도면·계산서 전체는 부록편으로 옮기세요.</div>`:'';
-  const CSIL=renderCsi(ctpa); renderFee(ctpa,CSIL);
+  const CSIL=renderCsi(ctpa); renderFee(ctpa,CSIL); if(window.renderCsiForms) renderCsiForms(ctpa);
   // E
   renderChange(isha,ctpa,CSIL);
   // risk
@@ -877,6 +931,64 @@ function makeXlsx(){
 }
 $('#csiCopy').onclick=async()=>{const L=csiFiles(judgeCTPA());const txt=L.map(x=>x.b+'\n'+x.a).join('\n');
   try{await navigator.clipboard.writeText(txt);$('#csiMsg').textContent=`${L.length*2}개 파일명을 복사했습니다.`}catch(e){$('#csiMsg').textContent='복사하지 못했습니다. 표에서 직접 복사해 주세요.'}};
+
+/* ---------- 공종별 CSI 입력값 ---------- */
+const LISTS={eqs:[['k','sel',['이동식 크레인','천공기','항타·항발기','고소작업대','기타']],['m','txt','기종'],['v','txt','예: 50 ton / 33 m']],
+  tcs:[['m','txt','기종'],['t','num',''],['r','num',''],['n','txt','해당 없음'],['h','num',''],['f','sel',['직접기초','파일기초','기타']]]};
+function renderList(n){const tb=$('#l-'+n);if(!tb)return;const L=S[n]||[];
+  tb.innerHTML=L.length?L.map((row,i)=>'<tr>'+LISTS[n].map(([f,t,o])=>`<td>${t==='sel'?`<select data-l="${n}|${i}|${f}"><option></option>${o.map(x=>`<option${row[f]===x?' selected':''}>${x}</option>`).join('')}</select>`:`<input data-l="${n}|${i}|${f}" value="${xe(row[f]||'')}" placeholder="${t==='txt'?o:''}" ${t==='num'?'inputmode="decimal"':''}>`}</td>`).join('')+`<td><button class="x" data-del="${n}|${i}" title="삭제">✕</button></td></tr>`).join(''):`<tr><td colspan="${LISTS[n].length+1}" class="note">아직 없습니다 — 아래 버튼으로 추가</td></tr>`;}
+document.addEventListener('input',e=>{const l=e.target.dataset&&e.target.dataset.l;if(!l)return;const [n,i,f]=l.split('|');S[n][+i][f]=e.target.value;save();csiChecks()});
+document.addEventListener('change',e=>{if(e.target.dataset&&e.target.dataset.l&&e.target.tagName==='SELECT'){const [n,i,f]=e.target.dataset.l.split('|');S[n][+i][f]=e.target.value;save();csiChecks()}});
+document.addEventListener('click',e=>{const a=e.target.closest('[data-add]'),d=e.target.closest('[data-del]');
+  if(a){const n=a.dataset.add;(S[n]=S[n]||[]).push({});save();renderList(n);csiChecks()}
+  if(d){const [n,i]=d.dataset.del.split('|');S[n].splice(+i,1);save();renderList(n);csiChecks()}});
+const nv=v=>{const x=parseFloat(String(v??'').replace(/,/g,''));return isNaN(x)?0:x};
+function csiChecks(){
+  const W=new Set(ctpaWork(judgeCTPA()).map(x=>x[0])),C=[];
+  const inRange=(a,b,t)=>{if(S.start&&a&&a<S.start)C.push(`${t} 시작일(${a})이 전체 착공일(${S.start})보다 앞섭니다`);if(S.end&&b&&b>S.end)C.push(`${t} 종료일(${b})이 전체 준공일(${S.end})보다 뒤입니다`);if(a&&b&&a>b)C.push(`${t} 기간의 시작이 종료보다 늦습니다`)};
+  if(W.has('가설공사')){inRange(S.sc_s,S.sc_e,'가설비계');inRange(S.eq_s,S.eq_e,'가설장비');
+    if(num('sc_h')>=31&&!S.g_scaf31)C.push(`비계 최고 높이 ${S.sc_h}m — 공사 개요의 '비계 31m 이상'이 꺼져 있습니다(산안법 대상·비계 계산서 판정에 영향)`);
+    if(S.sc_h&&num('sc_h')<31&&S.g_scaf31)C.push(`공사 개요는 '비계 31m 이상'인데 CSI 최고 설치높이는 ${S.sc_h}m입니다`);
+    if(S.sc_br==='설치함'&&!S.g_bracket)C.push("벽체 브라켓 설치함 — 공사 개요의 '브라켓 비계'를 켜야 합니다");
+    const E=S.eqs||[];
+    if(E.some(r=>r.k==='항타·항발기')&&!S.m_pile)C.push("가설장비에 항타·항발기가 있는데 공사 개요의 '항타·항발기'가 꺼져 있습니다");
+    if(E.some(r=>r.k==='천공기'&&nv(r.v)>=10)&&!S.m_drill)C.push("높이 10m 이상 천공기가 있는데 공사 개요의 '천공기(10m 이상)'가 꺼져 있습니다");
+    E.forEach((r,i)=>{if(r.k&&!r.v)C.push(`가설장비 ${i+1}번(${r.k}) 용량·높이가 비었습니다`)});}
+  if(W.has('굴착 및 발파공사')){inRange(S.ex_s,S.ex_e,'굴착·흙막이');inRange(S.ex1_s,S.ex1_e,'굴착공사');inRange(S.ex2_s,S.ex2_e,'흙막이공사');
+    if(!S.ex_m1&&!S.ex_m2&&!S.ex_m3&&num('dig')>0)C.push('굴착 적용공법(순타·역타·합성)을 고르세요');
+    if(S.ex_m1&&!S.ex_wall)C.push('순타 공법 — 흙막이벽 종류가 비었습니다');}
+  if(W.has('콘크리트 공사')){inRange(S.co_s,S.co_e,'건축물(콘크리트)');
+    if(S.g_gang&&!S.fm_gtype)C.push('작업발판 일체형 거푸집 — 종류(갱폼·RCS 등)를 고르세요');
+    if(num('shore_h')>=5&&!S.g_form5)C.push(`동바리 높이 ${S.shore_h}m — '높이 5m 이상 거푸집'을 켜야 합니다(가설공사 동바리 계산서 대상)`);}
+  if(W.has('타워크레인 사용공사')){inRange(S.tc_s,S.tc_e,'타워크레인');const T=S.tcs||[];
+    if(!T.length)C.push('타워크레인 제원이 없습니다 — 대수만큼 추가하세요');
+    T.forEach((r,i)=>{['m','t','r','h','f'].forEach(f=>{if(!r[f])C.push(`타워크레인 ${i+1}번 ${({m:'기종',t:'용량',r:'작업반경',h:'설치높이',f:'기초타입'})[f]}이(가) 비었습니다`)});
+      if(S.height&&nv(r.h)&&nv(r.h)<num('height'))C.push(`타워크레인 ${i+1}번 설치높이 ${r.h}m가 건물 높이 ${S.height}m보다 낮습니다`)});
+    if(T.length&&T.some(r=>nv(r.h)>=100)&&S.tc_br!=='설치함')C.push('설치높이 100m 이상 타워크레인인데 브레이싱이 "설치함"이 아닙니다 — 자립고 초과 여부 확인');}
+  if(W.has('건축설비공사'))inRange(S.me_s,S.me_e,'건축설비');
+  const d=num('dig');
+  $('#c-ug').innerHTML=!d?'굴착깊이 입력 시 자동 판정':d>=20?'<b style="color:var(--accent)">지하안전평가 대상</b> (굴착깊이 20m 이상)':d>=10?'<b style="color:var(--accent)">소규모 지하안전평가 대상</b> (10m 이상 20m 미만)':`해당사항 없음 (굴착깊이 ${d}m — 10m 미만)`;
+  $('#c-csichk').innerHTML=C.length?`<div class="warn"><b>CSI 입력값 점검 ${C.length}건</b><ul style="margin:6px 0 0 18px;padding:0">${C.map(x=>`<li>${x}</li>`).join('')}</ul></div>`:(W.size?'<p class="note">입력값 점검: 걸리는 항목 없음</p>':'');
+}
+function renderCsiForms(ctpa){
+  const W=new Set(ctpaWork(ctpa).map(x=>x[0]));
+  $$('.csiw').forEach(el=>el.classList.toggle('hide',!el.dataset.w.split('|').some(w=>W.has(w))));
+  $('#c-csi-empty').textContent=W.size?'':'공종별 세부 안전관리계획 대상 공종이 없으면 입력할 값도 없습니다.';
+  renderList('eqs');renderList('tcs');csiChecks();
+}
+function csiValText(){
+  const W=new Set(ctpaWork(judgeCTPA()).map(x=>x[0])),o=[],p=(a,b)=>a||b?`${a||''} ~ ${b||''}`:'';
+  const L=(t,v)=>{if(v!==undefined&&v!==''&&v!==false)o.push(`  ${t}: ${v}`)};
+  if(W.has('가설공사')){o.push('[2.1 가설공사 — 1. 가설비계]');L('공사기간',p(S.sc_s,S.sc_e));L('설치높이(최고)',S.sc_h&&S.sc_h+' m');L('비계 종류',S.sc_type);L('벽이음 구간명',S.sc_zone);L('벽이음 간격',S.sc_tv&&`${S.sc_tv} mm * ${S.sc_th||''} mm`);L('벽체 브라켓',S.sc_br);
+    o.push('[2.1 가설공사 — 3. 가설장비]');L('공사기간',p(S.eq_s,S.eq_e));(S.eqs||[]).forEach((r,i)=>L(`장비 ${i+1}`,[r.k,r.m,r.v].filter(Boolean).join(' / ')))}
+  if(W.has('굴착 및 발파공사')){o.push('[2.2 굴착공사 및 발파공사]');L('공사기간',p(S.ex_s,S.ex_e));L('최대 굴착깊이',S.dig&&S.dig+' m');L('적용공법',[S.ex_m1&&'순타',S.ex_m2&&'역타',S.ex_m3&&'합성형식'].filter(Boolean).join(', '));L('흙막이벽 종류',S.ex_wall);L('지지형식',S.ex_sup);L('지하수위 영향 G.L(-)',S.ex_gwl&&S.ex_gwl+' m');L('복공',S.ex_deck);L('동시굴착',S.ex_sim);L('지하안전 영향성 검토',$('#c-ug').textContent);L('굴착공사 기간',p(S.ex1_s,S.ex1_e));L('흙막이공사 기간',p(S.ex2_s,S.ex2_e))}
+  if(W.has('콘크리트 공사')){o.push('[2.3 콘크리트공사 — 건축물]');L('건축물 공사기간',p(S.co_s,S.co_e));L('공법',[S.co_rc&&'RC조',S.co_pc&&'PC조',S.co_sc&&'철골조'].filter(Boolean).join(', '));L('거푸집',[S.fm_gen&&'일반거푸집',S.g_gang&&'작업발판 일체형 거푸집',S.fm_wall&&'합벽거푸집',S.g_form5&&'높이 5m 이상 거푸집',S.fm_deck&&'데크플레이트'].filter(Boolean).join(', '));L('작업발판 일체형 거푸집',S.fm_gtype);L('동바리',[S.sh_type,S.shore_h&&S.shore_h+' m'].filter(Boolean).join(' / '));L('전이구조',S.co_tr);L('외부작업 일체형 가설구조물(10m 이상)',S.g_ext10?'해당 있음':'해당 없음')}
+  if(W.has('건축설비공사')){o.push('[2.7 건축설비공사]');L('공사기간',p(S.me_s,S.me_e))}
+  if(W.has('타워크레인 사용공사')){o.push('[2.8 타워크레인 사용공사]');L('공사기간',p(S.tc_s,S.tc_e));L('브레이싱',S.tc_br);(S.tcs||[]).forEach((r,i)=>L(`타워크레인 ${i+1}`,`기종 ${r.m||''} / 용량 ${r.t||''} ton / 작업반경 ${r.r||''} m / 설치단수 ${r.n||'해당 없음'} / 설치높이 ${r.h||''} m / 기초 ${r.f||''}`))}
+  return o.join('\n');
+}
+$('#csiValCopy').onclick=async()=>{const t=csiValText();if(!t){$('#csiValMsg').textContent='대상 공종이 없습니다.';return}
+  try{await navigator.clipboard.writeText(t);$('#csiValMsg').textContent='복사했습니다. CSI 화면에 칸별로 옮겨 적으세요.'}catch(e){$('#csiValMsg').textContent='복사하지 못했습니다.'}};
 $('#outDocx').onclick=makeDocx; $('#outXlsx').onclick=makeXlsx;
 
 function makeSummary(){
