@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<script src="/shared/gate.js"></script>
+<script src="/shared/sitenav.js?v=6"></script>
+<meta name="robots" content="noindex, nofollow">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>jbslab 지정 절차 서류</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="../decision/decision.css?v=1">
+<link rel="stylesheet" href="proc.css?v=1">
+</head>
+<body>
+<header class="top"><b>jbslab</b> <span class="sub">/proc</span> <h1>정비구역 지정 절차 서류</h1></header>
+<div class="layout">
+  <aside class="ctl">
+    <section>
+      <h2>1. 구역</h2>
+      <label>구역<select id="siteSel"></select></label>
+      <p class="note" id="siteInfo"></p>
+    </section>
+    <section>
+      <h2>2. 기관·장소</h2>
+      <label>정비사업 명칭<input id="name" placeholder="결정조서(/decision)와 같음"></label>
+      <label>위치<input id="loc" placeholder="예: 인천광역시 미추홀구 용현동 100번지 일원"></label>
+      <label>입안권자<input id="proposer" placeholder="위치에서 자동(○○구청장)"></label>
+      <label>지방의회<input id="council" placeholder="위치에서 자동(○○구의회)"></label>
+      <label>지정권자<input id="designator" placeholder="인천광역시장"></label>
+      <label>담당 부서<input id="dept" placeholder="예: 미추홀구 도시정비과"></label>
+      <label>전화<input id="tel"></label>
+      <label>공람 장소<input id="place" placeholder="예: 미추홀구청 도시정비과, 구 홈페이지"></label>
+      <label>설명회 장소<input id="briefPlace"></label>
+      <label>설명회 시각<input id="briefTime" placeholder="19:00"></label>
+      <label>공고 번호<input id="gosiNo" placeholder="예: 2027-○○"></label>
+      <label>문서 번호<input id="docNo" placeholder="예: 도시정비과-○○○○"></label>
+    </section>
+    <section>
+      <h2>3. 일정</h2>
+      <label>공람 시작일(공고일) <input id="open" type="date"></label>
+      <label>공람 일수(30 이상)<input id="days" type="number" min="30" value="30"></label>
+      <label>서면 통보일(비우면 7일 전)<input id="notice" type="date"></label>
+      <label>주민설명회 날(비우면 공람 7일째)<input id="brief" type="date"></label>
+      <label>구의회 통지일(비우면 공람 시작일)<input id="council_d" type="date"></label>
+      <label>관계기관 협의 요청일(비우면 공람 시작일)<input id="consult" type="date"></label>
+      <label>지정 신청일(비우면 계산)<input id="apply" type="date"></label>
+      <label>도시계획위원회 날(비우면 신청 30일 뒤)<input id="committee" type="date"></label>
+      <label>고시일(비우면 심의 30일 뒤)<input id="gosi" type="date"></label>
+      <label>공휴일(토·일 말고, 한 줄에 하나 2027-03-01)<textarea id="hol" rows="3"></textarea></label>
+    </section>
+    <section>
+      <h2>4. 내보내기</h2>
+      <button class="primary" id="print">인쇄 / PDF로 저장(A4)</button>
+      <button id="word">워드(.doc) 내려받기</button>
+      <button id="reset">고친 글 모두 되돌리기</button>
+      <p class="note">노란 칸은 자동으로 못 채운 곳입니다. 문서 어디든 눌러 고칠 수 있고 구역별로 이 컴퓨터에 저장됩니다. 날짜·기관을 바꾸면 고치지 않은 문서는 다시 계산됩니다.</p>
+    </section>
+  </aside>
+  <main class="stage"><nav id="docTabs"></nav><div id="docs"></div></main>
+</div>
+<script src="../shared/site-store.js?v=156"></script>
+<script src="../shared/feas.js?v=157"></script>
+<script src="../shared/decision.js?v=3"></script>
+<script src="../shared/proc.js?v=1"></script>
+<script src="proc.js?v=1"></script>
+<script src="../shared/workfile.js?v=8"></script>
+<script src="../shared/sticky-top.js?v=2"></script>
+</body>
+</html>

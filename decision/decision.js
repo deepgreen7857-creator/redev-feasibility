@@ -60,18 +60,26 @@
     return L.map((e, i) => { const f = L[(i + n - 1) % n], x1 = f[0][0], y1 = f[0][1], x2 = f[1][0], y2 = f[1][1], x3 = e[0][0], y3 = e[0][1], x4 = e[1][0], y4 = e[1][1], den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4); if (Math.abs(den) < 1e-9) return e[0]; const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den; return [x1 + t * (x2 - x1), y1 + t * (y2 - y1)]; });
   }
 
+  // 2026-11-08 소유자별(종전자산 구간별) 분담금: 사업성 화면 조서(이 브라우저 'jbsc.project.v1')가 같은 구역일 때만 — 이름은 결과에 안 남김
+  function ownersOf(s) {
+    if (!window.JbsOwnerShare || !s) return null;
+    try { const pj = JSON.parse(localStorage.getItem('jbsc.project.v1') || 'null'), st = pj && (pj.state || pj);
+      if (!st || !st.area || !JbsOwnerShare.sameZone(st.area.geojson, s.geojson)) return null;
+      return JbsOwnerShare.fromProject(st, window.JbsFeas ? JbsFeas.get() : null); } catch (e) { return null; }
+  }
+
   /* ---------- 문서 ---------- */
   function render() {
     const doc = $('#doc'); if (!site) { doc.innerHTML = '<p class="note">공통 구역이 없습니다. /arch에서 구역을 열고 [이 안으로 확정]을 먼저 누르세요.</p>'; return; }
     const m = mine(), meta = m.meta || {};
-    built = D.build(site, { name: meta.name || $('#name').value || '', location: meta.loc || $('#loc').value || D.IN, feas: window.JbsFeas, assume: window.JbsFeas ? JbsFeas.get() : null });
+    built = D.build(site, { name: meta.name || $('#name').value || '', location: meta.loc || $('#loc').value || D.IN, feas: window.JbsFeas, assume: window.JbsFeas ? JbsFeas.get() : null, ownerShare: window.JbsOwnerShare, owners: ownersOf(site) });
     const F = built.F, org = meta.org || '인천광역시';
     const ttl = `${F.fullName} 정비구역 지정 및 정비계획 결정(안), 지구단위계획구역 지정 및 지구단위계획 결정(안)`;
     let h = `<h1>${esc(ttl)}</h1><p class="gosi">${esc(org)} 고시 제　　　　호 (안)</p>`;
     h += `<p class="lead">「도시 및 주거환경정비법」 제8조 및 제16조에 따라 정비구역을 지정하고 정비계획을 결정하며, 같은 법 제17조 및 「국토의 계획 및 이용에 관한 법률」 제30조·제50조에 따라 지구단위계획구역 지정 및 지구단위계획을 결정하고, 「토지이용규제 기본법」 제8조에 따라 지형도면을 고시합니다.</p>`;
     built.parts.forEach(p => { h += `<h2>${p.no}. ${esc(p.title)}</h2>`; p.tables.forEach(t => { h += tableHtml(t, m); }); });
     h += `<h2>Ⅳ. 관련 도면</h2><div class="figs">${[['zone', '정비구역 결정도'], ['land', '토지이용계획 결정도'], ['plan', '정비계획(건축물 배치) 결정도'], ['district', '지구단위계획 결정도']].map(([k, n]) => `<figure>${figSvg(k)}<figcaption>${n}</figcaption></figure>`).join('')}</div>`;
-    h += `<p class="tnote">※ 도면은 개략도이며, 고시용 지형도면은 지적도 위에 작성해야 합니다(토지이용규제 기본법 제8조). 지구단위계획 결정도의 분홍 점선은 건축한계선(개략).</p>`;
+    h += `<p class="tnote">※ 도면은 개략도이며, 고시용 지형도면은 지적도 위에 따로 작성합니다(토지이용규제 기본법 제8조 — 왼쪽 [고시용 지형도면 만들기]). 지구단위계획 결정도의 분홍 점선은 건축한계선(개략).</p>`;
     h += `<div class="foot">Ⅴ. 관계 도서 열람: ${esc(org)} 및 관할 구청 정비사업 담당 부서 · 이 문서는 jbslab 정비계획 검토로 만든 초안이며, 계획 내용과 숫자는 인허가 및 심의 과정에서 변동될 수 있습니다.</div>`;
     doc.innerHTML = h;
     const ch = F.ch; $('#siteInfo').textContent = ch ? `확정안: ${ch.label || ''} · ${(+ch.units).toLocaleString('ko-KR')}세대${ch.stageName ? ' · ' + ch.stageName : ''}` : '건축계획 확정안이 없어 건축·분담금 칸이 비어 있습니다(/arch에서 확정).';
@@ -82,6 +90,8 @@
   ['name', 'loc', 'org'].forEach(id => $('#' + id).addEventListener('change', () => { const m = mine(); m.meta = Object.assign({}, m.meta, { name: $('#name').value.trim(), loc: $('#loc').value.trim(), org: $('#org').value.trim() }); save(m); render(); }));
   $('#reset').addEventListener('click', () => { if (!site || !confirm('이 구역에서 고친 칸과 더한 행을 모두 되돌릴까요? 기본 사항(명칭·위치)은 남깁니다.')) return; const m = mine(); save({ meta: m.meta || {}, cells: {}, extra: {} }); render(); });
   $('#print').addEventListener('click', () => window.print());
+  $('#toTopo').addEventListener('click', () => { location.href = '/topo/' + (site ? '?site=' + encodeURIComponent(site.id) : ''); });   // 2026-11-08 고시용 지형도면
+  $('#toProc').addEventListener('click', () => { location.href = '/proc/' + (site ? '?site=' + encodeURIComponent(site.id) : ''); });   // 2026-11-08 절차 서류
   $('#word').addEventListener('click', () => {
     if (!site) return; const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>body{font-family:'맑은 고딕';font-size:10pt}table{border-collapse:collapse;width:100%}th,td{border:1px solid #777;padding:3px;font-size:9pt;text-align:center}th{background:#eef1f4}h1{font-size:15pt;text-align:center}h2{font-size:12.5pt;border-bottom:1.5pt solid #222}h3{font-size:10.5pt}.addrow{display:none}</style></head><body>${$('#doc').innerHTML.replace(/ contenteditable="true"/g, '')}</body></html>`;
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + html], { type: 'application/msword' })); a.download = `${(built.F.fullName || '정비계획').replace(/[\\/:*?"<>|]/g, '')}_정비계획·지구단위계획 결정(안).doc`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);

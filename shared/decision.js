@@ -14,7 +14,8 @@
   const ringOf = s => { const gj = s && s.geojson; const geo = gj && (gj.geometry || gj); if (!geo) return null; return geo.type === 'Polygon' ? geo.coordinates[0] : geo.type === 'MultiPolygon' ? geo.coordinates[0][0] : null; };
   function projector(ring) {
     const lat0 = ring.reduce((a, p) => a + p[1], 0) / ring.length, lon0 = ring.reduce((a, p) => a + p[0], 0) / ring.length;
-    const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+    // 2026-11-08: 위도 1° 길이를 타원체 식으로(예전 110,540m는 적도 값 — 인천에서 남북 0.37% 짧아 면적이 약 0.5% 작게 나왔음). /topo(중부원점 TM) 면적과 0.05% 안
+    const f = lat0 * Math.PI / 180, e2 = 0.00669438002290, kx = Math.PI / 180 * 6378137 * Math.cos(f) / Math.sqrt(1 - e2 * Math.sin(f) ** 2), ky = 111132.954 - 559.822 * Math.cos(2 * f) + 1.175 * Math.cos(4 * f);
     return p => [(p[0] - lon0) * kx, (p[1] - lat0) * ky];
   }
   const areaXY = q => Math.abs(q.reduce((a, p, i) => { const r = q[(i + 1) % q.length]; return a + p[0] * r[1] - r[0] * p[1]; }, 0) / 2);
@@ -84,6 +85,14 @@
       I.push({ id: 'share2', no: '', title: '나. 유형별 추정분담금(조합원 1인 평균 권리가액 기준)', cols: ['유형(분양 주택)', '공급면적(㎡)', '권리자 분양가 추정액(a, 만원)', '추정 권리가액(b, 만원)', '추정분담금(a−b, 만원)', '비고'], rows: sr,
         note: `조합원 분양가 = 일반분양가 ${fmt(A.generalPrice)}만원/평 × ${fmt(A.memberRatio)}%, 추정 권리가액 = 종전자산 ÷ 조합원 ${fmt(SH.members)}명 × 추정비례율. 개인별 분담금은 종전자산 감정평가 후 관리처분계획에서 정해지며 인허가 및 심의 과정에서 변동될 수 있습니다.` });
       I.push({ id: 'share3', no: '', title: '다. 공사비·분양가 변동에 따른 비례율 변동', cols: ['공사비 변동', '분양가 변동', '추정비례율(%)'], rows: SH.vary.map(x => [`${x.dc > 0 ? '+' : ''}${x.dc}%`, `${x.dp > 0 ? '+' : ''}${x.dp}%`, fmt(x.ratio, 1)]) });
+      // 2026-11-08 종전자산 구간별(명부 기준) — opt.owners = JbsOwnerShare.fromProject(…) 결과, opt.ownerShare = JbsOwnerShare
+      const OS = opt.ownerShare, own = opt.owners;
+      if (OS && own && own.list && own.list.length) {
+        const types = b.types.filter(t => b.mem[t] > 0).map(t => ({ t, a: b.memberPrice * b.sup(t) / 3.305785 })), bd = OS.bands(own.list, b.ratio, b.prior, types);
+        if (bd && bd.rows.length) I.push({ id: 'share4', no: '', title: '라. 종전자산 구간별 추정분담금(토지등소유자 명부 기준)', cols: ['종전자산 구간', '인원(명)', '평균 종전자산(만원)', '추정 권리가액(만원)'].concat(types.map(x => `전용 ${x.t}㎡형 분담금(만원)`)),
+          rows: bd.rows.map(r => [r.band, fmt(r.n), fmt(r.avg, 0), fmt(r.right, 0)].concat(r.charge.map(c => (c.v < 0 ? `환급 ${fmt(-c.v, 0)}` : fmt(c.v, 0))))),
+          note: `${own.src} 기준 소유자별 종전자산을 묶은 값. 명부 합계 ${fmt(bd.sum / 10000, 1)}억원을 비례율 계산 종전자산 ${fmt(b.prior / 10000, 1)}억원에 맞춰 ${fmt(bd.k, 3)}배로 고침. 추정 권리가액 = 평균 종전자산 × 추정비례율 ${fmt(b.ratio, 1)}%. 국공유지는 뺐으며, 실제 분담금은 감정평가 후 관리처분계획에서 정해집니다.` });
+      }
     } else {
       I.push({ id: 'share1', no: '5', title: '토지등소유자 유형별 분담금 추산액 및 산출근거', cols: ['구분', '내용', '비고'], rows: [['산출 불가', '건축계획 확정안과 종전자산 추정액(사업성 화면 [1차 재검토로 넘기기])이 있어야 계산됩니다', IN]] });
     }

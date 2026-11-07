@@ -1,0 +1,26 @@
+/* /proc 절차 서류 — decision.css 위에 */
+.ctl textarea{display:block;width:100%;margin-top:3px;padding:6px 8px;border:1px solid #cfd6dd;border-radius:6px;font:inherit}
+#docTabs{display:flex;flex-wrap:wrap;gap:6px;max-width:210mm;margin:0 auto 12px}
+#docTabs a{font-size:12.5px;border:1px solid #cfd6dd;background:#fff;border-radius:999px;padding:4px 11px;color:#1f2933;text-decoration:none}
+.pdoc{background:#fff;max-width:210mm;margin:0 auto 18px;padding:18mm 16mm;box-shadow:0 2px 12px rgba(0,0,0,.12);font-size:10.5pt;line-height:1.65;position:relative}
+.pdoc .bar{position:absolute;top:6px;right:8px;display:flex;gap:6px;align-items:center;font-size:11px;color:#5b6670}
+.pdoc .bar button{font-size:11px;border:1px solid #cfd6dd;background:#fff;border-radius:4px;padding:2px 7px;cursor:pointer}
+.pdoc .body:focus{outline:2px dashed #e8590c;outline-offset:4px}
+.pdoc h1{font-size:15pt;text-align:center;margin:0 0 6mm;line-height:1.4}.pdoc h1 small{font-size:11pt;font-weight:500}
+.pdoc h2{font-size:11.5pt;margin:6mm 0 2mm}.pdoc h3{font-size:10.5pt;margin:4mm 0 1.5mm}
+.pdoc table{width:100%;border-collapse:collapse;margin:1mm 0 2mm;font-size:9pt}
+.pdoc th,.pdoc td{border:.25mm solid #9aa5b1;padding:1.2mm 1.6mm;text-align:center;vertical-align:middle}
+.pdoc thead th{background:#eef1f4}
+.pdoc .need{background:#fff3bf;padding:0 2px}
+.pdoc .to,.pdoc .doc-no{margin:0 0 1.5mm}.pdoc .doc-no{color:#5b6670;font-size:9pt}
+.pdoc .gosi{text-align:left;font-weight:600}
+.pdoc .sign{text-align:center;margin:8mm 0 4mm;line-height:2}.pdoc .sign b{font-size:14pt;letter-spacing:.1em}
+.pdoc .tnote{font-size:8.5pt;color:#5b6670}
+.pdoc ol{padding-left:6mm}.pdoc ol li{margin:0 0 2mm}
+.pdoc .warnbox{background:#fff4e6;border:1px solid #ffd8a8;border-radius:4px;padding:2mm 3mm;font-size:9pt}
+.pdoc.edited{box-shadow:0 0 0 2px #74c0fc,0 2px 12px rgba(0,0,0,.12)}
+@media print{
+  body{background:#fff}header.top,.ctl,#docTabs,.pdoc .bar,#siteNav,#planSteps,#jbsWorkBtn,#jbsWork{display:none!important}
+  .layout{display:block}.stage{padding:0}.pdoc{box-shadow:none!important;margin:0;padding:0;max-width:none;page-break-after:always;break-after:page}
+  .pdoc .need{background:none}
+}
