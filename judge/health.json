@@ -1,5 +1,37 @@
 [
  {
+  "time": "2026-11-07 17:15",
+  "onbid": {
+   "status": "수신 정상(목록 전부) — 결과(낙찰·유찰) 단계만 오류로 0건 → 고침",
+   "calls": "미니PC 일괄 수집 13:10~14:13(63분): 목록 831쪽 45,991행 저장, 원문 필요 0건(진행 물건 원문 95% — 나머지는 목록에서 사라진 옛 행), 결과 확인 약 11,180건 호출, 입찰결과목록 2,488행. 서버 집계 onbid-bid 5,942 등 1,000 넘어도 거절 없음 = 운영계정 한도 적용 확인",
+   "items": "오늘 DB 새 물건 852건(firstSeenAt 11-07, 법원·공매 합계) — 사이트 반영됨",
+   "error": "결과 단계 11,107건 전부 INVALID_RESPONSE. 원인: 입찰정보 API가 자료 없을 때 {\"result\":{\"resultCode\":\"03\",\"resultMsg\":\"NODATA_ERROR\"}}로 답하는데 해석기가 header만 봐서 오류로 셈 → 결과 시도 횟수도 안 올라가 매 회차 같은 1만여 건을 다시 부름. 직접 호출 시험(17:10 브라우저): 목록 00 NORMAL_CODE, 입찰정보 03 NODATA(키 정상, 미등록·한도초과 없음)"
+  },
+  "rtms": {
+   "status": "정상",
+   "note": "내 데이터 11.07 03:10 수집(11.06 18:10~18:20Z) 끝, 중단 자료 없음. 사이트 실거래 10종 완료(남은 작업 단독다가구 77·오피스텔 164)"
+  },
+  "court": {
+   "status": "정상 — 오늘 한도 채우고 쉼",
+   "lastCollected": "2026-11-07 14:10 전송(목록 275·상세 93·전송 273, 명세서 38), stoppedBy=limit(하루 한도). 등기부 112/120 12:38. 관리자 화면 '확인 필요 — 1시간 넘게 전송 없음'은 한도 채움을 구분 못 하는 표시 오류"
+  },
+  "conflicts": [],
+  "schedule": {
+   "status": "이상 없음 — 판단기록장 05:17 실행·picks 맨 앞 2026-11-07(사이트도 같은 날짜, health 사이트 반영 확인), 추가 실행 15:47 성공. 정비경매 11.07 04:21 성공(05:31 끝)"
+  },
+  "fixed": [
+   "court-collector/src/onbid-bulk.cjs: 온비드 응답 {\"result\":{resultCode}} 모양을 header로 바꿔 넘기는 apiFetch 추가(목록·원문·입찰정보·결과목록 4곳). 이제 자료 없음(03)은 오류가 아니라 '아직 결과 없음'으로 처리되고 시도 횟수가 올라가 5번 뒤 다시 안 부름 — autopush로 올라가고 미니PC 19:10 회차가 git pull로 받음",
+   "auction-server/functions/src/lib/dataGoKr.js: decode가 result.resultCode/resultMsg도 읽게 고침(node 확인: 03 → 자료 없음). 서버 함수 배포는 아직 — 사용자 배포 필요"
+  ],
+  "todo": [
+   "19:10 미니PC 공매 회차 뒤 state/onbid.lastBulk.errorCount가 0 근처로 떨어지고 결과 '아직' 수가 오르는지 다음 점검(21:05)에서 확인",
+   "서버 함수 배포(사용자 PC: cd C:\\notedata\\auction-server && firebase deploy --only functions) — dataGoKr.js 수정은 auction-server 폴더라 autopush 대상이 아니므로 git add auction-server 커밋·푸시도 필요",
+   "관리자 '미니PC 수집기 상태'가 stoppedBy=limit(오늘 한도 채움)인데도 17~22시에 '확인 필요'로 뜸 — MiniPcStatus.jsx에서 limit·같은 날이면 정상 표시로 고칠 것(빌드·배포 필요)",
+   "노트북 수동 공매 수집(logs/onbid-20261107.log) 12:16 '멈춤: fetch failed' — 미니PC 13:10 회차가 대신 돌아 영향 없음",
+   "법원 명세서 12%(9,608건) — 미니PC 하루 1,000화면 한도로 매일 14시 전후 한도 채움. 속도 올리려면 한도 조정 검토"
+  ]
+ },
+ {
   "time": "2026-11-07 13:12",
   "onbid": {
    "status": "대부분 받음(원문 95%) — 미니PC 일괄 수집 13:10 진행 중",

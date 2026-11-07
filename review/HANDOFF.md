@@ -443,3 +443,8 @@
 - 오늘 원문 채워진 수도권 주택 433건 일괄 시세 관문: $HOME/work/gate_all.py(VM 임시, 줄 형식 '관리번호|동|지번|면적|최저가', sgg 무시하고 동+지번 매칭 → 통과분은 sgg 지정 search.py로 재확인).
 - 판단기록장 11.07 A 2건 추가(조건부): 수자인파크뷰 1109(043회차 11.30 2,641만, 세후 약 1,488만, 현금 약 3,330만), 베스티움 1423(044회차 12.07 1,161만, 세후 약 1,239만). 조건: HUG 서면 회신(양수채권=보증금 전액)·전입세대열람, 베스티움은 토지거래허가 지정 근거.
 - 서울 HUG 확약 도시형생활주택(동도센트리움 508·양우내안애애플 711): 2025.10 서울 아파트 토지거래허가(실거주)가 걸리는지·공매 면제 여부 확인 필요 → pending.
+
+## 2026.11.07 17:15 4시간 점검 메모
+- 온비드 입찰정보 API는 '자료 없음'을 {"result":{"resultCode":"03"}}로 돌려줌(header 없음) → 해석기가 INVALID_RESPONSE로 세어 13:10 회차 결과 단계 11,107건이 전부 오류·0건이었음. court-collector/src/onbid-bulk.cjs에 apiFetch(모양 변환) 추가, auction-server/.../dataGoKr.js decode도 수정(서버 배포는 사용자).
+- 미니PC 법원 수집은 매일 14시쯤 하루 한도(stoppedBy=limit)를 채우고 쉰다. 관리자 화면 '확인 필요 — 1시간 넘게 전송 없음'은 이 경우의 표시 오류(state/court.stoppedBy로 확인).
+- 관리자 Firestore 문서(state/onbid, state/court)는 관리자 탭의 IndexedDB(firebaseLocalStorageDb) 토큰으로 REST 조회 가능.

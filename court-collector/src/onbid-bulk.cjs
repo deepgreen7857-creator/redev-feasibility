@@ -53,6 +53,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const appendJsonl = (name, rows) => { if (OUT && rows.length) fs.appendFileSync(path.join(OUT, name), rows.map((r) => JSON.stringify(r)).join('\n') + '\n'); };
 
 // ── 수집 서버로 보내기 ─────────────────────────────────
+// 2026-11-07 점검: 온비드 API는 자료 없음을 {"result":{"resultCode":"03",...}} 모양으로 돌려준다(header 없음).
+// 서버 해석기가 이 모양을 몰라 INVALID_RESPONSE 오류로 셌다(13:10 회차 결과 단계 11,107건 전부 — 실제로는 '자료 없음').
+// header 모양으로 바꿔 넘겨서 '자료 없음'으로 처리되게 한다(결과 시도 횟수가 올라가 5번 뒤 다시 안 부름).
+async function apiFetch(u, opts) {
+  const res = await fetch(u, opts);
+  if (!res.ok) return res;
+  let t = await res.text();
+  try {
+    const j = JSON.parse(t);
+    if (j && j.result && j.result.resultCode !== undefined && !j.header && !j.response) t = JSON.stringify({ header: j.result, body: j.body || {} });
+  } catch { /* JSON 아님 — 그대로 */ }
+  return { ok: true, status: res.status, text: async () => t };
+}
+
 async function post(body, tries = 4) {
   if (DRY) return { ok: true, dry: true, needDetail: [] };
   let last;
@@ -136,7 +150,7 @@ async function main() {
     for (let pageNo = 1; ; pageNo++) {
       let page;
       try {
-        page = await onbid.fetchListPage({ part, pageNo, serviceKey: KEY });
+        page = await onbid.fetchListPage({ part, pageNo, serviceKey: KEY, fetcher: apiFetch });
       } catch (e) {
         if (isQuota(e) || isAuth(e)) { stopped = `목록 ${e.message}`; break; }
         err(`목록 ${part.label} ${pageNo}쪽: ${e.message}`); break;
@@ -192,7 +206,7 @@ async function main() {
   await pool(todo, async (it, k) => {
     if (quotaHit) return 'stop';
     try {
-      const raw = await onbid.fetchDetail({ cltrMngNo: it.cltrMngNo, pbctCdtnNo: it.pbctCdtnNo, serviceKey: KEY, raw: true });
+      const raw = await onbid.fetchDetail({ cltrMngNo: it.cltrMngNo, pbctCdtnNo: it.pbctCdtnNo, serviceKey: KEY, raw: true, fetcher: apiFetch });
       const at = new Date().toISOString();
       if (!raw) { stats.detailEmpty++; buf.push({ id: it.id, detailEmptyAt: at }); }
       else {
@@ -223,7 +237,7 @@ async function main() {
     const out = [];
     await pool(ended, async (k) => {
       try {
-        const info = await onbid.fetchBidInfo({ cltrMngNo: k.cltrMngNo, pbctCdtnNo: k.pbctCdtnNo, serviceKey: KEY });
+        const info = await onbid.fetchBidInfo({ cltrMngNo: k.cltrMngNo, pbctCdtnNo: k.pbctCdtnNo, serviceKey: KEY, fetcher: apiFetch });
         const result = onbid.resultFor({ round: k.round, minBid: k.minBid }, info);
         const upd = { id: k.id, resultCheckedAt: new Date().toISOString(), resultTries: (k.resultTries || 0) + 1 };
         if (info) upd.bidInfo = info;
@@ -244,7 +258,7 @@ async function main() {
     for (const part of parts) {
       for (let pageNo = 1; pageNo <= 50; pageNo++) {
         try {
-          const page = await onbid.fetchResultPage({ ...part, from, to: TODAY, pageNo, serviceKey: KEY });
+          const page = await onbid.fetchResultPage({ ...part, from, to: TODAY, pageNo, serviceKey: KEY, fetcher: apiFetch });
           const rows = page.rows.filter((r) => r.cltrMngNo).map(onbid.mapResultRow).filter((r) => !part.sido || !r.sido || r.sido === part.sido);
           appendJsonl('입찰결과목록.jsonl', rows);
           if (rows.length) await post({ action: 'onbidResultRows', rows });
