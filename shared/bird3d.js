@@ -1,7 +1,7 @@
 'use strict';
 // 조감도·투시도 그리기(개략, 2판 2026-11-07) — three.js r128 + turf 6.5 (+ 있으면 EffectComposer·UnrealBloomPass·ShaderPass·CopyShader·LuminosityHighPassShader)
 // JbsBird.render(el, data, opt)
-//  data = { site:[[x,y]..], blds:[{ring:[[x,y]..], floors, top}], labels:[{label,c:[x,y],top}], parks:[ring..], ctx:[{poly,floors}], roads:[ring..], aerial:{img, x0,y0,x1,y1} }
+//  data = { aerialFar(같은 꼴, 넓은 범위 바탕), site:[[x,y]..], blds:[{ring:[[x,y]..], floors, top}], labels:[{label,c:[x,y],top}], parks:[ring..], ctx:[{poly,floors}], roads:[ring..], aerial:{img, x0,y0,x1,y1} }
 //  opt  = { look:'dusk'|'day', mode:'model'(주변 낮춤)|'review'(주변 실제 높이), view:'wide'|'semi'|'bird'|'persp', w, h, pr, labels }
 // 좌표: x 동, y 북(m). three는 (x, 높이, -y)
 (function (g) {
@@ -130,27 +130,23 @@
 
     // 땅: 항공사진(있으면) — 구역 밖은 어둡게
     const groundSize = span * 30;
+    const aerTex = a => { const [c, x] = cv(a.img.width, a.img.height); x.filter = dusk ? 'brightness(0.55) saturate(0.7) contrast(1.05)' : 'brightness(0.9) saturate(0.85)'; x.drawImage(a.img, 0, 0); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; return t; };
     let aerialT = null, aB = null;
-    if (D.aerial && D.aerial.img) {
-      const a = D.aerial; aB = a;
-      const [c, x] = cv(a.img.width, a.img.height);
-      x.filter = dusk ? 'brightness(0.55) saturate(0.7) contrast(1.05)' : 'brightness(0.9) saturate(0.85)';
-      x.drawImage(a.img, 0, 0);
-      aerialT = new THREE.CanvasTexture(c); aerialT.encoding = THREE.sRGBEncoding; aerialT.anisotropy = 8;
-    }
+    if (D.aerial && D.aerial.img) { aB = D.aerial; aerialT = aerTex(aB); }
     const groundMat = new THREE.MeshStandardMaterial({ color: dusk ? 0x4a4b45 : 0xb3b1a6, roughness: 1 });
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize), groundMat);
     ground.rotation.x = -Math.PI / 2; ground.position.set(cx, -0.1, -cy); ground.receiveShadow = true; scene.add(ground);
-    const worldUV = (geo, flatY) => { // 항공사진 좌표로 UV
-      const p = geo.attributes.position, uv = new Float32Array(p.count * 2);
-      for (let i = 0; i < p.count; i++) { const X = p.getX(i), Y = flatY ? -p.getZ(i) : p.getY(i); uv[i * 2] = (X - aB.x0) / (aB.x1 - aB.x0); uv[i * 2 + 1] = (Y - aB.y0) / (aB.y1 - aB.y0); }
+    const worldUV = (geo, flatY, B) => { // 항공사진 좌표로 UV
+      B = B || aB; const p = geo.attributes.position, uv = new Float32Array(p.count * 2);
+      for (let i = 0; i < p.count; i++) { const X = p.getX(i), Y = flatY ? -p.getZ(i) : p.getY(i); uv[i * 2] = (X - B.x0) / (B.x1 - B.x0); uv[i * 2 + 1] = (Y - B.y0) / (B.y1 - B.y0); }
       geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     };
-    if (aerialT) {
-      const pg = new THREE.PlaneGeometry(aB.x1 - aB.x0, aB.y1 - aB.y0, 1, 1); pg.rotateX(-Math.PI / 2); pg.translate((aB.x0 + aB.x1) / 2, 0, -(aB.y0 + aB.y1) / 2);
-      worldUV(pg, true);
-      const pmesh = new THREE.Mesh(pg, new THREE.MeshStandardMaterial({ map: aerialT, roughness: 1 })); pmesh.receiveShadow = true; scene.add(pmesh);
-    }
+    const aerPlane = (B, T, y) => {
+      const pg = new THREE.PlaneGeometry(B.x1 - B.x0, B.y1 - B.y0, 1, 1); pg.rotateX(-Math.PI / 2); pg.translate((B.x0 + B.x1) / 2, y, -(B.y0 + B.y1) / 2);
+      worldUV(pg, true, B); const m = new THREE.Mesh(pg, new THREE.MeshStandardMaterial({ map: T, roughness: 1 })); m.receiveShadow = true; scene.add(m);
+    };
+    if (D.aerialFar && D.aerialFar.img) aerPlane(D.aerialFar, aerTex(D.aerialFar), -0.06); // 바깥: 넓은 저해상도
+    if (aerialT) aerPlane(aB, aerialT, 0);
     const flat = (ring, mat, y, holes) => {
       const sh = new THREE.Shape(ring.map(p => new THREE.Vector2(p[0], p[1])));
       (holes || []).forEach(h => sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], p[1])))));
