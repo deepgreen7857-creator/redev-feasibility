@@ -9,3 +9,4 @@ auction-server/functions/.env*
 
 rtms-collector/*.log
 rtms-data/
+safety/test/package-lock.json
