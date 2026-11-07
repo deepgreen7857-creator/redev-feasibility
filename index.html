@@ -13,7 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=154">
+<link rel="stylesheet" href="css/style.css?v=155">
 <link rel="stylesheet" href="css/zonekit.css?v=154">
 </head>
 <body>
@@ -160,7 +160,7 @@
   <p class="note" id="ovSearchMsg" aria-live="polite"></p>
   <div id="repInfo" class="rep-info" hidden></div>
   <div class="form-grid">
-    <label>대표 지번 <input data-bind="meta.parcel" readonly placeholder="[대표 지번으로 설정]을 누르면 채워집니다" style="background:#f6f6f4"></label>
+    <label>대표 지번 <input data-bind="meta.parcel" readonly placeholder="비어 있음 — 위에서 지번(예: 용현동 557-1)으로 검색 후 [대표 지번으로 설정]" style="background:#f6f6f4"></label>
     <label>위치 (주소) <span class="auto-badge" id="locBadge">자동</span><input data-bind="meta.location" id="locInput" placeholder="주소를 검색하면 자동으로 채워집니다"></label>
     <label>용도지역 <span class="auto-badge" id="zoningBadge">자동</span><select data-bind="meta.zoning" id="zoningSelect"></select>
       <small id="zoningListNote"></small></label>
@@ -583,7 +583,7 @@
 <script src="shared/feas.js?v=154"></script>
 <script src="shared/cases.js?v=154"></script>
 <script src="js/assume.js?v=154"></script>
-<script src="js/app.js?v=158"></script>
+<script src="js/app.js?v=159"></script>
 <script src="js/quick.js?v=154"></script>
 <script src="js/forms.js?v=154"></script>
 <script src="js/hwpx.js?v=154"></script>
