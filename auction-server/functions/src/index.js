@@ -418,7 +418,9 @@ async function tick({ only, force } = {}) {
   const enabled = { zones: settings.collectZones !== false, bankrupt: settings.collectBankrupt !== false, bankruptDocs: settings.collectBankrupt !== false, onbid: settings.collectOnbid !== false, results: settings.collectOnbid !== false, resultList: settings.collectOnbid !== false, trades: settings.collectTrades !== false, land: settings.collectLand !== false, zoneMatch: true };
   // 2026-11-02: 한 회차(470초) 안에서 모든 작업이 자기 몫을 쓰게 — 가벼운 작업 먼저, 작업마다 시간 상한.
   //  전에는 공매 원문·토지가 시간을 다 써서 입찰결과·실거래가 매번 'time'으로 멈추고, 함수가 540초에 잘려 기록(runs)도 안 남았다.
-  const jobs = only ? [only] : ['zones', 'bankrupt', 'bankruptDocs', 'resultList', 'results', 'trades', 'onbid', 'land', 'zoneMatch'];
+  // 2026-11-07 사용자: 공매(온비드)는 API로 따로 한 번에 받는다(court-collector/src/onbid-bulk.cjs → ingestCourt 'onbid*' 동작).
+  //  20분마다 4분씩 쪼개 받다가 원문이 하루 1,800건밖에 안 쌓이던 문제. 관리자 화면 버튼(only)으로는 여전히 돌릴 수 있다.
+  const jobs = only ? [only] : ['zones', 'bankrupt', 'bankruptDocs', 'trades', 'land', 'zoneMatch'];
   const SLICE = { resultList: 40e3, results: 50e3, trades: 60e3, onbid: 240e3, land: 40e3, zoneMatch: 20e3 }; // 11-02 공매 원문 운영계정(10만 건) → 원문에 시간을 더 줌
   const until = (job) => (only ? deadline : Math.min(deadline, Date.now() + (SLICE[job] || 60e3)));
   for (const job of jobs) {
@@ -949,6 +951,39 @@ async function handleData(body) {
   return { ok: true, size: buf.length };
 }
 
+// ---------- 공매(온비드) 일괄 수집기(court-collector/src/onbid-bulk.cjs) ----------
+//  onbidKnown: 우리 DB의 공매 물건 요약(원문·결과를 다시 받을지 판단용)
+//  onbidSave: 물건 저장(merge=false면 회차·최저가 변화 이력·firstSeenAt 처리, 원문이 필요한 id를 돌려줌)
+//  onbidResultRows: 입찰결과목록(끝난 물건) 저장 / onbidState: 수집 기록(관리자 화면 '수집 현황')
+const ONBID_ID = /^onbid_[\w-]+$/;
+async function handleOnbidBulk(body) {
+  if (body.action === 'onbidKnown') {
+    const snap = await db.collection('listings').where('source', '==', 'onbid')
+      .select('cltrMngNo', 'pbctCdtnNo', 'round', 'minBid', 'statusCode', 'bidEnd', 'detailAt', 'detailVer', 'detailEmptyAt', 'result', 'resultTries', 'resultCheckedAt', 'pnu').get();
+    const items = snap.docs.map((d) => {
+      const x = d.data();
+      return [d.id, x.cltrMngNo || null, x.pbctCdtnNo || null, x.round ?? null, x.minBid ?? null, x.bidEnd || null,
+        x.detailAt ? (x.detailVer || 1) : 0, x.detailEmptyAt ? 1 : 0, x.result ? 1 : 0, x.resultTries || 0, x.resultCheckedAt || null, x.pnu ? 1 : 0];
+    });
+    return { ok: true, fields: ['id', 'cltrMngNo', 'pbctCdtnNo', 'round', 'minBid', 'bidEnd', 'detailVer', 'detailEmpty', 'hasResult', 'resultTries', 'resultCheckedAt', 'hasPnu'], items };
+  }
+  if (body.action === 'onbidSave') {
+    const items = (Array.isArray(body.items) ? body.items : []).filter((it) => it && ONBID_ID.test(String(it.id || ''))).slice(0, 400)
+      .map((it) => { const o = plain(it); if (!body.merge) { o.source = 'onbid'; } return o; });
+    const { needDetail } = await saveListings(items, { merge: Boolean(body.merge) });
+    return { ok: true, saved: items.length, needDetail: needDetail.map((x) => x.id) };
+  }
+  if (body.action === 'onbidResultRows') {
+    const rows = (Array.isArray(body.rows) ? body.rows : []).filter((r) => r && ONBID_ID.test(String(r.id || ''))).slice(0, 600).map(plain);
+    return { ok: true, ...(await saveResultRows(rows)) };
+  }
+  if (body.action === 'onbidState') {
+    await setState(String(body.name || 'onbid') === 'onbidResults' ? 'onbidResults' : 'onbid', { ...plain(body.state || {}), bulkAt: new Date().toISOString() });
+    return { ok: true };
+  }
+  return { ok: false, error: '모르는 동작' };
+}
+
 exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY, DATA_GO_KR_KEY], timeoutSeconds: 300, memory: '1GiB', cors: false }, async (req, res) => {
   if (req.method !== 'POST') { res.status(405).send('POST만 받습니다'); return; }
   const auth = String(req.get('authorization') || '');
@@ -960,6 +995,10 @@ exports.ingestCourt = onRequest({ secrets: [COURT_INGEST_TOKEN, VWORLD_KEY, DATA
   }
   if (['dataCase', 'dataFile', 'dataLocal'].includes(body.action)) {
     try { res.json(await handleData(body)); } catch (e) { logger.error('data file', body.caseNo, body.path, e.message); res.status(500).json({ ok: false, error: e.message.slice(0, 200) }); }
+    return;
+  }
+  if (String(body.action || '').startsWith('onbid')) {
+    try { res.json(await handleOnbidBulk(body)); } catch (e) { logger.error('onbid bulk', body.action, e.message); res.status(500).json({ ok: false, error: e.message.slice(0, 200) }); }
     return;
   }
   if (body.action) { res.json(await handleRegistry(body)); return; }
