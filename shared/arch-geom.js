@@ -313,7 +313,8 @@
           const dn = northDist(b.poly, e.a, e.b);
           if (dn !== null) cap = Math.min(cap, sunCap(dn + gap));
         }
-        if (tag === 'lowrise' && opt.lowriseCap && d < opt.lowriseDist) cap = Math.min(cap, opt.lowriseCap);
+        // 저층 인접 상한: 변 성격 'lowrise' 또는 경관 검토가 정한 경계부 점감 변(opt.lowEdges — 정북·도로 성격은 그대로 두고 상한만 더함, 2026-11-07)
+        if ((tag === 'lowrise' || (opt.lowEdges && opt.lowEdges.includes(i))) && opt.lowriseCap && d < opt.lowriseDist) cap = Math.min(cap, opt.lowriseCap);
         // 채광창 벽면 → 인접 대지경계선(건축법 시행령 제86조③1호): 높이 ≤ 거리 × 배수. 도로·공원 등이 사이에 있으면 중심선까지(같은 조 ⑥, 공동주택)
         //  판상·ㄱ형은 앞·뒤 벽면(동 깊이 방향)을 향한 변만, 탑상·Y·ㅁ형은 모든 변. 도로 폭은 변의 성격 표시와 관계없이 실제로 닿은 도로 폭
         if (opt.winRatio) {
@@ -495,7 +496,7 @@
     // 그 자리에 놓았을 때 채광창·정북 일조 등으로 정해지는 최고 층수(놓기 전에 미리 봄)
     //  층수와 관계없는 값이라 같은 모듈·자리는 한 번만 계산해 둠(세 번 훑기·층수별 반복에서 다시 씀)
     //  같은 구역(site 객체)·같은 방향·조건이면 층수별 배치(alternatives)끼리도 같이 씀
-    const capKey = ['walls2', opt.angle || 0, opt.winRatio || 0, opt.southBase ? 1 : 0, opt.parkWidth || 0, opt.lowriseCap || 0, opt.lowriseDist || 0, opt.spacing, A.floorHeight_m, A.groundExtra_m, A.maxFloors, JSON.stringify(opt.edgeW || []), JSON.stringify(opt.sun || {})].join('|');
+    const capKey = ['walls2', opt.angle || 0, opt.winRatio || 0, opt.southBase ? 1 : 0, opt.parkWidth || 0, opt.lowriseCap || 0, opt.lowriseDist || 0, JSON.stringify(opt.lowEdges || []), opt.spacing, A.floorHeight_m, A.groundExtra_m, A.maxFloors, JSON.stringify(opt.edgeW || []), JSON.stringify(opt.sun || {})].join('|');
     if (!site.__capc || site.__capc.key !== capKey) { try { Object.defineProperty(site, '__capc', { value: { key: capKey, map: new Map() }, configurable: true, writable: true, enumerable: false }); } catch (e) { /* 얼린 객체면 이번 배치에서만 */ } }
     const CAPC = site.__capc && site.__capc.key === capKey ? site.__capc.map : new Map();
     function capAt(m, x, y) {
@@ -761,11 +762,21 @@
     const dx = len * Math.sin(s.az), dy = len * Math.cos(s.az);
     return hull(poly.concat(poly.map(p => [p[0] + dx, p[1] + dy])));
   }
+  // 오목한 바닥(꺾인 동 외곽선 등)의 정확한 그림자 조각들(2026-11-07 독립 광선 검산에서 발견: 볼록 껍질은 꺾인 안쪽까지 그늘로 칠함)
+  //   그림자 = 바닥 ∪ 옮긴 바닥 ∪ 변마다 쓸고 간 사각형 — 볼록이면 껍질 하나 그대로
+  function isConvex(q) { const n = q.length; let sg = 0; for (let i = 0; i < n; i++) { const a = q[i], b = q[(i + 1) % n], c = q[(i + 2) % n], cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]); if (Math.abs(cr) < 1e-9) continue; const g = cr > 0 ? 1 : -1; if (sg && g !== sg) return false; sg = g; } return true; }
+  function shadowParts(poly, h, s) {
+    if (s.alt <= 0) return [];
+    if (poly.length <= 4 || isConvex(poly)) { const one = shadow(poly, h, s); return one ? [one] : []; }
+    const len = h / Math.tan(s.alt), dx = len * Math.sin(s.az), dy = len * Math.cos(s.az), mv = poly.map(p => [p[0] + dx, p[1] + dy]), out = [poly, mv];
+    poly.forEach((p, i) => { const r = poly[(i + 1) % poly.length]; out.push([p, r, mv[(i + 1) % poly.length], mv[i]]); });
+    return out;
+  }
   // 격자 점별 동지 일조 시간(합계 08~16, 최대 연속 09~15), 10분 간격
   function sunHours(blds, H, latDeg, pts, tol) {
     const times = []; for (let t = 8; t <= 16 + 1e-9; t += 1 / 6) times.push(t);
     // 시각별 그림자 + 외접사각형(점이 사각형 밖이면 다각형 검사를 건너뜀 — 주변 건물이 수천 동이어도 빠르게)
-    const shadowsAt = times.map(t => { const s = sun(latDeg, t); return blds.flatMap(b => (b.parts || [b.poly]).map(q => shadow(q, b.h != null ? b.h : H(b.floors), s))).filter(Boolean).map(sh => { const xs = sh.map(p => p[0]), ys = sh.map(p => p[1]); return { sh, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; }); });
+    const shadowsAt = times.map(t => { const s = sun(latDeg, t); return blds.flatMap(b => (b.parts || [b.poly]).flatMap(q => shadowParts(q, b.h != null ? b.h : H(b.floors), s))).filter(Boolean).map(sh => { const xs = sh.map(p => p[0]), ys = sh.map(p => p[1]); return { sh, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; }); });
     return pts.map(p => {
       let total = 0, run = 0, best = 0;
       times.forEach((t, k) => {
@@ -777,6 +788,6 @@
     });
   }
 
-  const api = { FORM_NAME, caseOf: id => caseOf(id), modulesFor, capper, wallsOf, wallsTo, northDist, southDist, projector, rot, area, ccw, openRing, inside, segDist, dirDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, hull, sunHours };
+  const api = { FORM_NAME, caseOf: id => caseOf(id), modulesFor, capper, wallsOf, wallsTo, northDist, southDist, projector, rot, area, ccw, openRing, inside, segDist, dirDist, edges, clipHalf, buildableTest, stripRanges, layout, alternatives, sun, shadow, shadowParts, isConvex, hull, sunHours };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.ArchGeom = api;
 })(typeof window !== 'undefined' ? window : globalThis);

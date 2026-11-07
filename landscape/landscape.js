@@ -101,6 +101,8 @@
       if (A) p = Object.assign({}, p, { floors: A.maxFloors });
       const r = LandscapeCalc.run(C, T, p, Object.assign({}, cons, { arch: A ? cons.arch || {} : null }));
       const bearing = +(p.axisBearing || 0);
+      // 건축계획(/arch) 2회차에 넘길 값(2026-11-07): 통경축 방위·주변 평균 층수·점감 배율 — /arch가 통경축 띠·경계부 층수 상한으로 반영
+      r.constraints.통경축_방위 = bearing; r.constraints.주변_평균층수 = h.num(p.aroundFloors); r.constraints.점감_배율 = (C._내부검토기준 || {}).주변대비_층수배율_주의 || 2;
       const op = A ? LandscapeCalc.openness(blds, pts, bearing) : null;
       const tall = A ? LandscapeCalc.edgeTall(blds, pts, h.num(p.aroundFloors), (C._내부검토기준 || {}).주변대비_층수배율_주의 || 2, 30, ArchGeom.segDist) : [];
       if (A && op) {

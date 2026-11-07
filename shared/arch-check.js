@@ -335,7 +335,7 @@
         if (G.sunHours(sh, Hf, lat, c.pts || [c.pt], tol).some(x => x.ok)) { c.okFrom = L; break; } } });
     const per = {}; let lost = 0, total = 0;
     cols.forEach(c => { const l = Math.min(c.b.floors, c.okFrom - 1); lost += l; total += c.b.floors; const q = per[c.id] || (per[c.id] = { lost: 0, total: 0, cols: 0, worst: 0 }); q.lost += l; q.total += c.b.floors; q.cols++; q.worst = Math.max(q.worst, l); });
-    return { ok: lost === 0, cols: cols.map(c => ({ id: c.id, k: c.k, okFrom: c.okFrom, north: c.north })), lost, total, per, 근거: '건축법 시행령 제86조③2호 단서(그 대지의 모든 세대 동지 9~15시 연속 2시간 이상)', 메모: '세대마다 가장 남쪽을 향한 창 한 점·층마다 개략(10분 간격) — 인허가는 정밀 일조분석' };
+    return { ok: lost === 0, cols: cols.map(c => ({ id: c.id, k: c.k, okFrom: c.okFrom, north: c.north, pt: c.pt, pts: c.pts || null, floors: c.b.floors })), lost, total, per, 근거: '건축법 시행령 제86조③2호 단서(그 대지의 모든 세대 동지 9~15시 연속 2시간 이상)', 메모: '세대마다 가장 남쪽을 향한 창 한 점·층마다 개략(10분 간격) — 인허가는 정밀 일조분석' };
   }
 
   /* ---------- 치수선(2026-11-05, 사용자 요구 '인동거리·일조권·통경축은 치수선을 그대로 표시하면 바로 보일 것') ----------

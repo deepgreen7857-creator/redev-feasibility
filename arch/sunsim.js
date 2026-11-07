@@ -5,7 +5,7 @@ const G=window.ArchGeom,K=window.JbsCheck,LAT=D.lat||37.46,fh=D.assume.floorHeig
 const $=s=>document.querySelector(s),svg=$('#map');
 let B=[],sel=null,nid=1,full=null,MODE='now';
 const clone=o=>JSON.parse(JSON.stringify(o));
-const prep=b=>{b.cores=b.cores||[];b.walls=b.walls||[];b.parts=b.parts||[b.poly];if(!b.units||!b.units.length){const cs=JSON.stringify(b.cores);b.units=b.parts.filter(q=>!cs.includes(JSON.stringify(q[0]))).map(q=>[q]);}b.n=b.n||b.units.length;b.mixT=b.mixT||{[b.t||'84']:b.n};return b;};
+const prep=b=>{b.cores=b.cores||[];b.walls=b.walls||[];b.parts=b.parts||[b.poly];b.units=b.units||[];b.n=b.n||Math.max(1,b.units.length);b.mixT=b.mixT||{[b.t||'84']:b.n};return b;};
 const load=arr=>{B=clone(arr).map(b=>Object.assign(prep(b),{id:nid++}));sel=null;full=null;draw();};
 // 좌표
 const P=D.site.pts,xs=P.map(p=>p[0]),ys=P.map(p=>p[1]),X0=Math.min(...xs)-60,X1=Math.max(...xs)+60,Y0=Math.min(...ys)-60,Y1=Math.max(...ys)+60;
@@ -17,9 +17,13 @@ const xf=(b,dx,dy,da)=>{const c=cen(b),r=da*Math.PI/180,T=p=>{const q=G.rot([p[0
   b.parts=b.parts.map(q=>q.map(T));b.cores=b.cores.map(q=>q.map(T));b.units=b.units.map(rs=>rs.map(q=>q.map(T)));b.walls=b.walls.map(w=>Object.assign(w,{a:T(w.a),b:T(w.b),n:G.rot(w.n,r)}));b.poly=G.hull(b.parts.flat());b.angle=(b.angle||0)+da;full=null;};
 // 세대 창 점(세대마다 가장 남쪽을 향한 바깥 변 가운데)
 const ptsOf=b=>{const parts=b.parts,inA=(x,y)=>parts.some(q=>G.inside(x,y,q)),out=[];
+  if(!b.units.length){// 세대 조각이 없는 동(올린 도면 등): 남쪽 반을 향한 바깥 벽을 층당 세대 수만큼 고르게 나눈 점
+    const es=[];parts.forEach(q=>q.forEach((p,i)=>{const r=q[(i+1)%q.length],dx=r[0]-p[0],dy=r[1]-p[1],L=Math.hypot(dx,dy);if(L<1.5)return;let n=[dy/L,-dx/L];const m=[(p[0]+r[0])/2,(p[1]+r[1])/2];const A1=inA(m[0]+n[0]*.4,m[1]+n[1]*.4),A2=inA(m[0]-n[0]*.4,m[1]-n[1]*.4);if(A1&&A2)return;if(A1)n=[-n[0],-n[1]];if(n[1]<-0.2)es.push({p,r,n,L});}));
+    const tot=es.reduce((a,e)=>a+e.L,0),k=Math.max(1,b.n||1);let acc=0,j=0;es.forEach(e=>{while(j<k&&(j+.5)*tot/k<=acc+e.L+1e-6){const t=((j+.5)*tot/k-acc)/e.L;out.push({b,k:j,p:[e.p[0]+(e.r[0]-e.p[0])*t+e.n[0]*.6,e.p[1]+(e.r[1]-e.p[1])*t+e.n[1]*.6]});j++;}acc+=e.L;});return out;}
+
   b.units.forEach((rs,k)=>{let best=null;rs.forEach(q=>q.forEach((p,i)=>{const r=q[(i+1)%q.length],dx=r[0]-p[0],dy=r[1]-p[1],L=Math.hypot(dx,dy);if(L<2)return;let n=[dy/L,-dx/L];const m=[(p[0]+r[0])/2,(p[1]+r[1])/2];const A1=inA(m[0]+n[0]*.4,m[1]+n[1]*.4),A2=inA(m[0]-n[0]*.4,m[1]-n[1]*.4);if(A1&&A2)return;if(A1)n=[-n[0],-n[1]];if(!best||n[1]<best.n[1])best={m,n};}));
     if(best)out.push({b,k,p:[best.m[0]+best.n[0]*.6,best.m[1]+best.n[1]*.6]});});return out;};
-const shadows=(t,z)=>{const s=G.sun(LAT,t);return B.flatMap(b=>b.parts.map(q=>G.shadow(q,Math.max(0,Hf(b.floors)-z),s))).filter(Boolean);};
+const shadows=(t,z)=>{const s=G.sun(LAT,t);return B.flatMap(b=>b.parts.flatMap(q=>G.shadowParts(q,Math.max(0,Hf(b.floors)-z),s))).filter(Boolean);};
 const litAt=(pt,S)=>!S.some(q=>G.inside(pt[0],pt[1],q));
 function contHours(pts,z){const S=[];for(let t=9;t<15-1e-9;t+=1/6)S.push(shadows(t,z));return pts.map(q=>{let run=0,best=0;S.forEach(s=>{if(litAt(q.p,s)){run+=1/6;best=Math.max(best,run);}else run=0;});return best;});}
 // 검사: 대지 밖·공원 겹침, 동 사이 10m 미만
@@ -82,6 +86,14 @@ $('#time').oninput=draw;$('#floor').oninput=draw;$('#mNow').onclick=()=>{MODE='n
 const tog=id=>{const el=$(id),o=el.style.display==='block';$('#menu').style.display='none';$('#help').style.display='none';el.style.display=o?'none':'block';};$('#mBtn').onclick=()=>tog('#menu');$('#hBtn').onclick=()=>tog('#help');
 let timer=null;$('#play').onclick=()=>{if(timer){clearInterval(timer);timer=null;$('#play').textContent='▶';return;}$('#play').textContent='■';timer=setInterval(()=>{let v=+$('#time').value+1/6;if(v>15)v=9;$('#time').value=v;draw();},350);};
 $('#full').onclick=()=>{$('#full').textContent='검사 중…';setTimeout(()=>{full=K.unitSun(D.site,B,{units:D.units||{},assume:D.assume,lat:LAT,sunWin:'any'});$('#full').textContent='전 층 검사';draw();},30);};
+// 정밀 검산(2026-11-07): 전 층 검사(엔진)를 광선 방식으로 다시 판정 — shared/sun-verify.js
+$('#verify').onclick=async()=>{const bt=$('#verify'),box=$('#vout');if(!window.JbsSunVerify)return;bt.disabled=true;bt.textContent='검산 중…';
+  try{if(!full){full=K.unitSun(D.site,B,{units:D.units||{},assume:D.assume,lat:LAT,sunWin:'any'});draw();}
+    const vo={fh,groundExtra:D.assume.groundExtra_m,lat:LAT,lon:D.lon||126.65,onProgress:(i,n)=>{bt.textContent=`검산 중… ${i}/${n}`;}};
+    const r=await JbsSunVerify.check(B,full,vo),rk=await JbsSunVerify.check(B,full,Object.assign({},vo,{basis:'kst',onProgress:null}));
+    box.innerHTML=JbsSunVerify.html(r,rk)+'<button onclick="this.parentNode.style.display=\'none\'">닫기</button>';box.style.display='block';}
+  catch(e){box.textContent='정밀 검산을 하지 못했습니다: '+e.message;box.style.display='block';}
+  bt.disabled=false;bt.textContent='정밀 검산';};
 $('#ldStart').onclick=()=>load(D.start);$('#ldEmpty').onclick=()=>load([]);
 $('#ldBack').onclick=()=>{try{localStorage.setItem('jbs-sunsim-back-cache',JSON.stringify({at:Date.now(),buildings:B.map(b=>({id:b.id,dname:b.dname,form:b.form,floors:b.floors,n:b.n,mixT:b.mixT,poly:b.poly,parts:b.parts,cores:b.cores,units:b.units,walls:b.walls,angle:b.angle||0}))}));$('#ldBack').textContent='넘김 — 건축계획 화면에서 [시뮬레이터 배치 받기]';}catch(e){$('#ldBack').textContent='넘기기 실패(저장 공간)';}};
 load(D.start);

@@ -8,18 +8,19 @@
 button{font:inherit;padding:4px 9px;border:1px solid var(--line);background:#f8f9fb;border-radius:6px;cursor:pointer}button:hover,button.on{border-color:var(--acc);background:#eef4ff}
 #sum{font-size:13px}#menu,#help{position:fixed;top:64px;right:8px;width:250px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px;display:none;box-shadow:0 4px 14px rgba(0,0,0,.12)}#menu button{display:block;width:100%;text-align:left;margin:3px 0}
 .mute{color:var(--mute);font-size:12px}
+#vout{position:fixed;left:8px;right:8px;top:64px;max-width:640px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;display:none;box-shadow:0 4px 14px rgba(0,0,0,.12)}#vout .note{color:var(--mute);font-size:12px}
 </style></head><body><svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
 <div class="bar" id="top">
  <div class="g"><button id="play">▶</button><b id="tlab">12:00</b><input type="range" id="time" min="9" max="15" step="0.1666667" value="12"><span class="mute" id="sunlab"></span></div>
  <div class="g">층 <b id="flab">10층</b><input type="range" id="floor" min="1" max="39" step="1" value="10"></div>
- <div class="g"><button id="mNow" class="on">지금 그림자</button><button id="mDay">하루 결과</button><button id="full">전 층 검사</button></div>
+ <div class="g"><button id="mNow" class="on">지금 그림자</button><button id="mDay">하루 결과</button><button id="full">전 층 검사</button><button id="verify" title="전 층 검사 결과를 다른 방법(따로 계산한 태양 위치·1분 간격·창에서 해 쪽 광선)으로 다시 판정해 대조">정밀 검산</button></div>
  <div id="sum"></div>
  <div class="g" style="margin-left:auto"><button id="mBtn">＋ 동·배치</button><button id="hBtn">?</button></div>
 </div>
-<div id="menu"><div class="mute">동 보태기(가운데에 30층으로)</div><div id="pal"></div><div class="mute" style="margin-top:8px">배치</div><button id="ldStart">건축계획 화면에서 넘긴 안</button><button id="ldEmpty">빈 대지</button><button id="ldBack">이 배치를 건축계획 화면으로</button></div>
+<div id="vout"></div><div id="menu"><div class="mute">동 보태기(가운데에 30층으로)</div><div id="pal"></div><div class="mute" style="margin-top:8px">배치</div><button id="ldStart">건축계획 화면에서 넘긴 안</button><button id="ldEmpty">빈 대지</button><button id="ldBack">이 배치를 건축계획 화면으로</button></div>
 <div id="help"><b>쓰는 법</b><div class="mute" style="margin-top:4px">· 동을 끌어 옮김, 빈 곳을 끌면 화면 이동, 휠 = 확대<br>· 동을 누르면 아래에 돌리기·층수 막대<br>· 방향키 1m(Shift 5m), Q/E 돌리기, +/− 층수, Delete 지우기<br>· 노란 점 = 지금 해 드는 창, 회색 = 그늘<br>· 하루 결과: 초록 = 9~15시 연속 2시간 이상, 빨강 = 미만(숫자 = 시간)<br>· 전 층 검사: 모든 층 세대, 동 위 빨간 −숫자 = 못 받는 세대<br>· 빨간 점선 = 동 사이 10m 미만, 빨간 테두리 = 대지 밖·공원에 걸침<br>· 세대마다 남쪽 창 한 점으로 보는 개략 점검</div></div>
 <div class="bar" id="selbar"><span id="selname"></span>
  <span class="g">돌리기 <button data-act="rotL">↺5°</button><button data-act="rotl">↺1°</button><button data-act="rotr">↻1°</button><button data-act="rotR">↻5°</button></span>
  <span class="g">층 <button data-act="fDn5">−5</button><button data-act="fDn">−1</button><button data-act="fUp">+1</button><button data-act="fUp5">+5</button></span>
  <span class="g"><button data-act="dup">복사</button><button data-act="del">지우기</button></span></div>
-<script src="../shared/arch-geom.js?v=27"></script><script src="../shared/arch-check.js?v=9"></script><script src="../shared/dong-lib.js?v=2"></script><script src="sunsim.js?v=1"></script></body></html>
+<script src="../shared/arch-geom.js?v=29"></script><script src="../shared/arch-check.js?v=10"></script><script src="../shared/sun-verify.js?v=1"></script><script src="../shared/dong-lib.js?v=2"></script><script src="sunsim.js?v=4"></script></body></html>
