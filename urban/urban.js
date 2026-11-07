@@ -624,7 +624,8 @@ function analyze(key) {
   bs.forEach(b => { const a = b.pid != null ? D.parcels[b.pid].access : null; if (a === true) accN++; else if (a == null) accU++; });
   const du = bs.reduce((s, b) => s + densityUnits(b), 0);
   const landArea = ps.reduce((s, p) => s + landA(p), 0);
-  const zoneArea = {}; ps.forEach(p => { const z = p.zone || '미확인'; zoneArea[z] = (zoneArea[z] || 0) + landA(p); });
+  // 토지특성의 용도지역1이 그 필지의 주된 용도지역 — '준공업지역, 일반공업지역'처럼 걸친 필지는 면적을 용도지역1에 넣고 걸친 용도지역은 따로 표시(2026-11-07 학익장미: 경계에 몇 ㎡ 걸친 일반공업에 필지 전체 면적이 붙던 문제)
+  const zoneArea = {}, zoneTouch = {}; ps.forEach(p => { const zs = String(p.zone || '').split(/\s*,\s*/).filter(Boolean); const z = zs[0] || '미확인'; zoneArea[z] = (zoneArea[z] || 0) + landA(p); zs.slice(1).forEach(t => { zoneTouch[t] = (zoneTouch[t] || 0) + 1; }); });
   const bsOf = p => (D.map ? (D.regions[key].blds[p.pnu] || []) : p.blds);
   let owners = 0; const names = new Set();
   ps.forEach(p => {
@@ -635,7 +636,7 @@ function analyze(key) {
   const priorLand = ps.reduce((s, p) => s + landA(p) * p.price, 0);
   const needUnits = bs.filter(b => b.needUnits).length;
   return {
-    key, area, ps, bs, N, oldN, unknownN, ghostN: ghosts.length, fa, oldFa, smallN, accN, accU, du, landArea, zoneArea, owners: Math.max(owners, 1), priorLand, needUnits, bsOf, estN,
+    key, area, ps, bs, N, oldN, unknownN, ghostN: ghosts.length, fa, oldFa, smallN, accN, accU, du, landArea, zoneArea, zoneTouch, owners: Math.max(owners, 1), priorLand, needUnits, bsOf, estN,
     oldRatio: N ? oldN / N : 0, oldFaRatio: fa ? oldFa / fa : 0, smallRatio: ps.length ? smallN / ps.length : 0,
     // 미확인 건축물이 있으면 접도율은 범위(accRatio ~ accMax)
     accRatio: N ? accN / N : 0, accMax: N ? (accN + accU) / N : 0, density: du / (area / 10000),
@@ -2886,7 +2887,7 @@ function renderPlan(a) {
   side.innerHTML = `<h2>${regName()} 정비계획 (토지이용·밀도)</h2>
   ${D.map ? infraSection(a, pl) : ''}
   <div class="form">
-    <div class="field"><label for="zone">용도지역(계획)</label><select id="zone">${Object.keys(RULES.far).map(k => `<option>${k}</option>`).join('')}</select><span class="u">현황: ${Object.entries(a.zoneArea).map(([z, v]) => esc(z.replace('일반주거지역', '')) + ' ' + fmt(v) + '㎡').join(', ')}</span>${industrialNote(a)}</div>
+    <div class="field"><label for="zone">용도지역(계획)</label><select id="zone">${Object.keys(RULES.far).map(k => `<option>${k}</option>`).join('')}</select><span class="u">현황: ${Object.entries(a.zoneArea).map(([z, v]) => esc(z.replace('일반주거지역', '')) + ' ' + fmt(v) + '㎡').join(', ')}</span>${Object.keys(a.zoneTouch || {}).length ? ` <span class="note">(경계에 ${Object.entries(a.zoneTouch).map(([z, n]) => esc(z) + ' ' + n + '필지').join(', ')} 일부 걸침 — 토지특성 용도지역2)</span>` : ''}${industrialNote(a)}</div>
     ${prop ? '' : field('infraRatio', '정비기반시설 비율(도로·공원·학교 등)', P.infraRatio, D.map ? '구역 면적 대비 % · 직접 입력' : '구역 면적 대비 %, 예시 가정', 'min=0 max=60 step=1')}
     <div class="field"><label for="farMode">적용 용적률</label><select id="farMode"><option value="base">기준용적률 ${far.base}%</option><option value="allowed">허용용적률 ${far.allowed}%</option><option value="max">상한용적률 ${far.max}%</option>${pl.farCalc ? `<option value="calc">산식(공공시설 제공) ${pl.farCalc.v}%</option>` : ''}<option value="custom">직접 입력</option></select><span class="u">2030 기본계획 · ${pressBadge}</span></div>
     ${P.farMode === 'custom' ? field('farCustom', '계획 용적률', P.farCustom, `% (상한 ${far.max}% 이내로 제한)`) : ''}
