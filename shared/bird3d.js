@@ -59,20 +59,52 @@
     if (srgb) t.encoding = THREE.sRGBEncoding; return t;
   }
 
+  /* ---------- 나무 그림(사진풍 2D, 위에서 비스듬히 보는 조감도용) ---------- */
+  // type: round(활엽), tall(가로수·느티), cone(침엽), flower(벚꽃), bush(관목)
+  function treeCanvas(type) {
+    const W = 256, H = type === 'bush' ? 128 : 256; const [c, x] = cv(W, H);
+    const cx0 = W / 2, base = H - 6;
+    const pal = { round: ['#2e4a22', '#4f7a34', '#86ad55'], tall: ['#2a4420', '#4b7331', '#7da24c'], cone: ['#1f3a22', '#35573a', '#5d7f52'], flower: ['#b98a95', '#e7b9c4', '#fbe6ea'], bush: ['#2f4b24', '#4e7a35', '#8ab25a'] }[type];
+    // 줄기
+    if (type !== 'bush') { x.strokeStyle = '#4a3a2c'; x.lineWidth = 7; x.beginPath(); x.moveTo(cx0, base); x.lineTo(cx0, H * 0.55); x.stroke(); x.lineWidth = 3; x.beginPath(); x.moveTo(cx0, H * 0.62); x.lineTo(cx0 - 22, H * 0.45); x.moveTo(cx0, H * 0.6); x.lineTo(cx0 + 20, H * 0.42); x.stroke(); }
+    // 잎 덩어리 모양 안에 작은 잎 뭉치를 여러 겹
+    const inside = (px, py) => {
+      if (type === 'cone') { const t = (py - H * 0.06) / (H * 0.78); return t > 0 && t < 1 && Math.abs(px - cx0) < 14 + t * 78; }
+      if (type === 'tall') { const dx = (px - cx0) / 78, dy = (py - H * 0.4) / 98; return dx * dx + dy * dy < 1; }
+      if (type === 'bush') { const dx = (px - cx0) / 118, dy = (py - H * 0.6) / 52; return dx * dx + dy * dy < 1; }
+      const dx = (px - cx0) / 104, dy = (py - H * 0.42) / 92; return dx * dx + dy * dy < 1;
+    };
+    const N = type === 'bush' ? 520 : 900;
+    for (let i = 0; i < N; i++) {
+      const px = rnd() * W, py = rnd() * H; if (!inside(px, py)) continue;
+      // 빛: 왼쪽 위가 밝고 오른쪽 아래가 어두움 + 얼룩
+      const lx = (cx0 - px) / W + (H * 0.3 - py) / H + (rnd() - .5) * 0.7;
+      const k = lx > 0.25 ? 2 : lx > -0.2 ? 1 : 0;
+      const r = (type === 'bush' ? 4 : 5) + rnd() * (type === 'cone' ? 7 : 11);
+      x.globalAlpha = 0.85; x.fillStyle = pal[k]; x.beginPath(); x.arc(px, py, r, 0, Math.PI * 2); x.fill();
+      if (rnd() < 0.25) { x.globalAlpha = 0.5; x.fillStyle = pal[Math.min(2, k + 1)]; x.beginPath(); x.arc(px - r * 0.3, py - r * 0.3, r * 0.45, 0, Math.PI * 2); x.fill(); }
+    }
+    // 잎 사이 그늘 점
+    x.globalAlpha = 0.35; x.fillStyle = '#132010';
+    for (let i = 0; i < 160; i++) { const px = rnd() * W, py = rnd() * H; if (inside(px, py) && rnd() < 0.6) { x.beginPath(); x.arc(px, py, 1.5 + rnd() * 3, 0, Math.PI * 2); x.fill(); } }
+    x.globalAlpha = 1;
+    return c;
+  }
+
   /* ---------- 하늘 ---------- */
   function skyCanvas(look) {
     const [c, x] = cv(1024, 512);
     const gr = x.createLinearGradient(0, 0, 0, 512);
-    if (look === 'dusk') { gr.addColorStop(0, '#16244a'); gr.addColorStop(0.5, '#2f4c80'); gr.addColorStop(0.78, '#6f86ad'); gr.addColorStop(0.88, '#b9a7a0'); gr.addColorStop(0.94, '#eab07a'); gr.addColorStop(1, '#f6cf98'); }
-    else { gr.addColorStop(0, '#3f78bd'); gr.addColorStop(0.7, '#8fb9e2'); gr.addColorStop(0.92, '#cfe0ec'); gr.addColorStop(1, '#eef3f4'); }
+    if (look === 'dusk') { gr.addColorStop(0, '#16244a'); gr.addColorStop(0.42, '#2f4c80'); gr.addColorStop(0.62, '#6f86ad'); gr.addColorStop(0.73, '#b9a7a0'); gr.addColorStop(0.78, '#eab07a'); gr.addColorStop(0.81, '#f6cf98'); gr.addColorStop(1, '#6b5a48'); } // 하늘 구가 천정~0.62π라 지평선 ≈ 0.81
+    else { gr.addColorStop(0, '#3f78bd'); gr.addColorStop(0.58, '#8fb9e2'); gr.addColorStop(0.76, '#cfe0ec'); gr.addColorStop(0.81, '#eef3f4'); gr.addColorStop(1, '#c9c9c2'); }
     x.fillStyle = gr; x.fillRect(0, 0, 1024, 512);
     // 구름(흐린 타원 여러 겹)
     for (let i = 0; i < 38; i++) {
-      const cx = rnd() * 1024, cy = 330 + rnd() * 160, rw = 80 + rnd() * 220, rh = 7 + rnd() * 14;
+      const cx = rnd() * 1024, cy = 250 + rnd() * 160, rw = 80 + rnd() * 220, rh = 7 + rnd() * 14;
       const gg = x.createRadialGradient(cx, cy, 0, cx, cy, rw);
       const lightUnder = look === 'dusk' ? `rgba(255,${170 + rnd() * 50},${110 + rnd() * 40},` : 'rgba(255,255,255,';
       const dark = look === 'dusk' ? 'rgba(70,80,110,' : 'rgba(255,255,255,';
-      const col = cy > 440 ? lightUnder : (rnd() < 0.5 ? lightUnder : dark);
+      const col = cy > 370 ? lightUnder : (rnd() < 0.5 ? lightUnder : dark);
       gg.addColorStop(0, col + (0.12 + rnd() * 0.14) + ')'); gg.addColorStop(1, col + '0)');
       x.save(); x.translate(cx, cy); x.scale(1, rh / rw); x.translate(-cx, -cy); x.fillStyle = gg; x.beginPath(); x.arc(cx, cy, rw, 0, Math.PI * 2); x.fill(); x.restore();
     }
@@ -110,12 +142,12 @@
     // 하늘(큰 구 안쪽에 그림) + 안개
     const skyC = skyCanvas(opt.look);
     const skyT = new THREE.CanvasTexture(skyC); skyT.encoding = THREE.sRGBEncoding;
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(span * 40, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2 + 0.05), new THREE.MeshBasicMaterial({ map: skyT, side: THREE.BackSide, fog: false, depthWrite: false }));
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(span * 30, 48, 24, 0, Math.PI * 2, 0, Math.PI * 0.62), new THREE.MeshBasicMaterial({ map: skyT, side: THREE.BackSide, fog: false, depthWrite: false }));
     sky.position.set(cx, -span * 0.3, -cy); sky.rotation.y = -0.9; scene.add(sky);
     // 반사용 환경(하늘 그림)
     const pm = new THREE.PMREMGenerator(renderer); const envRT = pm.fromEquirectangular((() => { const t = new THREE.CanvasTexture(skyC); t.mapping = THREE.EquirectangularReflectionMapping; t.encoding = THREE.sRGBEncoding; return t; })());
-    scene.environment = envRT.texture;
-    const fogCol = dusk ? 0x46506a : 0xd5dee6;
+    const ENV = envRT.texture; // 유리 반사에만 씀(땅·잔디까지 하늘빛으로 뜨지 않게)
+    const fogCol = dusk ? 0x46506a : 0xd5dee6; scene.background = new THREE.Color(fogCol);
     scene.fog = new THREE.Fog(fogCol, span * 3, span * 10); // 카메라 정한 뒤 다시 맞춤
 
     // 빛
@@ -217,7 +249,7 @@
       const Rg = ccw(b.ring); foot.push(Rg);
       const band = (p, q, L, z0, z1, pair, nF, side) => {
         const nB = Math.max(1, Math.round(L / 3.3));
-        const mat = new THREE.MeshStandardMaterial({ map: tex(pair[0], nB / 4, nF / 4), emissive: 0xffffff, emissiveMap: tex(pair[1], nB / 4, nF / 4), emissiveIntensity: dusk ? 1.0 : 0, roughness: side ? 0.85 : 0.5, metalness: side ? 0 : 0.15, envMapIntensity: dusk ? (side ? 0.15 : 0.45) : (side ? 0.3 : 0.6), color: dusk ? 0xdcd8d0 : 0xe6e6e6 });
+        const mat = new THREE.MeshStandardMaterial({ map: tex(pair[0], nB / 4, nF / 4), emissive: 0xffffff, emissiveMap: tex(pair[1], nB / 4, nF / 4), emissiveIntensity: dusk ? 1.0 : 0, envMap: ENV, roughness: side ? 0.85 : 0.5, metalness: side ? 0 : 0.15, envMapIntensity: dusk ? (side ? 0.15 : 0.45) : (side ? 0.3 : 0.6), color: dusk ? 0xdcd8d0 : 0xe6e6e6 });
         const m = new THREE.Mesh(new THREE.PlaneGeometry(L, z1 - z0), mat);
         const nx = (q[1] - p[1]) / L, ny = -(q[0] - p[0]) / L;
         m.position.set((p[0] + q[0]) / 2 + nx * 0.02, (z0 + z1) / 2, -((p[1] + q[1]) / 2 + ny * 0.02)); m.rotation.y = Math.atan2(nx, -ny);
@@ -235,7 +267,7 @@
       }
       const sh = new THREE.Shape(Rg.map(p => new THREE.Vector2(p[0], p[1])));
       const body = new THREE.ExtrudeGeometry(sh, { depth: zT - 0.05, bevelEnabled: false }); body.rotateX(-Math.PI / 2);
-      const bm = new THREE.Mesh(body, new THREE.MeshBasicMaterial({ color: 0x222222, side: THREE.BackSide })); bm.castShadow = true; scene.add(bm);
+      const bm = new THREE.Mesh(body, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false })); bm.castShadow = true; scene.add(bm); // 그림자 전용
       // 옥상: 녹화(가운데) + 난간
       const roof = new THREE.Mesh(new THREE.ShapeGeometry(sh), roofP); roof.rotation.x = -Math.PI / 2; roof.position.y = zT; roof.receiveShadow = true; scene.add(roof);
       const inner = mBuf(Rg, -1.6); if (inner && inner.length > 2) flat(inner, roofG, zT + 0.15);
@@ -281,24 +313,42 @@
       const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L;
       for (let t = 3; t < L - 2; t += 8) { const px = a[0] + (b[0] - a[0]) * t / L, py = a[1] + (b[1] - a[1]) * t / L; for (const o of [3, -2]) { const qx = px + nx * o, qy = py + ny * o; if (o < 0 ? inPoly(qx, qy, siteF) : !inPoly(qx, qy, siteF)) trees.push([qx, qy, 0.95]); } }
     }
-    const greens = dusk ? [0x3f5a2f, 0x4b6a35, 0x35502a, 0x5a7238, 0x6b6a35, 0x2f4a2a] : [0x5f8a4a, 0x6f9a52, 0x4f7a45, 0x86a85c, 0x9a8a4a, 0x3f6a3a];
-    const lobe = new THREE.IcosahedronGeometry(1.6, 1);
-    const crown = new THREE.InstancedMesh(lobe, STD(0xffffff, { roughness: 1 }), trees.length * 3);
-    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.22, 3, 5), STD(0x4a3b2e), trees.length);
+    // 그림자만 드리우는 보이지 않는 덩어리(그림 나무는 카메라를 정한 뒤 세움)
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Sc = new THREE.Vector3(), P = new THREE.Vector3(), col = new THREE.Color();
-    trees.forEach((t, i) => {
-      const s = t[2] * 1.15, gcol = greens[Math.floor(rnd() * greens.length)];
-      M.compose(P.set(t[0], 1.5 * s, -t[1]), Q, Sc.set(s, s, s)); trunk.setMatrixAt(i, M);
-      for (let k = 0; k < 3; k++) {
-        const ox = (rnd() - .5) * 1.8 * s, oz = (rnd() - .5) * 1.8 * s, oy = (3.4 + rnd() * 1.6) * s, ss = s * (0.9 + rnd() * 0.5);
-        M.compose(P.set(t[0] + ox, oy, -t[1] + oz), Q, Sc.set(ss, ss * 0.85, ss)); crown.setMatrixAt(i * 3 + k, M);
-        crown.setColorAt(i * 3 + k, col.setHex(gcol).offsetHSL(0, 0, (rnd() - .5) * 0.06));
-      }
-    });
-    crown.castShadow = trunk.castShadow = true; crown.receiveShadow = true; scene.add(trunk); scene.add(crown);
-    const shrub = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), STD(0xffffff, { roughness: 1 }), Math.max(1, shrubs.length));
-    shrubs.forEach((t, i) => { M.compose(P.set(t[0], 0.4 * t[2], -t[1]), Q, Sc.set(t[2] * 1.4, t[2] * 0.7, t[2] * 1.4)); shrub.setMatrixAt(i, M); shrub.setColorAt(i, col.setHex(greens[Math.floor(rnd() * greens.length)]).offsetHSL(0.02, 0, 0.03)); });
-    shrub.count = shrubs.length; shrub.receiveShadow = true; scene.add(shrub);
+    const ghost = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+    const caster = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.6, 1), ghost, Math.max(1, trees.length));
+    trees.forEach((t, i) => { const s2 = t[2] * 1.15; M.compose(P.set(t[0], 5 * s2, -t[1]), Q, Sc.set(s2 * 1.1, s2, s2 * 1.1)); caster.setMatrixAt(i, M); });
+    caster.count = trees.length; caster.castShadow = true; scene.add(caster);
+    // 짙은 무리·옅은 무리: 느린 물결 무늬로 나무를 묶어 대비를 줌
+    const toneAt = (x, y) => Math.sin(x / 23 + 1.3) + Math.cos(y / 29) + Math.sin((x + y) / 17 + 0.5) * 0.7;
+    const plantTrees = cam => {
+      const types = { round: [], tall: [], cone: [], flower: [], bush: [] };
+      trees.forEach(t => {
+        const inSite = inPoly(t[0], t[1], siteF), r = rnd();
+        const ty = !inSite ? (r < 0.75 ? 'tall' : 'round') : r < 0.07 ? 'flower' : r < 0.2 ? 'cone' : r < 0.42 ? 'tall' : 'round';
+        types[ty].push(t);
+      });
+      shrubs.forEach(t => types.bush.push(t));
+      const q = cam.quaternion;
+      Object.keys(types).forEach(ty => {
+        const list = types[ty]; if (!list.length) return;
+        const T = new THREE.CanvasTexture(treeCanvas(ty)); T.encoding = THREE.sRGBEncoding; T.anisotropy = 4;
+        const geo = new THREE.PlaneGeometry(1, 1); geo.translate(0, 0.5, 0);
+        const mat = new THREE.MeshLambertMaterial({ map: T, alphaTest: 0.5, side: THREE.DoubleSide });
+        const im = new THREE.InstancedMesh(geo, mat, list.length);
+        list.forEach((t, i) => {
+          const sz = t[2] * 1.15;
+          const [w, h] = ty === 'bush' ? [3.2 * t[2], 1.6 * t[2]] : ty === 'cone' ? [5.5 * sz, 9.5 * sz] : ty === 'tall' ? [7 * sz, 9.5 * sz] : [7.5 * sz, 8.2 * sz];
+          M.compose(P.set(t[0], 0, -t[1]), q, Sc.set(w, h, 1)); im.setMatrixAt(i, M);
+          // 색조: 무리별 짙음/옅음 + 나무마다 조금씩
+          const v = toneAt(t[0], t[1]);
+          let k = v > 0.9 ? 1.28 : v < -0.6 ? 0.62 : 0.95; k *= 0.9 + rnd() * 0.22; if (dusk) k *= 0.82;
+          const warm = v > 0.9 ? 1.06 : 1;
+          im.setColorAt(i, col.setRGB(k * warm, k * (v > 0.9 ? 1.04 : 1), k * (v < -0.6 ? 0.92 : 0.86)));
+        });
+        im.receiveShadow = true; scene.add(im);
+      });
+    };
 
     /* ----- 가로등·조명 점 ----- */
     const lampPts = [];
@@ -373,6 +423,7 @@
       camera.fov = v.fov; camera.position.set(look.x + dist * Math.cos(v.el) * Math.sin(v.az), look.y + dist * Math.sin(v.el), look.z + dist * Math.cos(v.el) * Math.cos(v.az)); camera.lookAt(look);
     }
     camera.updateProjectionMatrix();
+    camera.updateMatrixWorld(); plantTrees(camera);
     { const cd = camera.position.distanceTo(new THREE.Vector3(cx, 0, -cy)); scene.fog.near = cd * (opt.view === 'persp' ? 1.3 : 0.95); scene.fog.far = cd * (opt.view === 'wide' ? 2.6 : 4); }
 
     /* ----- 후처리: 빛 번짐 + 가장자리 어둡게 ----- */
@@ -383,10 +434,37 @@
       comp.addPass(new THREE.RenderPass(scene, camera));
       if (dusk) comp.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 0.5, 0.45, 0.93));
       if (THREE.ShaderPass) {
+        // 단지 범위(바닥 + 동 기둥 + 옥탑)를 화면에 비춘 그림 → 흐릿한 경계의 '초점 판'
+        const [mc, mx] = cv(Math.round(W / 2), Math.round(H / 2)), sx = mc.width, sy = mc.height;
+        const prj = (x, h, y) => { const v = new THREE.Vector3(x, h, -y).project(camera); return [(v.x + 1) / 2 * sx, (1 - v.y) / 2 * sy]; };
+        const hullOf = pts => { pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; pts.forEach(p => { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }); pts.slice().reverse().forEach(p => { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }); return lo.slice(0, -1).concat(up.slice(0, -1)); };
+        const fillPts = pts => { if (pts.length < 3) return; mx.beginPath(); pts.forEach((p, i) => i ? mx.lineTo(p[0], p[1]) : mx.moveTo(p[0], p[1])); mx.closePath(); mx.fill(); };
+        mx.fillStyle = '#000'; mx.fillRect(0, 0, sx, sy); mx.fillStyle = '#fff';
+        const inFront = (x, h, y) => new THREE.Vector3(x, h, -y).applyMatrix4(camera.matrixWorldInverse).z < 0;
+        fillPts(S.map(p => prj(p[0], 0, p[1]))); fillPts(S.map(p => prj(p[0], 10, p[1])));
+        D.blds.forEach(b => { const zT = Z0 + (b.floors || 15) * FH + 9; fillPts(hullOf(b.ring.map(p => prj(p[0], 0, p[1])).concat(b.ring.map(p => prj(p[0], zT, p[1]))))); });
+        if (fore) fillPts(fore.filter(p => inFront(p[0], 0, p[1])).map(p => prj(p[0], 0, p[1])));
+        const [bc, bx] = cv(sx, sy); bx.filter = `blur(${Math.round(sx / 60)}px)`; bx.drawImage(mc, 0, 0);
+        const maskT = new THREE.CanvasTexture(bc);
+        const taps = []; for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; taps.push([Math.cos(a), Math.sin(a), 1.0], [Math.cos(a + 0.26) * 2.1, Math.sin(a + 0.26) * 2.1, 0.7]); }
+        const blurSrc = taps.map(t => `s += texture2D(tDiffuse, vUv + vec2(${t[0].toFixed(3)}, ${t[1].toFixed(3)}) * px * rad).rgb * ${t[2].toFixed(2)};`).join('\n');
+        const wsum = taps.reduce((a, t) => a + t[2], 0) + 1;
         comp.addPass(new THREE.ShaderPass({
-          uniforms: { tDiffuse: { value: null }, amt: { value: dusk ? 0.55 : 0.35 } },
+          uniforms: { tDiffuse: { value: null }, tMask: { value: maskT }, px: { value: new THREE.Vector2(1 / (W * opt.pr), 1 / (H * opt.pr)) }, rad: { value: (opt.view === 'persp' ? 2.0 : 2.6) * opt.pr }, amt: { value: dusk ? 0.55 : 0.35 }, dark: { value: dusk ? 0.78 : 0.9 } },
           vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-          fragmentShader: 'uniform sampler2D tDiffuse; uniform float amt; varying vec2 vUv; void main(){ vec4 c=texture2D(tDiffuse,vUv); vec2 d=vUv-0.5; float v=1.0-amt*dot(d,d)*1.6; gl_FragColor=vec4(c.rgb*v,c.a); }',
+          fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tMask; uniform vec2 px; uniform float rad; uniform float amt; uniform float dark; varying vec2 vUv;
+            void main(){
+              vec4 c = texture2D(tDiffuse, vUv); float m = clamp(texture2D(tMask, vUv).r * 1.15, 0.0, 1.0);
+              vec3 s = c.rgb; ${blurSrc}
+              vec3 bl = s / ${wsum.toFixed(2)};
+              vec3 nb = (texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv - vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb + texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb) * 0.25;
+              vec3 sh = c.rgb + (c.rgb - nb) * 0.9;                       // 단지: 또렷하게
+              float l = dot(sh, vec3(0.299, 0.587, 0.114)); sh = mix(vec3(l), sh, 1.12); sh = (sh - 0.5) * 1.06 + 0.5;
+              float lo = dot(bl, vec3(0.299, 0.587, 0.114)); vec3 ou = mix(vec3(lo), bl, 0.7) * dark;   // 밖: 흐리고 옅고 어둡게
+              vec3 o = mix(ou, sh, m);
+              vec2 d = vUv - 0.5; o *= 1.0 - amt * dot(d, d) * 1.6;
+              gl_FragColor = vec4(clamp(o, 0.0, 1.0), c.a);
+            }`,
         }));
       }
       draw = () => comp.render();
