@@ -436,13 +436,13 @@
     };
   }
   const tick = () => new Promise(r => setTimeout(r, 0));
-  // 최근 일반형(옛 '추천형' — 우리가 추천한다는 오해를 피해 이름 바꿈): 요즘 단지는 판상형만으로 짓는 곳이 드물어 판상+탑상 혼합을 기본으로, 좁은 땅은 탑상형 — 배치는 한 번만(시간 그대로)
+  // 미리보기 배치(옛 '추천형'→'최근 일반형' — 배치를 모르는 주민이 감을 잡는 용도, 우리가 추천·최적안이라는 오해를 피함): 요즘 단지는 판상형만으로 짓는 곳이 드물어 판상+탑상 혼합을 기본으로, 좁은 땅은 탑상형 — 배치는 한 번만(시간 그대로)
   function recForm() {
     if (!pts || pts.length < 3) return { form: 'mix', why: '' };
     const bb = pts.reduce((m, q) => [Math.min(m[0], q[0]), Math.min(m[1], q[1]), Math.max(m[2], q[0]), Math.max(m[3], q[1])], [1e9, 1e9, -1e9, -1e9]);
     const ha = G.area(pts) / 1e4, minD = Math.min(bb[2] - bb[0], bb[3] - bb[1]);
-    if (ha < 1.0 || minD < 70) return { form: 'tower', why: `최근 일반형: 구역이 ${ha.toFixed(1)}ha${minD < 70 ? `, 짧은 변 ${Math.round(minD)}m로 좁아` : '로 작아'} 탑상형으로 배치(최적안을 찾은 것은 아님 — 다른 형태는 [형태 비교]로 확인)` };
-    return { form: 'mix', why: `최근 일반형: 최근 단지에서 흔한 판상+탑상 혼합으로 배치(최적안을 찾은 것은 아님 — 다른 형태는 [형태 비교]로 확인)` };
+    if (ha < 1.0 || minD < 70) return { form: 'tower', why: `미리보기 배치: 구역이 ${ha.toFixed(1)}ha${minD < 70 ? `, 짧은 변 ${Math.round(minD)}m로 좁아` : '로 작아'} 탑상형으로 그렸습니다. 이 배치는 구역 모양만으로 빠르게 그려 본 미리보기입니다. 실제 배치는 정비기반시설·출입구·교통·일조 등 꼭 필요한 검토를 반영해 여러 안을 비교한 뒤 정해집니다` };
+    return { form: 'mix', why: `미리보기 배치: 최근 단지에서 흔한 판상+탑상 혼합으로 그렸습니다. 이 배치는 구역 모양만으로 빠르게 그려 본 미리보기입니다. 실제 배치는 정비기반시설·출입구·교통·일조 등 꼭 필요한 검토를 반영해 여러 안을 비교한 뒤 정해집니다` };
   }
   async function run() {
     if (!pts) { msg('구역계가 없습니다.', true); return; }
@@ -495,7 +495,7 @@
           alts.push(Object.assign(pick, { angle: bf.a, form: fm, label: `${G.FORM_NAME[fm]} · ${pick.label}` }));
         }
         if (!alts.length) throw new Error('어느 형태도 들어가지 않습니다');
-      } else alts.forEach(x => { x.label = `${I.p.form === 'rec' ? '최근 일반형 · ' : ''}${G.FORM_NAME[I.opt.form] || '판상형'} · ${x.label}`; });
+      } else alts.forEach(x => { x.label = `${I.p.form === 'rec' ? '미리보기 · ' : ''}${G.FORM_NAME[I.opt.form] || '판상형'} · ${x.label}`; });
       // 기본 선택: 최고 층수가 25층에 가장 가까운 안(재개발 일반 규모) — 추천형은 첫 안
       cur = alts.reduce((bi, x, i) => Math.abs(x.maxFloors - 25) < Math.abs(alts[bi].maxFloors - 25) ? i : bi, 0);
       if (I.p.form === 'compare') { const pref = ['slab', 'mix', 'tower', 'L', 'Y', 'court'], ok = alts.map((x, i) => [x, i]).filter(([x]) => x.gfa >= x.target * 0.97).sort((a, b) => pref.indexOf(a[0].form) - pref.indexOf(b[0].form)); if (ok.length) cur = ok[0][1]; else cur = alts.reduce((bi, x, i) => x.gfa > alts[bi].gfa ? i : bi, 0); }
