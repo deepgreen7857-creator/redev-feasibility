@@ -507,7 +507,7 @@
   let SW = null; const SWCB = {};
   function simpleWorker() {
     if (SW) return SW;
-    SW = new Worker('simple-worker.js?v=16');
+    SW = new Worker('simple-worker.js?v=17');
     SW.onmessage = e => { const f = SWCB[e.data.id]; delete SWCB[e.data.id]; if (f) f(e.data); };
     SW.onerror = ev => { Object.values(SWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(SWCB).forEach(k => delete SWCB[k]); SW = null; };
     return SW;
@@ -576,7 +576,7 @@
   let PW = null; const PWCB = {};
   async function runDeep(I) {
     msg('심화 배치 계산 중… 골격·구획·방향·높이·동 형태를 바꿔 가며 반복 탐색합니다(기본형 후보 포함, 탐색 90초 + 기본형 계산 — 보통 2~3분). 이 창을 닫지 마세요.');
-    if (!PW) { PW = new Worker('plan-worker.js?v=17'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
+    if (!PW) { PW = new Worker('plan-worker.js?v=18'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
     const id = Date.now() + Math.random();
     const res = await new Promise(ok => { PWCB[id] = ok; PW.postMessage({ id, site: I.site, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }) }); });
     if (!res.r || !res.r.variants.length) throw new Error(res.err || '심화 배치 안을 만들지 못했습니다');
@@ -713,7 +713,7 @@
       if (!A.__risk.pv) A.__risk.pv = JbsCheck.unitSun(I.site, A.buildings, opt);
       const vo = { fh: I.opt.assume.floorHeight_m, groundExtra: I.opt.assume.groundExtra_m, lat: pr ? pr.lat0 : 37.46, lon: pr ? pr.lon0 : 126.65, onProgress: (i, n) => { btn.textContent = `검산 중… ${i}/${n}`; } };
       const r = await JbsSunVerify.check(A.buildings, A.__risk.pv, vo), rk = await JbsSunVerify.check(A.buildings, A.__risk.pv, Object.assign({}, vo, { basis: 'kst', onProgress: null }));
-      A.__risk.sv = JbsSunVerify.html(r, rk, esc); renderRisk();
+      A.__risk.sv = JbsSunVerify.html(r, rk, esc); A.__risk.svr = { sun: r.sun, kstLost: rk.lost.ray }; renderRisk();
     } catch (e) { console.warn('정밀 검산', e); if (out) out.textContent = '정밀 검산을 하지 못했습니다: ' + e.message; btn.disabled = false; btn.textContent = '정밀 검산(1분 간격 광선)'; }
   }
   document.addEventListener('click', e => { if (e.target && e.target.id === 'sunVerifyBtn') runSunVerify(); });
@@ -740,8 +740,15 @@
       ${pv ? `<h4>세대별 일조 — 단서 충족 여부(${esc(pv.근거)})</h4><p>${pv.ok ? `모든 세대(${fmt(pv.total)}세대)가 동지 연속 2시간 이상 — 단서 적용 검토 가능` : `${fmt(pv.total)}세대 중 <b>${fmt(pv.lost)}세대</b>가 2시간 미달 → 이대로면 단서 불충족. 미달 세대를 필로티·비주거로 비우면 순 ${fmt(A.units - pv.lost)}세대, 아니면 동 간격·엇갈림·옆 틈을 넓혀 다시 배치. 동별: ${Object.entries(pv.per).filter(([, q]) => q.lost).map(([k, q]) => `${esc(k)}동 ${q.lost}/${q.total}`).join(', ')}`}. <span class="note">${esc(pv.메모)}</span></p>` : ''}
       ${window.JbsSunVerify ? (A.__risk.sv ? `<div id="sunVerifyOut">${A.__risk.sv}</div>` : `<p><button id="sunVerifyBtn" title="엔진과 다른 방법(따로 계산한 동지 태양 위치·1분 간격·창에서 해 쪽 광선)으로 세대별 일조를 다시 판정해 엔진 결과와 대조">정밀 검산(1분 간격 광선)</button> <span id="sunVerifyOut" class="note">세대별 일조 판정을 상용 일조분석 도구와 같은 광선 방식으로 다시 봐서 엔진 판정과 대조합니다${pv ? '' : '(세대별 일조도 함께 계산)'}.</span></p>`) : ''}
       ${risks.length ? `<h4>심의·민원 위험(경험 — 탈락 아님)</h4><ul>${risks.map(risk).join('')}</ul>` : ''}
+      ${window.JbsOpinion ? `<details class="opinion"><summary><b>담당자 검토 의견(문안)</b> — 보완 요구·검토 의견에 붙여 쓰기</summary><textarea id="riskOpinion" rows="8" style="width:100%;font-size:13px" readonly>${esc(JbsOpinion.text(v, pv, A.__risk.svr, { landscape: (site.constraints || {}).landscape }))}</textarea><p><button id="riskOpCopy">문안 복사</button> <span class="note">위 검사 결과(동 이름·숫자·근거)로 만든 초안입니다. 붙여 쓴 뒤 구역 사정에 맞게 고치세요.</span></p></details>` : ''}
       <p class="note">규칙은 법령·조례 숫자, 경험 항목은 심의·협의에서 지적되기 쉬운 것(가정값 포함). 인허가 및 심의 과정에서 변동될 수 있습니다.</p></details>`;
   }
+  // 검토 의견 문안 복사(2026-11-07)
+  document.addEventListener('click', async e => {
+    if (!e.target || e.target.id !== 'riskOpCopy') return; const ta = $('#riskOpinion'); if (!ta) return;
+    try { await navigator.clipboard.writeText(ta.value); } catch (er) { ta.removeAttribute('readonly'); ta.select(); try { document.execCommand('copy'); } catch (e2) { /* 무시 */ } ta.setAttribute('readonly', ''); }
+    e.target.textContent = '복사했습니다'; setTimeout(() => { e.target.textContent = '문안 복사'; }, 1500);
+  });
 
   // 동지 일조: 구역 밖 주변 땅(평지·기존 건물 없음 가정)의 일조 시간
   /* ---------- 주변 기존 건물(브이월드 GIS건물통합정보) ----------

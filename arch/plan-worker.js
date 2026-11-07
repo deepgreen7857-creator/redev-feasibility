@@ -1,6 +1,6 @@
 /* /arch 심화 배치 계산 일꾼(Web Worker, 2026-11-05) — shared/site-plan.js(JbsPlan): 바깥 반복 탐색(골격·구획·방향·높이 장·동 형태) + 지금 엔진·기본형 후보 → 세대수·일조·균형 세 가지 안
    받는 것: { id, site, opt, o } → 돌려주는 것: { id, r: { variants, decodes, ms } | null, err } */
-importScripts('../shared/arch-geom.js?v=29', '../shared/arch-check.js?v=10', '../shared/dong-lib.js?v=2', '../shared/simple-plan.js?v=5', '../shared/site-plan.js?v=2');
+importScripts('../shared/arch-geom.js?v=29', '../shared/arch-check.js?v=11', '../shared/dong-lib.js?v=2', '../shared/simple-plan.js?v=5', '../shared/site-plan.js?v=2');
 let DT = null;
 self.onmessage = async e => {
   const { id, site, opt, o } = e.data;

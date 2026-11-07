@@ -133,6 +133,28 @@
       근거: f.근거 + (f.kind === 'side' ? '' : `, 법정 하한 ${f.law.toFixed(1)}m`) + (sb.상태 || f.kind === 'side' ? '' : ' ※ 기준 확인 필요') };
   }
   // 두 동 둘레 사이 가장 가까운 거리(조각 기준)
+  /* 시선 간섭(2026-11-07, 사용자 목록 4 '창끼리 가깝게 마주 보는 곳을 심의 지적 가능으로'): 두 동의 채광창 벽끼리
+     서로 상대 쪽을 향하고(벽 직각선에서 좌우 cone 안) 가장 가까운 거리가 min_m 미만인 곳. 법정 동 사이 거리(시행령 제86조③2호)와 별개인 실무 경고 — 기준값은 가정(arch.json 가정.privacy)
+     돌려주는 것: { d, p, q, wa, wb } 가장 가까운 한 곳 또는 null */
+  const privOf = opt => Object.assign({ min_m: 15, cone_deg: 45 }, ((opt.assume || {}).privacy) || {}, opt.privacy || {});
+  function segSeg(a0, a1, b0, b1) {
+    // 두 선분 사이 가장 가까운 두 점(끝점 대 선분 네 경우 — 교차하면 0)
+    const cl = (p, s0, s1) => { const vx = s1[0] - s0[0], vy = s1[1] - s0[1], L = vx * vx + vy * vy || 1e-9, t = Math.max(0, Math.min(1, ((p[0] - s0[0]) * vx + (p[1] - s0[1]) * vy) / L)); return [s0[0] + t * vx, s0[1] + t * vy]; };
+    let best = null; [[a0, cl(a0, b0, b1)], [a1, cl(a1, b0, b1)], [cl(b0, a0, a1), b0], [cl(b1, a0, a1), b1]].forEach(([p, q]) => { const d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (!best || d < best.d) best = { d, p, q }; });
+    return best;
+  }
+  function privacyPair(a, b, opt) {
+    const PV = privOf(opt), cc = Math.cos(PV.cone_deg * D2R); let best = null;
+    const WA = wallsW(a).filter(w => w.win), WB = wallsW(b).filter(w => w.win); if (!WA.length || !WB.length) return null;
+    WA.forEach(wa => WB.forEach(wb => {
+      if (wa.n[0] * wb.n[0] + wa.n[1] * wb.n[1] > -0.2) return;                 // 같은 쪽을 보거나 직각에 가까우면 마주 보지 않음
+      const c = segSeg(wa.a, wa.b, wb.a, wb.b); if (c.d >= PV.min_m || c.d < 1e-6) return;
+      const ux = (c.q[0] - c.p[0]) / c.d, uy = (c.q[1] - c.p[1]) / c.d;
+      if (wa.n[0] * ux + wa.n[1] * uy < cc || -(wb.n[0] * ux + wb.n[1] * uy) < cc) return;   // 서로 상대가 창 앞 cone 안에 있어야
+      if (!best || c.d < best.d) best = { d: c.d, p: c.p, q: c.q, wa, wb };
+    }));
+    return best;
+  }
   function minDist(a, b) {
     let d = Infinity; const A = ringsOf(a), B = ringsOf(b);
     const ed = (P, Q) => P.forEach(p => Q.forEach(q => q.forEach((x, i) => { d = Math.min(d, G.segDist(p, x, q[(i + 1) % q.length])); })));
@@ -251,6 +273,18 @@
       if (md < PR.nearGap_m) add({ id: 'near', 항목: `${a.id}·${b.id}동 근접 ${md.toFixed(1)}m(${PR.nearGap_m}m 미만)`, 등급: '주의', 동: [a.id, b.id],
         원인: '벽면이 마주 보지 않아(비껴 놓임·모서리끼리) 법정 동 사이 거리는 걸리지 않지만 가까움', 영향: '모서리 세대 시선 간섭·화재 확산·통풍, 심의 지적 가능', 확인자료: '배치도 동 사이 치수', 대안: '동을 옮기거나 돌려 간격 확보', 근거: '실무 권고(가정값) — 법정 기준 아님' });
     }
+    // ⑥ 시선 간섭(2026-11-07): 채광창 벽끼리 서로 마주 보고 가정 거리(privacy.min_m) 미만 — 법정 위반 쌍은 이미 규칙으로 걸려 있어 뺌
+    { const PV = privOf(opt);
+      for (let i = 0; i < blds.length; i++) for (let j = i + 1; j < blds.length; j++) {
+        const a = blds[i], b = blds[j], key = [a.id, b.id].sort().join('-'); if (bad.has(key)) continue;
+        const A = bbW(a), B = bbW(b); if (Math.hypot(Math.max(0, B[0] - A[2], A[0] - B[2]), Math.max(0, B[1] - A[3], A[1] - B[3])) >= PV.min_m) continue;
+        const pv = privacyPair(a, b, opt); if (!pv) continue;
+        const lowF = Math.min(a.floors, b.floors);
+        add({ id: 'privacy', 항목: `${a.id}·${b.id}동 창끼리 마주 봄 ${pv.d.toFixed(1)}m(${PV.min_m}m 미만) — 심의 지적 가능`, 등급: pv.d < PV.min_m * 0.6 ? '주의' : '권고', 동: [a.id, b.id],
+          원인: `두 동의 채광창 벽이 서로를 향함(벽 직각선 좌우 ${PV.cone_deg}° 안) — 법정 동 사이 거리는 벽면 직각으로 마주 보는 부분만 보므로 비껴 마주 보는 창은 걸리지 않을 수 있음`,
+          영향: `양쪽 동 1~${lowF}층 세대가 서로 들여다보임 — 사생활 민원, 건축위원회(경관·공동주택) 심의에서 동 배치 조정 요구 가능`,
+          확인자료: '배치도 치수선(시선) · 단위세대 평면의 창 위치(거실·침실 창인지)', 대안: '동을 돌리거나 옮겨 창이 비껴 보게, 마주 보는 쪽을 측벽(창 없는 벽)으로, 또는 간격 넓히기', 근거: `실무 권고(가정값 ${PV.min_m}m) — 법정 기준 아님` });
+      } }
     const ev = evaluate(site, blds, opt, q);
     return Object.assign({}, q, { risks, prefs: ev.prefs, score: ev.score });
   }
@@ -356,6 +390,7 @@
       { const c = cornerCheck(a, b, opt), CN = cornerOf(opt), np = CN ? null : nearPair(a, b);
         if (c) out.push({ kind: 'corner', a: c.p, b: c.q, d: c.d, need: c.need, 판정: '위반', 동: [a.id, b.id], 글: `${m1(c.d)}m / 기준 ${m1(c.need)}m`, 근거: '실무 기준(가정값, 법정 아님)' });
         else if (np && np.d < 10) out.push({ kind: 'corner', a: np.p, b: np.q, d: np.d, need: 10, 판정: '권고', 동: [a.id, b.id], 글: `${m1(np.d)}m / 권고 10m`, 근거: '실무 권고(가정값, 법정 아님)' }); }
+      { const pv = privacyPair(a, b, opt), PV = privOf(opt); if (pv) out.push({ kind: 'privacy', a: pv.p, b: pv.q, d: pv.d, need: PV.min_m, 판정: '권고', 동: [a.id, b.id], 글: `시선 ${m1(pv.d)}m / 권고 ${PV.min_m}m`, 근거: '실무 권고(가정값, 법정 아님) — 창끼리 마주 봄' }); }
       const f = facings(a, b, opt, sp).sort((x, y) => x.d / x.need - y.d / y.need)[0]; if (!f) continue;
       const bad = f.d < f.need - 0.05, pn = f.kind === 'ns' ? Math.max(10, PR.nsRatio * H(opt, f.S.floors)) : 0, adv = !bad && f.kind === 'ns' && f.w.win && f.d < pn - 0.05;
       out.push({ kind: 'spacing', a: f.p0, b: f.p1, d: f.d, need: f.need, 판정: bad ? '위반' : adv ? '권고' : '통과', 동: [f.X.id, f.Y.id],
@@ -408,6 +443,6 @@
     f(ringsOf(a), ringsOf(b), false); f(ringsOf(b), ringsOf(a), true); return best;
   }
 
-  const api = { quick, evaluate, verify, pairCheck, cornerCheck, facings, minDist, dims, nearPair, proviso, unitSun, gfaOf, unitsOf, overlapConvex, bboxIn };
+  const api = { quick, evaluate, verify, pairCheck, cornerCheck, facings, minDist, dims, nearPair, proviso, unitSun, gfaOf, unitsOf, overlapConvex, bboxIn, privacyPair };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else g.JbsCheck = api;
 })(typeof window !== 'undefined' ? window : globalThis);
