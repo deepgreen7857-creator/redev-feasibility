@@ -833,8 +833,9 @@ function classify(name,pages){
   if(/안전관리계획서검토의견서/.test(head)) return {kind:'opinion',label:'국토안전관리원 검토 의견서'};
   const app=/심사신청서/.test(head);
   let m=head.match(/총괄안전관리계획.{0,40}?([가나다라])\.(건설공사의개요|현장특성분석|현장운영계획|비상시긴급조치계획)/)||fn.match(/총괄-?([가나다라])\.(건설공사의개요|현장특성분석|현장운영계획|비상시긴급조치계획)/);
+  if(!m) m=head.slice(0,200).match(/([가나다라])\.(건설공사의개요|현장특성분석|현장운영계획|비상시긴급조치계획)/);
   if(!m&&app) m=[0,'가','건설공사의개요'];
-  const bu=/부록/.test(fn)&&!/본문|본편/.test(fn);
+  const bu=(/부록/.test(fn)&&!/본문|본편(?!.*부록)/.test(fn.replace(/부록편/,'')))||/부록편/.test(head.slice(0,300));
   if(m) return {kind:'total',key:m[1],label:`총괄 · ${m[1]}. ${({'건설공사의개요':'건설공사의 개요','현장특성분석':'현장 특성 분석','현장운영계획':'현장운영계획','비상시긴급조치계획':'비상시 긴급조치계획'})[m[2]]}`,bu};
   const w=head.match(/2\.([1-8])\.?(가설|굴착|콘크리트|강구조|성토|해체|건축설비|타워)/)||fn.match(/2\.([1-8])\.?(가설|굴착|콘크리트|강구조|성토|해체|건축설비|타워)/);
   if(w){const sub=(head.match(new RegExp('2\\.'+w[1]+'\\.(\\d)\\.?([가-힣]{2,12})'))||fn.match(/\((\d)\.([가-힣]{2,12})\)/)||[]);
@@ -864,6 +865,24 @@ const PLAN_RULES=[
  {on:c=>c.kind==='work'&&c.no===8&&S.tc_br==='설치함',t:F=>!/브레이싱.{0,40}(계산|검토|상세)/.test(F),lv:'bad',m:'브레이싱 설치함인데 브레이싱 안전성 계산서·연결 상세도가 보이지 않습니다'},
  {on:c=>c.kind==='work'&&c.no===8,t:F=>!/현장관리자/.test(F),lv:'warn',m:'타워크레인 작업 시 현장관리자 배치계획이 없습니다(시행규칙 별표7 아목) — 신호수·현장관리자 배치 평면도'},
  {on:c=>c.kind==='work'&&c.no===1&&c.sub===3,t:F=>!/아웃리거/.test(F),lv:'warn',m:'이동식 크레인 아웃리거 위치·지반 지지력 검토가 보이지 않습니다'}];
+// 부록이 함께 올라왔을 때만 보는 규칙(계산서·상세도는 부록에 있음)
+const BU_RULES=[
+ {on:c=>c.kind==='work'&&c.no===8,t:B=>!/기초.{0,30}(계산|구조검토|안전성)/.test(B),m:'부록에 타워크레인 기초 안전성 계산서가 없습니다'},
+ {on:c=>c.kind==='work'&&c.no===8&&S.tc_br==='설치함',t:B=>!/브레이싱|월브레이싱|wallbracing/i.test(B),m:'부록에 브레이싱 안전성 계산서·연결 상세도가 없습니다'},
+ {on:c=>c.kind==='work'&&c.no===3&&!!S.g_gang,t:B=>!/갱폼.{0,40}(계산|검토)|일체형.{0,20}(계산|검토)|RCS.{0,20}(계산|검토)/.test(B),m:'부록에 작업발판 일체형 거푸집(갱폼·RCS) 안전성 계산서·제작 상세도가 없습니다'},
+ {on:c=>c.kind==='work'&&c.no===3&&!!S.fm_deck,t:B=>!/데크/.test(B),m:'부록에 데크플레이트 안전성 검토·접합부 상세가 없습니다'},
+ {on:c=>c.kind==='work'&&c.no===3&&!!S.fm_wall,t:B=>!/합벽|솔져|soldier/i.test(B),m:'부록에 합벽 거푸집(솔져 시스템) 안전성 계산서·조립도가 없습니다'},
+ {on:c=>c.kind==='work'&&c.no===3&&S.co_tr==='있음',t:B=>!/전이/.test(B),m:'부록에 전이구조물 동바리·하부 지지구조 검토가 없습니다'},
+ {on:c=>c.kind==='work'&&c.no===3,t:(B,F)=>/CPB/.test(F)&&!/CPB/.test(B),m:'본편에 CPB가 있는데 부록에 CPB 지지 슬래브 계산·보강계획이 없습니다'},
+ {on:c=>c.kind==='work'&&c.no===3,t:(B,F)=>/필러|AL-?Form|알폼/i.test(F)&&!/필러/.test(B),m:'알폼 필러 동바리를 쓰는데 부록에 필러 동바리 구조계산서가 없습니다'},
+ {on:c=>c.kind==='total'&&c.key==='가',t:B=>!/검토[·ㆍ.]?확인서|검토의견서/.test(B),m:'부록에도 건설사업관리기술인 검토의견서·확인서가 없습니다'}];
+// 본편의 '부록 n 참조'가 부록 파일에 실제로 있는지
+function refCheck(F,B){
+  const want=new Map();for(const m of F.matchAll(/부록#?(\d{1,2})\.?([가-힣·]{2,18}?)(?:참조|참고|첨부)/g)) if(!want.has(m[1])) want.set(m[1],m[2]);
+  if(!want.size) return [];
+  const have=new Set([...B.matchAll(/부록편(\d{1,2})\.|부록#(\d{1,2})|(?:^|[^\d.])(\d{1,2})\.(?:(?!\d{1,2}\.)[^\d]){2,80}?부록편/g)].map(m=>m[1]||m[2]||m[3]));
+  return [...want].filter(([n,t])=>!have.has(n)&&!B.includes(t.slice(0,6))).map(([n,t])=>`본편은 “부록 ${n}. ${t}”를 참조하는데 부록 파일에 그 자료가 없습니다${have.size?`(부록에는 ${[...have].sort((a,b)=>a-b).join('·')}번만 있음)`:''}`);
+}
 function parseOpinion(F){
   const items=[['가','건설공사의개요'],['나','현장특성분석'],['다','현장운영계획'],['라','비상시긴급조치계획']];
   const res=F.match(/종합검토의견(적정|조건부적정|부적정)/), out=[];
@@ -883,10 +902,23 @@ async function onFiles(files){
       const hits=PLAN_RULES.filter(r=>r.on(c)&&r.t(F)).map(r=>[r.lv,r.m]);
       if(c.kind==='opinion') opin=parseOpinion(F);
       if(c.kind==='total'&&c.key==='가') ovPages=R.pages;
-      rows.push({f:f.name,c,n:R.pages.length,blank,hits});
+      rows.push({f:f.name,c,n:R.pages.length,blank,hits,F});
       $('#upStat').textContent=`${rows.length} / ${files.length} 읽음…`;
     }catch(e){rows.push({f:f.name,c:{kind:'err',label:'읽기 실패'},n:0,blank:[],hits:[['bad',e.message||String(e)]]})}
   }
+  // 같은 항목의 본편·부록을 한 줄로 묶어 다시 점검
+  const gkey=r=>r.c.kind==='total'?'t'+r.c.key:r.c.kind==='work'?'w'+r.c.no+'.'+(r.c.sub||0):'x'+r.f;
+  const G=new Map();rows.forEach(r=>{let k=gkey(r);if(r.c.bu&&r.c.kind==='work'&&!r.c.sub){const b=rows.find(x=>!x.c.bu&&x.c.kind==='work'&&x.c.no===r.c.no);if(b)k=gkey(b)}if(!G.has(k))G.set(k,[]);G.get(k).push(r)});
+  const merged=[];G.forEach(list=>{const bon=list.filter(r=>!r.c.bu),bu=list.filter(r=>r.c.bu);
+    if(!bu.length||!bon.length||!['total','work'].includes(list[0].c.kind)){list.forEach(r=>{if(r.c.bu&&r.c.kind!=='err')r.hits=[['info','본편 파일 없이 부록만 올라왔습니다 — 본편과 함께 올리면 참조·계산서를 대조합니다']];merged.push(r)});return}
+    const F=bon.map(r=>r.F).join(''),B=bu.map(r=>r.F).join(''),c=bon[0].c;
+    const hits=PLAN_RULES.filter(x=>x.on(c)&&x.t(F+B)).map(x=>[x.lv,x.m]);
+    BU_RULES.filter(x=>x.on(c)&&x.t(B,F)).forEach(x=>hits.push(['bad',x.m]));
+    refCheck(F,B).forEach(t=>hits.push(['bad',t]));
+    merged.push({f:[...bon,...bu].map(r=>r.f).join(' + '),c:{...c,bu:false,pair:true},n:bon.reduce((a,r)=>a+r.n,0),nb:bu.reduce((a,r)=>a+r.n,0),blank:[...bon,...bu].flatMap(r=>r.blank),hits});});
+  rows.length=0; merged.forEach(r=>rows.push(r));
+  rows.forEach(r=>{if(r.c.kind==='work'&&!r.c.pair&&!r.c.bu) r.hits.push(['info','부록이 같이 없어서 계산서·상세도는 본편 글자로만 봤습니다 — 부록을 같이 올리면 계산서 유무와 “부록 참조” 대조까지 합니다'])});
+  rows.forEach(r=>{if(r.c.kind==='total'&&!r.c.pair&&!r.c.bu&&/부록#?\d/.test(r.F||'')) r.hits.push(['info','본편이 부록을 참조합니다 — 부록을 같이 올리면 참조한 자료가 실제로 있는지 대조합니다'])});
   const order=r=>r.c.kind==='total'?' abcd'.indexOf({가:'a',나:'b',다:'c',라:'d'}[r.c.key]):r.c.kind==='work'?10+r.c.no+(r.c.sub||0)/10:r.c.kind==='opinion'?99:50;
   rows.sort((a,b)=>order(a)-order(b));
   const have=new Set(rows.filter(r=>r.c.kind==='work').map(r=>r.c.no)), haveT=new Set(rows.filter(r=>r.c.kind==='total').map(r=>r.c.key));
@@ -898,7 +930,7 @@ async function onFiles(files){
   $('#upStat').textContent=`${files.length}개 파일 판독 — 주의 ${nb}건 · 확인 ${nw}건`;
   let h=`<h2 style="margin-top:14px">제출 파일 묶음 판독 <span class="auto">항목별 파일</span></h2>`;
   if(miss.length&&rows.some(r=>r.c.kind==='total'||r.c.kind==='work')) h+=`<div class="warn">이번에 올린 파일에 없는 항목: ${miss.join(', ')} — 제출 대상이면 같이 올려 점검하세요.</div>`;
-  h+='<table class="map"><thead><tr><th style="width:30%">파일 · 항목</th><th style="width:70px">쪽</th><th>점검 결과</th></tr></thead><tbody>'+rows.filter(r=>r.c.kind!=='opinion').map(r=>`<tr><td><b>${xe(r.c.label)}</b>${r.c.bu?' <span class="auto">부록</span>':''}<br><span class="note" style="margin:0">${xe(r.f)}</span></td><td>${r.n}${r.blank.length?`<br><span class="note" style="margin:0">그림 쪽 ${r.blank.length}</span>`:''}</td><td>${r.hits.length?'<ul class="diag" style="margin:0">'+r.hits.map(([l,t])=>`<li><span class="lv-${l==='warn'?'info':l}">${LV[l]}</span> ${xe(t)}</li>`).join('')+'</ul>':'<span class="lv-ok">적합</span> 규칙에 걸리는 항목 없음'}${r.blank.length?`<div class="note">글자가 없는(그림) 쪽 ${r.blank.slice(0,8).join(', ')}${r.blank.length>8?' 외':''} — 자동 점검이 못 본 부분이니 직접 확인</div>`:''}</td></tr>`).join('')+'</tbody></table>';
+  h+='<table class="map"><thead><tr><th style="width:30%">파일 · 항목</th><th style="width:70px">쪽</th><th>점검 결과</th></tr></thead><tbody>'+rows.filter(r=>r.c.kind!=='opinion').map(r=>`<tr><td><b>${xe(r.c.label)}</b>${r.c.bu?' <span class="auto">부록</span>':''}${r.c.pair?' <span class="auto">본편+부록</span>':''}<br><span class="note" style="margin:0">${xe(r.f)}</span></td><td>${r.n}${r.nb?`<br><span class="note" style="margin:0">부록 ${r.nb}</span>`:''}${r.blank.length?`<br><span class="note" style="margin:0">그림 쪽 ${r.blank.length}</span>`:''}</td><td>${r.hits.length?'<ul class="diag" style="margin:0">'+r.hits.map(([l,t])=>`<li><span class="lv-${l==='warn'?'info':l}">${LV[l]}</span> ${xe(t)}</li>`).join('')+'</ul>':'<span class="lv-ok">적합</span> 규칙에 걸리는 항목 없음'}${r.blank.length?`<div class="note">글자가 없는(그림) 쪽 ${r.blank.slice(0,8).join(', ')}${r.blank.length>8?' 외':''} — 자동 점검이 못 본 부분이니 직접 확인</div>`:''}</td></tr>`).join('')+'</tbody></table>';
   h+='<p class="note">점검 규칙은 실제 검토의견서(사례 1호, 조건부 적정)의 지적 사항에서 만들었습니다. 글자 검색이라 “있다/없다”의 신호일 뿐 판정이 아닙니다 — 사례가 쌓일수록 규칙을 늘립니다.</p>';
   if(opin){h+=`<h2>검토 의견서 판정 <span class="auto">${xe(opin.res||'')}</span></h2><table class="map"><thead><tr><th>항목</th><th>판정</th><th>주요 내용</th></tr></thead><tbody>${opin.out.map(r=>`<tr><td>${xe(r[0])}</td><td>${xe(r[1])}</td><td>${xe(r[2])}</td></tr>`).join('')}</tbody></table>
     <p class="note"><button class="btn" id="opToCase">지적 사항을 사례 탭 오류유형에 넣기</button></p>`;}
