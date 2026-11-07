@@ -444,6 +444,8 @@
     if (ha < 1.0 || minD < 70) return { form: 'tower', why: `미리보기 배치: 구역이 ${ha.toFixed(1)}ha${minD < 70 ? `, 짧은 변 ${Math.round(minD)}m로 좁아` : '로 작아'} 탑상형으로 그렸습니다. 이 배치는 구역 모양만으로 빠르게 그려 본 미리보기입니다. 정비계획 검토의 단계별 검토(출입구 → 정비기반시설 → 교통성 → 환경성 → 경관성 → 건축계획)를 차례로 거치고, 그 결과를 다시 배치에 반영하는 과정을 되풀이할수록 최적안에 가까워집니다` };
     return { form: 'mix', why: `미리보기 배치: 최근 단지에서 흔한 판상+탑상 혼합으로 그렸습니다. 이 배치는 구역 모양만으로 빠르게 그려 본 미리보기입니다. 정비계획 검토의 단계별 검토(출입구 → 정비기반시설 → 교통성 → 환경성 → 경관성 → 건축계획)를 차례로 거치고, 그 결과를 다시 배치에 반영하는 과정을 되풀이할수록 최적안에 가까워집니다` };
   }
+  // 점검용: 콘솔에서 현재 대안 보기(window.__jbsArch.alts)
+  try { window.__jbsArch = { get alts() { return alts; }, get cur() { return cur; } }; } catch (e) { /* 무시 */ }
   async function run() {
     if (!pts) { msg('구역계가 없습니다.', true); return; }
     const I = buildInput();
