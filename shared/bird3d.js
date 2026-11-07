@@ -139,7 +139,7 @@
     const inPoly = (x, y, f) => turf.booleanPointInPolygon([x, y], f);
     const siteF = tp(S);
     // 모형 받침: 모형 모드에서는 단지 바닥을 경계를 따라 LIFT만큼 들어 올림(구역 경계가 보이고 단지가 도드라지게)
-    const LIFT = opt.mode === 'model' ? (opt.lift != null ? opt.lift : 1.2) : 0, Z0 = Z00 + LIFT;
+    const LIFT = opt.mode === 'model' ? (opt.lift != null ? opt.lift : 1.8) : 0, Z0 = Z00 + LIFT;
     const liftAt = (x, y) => (LIFT && inPoly(x, y, siteF) ? LIFT : 0);
 
     // 하늘(큰 구 안쪽에 그림) + 안개
@@ -228,7 +228,7 @@
       const pg0 = new THREE.ExtrudeGeometry(sh0, { depth: LIFT, bevelEnabled: false }); pg0.rotateX(-Math.PI / 2);
       const plinth = new THREE.Mesh(pg0, [STD(dusk ? 0x8d877c : 0xd8d0c0), STD(dusk ? 0x6e675c : 0xa89d88)]); plinth.castShadow = true; plinth.receiveShadow = true; scene.add(plinth);
       // 경계 테두리선(해질녘엔 은은한 조명선)
-      for (let i = 0; i < S.length; i++) { const a = S[i], b = S[(i + 1) % S.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 0.3) continue; const e = new THREE.Mesh(new THREE.BoxGeometry(L + 0.3, 0.22, 0.3), new THREE.MeshBasicMaterial({ color: dusk ? 0xffe2ae : 0xf7f3ea })); e.position.set((a[0] + b[0]) / 2, LIFT + 0.12, -(a[1] + b[1]) / 2); e.rotation.y = Math.atan2(b[1] - a[1], b[0] - a[0]); scene.add(e); }
+      for (let i = 0; i < S.length; i++) { const a = S[i], b = S[(i + 1) % S.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 0.3) continue; const e = new THREE.Mesh(new THREE.BoxGeometry(L + 0.4, 0.45, 0.45), new THREE.MeshBasicMaterial({ color: dusk ? 0xffe2ae : 0xffffff })); e.position.set((a[0] + b[0]) / 2, LIFT + 0.12, -(a[1] + b[1]) / 2); e.rotation.y = Math.atan2(b[1] - a[1], b[0] - a[0]); scene.add(e); }
     }
     flat(S, pave, 0.05 + LIFT);
     if (fore) flat(fore, lawn, 0.03);
@@ -332,7 +332,7 @@
     const rbb = roadF.map(f => turf.bbox(f));
     const inRoad = (x, y) => roadF.some((f, i) => x >= rbb[i][0] && x <= rbb[i][2] && y >= rbb[i][1] && y <= rbb[i][3] && inPoly(x, y, f));
     const streetLamps = [], streetRings = [], streets = [];
-    const sideM = STD(dusk ? 0x5f5a54 : 0x6f6a62), curbM = STD(dusk ? 0x8a847c : 0xbdb8ae), asphM = STD(dusk ? 0x141517 : 0x17181a, { roughness: 0.9 });
+    const sideM = STD(dusk ? 0x5f5a54 : 0x6f6a62), curbM = STD(dusk ? 0x8a847c : 0xbdb8ae), asphM = STD(dusk ? 0x0b0b0c : 0x0c0d0e, { roughness: 0.95 });
     const yelM = new THREE.MeshBasicMaterial({ color: dusk ? 0xa8851a : 0xe3b21c }), whM = new THREE.MeshBasicMaterial({ color: dusk ? 0xb8b8b8 : 0xf4f4f4 });
     const quad = (A, B, n, o1, o2, t1, t2) => { const L = Math.hypot(B[0] - A[0], B[1] - A[1]), ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L; const P0 = [A[0] + ux * t1, A[1] + uy * t1], P1 = [A[0] + ux * t2, A[1] + uy * t2]; return [[P0[0] + n[0] * o1, P0[1] + n[1] * o1], [P1[0] + n[0] * o1, P1[1] + n[1] * o1], [P1[0] + n[0] * o2, P1[1] + n[1] * o2], [P0[0] + n[0] * o2, P0[1] + n[1] * o2]]; };
     for (let i = 0; i < S.length; i++) {
