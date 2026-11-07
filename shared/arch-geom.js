@@ -369,7 +369,9 @@
     let MODS = MODS_REP;
     // 혼합형: 직전에 판상을 놓았으면 탑상부터, 탑상을 놓았으면 판상부터 시도 → 판상·탑상이 번갈아 섬(2026-11-08 학익장미 시험에서 판상만 보이던 것)
     let wantTower = false, altOn = true;
-    const ordM = ms => form !== 'mix' || !altOn ? ms : ms.filter(m => (m.form === 'tower') === wantTower).concat(ms.filter(m => (m.form === 'tower') !== wantTower));
+    // 탑상 자리: 단지 북쪽 55%·동서 가장자리 15m 안쪽(남쪽·가장자리는 판상 — 남측 개방, 탑상동이 경계 높이 제한에 덜 걸림)
+    const towerZone = (x, y) => x == null || y == null || (y >= ymin + 0.45 * (ymax - ymin) && x >= xmin + 15 && x <= xmax - 15);
+    const ordM = (ms, x, y) => { if (form !== 'mix' || !altOn) return ms; const tw = towerZone(x, y); /* 탑상 자리면 탑상부터, 아니면 판상부터(판상이 안 들어가는 자투리엔 탑상) */ return ms.filter(m => (m.form === 'tower') === tw).concat(ms.filter(m => (m.form === 'tower') !== tw)); };
     const picked = m => { if (form === 'mix' && altOn) wantTower = m.form !== 'tower'; };
     const Dmax = Math.max(...types.flatMap(t => MODS_REP[t].map(m => m.D)));
 
@@ -388,7 +390,7 @@
           const order = types.slice().sort((a, b) => (cols[a] / tot - want[a]) - (cols[b] / tot - want[b]));
           let pick = null;
           const prev = items.length ? items[items.length - 1].m : null, x0 = m => (prev ? x + gapOf(prev, m) : x);
-          for (const t of order) { for (const m of ordM(MODS[t])) { if (x0(m) + m.L <= e + 1e-6) { pick = m; break; } } if (pick) break; }
+          for (const t of order) { for (const m of ordM(MODS[t], x, y0)) { if (x0(m) + m.L <= e + 1e-6) { pick = m; break; } } if (pick) break; }
           if (!pick) break; picked(pick);
           const px = x0(pick); items.push({ x: px, m: pick }); cols[pick.t] += pick.n; x = px + pick.L;
         }
@@ -567,7 +569,7 @@
             for (const strict of (types.length < 2 ? [false] : legacy ? [pass === 0] : pass < 2 ? [true] : [true, false])) {
             if (pick) break;
             for (const t of order) {
-              for (const m0 of ordM(MODS[t])) {
+              for (const m0 of ordM(MODS[t], x, y)) {
                 if (strict && over(m0, F, pass)) { if (form === 'mix') continue; break; }
                 if (!fits(m0, x, y)) continue;
                 const m = flip(m0, x, y);
@@ -629,7 +631,28 @@
     // 세대당 지상 연면적: 평면 라이브러리의 공급면적(전용+주거공용). 없으면 전용 × 환산계수
     const supOf = t => (+U[t].공급 > 0 ? +U[t].공급 : U[t].전용 * A.supplyFactor);
     const gfaOf = blds => blds.reduce((s, b) => s + b.n * b.floors * supOf(b.t), 0);
-    const finish = blds => { blds.forEach(b => { b.cap = capFloors(b); b.floors = Math.min(b.floors, b.cap); }); return blds.filter(b => b.floors >= A.minFloors); };
+    const finish0 = blds => { blds.forEach(b => { b.cap = capFloors(b); b.floors = Math.min(b.floors, b.cap); }); return blds.filter(b => b.floors >= A.minFloors); };
+    // 혼합형 스카이라인: 탑상동을 판상동 최고층보다 최대 30% 높게(경계 높이 제한·최고 층수 안에서). 탑상은 사방이 창이라
+    //  남·북쪽 동(남북으로 겹침)과 옆 동(동서로 나란함) 모두 '배수 × 올린 높이' 이상 떨어져 있어야 올림(마주보는 두 동은 높은 쪽 높이 기준)
+    const raiseTowers = blds => {
+      if (form !== 'mix' || !blds.some(b => b.form === 'tower') || !blds.some(b => b.form !== 'tower')) return blds;
+      const slabTop = Math.max(...blds.filter(b => b.form !== 'tower').map(b => b.floors));
+      blds.filter(b => b.form === 'tower').sort((a, b) => b.ry - a.ry).forEach(T => {
+        const goal = Math.min(A.maxFloors, T.cap || A.maxFloors, Math.ceil(slabTop * 1.3));
+        const okAt = f => blds.every(o => {
+          if (o === T) return true;
+          const xo = o.rx < T.rx + T.L && o.rx + o.L > T.rx, yo = o.ry < T.ry + T.D && o.ry + o.D > T.ry, need = opt.spacing * H(f);
+          if (xo && o.ry >= T.ry + T.D - 0.5) return o.ry - (T.ry + T.D) >= need - 1e-6;              // 북쪽 동
+          if (xo && o.ry + o.D <= T.ry + 0.5) return T.ry - (o.ry + o.D) >= need - 1e-6;              // 남쪽 동 — 마주보는 두 동 중 높은 쪽 높이 기준(시행령 제86조③2가, 법제처 21-0403)
+          if (yo) { const gx = o.rx >= T.rx + T.L ? o.rx - (T.rx + T.L) : T.rx - (o.rx + o.L); return gx >= Math.max(A.sideGap_m, need) - 1e-6; } // 옆 동
+          return true;
+        });
+        let f = T.floors; while (f + 1 <= goal && okAt(f + 1)) f++;
+        T.floors = f;
+      });
+      return blds;
+    };
+    const finish = blds => raiseTowers(finish0(blds));
 
     // 균일 층수 F를 낮은 쪽부터 올려 목표 용적률 이하 최대 찾기 → 북쪽 줄부터 한 층씩 올려 목표에 맞춤(남저북고)
     const target = opt.lot * opt.far / 100;
