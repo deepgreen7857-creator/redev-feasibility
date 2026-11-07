@@ -24,12 +24,15 @@
     "muryo": "node src/muryo.js",
     "muryo-test": "node src/muryo.js --limit 1 --dry",
     "muryo-now": "node src/muryo.js --now",
-    "muryo-login": "node src/muryo.js --login"
+    "muryo-login": "node src/muryo.js --login",
+    "onbid": "node src/onbid-bulk.cjs",
+    "onbid-test": "node src/onbid-bulk.cjs --dry --limit 5"
   },
   "dependencies": {
     "pdfjs-dist": "^4.10.38",
     "playwright": "^1.48.0",
     "pdf-lib": "^1.17.1",
-    "jpeg-js": "^0.4.4"
+    "jpeg-js": "^0.4.4",
+    "fast-xml-parser": "^4.5.0"
   }
 }
