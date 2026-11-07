@@ -41,10 +41,12 @@ function decode(raw) {
     (env && env.header && env.header.resultCode) ??
     (env && env.cmmMsgHeader && env.cmmMsgHeader.returnReasonCode) ??
     (denied && denied.returnReasonCode) ??
+    (env && env.result && env.result.resultCode) ?? // 온비드: 자료 없음을 {"result":{"resultCode":"03"}}로 돌려줌(2026-11-07)
     'INVALID_RESPONSE',
   );
   const message =
     (env && env.header && env.header.resultMsg) ||
+    (env && env.result && env.result.resultMsg) ||
     (denied && (denied.returnAuthMsg || denied.errMsg)) || '';
   const body = (env && env.body) || {};
   const rows = rowsOf(body);
