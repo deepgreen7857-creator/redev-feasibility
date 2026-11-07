@@ -507,7 +507,7 @@
   let SW = null; const SWCB = {};
   function simpleWorker() {
     if (SW) return SW;
-    SW = new Worker('simple-worker.js?v=17');
+    SW = new Worker('simple-worker.js?v=18');
     SW.onmessage = e => { const f = SWCB[e.data.id]; delete SWCB[e.data.id]; if (f) f(e.data); };
     SW.onerror = ev => { Object.values(SWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(SWCB).forEach(k => delete SWCB[k]); SW = null; };
     return SW;
@@ -576,7 +576,7 @@
   let PW = null; const PWCB = {};
   async function runDeep(I) {
     msg('심화 배치 계산 중… 골격·구획·방향·높이·동 형태를 바꿔 가며 반복 탐색합니다(기본형 후보 포함, 탐색 90초 + 기본형 계산 — 보통 2~3분). 이 창을 닫지 마세요.');
-    if (!PW) { PW = new Worker('plan-worker.js?v=18'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
+    if (!PW) { PW = new Worker('plan-worker.js?v=19'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
     const id = Date.now() + Math.random();
     const res = await new Promise(ok => { PWCB[id] = ok; PW.postMessage({ id, site: I.site, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }) }); });
     if (!res.r || !res.r.variants.length) throw new Error(res.err || '심화 배치 안을 만들지 못했습니다');
@@ -671,9 +671,12 @@
     const I = buildInput(), As = I.opt.assume, H = f => f * As.floorHeight_m + As.groundExtra_m, sup = t => (C.평면[t] ? (+C.평면[t].공급 > 0 ? +C.평면[t].공급 : C.평면[t].전용 * As.supplyFactor) : (+t || 84) * As.supplyFactor);
     const blds = list.map((b, i) => { const mt = b.mixT || (b.t ? { [b.t]: b.n || 1 } : {}), t = Object.keys(mt).sort((x, y) => mt[y] - mt[x])[0] || '84', th = (b.angle || 0) * Math.PI / 180, loc = b.poly.map(p => G.rot(p, -th)), xs = loc.map(p => p[0]), ys = loc.map(p => p[1]);
       return Object.assign({}, b, { id: i + 1, t, mixT: mt, L: Math.max(...xs) - Math.min(...xs), D: Math.max(...ys) - Math.min(...ys), center: b.poly.reduce((a, p) => [a[0] + p[0] / b.poly.length, a[1] + p[1] / b.poly.length], [0, 0]), cap: b.floors, divs: [], vname: b.vname || b.dname || vname }); });
-    const byType = {}; blds.forEach(b => Object.keys(b.mixT).forEach(t => { byType[t] = (byType[t] || 0) + b.mixT[t] * b.floors; }));
-    const gfa = blds.reduce((s, b) => s + Object.keys(b.mixT).reduce((c, t) => c + b.mixT[t] * b.floors * sup(t), 0), 0), ba = blds.reduce((s, b) => s + Math.abs(G.area(b.poly)), 0), mf = Math.max(...blds.map(b => b.floors));
-    return { label, buildings: blds, units: blds.reduce((s, b) => s + (b.n || 0) * b.floors, 0), gfa, far: gfa / I.lot * 100, bcr: ba / I.lot * 100, byType, maxFloors: mf, maxHeight: H(mf), H, angle: 0, form: 'mix', target: I.lot * I.opt.far / 100, imported: true };
+    // 계단식(날개별 층수) 동은 세대 조각 층수 합 ÷ (조각 수 × 최고 층수) 비율로 줄임(JbsCheck stepK와 같음)
+    const kOf = b => (Array.isArray(b.unitFl) && b.unitFl.length && b.floors > 0 ? b.unitFl.reduce((a, f) => a + f, 0) / (b.unitFl.length * b.floors) : 1);
+    const byType = {}; blds.forEach(b => Object.keys(b.mixT).forEach(t => { byType[t] = (byType[t] || 0) + Math.round(b.mixT[t] * b.floors * kOf(b)); }));
+    const gfa = blds.reduce((s, b) => s + Object.keys(b.mixT).reduce((c, t) => c + b.mixT[t] * b.floors * sup(t), 0) * kOf(b), 0), ba = blds.reduce((s, b) => s + Math.abs(G.area(b.poly)), 0), mf = Math.max(...blds.map(b => b.floors));
+    blds.forEach(b => { if (b.wingFloors) b.vname = `${b.vname || b.dname || ''} · 날개 ${b.wingFloors.join('/')}층`; });
+    return { label, buildings: blds, units: blds.reduce((s, b) => s + Math.round((b.n || 0) * b.floors * kOf(b)), 0), gfa, far: gfa / I.lot * 100, bcr: ba / I.lot * 100, byType, maxFloors: mf, maxHeight: H(mf), H, angle: 0, form: 'mix', target: I.lot * I.opt.far / 100, imported: true };
   }
   /* 일조 연계 다듬기(2026-11-07, 사용자 목록 2): 지금 대안에서 출발 → shared/sun-refine.js(워커 arch/refine-worker.js, 시간 예산 90초)
      결과는 대안 하나를 더함. 세대수는 '순세대'(동지 2시간 미달 세대를 뺀 값 — 저층 3개 층 안 미달은 필로티·커뮤니티로 비움, 그보다 많은 줄은 못 씀) */
@@ -681,9 +684,9 @@
   async function runRefine() {
     const A = alts[cur], btn = $('#refineBtn'); if (!A || !btn) return;
     const { I, opt } = riskOpt(), id = Date.now();
-    if (!RW) { RW = new Worker('refine-worker.js?v=2'); RW.onmessage = e => { const d = e.data; if (d.prog) { const f = RWPROG[d.id]; if (f) f(d.prog); return; } const f = RWCB[d.id]; delete RWCB[d.id]; delete RWPROG[d.id]; if (f) f(d); }; RW.onerror = ev => { Object.values(RWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); RWCB = {}; RWPROG = {}; RW = null; }; }
+    if (!RW) { RW = new Worker('refine-worker.js?v=3'); RW.onmessage = e => { const d = e.data; if (d.prog) { const f = RWPROG[d.id]; if (f) f(d.prog); return; } const f = RWCB[d.id]; delete RWCB[d.id]; delete RWPROG[d.id]; if (f) f(d); }; RW.onerror = ev => { Object.values(RWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); RWCB = {}; RWPROG = {}; RW = null; }; }
     btn.disabled = true; btn.textContent = '다듬는 중…';
-    const blds = JSON.parse(JSON.stringify(A.buildings.map(b => { const o = {}; ['id', 'poly', 'parts', 'cores', 'units', 'divs', 'walls', 'center', 'angle', 'floors', 'form', 'n', 't', 'mixT', 'inner', 'vname', 'dname', 'notes', 'wingUnits'].forEach(k => { if (b[k] !== undefined && typeof b[k] !== 'function') o[k] = b[k]; }); return o; })));
+    const blds = JSON.parse(JSON.stringify(A.buildings.map(b => { const o = {}; ['id', 'poly', 'parts', 'cores', 'units', 'divs', 'walls', 'center', 'angle', 'floors', 'form', 'n', 't', 'mixT', 'inner', 'vname', 'dname', 'notes', 'wingUnits', 'partWing', 'unitWing', 'wingFloors', 'partFl', 'unitFl'].forEach(k => { if (b[k] !== undefined && typeof b[k] !== 'function') o[k] = b[k]; }); return o; })));
     const res = await new Promise(ok => { RWCB[id] = ok; RWPROG[id] = s => { btn.textContent = `다듬는 중… 순 ${fmt(s.net)}세대 · ${s.n}개동 · ${Math.round(s.ms / 1000)}초`; }; RW.postMessage({ id, site: I.site, blds, opt: Object.assign({}, opt, { lat: pr ? pr.lat0 : 37.46 }), budget: 90000 }); });
     btn.disabled = false; btn.textContent = '일조 연계 다듬기';
     if (!res.r) { msg('일조 연계 다듬기를 하지 못했습니다: ' + (res.err || ''), true); return; }

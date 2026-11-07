@@ -11,6 +11,7 @@
   const G = isNode ? require('./arch-geom.js') : g.ArchGeom;
   const K = isNode ? require('./arch-check.js') : g.JbsCheck;
   const V = isNode ? require('./sun-verify.js') : g.JbsSunVerify;
+  const SH = isNode ? (() => { try { return require('./dong-shapes.js'); } catch (e) { return null; } })() : g.JbsShapes;
   const D2R = Math.PI / 180;
 
   function rng(seed) { let s = (seed >>> 0) || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
@@ -33,20 +34,29 @@
      창에서 해 쪽 광선(JbsSunVerify — 엔진과 판정 100% 일치 시험)으로 몇 층부터 통과하는지 이분 탐색. 그림자는 동 바깥선(poly) 기둥 */
   function fastNet(blds, T, opt, keepLow) {
     const fh = +opt.assume.floorHeight_m || 2.9, ge = +opt.assume.groundExtra_m || 0, Hf = f => f * fh + ge;
-    const PR = V.prisms(blds.map(b => ({ poly: b.poly, floors: b.floors })), Hf);
+    const PR = V.prisms(blds.map(b => (Array.isArray(b.partFl) ? { parts: b.parts, partFl: b.partFl, floors: b.floors } : { poly: b.poly, floors: b.floors })), Hf);   // 계단식 동은 조각마다 제 높이
     let gross = 0, low = 0, dead = 0; const per = {};
-    blds.forEach(b => (b.sc || []).forEach(pts => {
-      const F = b.floors, pass = L => pts.some(p => V.contMin(p, (L - 1) * fh, T, PR, 120) >= 120 - 1e-6);
+    blds.forEach(b => (b.sc || []).forEach((pts, k) => {
+      if (!pts) return;
+      const F = Array.isArray(b.unitFl) && b.unitFl[k] > 0 ? b.unitFl[k] : b.floors, pass = L => pts.some(p => V.contMin(p, (L - 1) * fh, T, PR, 120) >= 120 - 1e-6);
       let ok; if (!pass(F)) ok = F + 1; else { let lo = 1, hi = Math.min(F, keepLow + 1); if (pass(hi)) { while (lo < hi) { const m = (lo + hi) >> 1; if (pass(m)) hi = m; else lo = m + 1; } ok = lo; } else ok = keepLow + 2; }
       const lost = Math.min(F, ok - 1); gross += F; per[b.id] = (per[b.id] || 0) + lost;
       if (lost <= 0) return; if (lost <= keepLow) low += lost; else dead += F;
     }));
     return { gross, low, dead, net: gross - low - dead, per };
   }
+  // 엔진으로 한 번 셈: 창 점(b.sc)을 엔진이 고른 자리로 다시 붙이고 엔진 순세대도 같이(unitSun 한 번)
+  function engineSync(site, blds, opt, keepLow) {
+    const us = K.unitSun(site, blds, opt), by = {};
+    (us.cols || []).forEach(c => { const a = (by[c.id] = by[c.id] || []); a[c.k != null ? c.k : a.length] = c.pts && c.pts.length ? c.pts : [c.pt]; });
+    let gross = 0, low = 0, dead = 0;
+    (us.cols || []).forEach(c => { const F = +c.floors || 0, lost = Math.min(F, (c.okFrom || F + 1) - 1); gross += F; if (lost <= 0) return; if (lost <= keepLow) low += lost; else dead += F; });
+    return { blds: blds.map(b => Object.assign({}, b, { sc: by[b.id] || [] })), net: gross - low - dead, gross, low, dead, us };
+  }
   // 처음 한 번: 엔진 세대별 일조로 줄마다 창 점을 구해 동에 붙임(b.sc)
   function attachCols(site, blds, opt) {
     const us = K.unitSun(site, blds, opt), by = {};
-    (us.cols || []).forEach(c => { (by[c.id] = by[c.id] || []).push(c.pts && c.pts.length ? c.pts : [c.pt]); });
+    (us.cols || []).forEach((c, i) => { const a = (by[c.id] = by[c.id] || []); a[c.k != null ? c.k : a.length] = c.pts && c.pts.length ? c.pts : [c.pt]; });   // 세대 번호 자리에(계단식 층수와 짝)
     return blds.map(b => Object.assign({}, b, { sc: by[b.id] || [] }));
   }
 
@@ -69,8 +79,11 @@
     const A = opt.assume, maxF = +A.maxFloors || 35, minF = +A.minFloors || 5, cap = G.capper(site, opt);
     const capOf = b => { try { return Math.min(maxF, cap({ poly: b.poly, form: b.form, angle: b.angle, inner: b.inner || 0, walls: b.walls })); } catch (e) { return maxF; } };
     const TR = V.sunTrack({ lat: +opt.lat || 37.46, step: +o.step || 5 });
-    let cur = attachCols(site, blds0, opt), L0 = legal(site, cur, opt);
-    const S0 = netOf(site, cur, opt, keepLow);
+    const E0 = engineSync(site, blds0, opt, keepLow);
+    let cur = E0.blds, L0 = legal(site, cur, opt);
+    const S0 = E0;
+    // 엔진 기준 최고안(빠른 채점이 후하게 볼 수 있어 중간중간 엔진으로 다시 세고 엔진 기준으로 가장 좋은 배치를 남김)
+    let bestE = { net: E0.net, blds: cur, legal: L0.ok }, accSince = 0, lastSync = Date.now();
     let S = fastNet(cur, TR, opt, keepLow); const start = { net: S0.net, gross: S0.gross, low: S0.low, dead: S0.dead, legal: L0.ok, fast: S.net };
     const steps = [], shapes = cur.slice();
     // 섞을 동 틀(o.shapes — JbsShapes.templates: V자 꼭짓점형·일자 2·4·6호). 창 점은 틀마다 한 번 구해 둠(가운데 0,0 기준)
@@ -82,7 +95,7 @@
       tries++;
       const Lc = legal(site, cand, opt); if (!Lc.ok && (L0.ok || Lc.bad.length >= L0.bad.length)) return false;   // 출발 배치가 규칙 위반이면 위반이 줄어드는 쪽만
       const Sc = fastNet(cand, TR, opt, keepLow);
-      if (Sc.net > S.net || (!L0.ok && Lc.bad.length < L0.bad.length)) { cur = cand; S = Sc; L0 = Lc; steps.push({ kind, id, net: Sc.net }); return true; }
+      if (Sc.net > S.net || (!L0.ok && Lc.bad.length < L0.bad.length)) { cur = cand; S = Sc; L0 = Lc; steps.push({ kind, id, net: Sc.net }); accSince++; return true; }
       return false;
     };
     const tick = () => new Promise(r => setTimeout(r, 0));
@@ -105,7 +118,13 @@
           const nb = moved(b, [0, 0], dd); nb.floors = Math.min(b.floors, capOf(nb)); if (nb.floors >= minF && accept(put(nb), '돌리기', id)) gained = true;
         } else if (r < 0.85) {                            // 층수: 미달 줄이 있으면 낮추기 먼저, 아니면 올리기
           const lostHere = per[id] || 0, up = lostHere === 0 ? R() < 0.75 : R() < 0.25, st = [1, 2, 4][Math.floor(R() * 3)];
-          const f = Math.max(minF, Math.min(capOf(b), b.floors + (up ? st : -st))); if (f !== b.floors && accept(put(Object.assign({}, b, { floors: f })), up ? '층수 올리기' : '층수 낮추기', id)) gained = true;
+          const f = Math.max(minF, Math.min(capOf(b), b.floors + (up ? st : -st)));
+          const nb = b.wingFloors && SH ? SH.setWingFloors(b, b.wingFloors.map(x => Math.max(minF, Math.min(capOf(b), x + (f - b.floors))))) : Object.assign({}, b, { floors: f });
+          if (nb.floors !== b.floors && accept(put(nb), up ? '층수 올리기' : '층수 낮추기', id)) gained = true;
+        } else if (r < 0.80 && b.wingUnits && b.partWing && SH && SH.setWingFloors) {   // 날개 층수(계단식): 한 날개만 ±1·2·4층
+          const wf = (b.wingFloors || [b.floors, b.floors]).slice(), w = R() < 0.5 ? 0 : 1, st = [1, 2, 4][Math.floor(R() * 3)] * (R() < 0.5 ? -1 : 1);
+          wf[w] = Math.max(minF, Math.min(capOf(b), wf[w] + st));
+          if (wf[w] !== (b.wingFloors || [b.floors, b.floors])[w] && accept(put(SH.setWingFloors(b, wf)), `날개 층수(${w ? '동' : '서'} ${wf[w]}층)`, id)) gained = true;
         } else if (r < 0.88 && extra.length) {            // 바꿔 끼우기: 이 동 자리(가운데·방향)에 다른 틀(V자·2호 판상 등)
           const tp = extra[Math.floor(R() * extra.length)], c = b.center || b.poly[0];
           const nb = moved(tp, c, (+b.angle || 0) * D2R); nb.id = b.id; nb.floors = Math.min(capOf(nb), b.floors);
@@ -120,16 +139,23 @@
         }
       }
       if (gained) { lastGain = round; lastGainTries = tries; }
+      // 채택이 쌓였거나 8초가 지나면 엔진으로 다시 셈: 엔진 기준 최고안 갱신, 창 점·채점 기준을 엔진에 맞춤
+      if (accSince >= 12 || (accSince > 0 && Date.now() - lastSync > 8000)) {
+        const E = engineSync(site, cur, opt, keepLow); cur = E.blds; S = fastNet(cur, TR, opt, keepLow); accSince = 0; lastSync = Date.now();
+        if (L0.ok && (E.net > bestE.net || !bestE.legal)) bestE = { net: E.net, blds: cur, legal: true };
+      }
       if (o.onProgress) o.onProgress({ round, net: S.net, gross: S.gross, low: S.low, dead: S.dead, n: cur.length, tries, ms: Date.now() - t0 });
       await tick();
       if (tries - lastGainTries > Math.max(400, 60 * cur.length)) break;   // 오래(동 수 × 60번, 최소 400번) 대 봐도 나아진 게 없으면 멈춤
     }
-    // 마지막에 엔진 세대별 일조로 다시 셈(보고 숫자는 엔진 기준). 동 번호는 101부터 다시
+    // 마지막에 엔진 세대별 일조로 다시 셈(보고 숫자는 엔진 기준) — 엔진 기준 최고안과 비교해 더 좋은 쪽. 동 번호는 101부터 다시
+    { const E = engineSync(site, cur, opt, keepLow); if (L0.ok && (E.net > bestE.net || !bestE.legal)) bestE = { net: E.net, blds: E.blds, legal: true }; }
+    if (bestE.legal || !L0.ok) { cur = bestE.blds; L0 = legal(site, cur, opt); }
     const out = cur.map((b, i) => { const nb = Object.assign({}, b, { id: 101 + i }); delete nb.sc; return nb; });
     const SF = netOf(site, out, opt, keepLow);
     return { blds: out, start, best: { net: SF.net, gross: SF.gross, low: SF.low, dead: SF.dead, fast: S.net, legal: L0.ok, bad: L0.bad.map(r => r.항목) }, steps, tries, ms: Date.now() - t0, us: SF.us };
   }
 
-  const api = { refine, netOf, fastNet, attachCols, legal, moved };
+  const api = { refine, netOf, fastNet, attachCols, engineSync, legal, moved };
   if (isNode) module.exports = api; else g.JbsRefine = api;
 })(typeof window !== 'undefined' ? window : globalThis);

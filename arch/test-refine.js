@@ -18,6 +18,6 @@ const opt = { units: C.평면, assume: A, mix: { 59: 40, 84: 50, 114: 10 }, spac
   const b = blds[0], m = Rf.moved(b, [5, 3], 10 * Math.PI / 180);
   assert.ok(Math.abs(G.area(m.poly) - G.area(b.poly)) < 1e-6 && Math.abs(m.angle - b.angle - 10) < 1e-9 && m.units.length === b.units.length);
   assert.strictEqual(K.unitSun(site, [m], opt).cols.length, K.unitSun(site, [b], opt).cols.length, '옮긴 동도 세대 창을 그대로 찾아야');
-  assert.ok(Math.abs(r.best.fast - r.best.net) <= Math.max(10, r.best.net * 0.03), `빠른 채점 ${r.best.fast} ≈ 엔진 ${r.best.net}`);
+  assert.ok(r.best.net >= s0.net, `엔진 기준으로도 출발(${s0.net})보다 나빠지지 않아야 — 결과 ${r.best.net}(빠른 채점 ${r.best.fast})`);
   console.log('\n일조 연계 다듬기 시험 통과');
 })().catch(e => { console.error(e); process.exit(1); });

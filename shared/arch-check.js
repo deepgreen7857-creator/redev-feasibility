@@ -27,12 +27,19 @@
   const H = (opt, f) => f * opt.assume.floorHeight_m + opt.assume.groundExtra_m;
   const supOf = (opt, t) => { const u = (opt.units || {})[t]; return u ? (+u.공급 > 0 ? +u.공급 : u.전용 * opt.assume.supplyFactor) : 0; };
   // 동 연면적(지상): gfa가 있으면 그 값, 없으면 평형 구성(mixT 층당 세대) × 층수 × 공급면적, 그것도 없으면 t·n
+  // 계단식(날개별 층수, 2026-11-07): b.unitFl = 세대 조각마다 층수(없으면 모두 b.floors). 세대·연면적은 층수 합 ÷ (조각 수 × 최고 층수) 비율로 줄임
+  const stepK = b => (Array.isArray(b.unitFl) && b.unitFl.length && b.floors > 0 ? b.unitFl.reduce((a, f) => a + f, 0) / (b.unitFl.length * b.floors) : 1);
   function gfaOf(b, opt) {
     if (b.gfa > 0) return b.gfa;
     const mix = b.mixT || (b.t ? { [b.t]: b.n || 0 } : null); if (!mix) return 0;
-    return Object.keys(mix).reduce((s, t) => s + mix[t] * b.floors * supOf(opt, t), 0);
+    return Object.keys(mix).reduce((s, t) => s + mix[t] * b.floors * supOf(opt, t), 0) * stepK(b);
   }
-  const unitsOf = b => (b.units > 0 ? b.units : (b.mixT ? Object.values(b.mixT).reduce((a, c) => a + c, 0) : (b.n || 0)) * b.floors);
+  const unitsOf = b => (b.units > 0 ? b.units : Math.round((b.mixT ? Object.values(b.mixT).reduce((a, c) => a + c, 0) : (b.n || 0)) * b.floors * stepK(b)));
+  // 그림자용: 계단식 동은 조각마다 제 높이(b.partFl)인 동으로 나눔. 그 밖은 그대로
+  const shadowBlds = (blds, Hf, z) => blds.flatMap(o => {
+    if (Array.isArray(o.partFl) && o.partFl.length === ringsOf(o).length) return ringsOf(o).map((q, i) => ({ id: o.id, poly: q, parts: [q], floors: o.partFl[i], h: Math.max(0, Hf(o.partFl[i]) - z) })).filter(x => x.h > 0.5);
+    const h = Math.max(0, (o.h != null ? o.h : Hf(o.floors)) - z); return h > 0.5 ? [Object.assign({}, o, { h })] : [];
+  });
 
   // 객체에 계산값을 숨겨 둠(JSON·저장에 안 실림)
   //  도형(poly·parts)이 바뀌면 다시 계산
@@ -331,7 +338,7 @@
         // 창 폭(opt.sunWin: 'center' 가운데 한 점 / 'any' 창 폭 안 세 점 중 한 곳이라도 — 창 위치·폭이 판정에 주는 영향 시험용, 2026-11-06)
         const t = [e.b[0] - e.a[0], e.b[1] - e.a[1]].map(v => v / e.L), ww = Math.min(e.L * 0.7, +opt.winW || e.L * 0.7) / 2;
         const at = d => [e.m[0] + t[0] * d + e.n[0] * 0.5, e.m[1] + t[1] * d + e.n[1] * 0.5];
-        cols.push({ b, id: b.id, k, pt: at(0), pts: opt.sunWin === 'any' ? [at(-ww), at(0), at(ww)] : null, north: e.n[1] > 0.3 });
+        cols.push({ b, id: b.id, k, F: Array.isArray(b.unitFl) && b.unitFl[k] > 0 ? b.unitFl[k] : b.floors, pt: at(0), pts: opt.sunWin === 'any' ? [at(-ww), at(0), at(ww)] : null, north: e.n[1] > 0.3 });
       });
       else {
         // 올린 도면(세대 구분 없음): 남쪽 반(남동~남서) 바깥 변을 2m마다 후보로 — 거실 창은 설계자가 유리한 면에 둔다고 보고, 층당 세대 수만큼 가장 좋은 후보(6m 이상 떨어진)를 고름(아래 cand 처리)
@@ -345,7 +352,7 @@
     cols.filter(c => c.cand).forEach(c => {
       const ok = c.cand.map(() => null);
       for (const L of LV0) { if (L > c.b.floors) break; const idx = ok.map((v, i) => (v == null ? i : -1)).filter(i => i >= 0); if (!idx.length) break;
-        const z = (L - 1) * fh, sh = blds.map(o => Object.assign({}, o, { h: Math.max(0, (o.h != null ? o.h : Hf(o.floors)) - z) })).filter(o => o.h > 0.5);
+        const z = (L - 1) * fh, sh = shadowBlds(blds, Hf, z);
         const r = G.sunHours(sh, Hf, lat, idx.map(i => c.cand[i]), tol); idx.forEach((ci, k) => { if (r[k].ok) ok[ci] = L; }); }
       const ord = c.cand.map((p, i) => ({ p, f: ok[i] == null ? c.b.floors + 1 : ok[i] })).sort((x, y) => x.f - y.f), pick = [];
       ord.forEach(o => { if (pick.length < c.n && pick.every(q => Math.hypot(q.p[0] - o.p[0], q.p[1] - o.p[1]) >= 6)) pick.push(o); });
@@ -353,23 +360,23 @@
       c.picked = pick;
     });
     const flat = [];
-    cols.forEach(c => { if (c.cand) (c.picked || []).forEach((o, k) => flat.push({ b: c.b, id: c.id, k, pt: o.p, fixed: o.f })); else flat.push(c); });
+    cols.forEach(c => { if (c.cand) (c.picked || []).forEach((o, k) => flat.push({ b: c.b, id: c.id, k, F: c.b.floors, pt: o.p, fixed: o.f })); else flat.push(c); });
     cols.length = 0; flat.forEach(c => cols.push(c));
-    cols.forEach(c => { c.okFrom = c.fixed != null ? (c.fixed > c.b.floors ? null : c.fixed) : null; if (c.fixed != null && c.fixed > c.b.floors) c.done = true; });
+    cols.forEach(c => { if (!(c.F > 0)) c.F = c.b.floors; c.okFrom = c.fixed != null ? (c.fixed > c.F ? null : c.fixed) : null; if (c.fixed != null && c.fixed > c.F) c.done = true; });
     for (const L of LV) {
-      const pend = cols.filter(c => c.okFrom == null && !c.done && L <= c.b.floors); if (!pend.length) break;
-      const z = (L - 1) * fh, sh = blds.map(o => Object.assign({}, o, { h: Math.max(0, (o.h != null ? o.h : Hf(o.floors)) - z) })).filter(o => o.h > 0.5);
+      const pend = cols.filter(c => c.okFrom == null && !c.done && L <= c.F); if (!pend.length) break;
+      const z = (L - 1) * fh, sh = shadowBlds(blds, Hf, z);
       const flatP = []; pend.forEach(c => (c.pts || [c.pt]).forEach(q => flatP.push(q)));
       const r = G.sunHours(sh, Hf, lat, flatP, tol); let k2 = 0;
       pend.forEach(c => { const m = (c.pts || [c.pt]).length; if (r.slice(k2, k2 + m).some(x => x.ok)) c.okFrom = L; k2 += m; });
     }
     // 통과한 층 사이는 앞 단계(통과 못 한 마지막 단계 + 1)로 좁혀 봄 — 단계 사이 층은 한 층씩
-    cols.forEach(c => { if (c.okFrom == null) { c.okFrom = c.b.floors + 1; return; } const i = LV.indexOf(c.okFrom); if (i <= 0 || c.fixed != null) return;
-      for (let L = LV[i - 1] + 1; L < c.okFrom; L++) { const z = (L - 1) * fh, sh = blds.map(o => Object.assign({}, o, { h: Math.max(0, (o.h != null ? o.h : Hf(o.floors)) - z) })).filter(o => o.h > 0.5);
+    cols.forEach(c => { if (c.okFrom == null) { c.okFrom = c.F + 1; return; } const i = LV.indexOf(c.okFrom); if (i <= 0 || c.fixed != null) return;
+      for (let L = LV[i - 1] + 1; L < c.okFrom; L++) { const z = (L - 1) * fh, sh = shadowBlds(blds, Hf, z);
         if (G.sunHours(sh, Hf, lat, c.pts || [c.pt], tol).some(x => x.ok)) { c.okFrom = L; break; } } });
     const per = {}; let lost = 0, total = 0;
-    cols.forEach(c => { const l = Math.min(c.b.floors, c.okFrom - 1); lost += l; total += c.b.floors; const q = per[c.id] || (per[c.id] = { lost: 0, total: 0, cols: 0, worst: 0 }); q.lost += l; q.total += c.b.floors; q.cols++; q.worst = Math.max(q.worst, l); });
-    return { ok: lost === 0, cols: cols.map(c => ({ id: c.id, k: c.k, okFrom: c.okFrom, north: c.north, pt: c.pt, pts: c.pts || null, floors: c.b.floors })), lost, total, per, 근거: '건축법 시행령 제86조③2호 단서(그 대지의 모든 세대 동지 9~15시 연속 2시간 이상)', 메모: '세대마다 가장 남쪽을 향한 창 한 점·층마다 개략(10분 간격) — 인허가는 정밀 일조분석' };
+    cols.forEach(c => { const l = Math.min(c.F, c.okFrom - 1); lost += l; total += c.F; const q = per[c.id] || (per[c.id] = { lost: 0, total: 0, cols: 0, worst: 0 }); q.lost += l; q.total += c.F; q.cols++; q.worst = Math.max(q.worst, l); });
+    return { ok: lost === 0, cols: cols.map(c => ({ id: c.id, k: c.k, okFrom: c.okFrom, north: c.north, pt: c.pt, pts: c.pts || null, floors: c.F })), lost, total, per, 근거: '건축법 시행령 제86조③2호 단서(그 대지의 모든 세대 동지 9~15시 연속 2시간 이상)', 메모: '세대마다 가장 남쪽을 향한 창 한 점·층마다 개략(10분 간격) — 인허가는 정밀 일조분석' };
   }
 
   /* ---------- 치수선(2026-11-05, 사용자 요구 '인동거리·일조권·통경축은 치수선을 그대로 표시하면 바로 보일 것') ----------

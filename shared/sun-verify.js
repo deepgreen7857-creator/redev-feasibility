@@ -38,9 +38,10 @@
   // 동 기둥 목록 — 조각마다 변·외접사각형·높이
   function prisms(blds, Hf) {
     const out = [];
-    blds.forEach(b => (b.parts && b.parts.length ? b.parts : [b.poly]).forEach(q => {
+    blds.forEach(b => (b.parts && b.parts.length ? b.parts : [b.poly]).forEach((q, i) => {
       if (!q || q.length < 3) return; const xs = q.map(p => p[0]), ys = q.map(p => p[1]);
-      out.push({ q, h: b.h != null ? +b.h : Hf(b.floors), x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
+      // 계단식 동은 조각마다 제 층수(b.partFl)
+      out.push({ q, h: b.h != null ? +b.h : Hf(Array.isArray(b.partFl) && b.partFl[i] > 0 ? b.partFl[i] : b.floors), x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
     }));
     return out;
   }

@@ -23,7 +23,17 @@
     const all = b.parts.flat(), c = all.reduce((a, p) => [a[0] + p[0] / all.length, a[1] + p[1] / all.length], [0, 0]), Tc = p => [p[0] - c[0], p[1] - c[1]];
     b.parts = b.parts.map(q => q.map(Tc)); b.cores = b.cores.map(q => q.map(Tc)); b.units = b.units.map(rs => rs.map(q => q.map(Tc))); b.walls = b.walls.map(w => Object.assign({}, w, { a: Tc(w.a), b: Tc(w.b) }));
     b.wingUnits = [m1.n, m2.n];                                  // 날개별 세대 수(서쪽 날개 먼저)
+    // 조각·세대가 어느 날개인지(계단식 층수용): 0 서쪽 날개, 1 동쪽 날개, -1 꼭짓점 세모 코어(높은 날개를 따름)
+    b.partWing = [...m1.parts.map(() => 0), ...m2.parts.map(() => 1), -1];
+    b.unitWing = [...(m1.units || []).map(() => 0), ...(m2.units || []).map(() => 1)];
     return b;
+  }
+  /* 계단식(날개별 층수, 2026-11-07 사용자 목록 3 '실제 계획 동의 날개별 층수(계단식)도 반영'): 날개 층수 [서, 동] → 조각·세대마다 층수(partFl·unitFl), floors = 높은 날개
+     그림자·세대별 일조·광선 검산·세대 수·연면적이 이를 따름(JbsCheck shadowBlds·stepK). 법정 높이 상한(채광창·정북)은 높은 날개(floors) 기준으로 봄 — 안전 쪽 */
+  function setWingFloors(b, wf) {
+    if (!b.partWing || !b.unitWing || !wf || wf.length < 2) return Object.assign({}, b);
+    const top = Math.max(wf[0], wf[1]), fl = w => (w < 0 ? top : wf[w]);
+    return Object.assign({}, b, { wingFloors: [wf[0], wf[1]], floors: top, partFl: b.partWing.map(fl), unitFl: b.unitWing.map(fl) });
   }
   // JbsDong(이미 init)으로 틀 목록. 평형 배열은 시뮬레이터와 같음
   function templates(JbsDong) {
@@ -32,6 +42,6 @@
     return [['V자 2+2호', V(p2, p2)], ['V자 4+2호', V(p4, p2)], ['V자 4+4호', V(p4, p4)], ['일자 2호', slab(p2)], ['일자 4호', slab(p4)], ['일자 6호', slab(p6)]]
       .map(([nm, b]) => Object.assign(b, { dname: nm, vname: nm, poly: G.hull(b.parts.flat()), angle: 0, center: [0, 0], t: Object.keys(b.mixT).sort((x, y) => b.mixT[y] - b.mixT[x])[0] }));
   }
-  const api = { slab, V, templates };
+  const api = { slab, V, templates, setWingFloors };
   if (isNode) module.exports = api; else g.JbsShapes = api;
 })(typeof window !== 'undefined' ? window : globalThis);
