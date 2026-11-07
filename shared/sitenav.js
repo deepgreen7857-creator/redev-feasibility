@@ -44,7 +44,8 @@ body.has-plansteps nav.tools{display:none!important}
 #jbsMan .list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 #jbsMan .list button{border:1px solid #cfd6dd;background:#fff;border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer}
 #jbsMan .list button[aria-pressed="true"]{background:#1f2933;color:#fff;border-color:#1f2933}
-#jbsMan .player{display:flex;justify-content:center;background:#111;border-radius:8px;min-height:120px;align-items:center;color:#ccc;font-size:14px}
+#jbsMan .player{display:flex;justify-content:center;background:#111;border-radius:8px;padding:8px}
+#jbsMan .body{font-size:14px;line-height:1.6;color:#1f2933}
 #jbsMan iframe{border:0;display:block}
 @media print{#siteNav,#planSteps{display:none!important}}`;
   function build() {
@@ -53,7 +54,7 @@ body.has-plansteps nav.tools{display:none!important}
     const nav = document.createElement('nav'); nav.id = 'siteNav'; nav.setAttribute('aria-label', '사이트 페이지');
     nav.innerHTML = `<span class="mk"><svg width="18" height="18" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="4" fill="#fff"/><path d="M6 6h6v6H6zM14 6h6v6h-6zM6 14h6v6H6z" fill="#1f2933" opacity=".85"/><path d="M14 14h6v6h-6z" fill="none" stroke="#e8590c" stroke-width="1.6"/></svg>jbslab</span>`
       + PAGES.map(pg => `<a href="${pg.href}"${pg.on(P) ? ' aria-current="page"' : ''}>${pg.name}</a>`).join('')
-      + '<button class="man" type="button" title="이 화면 사용법 영상(쇼츠·짧은 영상)">▶ 사용법 영상</button>';
+      + '<button class="man" type="button" title="이 화면 사용법(글·영상)">▶ 사용법</button>';
     nav.querySelector('.man').addEventListener('click', openManual);
     document.body.insertBefore(nav, document.body.firstChild);
     if (PAGES[1].on(P)) {
@@ -68,30 +69,40 @@ body.has-plansteps nav.tools{display:none!important}
     ps.innerHTML = '<span class="lab">정비계획 순서</span>' + STEPS.map((s, i) => `${i ? '<span class="ar">›</span>' : ''}<a href="${s.href}"${s.on() ? ' aria-current="step"' : ''}><b>${s.n}</b>${s.name}</a>`).join('')
       + '<a class="back" href="/" title="정비사업 사업성 검토 화면 — 건축계획을 확정했으면 ★빠른 사업성 맨 아래 ⑤ 2차 사업성으로 1회차와 비교">→ 사업성으로(2차 비교)</a>';
   }
-  // 사용법 영상: shared/manuals.json에서 이 페이지 영상 목록을 읽어 창으로 보여 줌(누르면 재생 — 자동재생 없음)
+  // 사용법: shared/manuals.json — 매뉴얼(글)이 원본, 단계마다 영상이 있으면 같이 보여 줌(누르면 재생 — 자동재생 없음)
   async function openManual() {
     let M = { pages: {} };
     try { M = await (await fetch('/shared/manuals.json', { cache: 'no-cache' })).json(); } catch (e) { /* 목록 없음 */ }
     const key = Object.keys(M.pages || {}).filter(k => k === '/' ? P === '/' : P.startsWith(k)).sort((a, b) => b.length - a.length)[0];
-    const list = (M.pages || {})[key] || [];
+    let pg = (M.pages || {})[key] || [];
+    if (Array.isArray(pg)) pg = { title: '사용법', steps: [], videos: pg }; // 예전 꼴(영상 목록만)
+    const steps = pg.steps || [], vids = pg.videos || [];
     const old = document.getElementById('jbsMan'); if (old) old.remove();
     const w = document.createElement('div'); w.id = 'jbsMan';
-    const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    w.innerHTML = `<div class="box" role="dialog" aria-label="사용법 영상"><div class="hd"><b>사용법 영상</b><span style="font-size:12px;color:#5b6670">이 화면에서 쓰는 방법을 짧게 보여 드립니다</span><button type="button" data-x>닫기</button></div>`
-      + `<div class="list">${list.map((v, i) => `<button type="button" data-i="${i}">${v.kind === 'shorts' ? '쇼츠 · ' : ''}${esc(v.title)}${v.id ? '' : ' (준비 중)'}</button>`).join('') || '<span style="color:#5b6670">이 화면 영상은 준비 중입니다.</span>'}</div>`
-      + `<div class="player">위에서 영상을 고르세요.</div>`
+    const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const player = v => { if (!v || !v.id) return ''; const sh = v.kind === 'shorts', W = sh ? 300 : 640, H = sh ? 533 : 360; return `<iframe width="${W}" height="${H}" style="max-width:100%" src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.id)}?rel=0" title="사용법 영상" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`; };
+    const stepHtml = i => { const s = steps[i]; return `<h3 style="margin:0 0 6px">${esc(s.name)}</h3><p style="margin:0 0 10px;color:#5b6670">${esc(s.why)}</p>`
+      + `<ol style="margin:0 0 10px;padding-left:20px;display:grid;gap:4px">${(s.do || []).map(d => `<li>${esc(d)}</li>`).join('')}</ol>`
+      + (s.check ? `<p style="margin:0 0 6px"><b>확인</b> ${esc(s.check)}</p>` : '') + (s.stuck ? `<p style="margin:0 0 6px"><b>막히면</b> ${esc(s.stuck)}</p>` : '') + (s.next ? `<p style="margin:0 0 10px"><b>다음</b> ${esc(s.next)}</p>` : '')
+      + (s.video && s.video.id ? `<div class="player">${player(s.video)}</div>` : `<p style="margin:0;font-size:12px;color:#8a949c">이 단계 영상은 준비 중입니다.</p>`); };
+    w.innerHTML = `<div class="box" role="dialog" aria-label="사용법"><div class="hd"><b>${esc(pg.title || '사용법')}</b><button type="button" data-x>닫기</button></div>`
+      + (pg.goal ? `<p style="margin:0 0 10px;color:#5b6670">${esc(pg.goal)}</p>` : '')
+      + `<div class="list">${steps.map((s, i) => `<button type="button" data-s="${i}">${esc(s.name)}</button>`).join('')}${vids.map((v, i) => `<button type="button" data-v="${i}">▶ ${esc(v.title)}${v.id ? '' : ' (준비 중)'}</button>`).join('')}</div>`
+      + `<div class="body" style="min-height:120px">${steps.length ? '' : '<p style="color:#5b6670">이 화면 사용법은 준비 중입니다.</p>'}</div>`
       + (M.channel ? `<p style="margin:10px 0 0;font-size:13px"><a href="${esc(M.channel)}" target="_blank" rel="noopener">유튜브 채널에서 전체 영상 보기 →</a></p>` : '') + `</div>`;
     document.body.appendChild(w);
-    const pl = w.querySelector('.player');
+    const body = w.querySelector('.body');
+    const pick = btn => { w.querySelectorAll('.list button').forEach(b => b.setAttribute('aria-pressed', b === btn ? 'true' : 'false')); };
     w.addEventListener('click', e => {
       if (e.target === w || e.target.dataset.x !== undefined) { w.remove(); return; }
-      const i = e.target.dataset.i; if (i === undefined) return;
-      w.querySelectorAll('.list button').forEach(b => b.setAttribute('aria-pressed', b === e.target ? 'true' : 'false'));
-      const v = list[+i];
-      if (!v.id) { pl.textContent = `'${v.title}' 영상은 준비 중입니다.`; return; }
-      const sh = v.kind === 'shorts', W = sh ? 360 : Math.min(900, w.querySelector('.box').clientWidth - 32), H = sh ? 640 : Math.round(W * 9 / 16);
-      pl.innerHTML = `<iframe width="${W}" height="${H}" src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.id)}?rel=0" title="${esc(v.title)}" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+      const t = e.target.closest('button'); if (!t) return;
+      if (t.dataset.s !== undefined) { pick(t); body.innerHTML = stepHtml(+t.dataset.s); }
+      if (t.dataset.v !== undefined) { pick(t); const v = vids[+t.dataset.v]; body.innerHTML = v.id ? `<div class="player">${player(v)}</div>` : `<p>'${esc(v.title)}' 영상은 준비 중입니다.</p>`; }
     });
+    // 지금 보고 있는 단계를 먼저 펼침(사업성 화면은 주소 #탭)
+    const tabIdx = steps.findIndex(s => { const h = (location.hash || '').slice(1); const map = { overview: 0, area: 1, quick: 2, survey: 3, revenue: 4, cost: 5, result: 6, sensitivity: 7 }; return h in map && map[h] === steps.indexOf(s); });
+    const first = w.querySelector(`.list button[data-s="${tabIdx >= 0 ? tabIdx : 0}"]`) || w.querySelector('.list button');
+    if (first) first.click();
   }
   window.JbsNav = { mark(tab) { window.__urbanTab = tab; render(); } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
