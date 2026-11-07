@@ -377,6 +377,15 @@ async function importProject(id) {
     Object.keys(z.inArea).forEach(k => { CACHE.blds[k] = byP[k] || []; });
     z.fetchedAt = new Date().toLocaleString('sv-SE').slice(0, 16); z.from = 'project';
   }
+  // 사업성 검토의 사업명·1회차 가정(용도지역·용적률 단계·기반시설 비율)을 이어받음 — 두 화면 세대수가 달라지지 않게(2026-11-07 학익장미: 사업성 708세대인데 /urban 1,078세대)
+  const m = p.meta || {}, q = p.quick || {};
+  if (m.title && !Z.title) Z.title = m.title;
+  if (q.zone && RULES.far[q.zone]) z.planZone = q.zone;
+  if (q.zone && RULES.far[q.zone]) P.zone = q.zone;
+  if (q.farStep) { P.farMode = q.farStep === 'custom' ? 'custom' : q.farStep; if (q.farStep === 'custom' && q.farCustom) P.farCustom = num(q.farCustom); }
+  const ir = { avg: 25, cons: 30, custom: num(q.infraPct) }[q.infraLevel];
+  if (ir > 0) P.infraRatio = ir;
+  saveP(); syncTitle();
   saveZ(); saveCache();
   S.region = id; D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); fitZone(id); render();
   if (!lands.length) { fetchZone(id); return; }
