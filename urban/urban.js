@@ -277,6 +277,16 @@ async function fillLedger(pnus, say) {
   }
   return fail;
 }
+// 사업성 검토에서 가져온 조서에 공동주택 세대수·사용승인 연도가 비어 있으면 건축물대장 표제부로 한 번 채움(창마다 안별 한 번)
+//  예전엔 가져오기에서 대장 조회를 안 해 아파트 단지 소유자가 '동 수'로 셈해졌음(2026-11-07 유원 11명)
+const AUTO_LG = new Set();
+async function autoLedger(id) {
+  const z = Z.zones[id]; if (!z || !z.inArea || !LG.ok || busy || AUTO_LG.has(id)) return;
+  const ks = Object.keys(z.inArea).filter(ledgerNeeded); if (!ks.length) return;
+  AUTO_LG.add(id); busy = true;
+  try { const f = await fillLedger(ks, (t, st, d, n) => { statusMsg(`${id}안: ${t}`); if (st) jobSet(id, st, d, n); }); saveCache(); statusMsg(f ? `${id}안: 건축물대장 조회 ${f}필지 실패(건축물대장 버튼으로 재시도)` : `${id}안: 건축물대장으로 세대수·사용승인 연도를 채웠습니다.`); }
+  finally { busy = false; jobEnd(); if (S.source === 'map') { D = buildMap(); D.parcels.forEach(applyAccess); render(); } }
+}
 // 안 하나의 필지·건축물·토지특성을 불러옴 (구역계와 10% 이상 겹치거나 한 점이 구역 안인 필지)
 // 여러 안을 연달아 그려도 차례로 불러오도록 줄을 세움
 let fetchQueue = Promise.resolve();
@@ -377,6 +387,7 @@ async function importProject(id) {
     try { await fillLandChar(miss, t => statusMsg(`${id}안: ${t}`)); saveCache(); statusMsg(`${id}안: 사업성 검토 조서를 가져오고 도로접면을 조회했습니다.`); }
     finally { busy = false; D = buildMap(); D.parcels.forEach(applyAccess); render(); }
   }
+  autoLedger(id);
 }
 // delay(ms): 필지 선택처럼 연달아 바꿀 때는 마지막으로 바꾸고 잠시 뒤에 한 번만 불러옴
 let fetchTimer = null;
@@ -602,6 +613,10 @@ function analyze(key) {
   ghosts.forEach(b => { b.lic = gm === 'old' ? '기존무허가' : '허가'; Object.assign(b, { unknown: false }, obsoleteRule(b)); });
   let bs = zp.bs.filter(b => b.lic !== '신발생무허가' && (gm !== 'out' || !b.ghost));
   bs.forEach(b => { if (b.old === undefined) Object.assign(b, obsoleteRule(b)); });
+  // 아파트 단지: 같은 필지에 사용승인 연도를 아는 공동주택(주동)이 있으면, 연도 없는 건물(부속동·GIS 건물)은 그 단지 연도로 추정
+  const aptYear = {}; bs.forEach(b => { if (b.kind === '공동' && b.year && b.pid != null) aptYear[b.pid] = Math.max(aptYear[b.pid] || 0, b.year); });
+  let estN = 0;
+  bs.forEach(b => { if (b.unknown && b.pid != null && aptYear[b.pid] && b.lic !== '기존무허가') { const y = aptYear[b.pid]; Object.assign(b, obsoleteRule(Object.assign({}, b, { year: y, ghost: false, kind: b.kind === '공동' ? '공동' : b.kind })), { estYear: y, unknown: false }); b.why = (b.why || '') + ` — 연도 없음: 같은 단지 주동 사용승인 ${y}년으로 추정`; estN++; } });
   const N = bs.length, oldN = bs.filter(b => b.old).length, unknownN = bs.filter(b => b.unknown).length;
   const fa = bs.reduce((s, b) => s + b.floor, 0), oldFa = bs.filter(b => b.old).reduce((s, b) => s + b.floor, 0);
   const smallN = ps.filter(p => (p.base ?? p.area) < smallLimit(p.zone)).length;
@@ -620,7 +635,7 @@ function analyze(key) {
   const priorLand = ps.reduce((s, p) => s + landA(p) * p.price, 0);
   const needUnits = bs.filter(b => b.needUnits).length;
   return {
-    key, area, ps, bs, N, oldN, unknownN, ghostN: ghosts.length, fa, oldFa, smallN, accN, accU, du, landArea, zoneArea, owners: Math.max(owners, 1), priorLand, needUnits, bsOf,
+    key, area, ps, bs, N, oldN, unknownN, ghostN: ghosts.length, fa, oldFa, smallN, accN, accU, du, landArea, zoneArea, owners: Math.max(owners, 1), priorLand, needUnits, bsOf, estN,
     oldRatio: N ? oldN / N : 0, oldFaRatio: fa ? oldFa / fa : 0, smallRatio: ps.length ? smallN / ps.length : 0,
     // 미확인 건축물이 있으면 접도율은 범위(accRatio ~ accMax)
     accRatio: N ? accN / N : 0, accMax: N ? (accN + accU) / N : 0, density: du / (area / 10000),
@@ -2691,6 +2706,15 @@ function stepNav() {
   });
 }
 const kpi = (l, v, f) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="f">${f || ''}</div></div>`;
+const kpiNA = l => `<div class="kpi na"><div class="l">${l}</div><div class="v" style="color:#8a8f98">해당없음</div><div class="f">재개발사업 적용요건</div></div>`;
+// 지금 안이 재건축인지: 사업성 검토 화면에서 가져온 구역이고 그 화면 사업 유형이 재건축
+function isReconZone(key) {
+  const z = Z.zones[key], p = loadProject(), st = p && (p.state || p);
+  if (!z || !z.geojson || !st || !st.meta || st.meta.type !== 'reconstruction' || !st.area || !st.area.geojson) return false;
+  if (z.from === 'project') return true;
+  // 직접 다시 불러온 구역이어도 사업성 검토(재건축) 구역과 절반 이상 겹치면 재건축으로 봄
+  try { const a = st.area.geojson, g = a.type === 'Feature' ? a : turf.feature(a), x = turf.intersect(g, z.geojson); return !!x && turf.area(x) >= 0.5 * Math.min(turf.area(g), turf.area(z.geojson)); } catch (e) { return false; }
+}
 // 화면 제목·내보내기에 구역명(있으면)을 붙임: "용현1구역 · A안"
 const regName = () => esc((Z.title ? Z.title + ' · ' : '') + D.regions[S.region].name);
 function syncTitle() { document.title = (Z.title ? Z.title + ' — ' : '') + 'jbslab 정비계획 검토'; }
@@ -2699,16 +2723,18 @@ function renderZone(a) {
     const p = b.pid != null ? D.parcels[b.pid] : null;
     return `<tr><td>${esc(p ? p.jibun : '(필지 연결 안 됨)')}</td><td>${esc(b.use)}${b.src ? ` <span class="u">${esc(b.src)}</span>` : ''}</td><td>${esc(b.struct)}</td><td class="r">${b.year || '–'}</td><td class="r">${fmt(b.floor)}</td><td>${b.unknown ? '<span class="pill warn">확인</span>' : b.old ? '<span class="pill bad">노후</span>' : '<span class="pill ok">비노후</span>'}</td><td>${esc(b.why)}</td><td>${p ? `<button class="acc ${p.access === true ? 'ok' : p.access === false ? 'bad' : ''} ${p.manual ? 'man' : ''}" data-pid="${p.id}" title="${esc(p.accSrc)} · 누르면 충족 → 미충족 → 자동">${p.access == null ? '미확인' : p.access ? '충족' : '미충족'}${p.manual ? ' · 지정' : ''}</button>` : '–'}</td><td>${b.lic}</td></tr>`;
   }).join('');
+  const recon = D.map && isReconZone(S.region);
+  if (D.map && a.needUnits) setTimeout(() => autoLedger(S.region), 0);   // 공동주택 세대수가 비었으면 대장으로 한 번 채움
   side.innerHTML = `<h2>${regName()} 현황분석 ${D.map ? `<span class="badge v">공부 조회 ${esc(D.regions[S.region].at)}</span>` : '<span class="badge a">예시 데이터</span>'}</h2>
   <div class="kpis">
     ${kpi('구역 면적', fmt(a.area) + '㎡', D.map ? '그린 구역계 면적(도로 포함)' : '구역계 폴리곤 면적(도로 포함)')}
     ${kpi('편입 필지', a.ps.length + '필지', `${D.map ? '대장 면적×편입비율' : '조서 면적'} 합 ${fmt(a.landArea)}㎡`)}
     ${kpi('건축물', a.N + '동', `연면적 ${fmt(a.fa)}㎡` + (a.ghostN ? `<br>공부 정보 없는 GIS 건물 ${a.ghostN}동 ${({ out: '제외', unknown: '포함(연도 미확인)', old: '포함(기존무허가·노후)' })[ghostMode()]}` : ''))}
-    ${kpi('노후도(동수)', oldText(a), `${a.oldN} / ${a.N}동${a.unknownN ? ` · 사용승인 연도 미확인 ${a.unknownN}동` : ''}`)}
+    ${kpi('노후도(동수)', oldText(a), `${a.oldN} / ${a.N}동${a.unknownN ? ` · 사용승인 연도 미확인 ${a.unknownN}동` : ''}${a.estN ? ` · ${a.estN}동은 같은 단지 주동 연도로 추정` : ''}`)}
     ${kpi('노후도(연면적)', pct(a.oldFaRatio), `${fmt(a.oldFa)} / ${fmt(a.fa)}㎡`)}
-    ${kpi('과소필지', pct(a.smallRatio), `분할제한면적 미만 ${a.smallN} / ${a.ps.length}필지`)}
-    ${kpi('주택접도율', accText(a), `폭4m·4m 이상 접도 ${a.accN} / ${a.N}동${a.accU ? ` · 미확인 ${a.accU}동` : ''}`)}
-    ${kpi('호수밀도', a.density.toFixed(1) + '동/ha', `${a.du}동 ÷ ${(a.area / 10000).toFixed(2)}ha`)}
+    ${recon ? kpiNA('과소필지') : kpi('과소필지', pct(a.smallRatio), `분할제한면적 미만 ${a.smallN} / ${a.ps.length}필지`)}
+    ${recon ? kpiNA('주택접도율') : kpi('주택접도율', accText(a), `폭4m·4m 이상 접도 ${a.accN} / ${a.N}동${a.accU ? ` · 미확인 ${a.accU}동` : ''}`)}
+    ${recon ? kpiNA('호수밀도') : kpi('호수밀도', a.density.toFixed(1) + '동/ha', `${a.du}동 ÷ ${(a.area / 10000).toFixed(2)}ha`)}
     ${kpi('토지등소유자(추정)', fmt(a.owners) + '명', D.map ? '소유자 정보 없음: 사유지 1필지 1인, 공동주택은 세대별' + (a.needUnits ? ` · 세대수 미확인 ${a.needUnits}동` : '') : '1필지 1인, 다세대는 호수별')}
   </div>
   ${a.ghostN ? `<div class="ghost-note"><b>공부 정보 없는 GIS 건물 ${a.ghostN}동</b> — 무허가건축물일 수 있음
