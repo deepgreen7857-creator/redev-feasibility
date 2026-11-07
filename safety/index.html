@@ -845,6 +845,7 @@ function classify(name,pages){
 // 사례 1호 검토의견서(조건부 적정)에서 나온 지적을 규칙으로 — 글자 없는(그림) 쪽은 못 봄
 const PLAN_RULES=[
  {on:c=>c.kind==='total'&&c.key==='가',t:F=>!/검토[·ㆍ.]?확인서|검토의견서/.test(F.replace(/구비서류.{0,80}/g,'')),lv:'bad',m:'건설사업관리기술인(공사감독자) 검토의견서·확인서가 본문에 없습니다 — 구비서류 목록에만 있음. 미제출 시 반려 등 불이익(영 제98조제2항)'},
+ {on:c=>c.kind==='total'&&c.key==='가',t:F=>(S.first_rcv||S.chg_rcv||'9')>='2026-06-01',lv:'warn',m:'개정 매뉴얼(2026. 6. 1.) 뒤 접수분 — 건설사업관리기술인 검토의견서·확인서는 개정 최신 서식으로(옛 서식이면 다음 차수 반려, 사례 2호)'},
  {on:c=>c.kind==='total'&&c.key==='나',t:F=>/매설물|지장물/.test(F)&&!/회신|회의록|공문|날인/.test(F),lv:'bad',m:'매설물 관리주체 협의 입증서류(회신 공문·날인 회의록)가 보이지 않습니다 — ‘협의 결과’ 제목이나 ‘부록 참조’만으로는 부족, 공사 영향범위 안 지장물 전부 표기'},
  {on:c=>c.kind==='total'&&c.key==='나',t:F=>num('dig')>=10&&!/지하안전/.test(F),lv:'bad',m:'굴착 10m 이상인데 지하안전평가 요약이 없습니다'},
  {on:c=>c.kind==='work',t:F=>!/자체안전점검|HoldPoint|H\/P/i.test(F),lv:'bad',m:'자체안전점검표(Hold Point, 별지 제10호)가 없습니다 — 반려 사유'},
@@ -885,11 +886,11 @@ function refCheck(F,B){
 }
 function parseOpinion(F){
   const items=[['가','건설공사의개요'],['나','현장특성분석'],['다','현장운영계획'],['라','비상시긴급조치계획']];
-  const res=F.match(/종합검토의견(적정|조건부적정|부적정)/), out=[];
-  const pick=(lab,re)=>{const m=F.match(new RegExp(re+'(조건부적정|부적정|적정|-)(.{0,30}?)(?=[가-아]\\.|공종별|\\[첨부\\]|$)'));if(m)out.push([lab,m[1].replace('조건부적정','조건부 적정'),m[2].replace(/해당사항없음/,'해당 없음')])};
+  const res=F.match(/종합검토의견(조건부적정|부적정|적정(?:\(검토미의뢰항목외\))?)/), out=[];
+  const pick=(lab,re)=>{const m=F.match(new RegExp(re+'(조건부적정|부적정|검토미의뢰|적정|-)(.{0,40}?)(?=[가-아]\\.|공종별|\\[첨부\\]|$)'));if(m)out.push([lab,m[1].replace('조건부적정','조건부 적정').replace('검토미의뢰','검토 미의뢰'),m[2].replace(/해당사항없음/,'해당 없음')])};
   items.forEach(([k,n])=>pick(`총괄 ${k}.`,k+'\\.'+n));
   [['가','가설공사'],['나','굴착공사및발파공사'],['다','콘크리트공사'],['라','강구조물공사'],['마','성토및절토공사'],['바','해체공사'],['사','건축설비공사'],['아','타워크레인사용공사']].forEach(([k,n])=>pick(`공종 ${n.replace(/및/,' 및 ')}`,k+'\\.'+n));
-  return {res:res?res[1].replace('조건부적정','조건부 적정'):'',out};
+  return {res:res?res[1].replace('조건부적정','조건부 적정').replace('(검토미의뢰항목외)',' (검토 미의뢰 항목 외)'):'',out};
 }
 // CSI [의뢰개요] 엑셀 내려받기 파일 → 공사 개요·대상 판정 값 (담당자 이름은 읽지 않음)
 function parseCsiOverview(text){
@@ -951,7 +952,10 @@ function fixItems(F){
     const ans=/▷|하였음|하였습니다|반영|작성함|적용함/.test(seg);
     const attach=/※첨부/.test(seg)&&!refs.length;
     const cma=/감리확인탭|감리\/발주청확인/.test(seg);
-    return {title,refs,defer,none,ans,attach,cma,seg};
+    const bl=seg.split(/(?=[○¡](?=[가-힣A-Za-z]))|(?=(?<![가-힣A-Za-z])o(?=[가-힣]))/).slice(1);
+    let lastResp=-1; bl.forEach((b,i)=>{if(/부록#\d|▷|하였음|반영|※[^※]{0,20}없음/.test(b))lastResp=i});
+    const tail=lastResp>=0?bl.slice(lastResp+1).map(b=>b.replace(/^[○¡o]/,'').slice(0,40)).filter(x=>x.length>4):[];
+    return {title,refs,defer,none,ans,attach,cma,seg,tail};
   }).filter(x=>!/^\d+$/.test(x.title));
 }
 function fixReport(groups){
@@ -963,7 +967,8 @@ function fixReport(groups){
       if(it.defer&&!it.refs.length){lv='info';msg='검토 미의뢰 — 해당 공종 착공 전 제출로 답함(조건부 적정 처리, 착공 전 승인 필요)'}
       else if(it.refs.length){const miss=it.refs.filter(n=>!have.has(n));
         if(miss.length){lv='bad';msg=`부록 #${miss.join(', #')}를 참조했지만 부록 파일에 없음`}
-        else{lv='ok';msg=`부록 #${it.refs.join(', #')} 있음`+(g.blankB?` (부록 ${g.nB}쪽 중 그림 ${g.blankB}쪽 — 회신 공문·도면 내용은 직접 확인)`:'')}}
+        else{lv='ok';msg=`부록 #${it.refs.join(', #')} 있음`+(g.blankB?` (부록 ${g.nB}쪽 중 그림 ${g.blankB}쪽 — 회신 공문·도면 내용은 직접 확인)`:'');
+          if(it.tail.length){lv='warn';msg+=` · 그 뒤 세부 지적 ${it.tail.length}개는 대응 표시가 없음: ${it.tail.map(t=>'“'+t+'…”').join(', ')}`}}}
       else if(it.cma){lv='warn';msg='“CSI 감리/발주청 확인 탭에 첨부”로 답함 — 이 파일들에는 없으니 CSI 탭에서 확인'}
       else if(it.none){lv='warn';msg='“해당 없음”으로 답함 — 근거(도면·CSI 입력값)와 맞는지 확인'}
       else if(it.attach){if(/상세도/.test(g.B)){lv='warn';msg='“※ 첨부”라고만 적었고 부록 안에 번호 없는 상세도가 있음 — 지적한 안전시설·안전조치 상세도인지 확인'}else{lv='bad';msg='“※ 첨부”라고만 적고 첨부 위치(부록 번호)가 없음 — 실제 첨부 여부 확인'}}
@@ -973,7 +978,9 @@ function fixReport(groups){
       if(lv==='bad')nb++; if(lv==='warn')nw++;
       rows+=`<tr><td>${xe(g.label)}</td><td>${xe(it.title)}</td><td><span class="lv-${lv==='warn'?'info':lv}">${({ok:'대응',bad:'주의',warn:'확인',info:'미의뢰'})[lv]}</span> ${xe(msg)}</td></tr>`});
   });
-  return {html:`<h2 style="margin-top:14px">재검토(보완) 대응 점검 <span class="auto">지적 항목별</span></h2><table class="map"><thead><tr><th style="width:18%">항목</th><th style="width:34%">지적 사항</th><th>대응</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="note">지적 항목을 찾지 못했습니다.</td></tr>'}</tbody></table><p class="note">보완서의 “1) ○○ 보완” 항목마다 대응(▷ 답변·부록 참조·검토 미의뢰·해당 없음)이 있는지, 참조한 부록 번호가 실제 부록에 있는지 봅니다. 대응의 질은 판단하지 않습니다.</p>`,nb,nw};
+  const rc=S.chg_rcv||S.first_rcv||'';
+  const note=(!rc||rc>='2026-06-01')?`<div class="warn">개정 매뉴얼(2026. 6. 1.) 뒤 접수분은 <b>건설사업관리기술인 검토의견서·확인서를 개정 최신 서식</b>으로 내야 합니다 — 옛 서식이면 다음 차수 반려(사례 2호 의견서). 감리 확인 탭 첨부본의 서식 판을 확인하세요.</div>`:'';
+  return {html:`<h2 style="margin-top:14px">재검토(보완) 대응 점검 <span class="auto">지적 항목별</span></h2>${note}<table class="map"><thead><tr><th style="width:18%">항목</th><th style="width:34%">지적 사항</th><th>대응</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="note">지적 항목을 찾지 못했습니다.</td></tr>'}</tbody></table><p class="note">보완서의 “1) ○○ 보완” 항목마다 대응(▷ 답변·부록 참조·검토 미의뢰·해당 없음)이 있는지, 참조한 부록 번호가 실제 부록에 있는지 봅니다. 대응의 질은 판단하지 않습니다.</p>`,nb,nw};
 }
 async function onFiles(files){
   files=[...files]; if(!files.length) return;
@@ -1043,7 +1050,7 @@ async function onFiles(files){
   if(opin){h+=`<h2>검토 의견서 판정 <span class="auto">${xe(opin.res||'')}</span></h2><table class="map"><thead><tr><th>항목</th><th>판정</th><th>주요 내용</th></tr></thead><tbody>${opin.out.map(r=>`<tr><td>${xe(r[0])}</td><td>${xe(r[1])}</td><td>${xe(r[2])}</td></tr>`).join('')}</tbody></table>
     <p class="note"><button class="btn" id="opToCase">지적 사항을 사례 탭 오류유형에 넣기</button></p>`;}
   $('#upDiag').innerHTML=fixHtml+h;
-  if(opin&&$('#opToCase')) $('#opToCase').onclick=()=>{const add=opin.out.filter(r=>/조건부|부적정/.test(r[1])).map(r=>`${r[0]} ${r[2]}`.trim());
+  if(opin&&$('#opToCase')) $('#opToCase').onclick=()=>{const add=opin.out.filter(r=>/조건부|부적정|미의뢰/.test(r[1])).map(r=>`${r[0]} ${r[2]}`.trim());
     const cur=$('#cs_err').value.split(',').map(x=>x.trim()).filter(Boolean);$('#cs_err').value=[...new Set([...cur,...add])].join(', ');
     if(opin.res){const o=[...$('#cs_res').options].find(o=>o.text.includes(opin.res));if(o)$('#cs_res').value=o.text}
     $('#tabs [data-t="f"]').click();};
