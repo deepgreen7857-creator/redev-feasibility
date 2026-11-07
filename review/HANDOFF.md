@@ -448,3 +448,5 @@
 - 온비드 입찰정보 API는 '자료 없음'을 {"result":{"resultCode":"03"}}로 돌려줌(header 없음) → 해석기가 INVALID_RESPONSE로 세어 13:10 회차 결과 단계 11,107건이 전부 오류·0건이었음. court-collector/src/onbid-bulk.cjs에 apiFetch(모양 변환) 추가, auction-server/.../dataGoKr.js decode도 수정(서버 배포는 사용자).
 - 미니PC 법원 수집은 매일 14시쯤 하루 한도(stoppedBy=limit)를 채우고 쉰다. 관리자 화면 '확인 필요 — 1시간 넘게 전송 없음'은 이 경우의 표시 오류(state/court.stoppedBy로 확인).
 - 관리자 Firestore 문서(state/onbid, state/court)는 관리자 탭의 IndexedDB(firebaseLocalStorageDb) 토큰으로 REST 조회 가능.
+- (정민님, 2026.11.07 저녁) 판단기록장 추천의 기일은 '진입 회차' 날짜로 표시한다 — picks 항목에 date(진입 회차 입찰 마감일, YYYY-MM-DD)를 넣는다(judge/index.html normDate가 x.date를 먼저 씀). 지금 회차 날짜로 두지 않는다.
+- (2026.11.07 저녁) judge/index.html calc: 땅(it.land)에 bidMax가 있으면 상한을 bidMax 그대로 씀. 땅 항목에는 acqTax(대 0.046·농지 0.034, 섞이면 비율)와 온비드 전 회차(min)를 넣을 것 — 없으면 경매식 30% 저감·1.1%로 잘못 계산됨.

@@ -127,7 +127,8 @@ function calc(it){
   const TR=(it.acqTax!=null?it.acqTax:(/12\.4%/.test(it.tax11||'')?0.124:0.011));const X=(low-it.costs-it.minProfit/(it.land?1:(1-CT)))/(1+TR);   // 세후 목표수익이 남는 총투입 한도
   let hi=D?(X>=D?X:-1):X-A;
   if(!it.land&&!it.budgetOnly)hi=Math.min(hi,(CASH-it.costs)/(1+TR)-A);   // 현금 한도(대출 없음)
-  if(it.bidMax)hi=Math.min(hi,it.bidMax);
+  if(it.land&&it.bidMax)hi=it.bidMax;   // 땅은 검토서에서 정한 입찰 상한을 그대로 씀(2026.11.07)
+  else if(it.bidMax)hi=Math.min(hi,it.bidMax);
   hi=hi>0?Math.floor(hi/10000)*10000:0;
   const rows=[];let min=it.appraisal;
   for(let k=0;k<=Math.max(MAXK,it.rounds.length+1);k++){
