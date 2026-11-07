@@ -5,7 +5,7 @@
 //  opt  = { look:'dusk'|'day', mode:'model'(주변 낮춤)|'review'(주변 실제 높이), view:'wide'|'semi'|'bird'|'persp', w, h, pr, labels }
 // 좌표: x 동, y 북(m). three는 (x, 높이, -y)
 (function (g) {
-  const FH = 2.9, Z0 = 1.5;
+  const FH = 2.9, Z00 = 1.5;
   let rnd = Math.random;
   const seed = s => { rnd = () => (s = (s * 16807) % 2147483647) / 2147483647; };
   const cv = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d')]; };
@@ -138,6 +138,9 @@
     const mBuf = (ring, m) => { try { const f = turf.buffer(turf.polygon([deg(ring)]), m / 1000, { units: 'kilometers' }); if (!f) return null; const g2 = f.geometry; const c = g2.type === 'Polygon' ? g2.coordinates[0] : g2.coordinates.sort((a, b) => b[0].length - a[0].length)[0][0]; return c.slice(0, -1).map(p => [p[0] * K, p[1] * K]); } catch (e) { return null; } };
     const inPoly = (x, y, f) => turf.booleanPointInPolygon([x, y], f);
     const siteF = tp(S);
+    // 모형 받침: 모형 모드에서는 단지 바닥을 경계를 따라 LIFT만큼 들어 올림(구역 경계가 보이고 단지가 도드라지게)
+    const LIFT = opt.mode === 'model' ? (opt.lift != null ? opt.lift : 1.2) : 0, Z0 = Z00 + LIFT;
+    const liftAt = (x, y) => (LIFT && inPoly(x, y, siteF) ? LIFT : 0);
 
     // 하늘(큰 구 안쪽에 그림) + 안개
     const skyC = skyCanvas(opt.look);
@@ -220,13 +223,20 @@
     const lawnC = (() => { const [c, x] = cv(256, 256); x.fillStyle = dusk ? '#4f6b3a' : '#5f8a40'; x.fillRect(0, 0, 256, 256); for (let i = 0; i < 3000; i++) { x.fillStyle = `rgba(${30 + rnd() * 40},${60 + rnd() * 50},${20 + rnd() * 30},.35)`; x.fillRect(rnd() * 256, rnd() * 256, 2, 2); } return c; })();
     const lawn = new THREE.MeshStandardMaterial({ map: tex(lawnC, span / 20, span / 20), roughness: 1 });
     const pave = STD(dusk ? 0x9b8a72 : 0xc2b49a);
-    flat(S, pave, 0.05);
+    if (LIFT) {
+      const sh0 = new THREE.Shape(S.map(p => new THREE.Vector2(p[0], p[1])));
+      const pg0 = new THREE.ExtrudeGeometry(sh0, { depth: LIFT, bevelEnabled: false }); pg0.rotateX(-Math.PI / 2);
+      const plinth = new THREE.Mesh(pg0, [STD(dusk ? 0x8d877c : 0xd8d0c0), STD(dusk ? 0x6e675c : 0xa89d88)]); plinth.castShadow = true; plinth.receiveShadow = true; scene.add(plinth);
+      // 경계 테두리선(해질녘엔 은은한 조명선)
+      for (let i = 0; i < S.length; i++) { const a = S[i], b = S[(i + 1) % S.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 0.3) continue; const e = new THREE.Mesh(new THREE.BoxGeometry(L + 0.3, 0.22, 0.3), new THREE.MeshBasicMaterial({ color: dusk ? 0xffe2ae : 0xf7f3ea })); e.position.set((a[0] + b[0]) / 2, LIFT + 0.12, -(a[1] + b[1]) / 2); e.rotation.y = Math.atan2(b[1] - a[1], b[0] - a[0]); scene.add(e); }
+    }
+    flat(S, pave, 0.05 + LIFT);
     if (fore) flat(fore, lawn, 0.03);
     const ring1 = mBuf(S, -4), ring2 = mBuf(S, -11), ring3 = mBuf(S, -14);
-    if (ring1) flat(ring1, lawn, 0.07);
+    if (ring1) flat(ring1, lawn, 0.07 + LIFT);
     // 단지 순환로(붉은 포장)
-    if (ring2 && ring3) flat(ring2, STD(dusk ? 0x6d4a3e : 0xa8735f), 0.09, [ring3]);
-    if (ring3) flat(ring3, lawn, 0.1);
+    if (ring2 && ring3) flat(ring2, STD(dusk ? 0x6d4a3e : 0xa8735f), 0.09 + LIFT, [ring3]);
+    if (ring3) flat(ring3, lawn, 0.1 + LIFT);
     // 공원
     (D.parks || []).forEach(pk => flat(pk, lawn, 0.11));
     // 구역 경계선(검토 모드만)
@@ -359,7 +369,7 @@
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Sc = new THREE.Vector3(), P = new THREE.Vector3(), col = new THREE.Color();
     const ghost = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
     const caster = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.6, 1), ghost, Math.max(1, trees.length));
-    trees.forEach((t, i) => { const s2 = t[2] * 1.15; M.compose(P.set(t[0], 5 * s2, -t[1]), Q, Sc.set(s2 * 1.1, s2, s2 * 1.1)); caster.setMatrixAt(i, M); });
+    trees.forEach((t, i) => { const s2 = t[2] * 1.15; M.compose(P.set(t[0], 5 * s2 + liftAt(t[0], t[1]), -t[1]), Q, Sc.set(s2 * 1.1, s2, s2 * 1.1)); caster.setMatrixAt(i, M); });
     caster.count = trees.length; caster.castShadow = true; scene.add(caster);
     // 짙은 무리·옅은 무리: 느린 물결 무늬로 나무를 묶어 대비를 줌
     const toneAt = (x, y) => Math.sin(x / 23 + 1.3) + Math.cos(y / 29) + Math.sin((x + y) / 17 + 0.5) * 0.7;
@@ -387,7 +397,7 @@
         list.forEach((t, i) => {
           const sz = t[2] * 1.15;
           const [w, h] = ty === 'bush' ? [3.2 * t[2], 1.6 * t[2]] : ty === 'cone' ? [5.5 * sz, 9.5 * sz] : ty === 'tall' ? [7 * sz, 9.5 * sz] : [7.5 * sz, 8.2 * sz];
-          M.compose(P.set(t[0], 0, -t[1]), q, Sc.set(w, h, 1)); im.setMatrixAt(i, M);
+          M.compose(P.set(t[0], liftAt(t[0], t[1]), -t[1]), q, Sc.set(w, h, 1)); im.setMatrixAt(i, M);
           // 색조: 무리별 짙음/옅음 + 나무마다 조금씩
           const v = toneAt(t[0], t[1]);
           let k = v > 0.9 ? 1.28 : v < -0.6 ? 0.62 : 0.95; k *= 0.9 + rnd() * 0.22; if (dusk) k *= 0.82;
@@ -406,18 +416,18 @@
     trees.forEach(t => { if (rnd() < 0.08 && inPoly(t[0], t[1], siteF)) lampPts.push([t[0] + 1.5, t[1] + 1.5, 1.2]); });
     const poleG = new THREE.CylinderGeometry(0.08, 0.1, 1, 5);
     const poles = new THREE.InstancedMesh(poleG, STD(0x2b2d30), lampPts.length);
-    lampPts.forEach((l, i) => { M.compose(P.set(l[0], l[2] / 2, -l[1]), Q, Sc.set(1, l[2], 1)); poles.setMatrixAt(i, M); }); scene.add(poles);
+    lampPts.forEach((l, i) => { M.compose(P.set(l[0], l[2] / 2 + liftAt(l[0], l[1]), -l[1]), Q, Sc.set(1, l[2], 1)); poles.setMatrixAt(i, M); }); scene.add(poles);
     if (dusk) {
       const [gc, gx] = cv(64, 64); const gg = gx.createRadialGradient(32, 32, 0, 32, 32, 32); gg.addColorStop(0, 'rgba(255,240,200,1)'); gg.addColorStop(0.25, 'rgba(255,200,120,.55)'); gg.addColorStop(1, 'rgba(255,180,90,0)'); gx.fillStyle = gg; gx.fillRect(0, 0, 64, 64);
       const gt = new THREE.CanvasTexture(gc);
-      const pos = new Float32Array(lampPts.length * 3); lampPts.forEach((l, i) => { pos[i * 3] = l[0]; pos[i * 3 + 1] = l[2] + 0.2; pos[i * 3 + 2] = -l[1]; });
+      const pos = new Float32Array(lampPts.length * 3); lampPts.forEach((l, i) => { pos[i * 3] = l[0]; pos[i * 3 + 1] = l[2] + 0.2 + liftAt(l[0], l[1]); pos[i * 3 + 2] = -l[1]; });
       const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       scene.add(new THREE.Points(pg, new THREE.PointsMaterial({ map: gt, size: 5.5, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, fog: false })));
       // 바닥에 번지는 불빛(가로등 아래 둥근 빛)
       const [pc, px] = cv(64, 64); const pg2 = px.createRadialGradient(32, 32, 0, 32, 32, 32); pg2.addColorStop(0, 'rgba(255,190,110,.55)'); pg2.addColorStop(1, 'rgba(255,190,110,0)'); px.fillStyle = pg2; px.fillRect(0, 0, 64, 64);
       const pool = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(pc), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }), lampPts.length);
       const qd = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-      lampPts.forEach((l, i) => { const r = l[2] > 3 ? 9 : 4; M.compose(P.set(l[0], 0.2, -l[1]), qd, Sc.set(r, r, 1)); pool.setMatrixAt(i, M); }); scene.add(pool);
+      lampPts.forEach((l, i) => { const r = l[2] > 3 ? 9 : 4; M.compose(P.set(l[0], 0.2 + liftAt(l[0], l[1]), -l[1]), qd, Sc.set(r, r, 1)); pool.setMatrixAt(i, M); }); scene.add(pool);
     }
 
     /* ----- 사람·차 ----- */
@@ -425,10 +435,10 @@
     if (ring3) for (let i = 0; i < ring3.length; i++) { const a = ring3[i], b = ring3[(i + 1) % ring3.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); for (let t = 0; t < L; t += 4) if (rnd() < 0.35) people.push([a[0] + (b[0] - a[0]) * t / L + (rnd() - .5) * 2, a[1] + (b[1] - a[1]) * t / L + (rnd() - .5) * 2]); }
     const body = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.26, 0.22, 1.2, 6), STD(0xffffff), Math.max(1, people.length));
     const cloth = [0x2f4b7c, 0xc0392b, 0xe8c547, 0x2e8b57, 0x34495e, 0xe67e22, 0xf2f2f2, 0x8e44ad];
-    people.forEach((p, i) => { M.compose(P.set(p[0], 0.75, -p[1]), Q, Sc.set(1, 1, 1)); body.setMatrixAt(i, M); body.setColorAt(i, col.setHex(cloth[Math.floor(rnd() * cloth.length)])); });
+    people.forEach((p, i) => { M.compose(P.set(p[0], 0.75 + liftAt(p[0], p[1]), -p[1]), Q, Sc.set(1, 1, 1)); body.setMatrixAt(i, M); body.setColorAt(i, col.setHex(cloth[Math.floor(rnd() * cloth.length)])); });
     body.count = people.length; body.castShadow = true; scene.add(body);
     const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.2, 6, 5), STD(0xd9b08c), Math.max(1, people.length));
-    people.forEach((p, i) => { M.compose(P.set(p[0], 1.55, -p[1]), Q, Sc.set(1, 1, 1)); heads.setMatrixAt(i, M); }); heads.count = people.length; scene.add(heads);
+    people.forEach((p, i) => { M.compose(P.set(p[0], 1.55 + liftAt(p[0], p[1]), -p[1]), Q, Sc.set(1, 1, 1)); heads.setMatrixAt(i, M); }); heads.count = people.length; scene.add(heads);
     const cars = [], carLights = [];
     (D.roads || []).forEach(r => {
       if (r.length < 3) return; let best = 0, ang = 0;
