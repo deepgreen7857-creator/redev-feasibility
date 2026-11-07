@@ -367,9 +367,9 @@
     const hasVar = types.some(t => MODS_ALL[t].length > MODS_REP[t].length);
     let MODS = MODS_REP;
     // 혼합형: 직전에 판상을 놓았으면 탑상부터, 탑상을 놓았으면 판상부터 시도 → 판상·탑상이 번갈아 섬(2026-11-08 학익장미 시험에서 판상만 보이던 것)
-    let wantTower = false;
-    const ordM = ms => form !== 'mix' ? ms : ms.filter(m => (m.form === 'tower') === wantTower).concat(ms.filter(m => (m.form === 'tower') !== wantTower));
-    const picked = m => { if (form === 'mix') wantTower = m.form !== 'tower'; };
+    let wantTower = false, altOn = true;
+    const ordM = ms => form !== 'mix' || !altOn ? ms : ms.filter(m => (m.form === 'tower') === wantTower).concat(ms.filter(m => (m.form === 'tower') !== wantTower));
+    const picked = m => { if (form === 'mix' && altOn) wantTower = m.form !== 'tower'; };
     const Dmax = Math.max(...types.flatMap(t => MODS_REP[t].map(m => m.D)));
 
     // 한 줄 채우기: 형태 그룹 fm(같은 형태의 모듈들)으로 [y0, y0+D] 띠를 채움. cols는 복사본에 반영
@@ -609,12 +609,15 @@
       const add = (k, b) => { b.__k = k; cands.push(b); };
       if (!opt.quick) add('row', finish(place(() => F)));
       add('pack', finish(pack(F)));
+      // 혼합형: 판상·탑상 번갈아 놓기(alt)와 예전 순서(판상 먼저) 둘 다 만들어 보고, 세대가 크게 줄지 않으면 탑상이 섞인 쪽을 고름
+      if (form === 'mix') { altOn = false; try { if (!opt.quick) add('row0', finish(place(() => F))); add('pack0', finish(pack(F))); } finally { altOn = true; } }
       if (multi && !opt.quick) { add('single', finish(pack(F, 'single'))); add('legacy', finish(pack(F, 'legacy'))); }
       if (hasVar) { add('packV', packV()); if (multi && !opt.quick) { add('singleV', packV('single')); add('legacyV', packV('legacy')); } }
       // 연면적이 가장 큰 후보의 97% 이상인 것 중 평형 비율이 가장 잘 맞는 것(같으면 연면적 큰 것)
       //  목표 연면적을 넘는 부분은 나중에 동을 빼서 맞추므로 비교에서는 목표까지만 셈
       const gv = c => Math.min(gfaOf(c), target > 0 ? target : Infinity), top = Math.max(...cands.map(gv));
-      const best = cands.filter(c => gv(c) >= top * 0.97).sort((a, b) => mixErr(a) - mixErr(b) || gfaOf(b) - gfaOf(a))[0];
+      const towerShare = c => c.length ? c.filter(b => b.form === 'tower').length / c.length : 0, mixed = c => form === 'mix' && towerShare(c) >= 0.2 && towerShare(c) <= 0.7 ? 0 : 1;
+      const best = cands.filter(c => gv(c) >= top * 0.97).sort((a, b) => mixed(a) - mixed(b) || mixErr(a) - mixErr(b) || gfaOf(b) - gfaOf(a))[0];
       if (typeof process !== 'undefined' && process.env && process.env.LOGW) console.error('F', F, cands.map(c => c.__k + ':' + Math.round(gv(c)) + '/' + mixErr(c).toFixed(2)).join(' '), '->', best.__k);
       return best;
     }
