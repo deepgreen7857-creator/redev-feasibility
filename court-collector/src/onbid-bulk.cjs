@@ -83,21 +83,24 @@ const isRate = (e) => e && String(e.code) === '23';
 let gap = 250; // ms — 성공이 이어지면 조금씩 줄이고, 23이면 두 배로
 async function pool(list, fn) {
   let queue = list.map((it, k) => ({ it, k, tries: 0 }));
+  let done = 0; let rated = 0; let last = Date.now();
   for (let round = 0; queue.length && round < 6; round++) {
     const later = [];
     let ok = 0;
     for (const job of queue) {
       const r = await fn(job.it, job.k);
       if (r === 'rate') {
-        gap = Math.min(5000, gap * 2);
-        job.tries++;
+        gap = Math.min(3000, gap * 2);
+        job.tries++; rated++;
         later.push(job);
-        await sleep(gap * 4);
+        await sleep(gap);
       } else {
+        done++;
         ok++;
         if (ok % 20 === 0 && gap > 120) gap = Math.max(120, Math.round(gap * 0.9));
       }
       if (r === 'stop') return;
+      if (Date.now() - last > 60000) { last = Date.now(); log(`진행 ${done}/${list.length} · 초당한도 거절 ${rated} · 간격 ${gap}ms`); }
       await sleep(gap);
     }
     if (later.length) log(`초당 한도로 미룬 ${later.length}건 다시 받음(간격 ${gap}ms, ${round + 2}번째)`);
