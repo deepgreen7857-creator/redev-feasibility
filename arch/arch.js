@@ -896,7 +896,7 @@
     const st = BIRD.st, el = $('#vbirdCanvas');
     $$('#birdBar [data-bk]').forEach(b => { const on = b.dataset.bk === 'labels' ? st.labels : st[b.dataset.bk] === b.dataset.bv; b.setAttribute('aria-pressed', on); b.classList.toggle('on', on); });
     const t0 = Date.now();
-    const W0 = el.clientWidth || (el.parentElement && el.parentElement.clientWidth) || 1200, H0 = el.clientHeight || 620;
+    const W0 = el.clientWidth >= 320 ? el.clientWidth : 1200, H0 = el.clientHeight >= 200 ? el.clientHeight : 620; // 창이 접혀 폭이 0에 가까우면 기본 크기로
     BIRD.last = JbsBird.render(el, data, { view: st.view, look: st.look, mode: st.mode, labels: st.labels, w: W0, h: H0, pr: 1 });
     BIRD.data = data;
     $('#birdNote').textContent = `${A.label} · ${A.buildings.length}개동 ${fmt(A.units)}세대 · 최고 ${A.maxFloors}층 — 바닥 브이월드 항공사진, 주변 건물 ${fmt(ctx.length)}동. 그리는 데 ${((Date.now() - t0) / 1000).toFixed(1)}초. 이해를 돕기 위한 이미지이며 정비계획 수립 과정에서 변경될 수 있습니다.`;
