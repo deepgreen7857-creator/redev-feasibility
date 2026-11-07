@@ -691,7 +691,7 @@
     btn.disabled = false; btn.textContent = '일조 연계 다듬기';
     if (!res.r) { msg('일조 연계 다듬기를 하지 못했습니다: ' + (res.err || ''), true); return; }
     const r = res.r, B = r.best, S0 = r.start;
-    const alt = altFromBuildings(r.blds, `일조 연계 다듬기 — 순 ${fmt(B.net)}세대`, '일조 연계 다듬기');
+    const alt = altFromBuildings(r.blds, `일조 다듬기 순 ${fmt(B.net)}세대`, '일조 연계 다듬기');
     const k = B.gross ? B.net / B.gross : 1; alt.grossUnits = alt.units; alt.units = B.net; alt.gfa *= k; alt.far *= k; Object.keys(alt.byType).forEach(t => { alt.byType[t] = Math.round(alt.byType[t] * k); });
     alt.refine = { start: S0, best: B, steps: r.steps.length, tries: r.tries, ms: r.ms, from: A.label };
     alts.push(alt); cur = alts.length - 1; sunRes = null; v3 = null; renderAlts(); showView('plan'); drawBuildingsOnMap();
