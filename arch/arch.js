@@ -850,16 +850,6 @@
   /* ---------- 조감도·투시도(shared/bird3d.js, 2026-11-07) ----------
      지금 대안의 동(세대 조각을 합친 바깥선)·층수 + 주변 건물(ctx) + 도로 필지·항공사진(브이월드, 구역마다 한 번 받아 창 안에서만 기억) */
   const BIRD = { st: { view: 'bird', look: 'day', mode: 'model', labels: false }, memo: {} };
-  const K_DEG = 111320;
-  function unionRing(parts) {
-    // 세대 조각들을 하나의 바깥선으로(turf는 경위도 기준이라 미터를 잠깐 도 단위로)
-    try {
-      let u = null;
-      parts.forEach(q => { const f = turf.polygon([[...q, q[0]].map(p => [p[0] / K_DEG, p[1] / K_DEG])]); u = u ? turf.union(u, f) : f; });
-      const g = u.geometry, rings = g.type === 'Polygon' ? [g.coordinates[0]] : g.coordinates.map(c => c[0]);
-      return rings.map(r => G.openRing(r).map(p => [p[0] * K_DEG, p[1] * K_DEG]));
-    } catch (e) { return parts; }
-  }
   async function birdAerial(z, half) {
     const lon0 = pr.lon0, lat0 = pr.lat0, kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
     const lon2x = lon => (lon + 180) / 360 * 2 ** z, lat2y = lat => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * 2 ** z;
@@ -893,9 +883,9 @@
     const A = alts[cur], m = await birdPrep();
     const blds = [], labels = [];
     A.buildings.forEach(b => {
-      const parts = (b.parts && b.parts.length ? b.parts : [b.poly]).filter(q => q && q.length > 2);
-      const rings = unionRing(parts);
-      rings.forEach((r, i) => blds.push({ ring: r, floors: b.floors, top: i === 0 }));
+      const parts = (b.parts && b.parts.length ? b.parts : [b.poly]).filter(q => q && q.length > 2).map(q => G.ccw(q));
+      const big = parts.reduce((bi, q, i) => Math.abs(G.area(q)) > Math.abs(G.area(parts[bi])) ? i : bi, 0);
+      parts.forEach((r, i) => blds.push({ ring: r, floors: b.floors, top: i === big, grp: parts }));
       const c = b.center || parts[0].reduce((a, p) => [a[0] + p[0] / parts[0].length, a[1] + p[1] / parts[0].length], [0, 0]);
       labels.push({ label: `${b.id || ''}동 ${b.floors}F`, c, top: b.floors });
     });

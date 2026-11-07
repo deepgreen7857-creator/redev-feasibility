@@ -248,7 +248,7 @@
     const ccw = r => { let a = 0; for (let i = 0; i < r.length; i++) { const p = r[i], q = r[(i + 1) % r.length]; a += p[0] * q[1] - q[0] * p[1]; } return a > 0 ? r : r.slice().reverse(); };
     const lit = dusk ? 0.42 : 0;
     const sets = accents.map(a => ({ front: facade('front', a, lit), side: facade('side', a, lit), base: facade('base', a, dusk ? 1 : 0), crown: facade('crown', a, lit * 0.6) }));
-    const foot = [];
+    const foot = [], baseShrub = []; // 동 바깥 벽 앞 관목(안쪽 벽은 빼고)
     const roofG = STD(dusk ? 0x5f7a48 : 0x8fb36a), roofP = STD(0xd9d5cc), parap = STD(0xeeebe4, { roughness: 0.6 });
     const glow = []; // 빛 점(가로등·옥탑)
     // 동 번호로 묶기(가장 가까운 라벨) → 같은 동은 같은 색
@@ -257,6 +257,10 @@
       const di = dongOf(b), set = sets[di % sets.length], F = b.floors || 15;
       const zB = Z0 + 2 * FH, zC = Z0 + (F - 2) * FH, zT = Z0 + F * FH;
       const Rg = ccw(b.ring); foot.push(Rg);
+      // 같은 동의 다른 세대 조각과 맞닿은 안쪽 벽은 안 그림(조각들을 합치지 않고 세움 — 합치기 계산은 맞닿은 사각형이 많으면 매우 느림)
+      const others = (b.grp || []).filter(r => r !== b.ring);
+      const inR2 = (x, y, r) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], q = r[j]; if ((a[1] > y) !== (q[1] > y) && x < (q[0] - a[0]) * (y - a[1]) / (q[1] - a[1]) + a[0]) c = !c; } return c; };
+      const innerWall = (p, q, L) => { if (!others.length) return false; const nx = (q[1] - p[1]) / L, ny = -(q[0] - p[0]) / L, mx = (p[0] + q[0]) / 2 + nx * 0.35, my = (p[1] + q[1]) / 2 + ny * 0.35; return others.some(o => inR2(mx, my, o)); };
       const band = (p, q, L, z0, z1, pair, nF, side) => {
         const nB = Math.max(1, Math.round(L / 3.3));
         const mat = new THREE.MeshStandardMaterial({ map: tex(pair[0], nB / 4, nF / 4), emissive: 0xffffff, emissiveMap: tex(pair[1], nB / 4, nF / 4), emissiveIntensity: dusk ? 1.0 : 0, envMap: ENV, roughness: side ? 0.85 : 0.5, metalness: side ? 0 : 0.15, envMapIntensity: dusk ? (side ? 0.15 : 0.45) : (side ? 0.3 : 0.6), color: dusk ? 0xdcd8d0 : 0xe6e6e6 });
@@ -269,7 +273,7 @@
         m.castShadow = true; m.receiveShadow = true; scene.add(m);
       };
       for (let i = 0; i < Rg.length; i++) {
-        const p = Rg[i], q = Rg[(i + 1) % Rg.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]); if (L < 0.4) continue;
+        const p = Rg[i], q = Rg[(i + 1) % Rg.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]); if (L < 0.4 || innerWall(p, q, L)) continue;
         const side = L < 7.5;
         band(p, q, L, Z0, zB, set.base, 2, false);
         band(p, q, L, zB, zC, side ? set.side : set.front, F - 4, side);
@@ -320,7 +324,7 @@
     }
     if (fore) { const fb2 = turf.bbox(foreF); for (let x = fb2[0]; x <= fb2[2]; x += 7) for (let y = fb2[1]; y <= fb2[3]; y += 7) { const px = x + (rnd() - .5) * 6, py = y + (rnd() - .5) * 6; if (!inPoly(px, py, foreF)) continue; const de = Math.hypot(px - EYE[0], py - EYE[1]); if (de < 30) continue; const rr = rnd(); if (rr < (de < 110 ? 0.04 : 0.3)) trees.push([px, py, 0.8 + rnd() * 0.9]); else if (rr < 0.6) shrubs.push([px, py, 0.8 + rnd() * 1.2]); } }
     // 동 둘레 관목
-    foot.forEach(Rg => { const ring = mBuf(Rg, 2.5); if (!ring) return; for (let i = 0; i < ring.length; i += 2) if (rnd() < 0.7) shrubs.push([ring[i][0], ring[i][1], 0.5 + rnd() * 0.5]); });
+    baseShrub.forEach(t => shrubs.push(t));
     // 단지 안쪽 둘레 나무
     for (let i = 0; i < S.length; i++) {
       const a = S[i], b = S[(i + 1) % S.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 6) continue;
