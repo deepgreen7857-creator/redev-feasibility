@@ -1067,7 +1067,7 @@ function fixReportB(docs,ug,all,att){att=att||[];
       else msg.push('조치 내용 있음');
       const T=t.text, Tall=all;
       if(/계산서/.test(op)&&t.np&&!/계산|검토|kN|ton|O\.?K/i.test(T)){lv=lv==='ok'?'warn':lv;msg.push('계산서를 요구했는데 첨부 글자에 계산 내용이 없음(그림 쪽이면 직접 확인)')}
-      if(/계산서/.test(op)&&t.np&&/계산|kN|O\.?K/i.test(T)&&!/서명|날인|\(인\)|기술사/.test(T)){lv=lv==='ok'?'warn':lv;msg.push('안전성 계산서에 작성 기술인 서명·날인 흔적이 없음(시행규칙 제43조) — 그림 쪽이면 직접 확인')}
+      if(/계산서/.test(op)&&t.np&&t.nfig<t.np*0.6&&/계산|kN|O\.?K/i.test(T)&&!/서명|날인|\(인\)|기술사/.test(T)){lv=lv==='ok'?'warn':lv;msg.push('안전성 계산서에 작성 기술인 서명·날인 흔적이 없음(시행규칙 제43조) — 그림 쪽이면 직접 확인')}
       if(/시험발파/.test(op)&&(/시공시시험발파를실시|설계단계/.test(T+Tall)||!/시험발파결과|측정결과|계측결과/.test(T))){msg.push('참고: 시험발파 결과가 아니라 설계 단계 보고서(사전 발파환경영향평가·설계보고서)로 답함 — 사례 6호에서는 이걸로 적정 처리됨, 시공 시 시험발파 결과로 발파패턴 확정 여부는 현장 확인')}
       // 의견이 도면에 표기하라고 한 항목이 첨부 도면 글자에 있는지(그림이면 못 봄)
       if(t.np&&T.length>300){const TERMS=[['법면기울기',/법면|구배|기울기|1:\d/],['한계굴착고',/한계굴착/],['소단',/소단/],['되메우기높이',/되메우기|뒤채움/],['작업반경',/작업반경|반경/],['붐길이',/붐/],['진출입로',/진입로|진출입로|진입|출입로/],['이격거리',/이격/],['매설깊이',/매설깊이|심도|토피/]];
@@ -1083,11 +1083,27 @@ function fixReportB(docs,ug,all,att){att=att||[];
         else if(t.np){lv=lv==='ok'?'warn':lv;msg.push('사전조사 계획·보고서에 '+['조사대상','시설물별 개요','조사 항목·방법'].filter((x,i)=>!ok[i]).join('·')+'이(가) 글자로 보이지 않음 — 직접 확인')}}
       if(/확인서/.test(op)&&!/확인서/.test(T)&&!/검토[·ㆍ]?확인서[^※]{0,30}(첨부|붙임)/.test(Tall.replace(op,''))){lv=lv==='ok'?'warn':lv;msg.push('확인서 쪽이 이 파일들에는 없음 — CSI 감리/발주청 확인 탭에 첨부했는지 확인(보완 차수부터 필수)')}
     }
-    if(self){lv='bad';msg.push('검토의견에 없던 시공자 스스로의 변경 — 보완 검토로는 검토하지 않음(“보완 외 자료는 검토의견 없음”, 사례 6호). CSI에서 그 공종 ‘변경’을 골라 변경검토를 따로 의뢰(변경 내용 요약, 개요서 등 변경 전·후 자료, 변경 쪽 위주) — 보완으로 내면 반려될 수 있음')}
+    if(self){lv='bad';msg.push('검토의견에 없던 시공자 스스로의 변경 — 보완 검토로는 검토하지 않음(“보완 외 자료는 검토의견 없음”, 사례 6호). CSI에서 그 공종 ‘변경’을 골라 변경검토를 따로 의뢰(변경 내용 요약, 개요서 등 변경 전·후 자료, 변경 쪽 위주) — 보완으로 내면 반려될 수 있음. 같은 차수에 ‘변경검토’로도 의뢰했으면 변경검토로 처리됨(사례 7호)')}
+    // 장비 변경(변경 완료): 변경검토로 의뢰하면 적정 + 전도안전성·지내력 권고(사례 7호)
+    if(d&&/변경/.test(st)&&it.sec==='w1'&&/항타|항발|크레인|장비|천공기/.test(op)&&!/전도안전|전도에대한|전도검토|지내력/.test((d.t&&d.t.text)||'')){msg.push('장비 변경 — CSI ‘변경검토’로 의뢰했으면 적정 예상, 권고: 변경된 장비·인양하중·지내력을 고려한 전도안전성 검토, 장비 운용 전 지내력 시험으로 가정 지내력 확인(사례 7호)')}
+    // 브레이싱 계산서를 첨부했다고 답했는데 첨부 글자·파일 이름에 브레이싱이 없음(사례 7호 — 기초 계산서만 옴)
+    if(d&&/브레이싱/.test(op)&&/브레이싱[^⇒]{0,20}첨부/.test(op.split('⇒').slice(1).join('⇒')||op)){const T=((d.t&&d.t.text)||'')+((d.t&&d.t.att)||[]).join(' ');
+      if(!/브레이싱|bracing|벽체고정|월타이|wall\s*tie/i.test(T.replace(op,'').replace(/※첨부[^※]{0,60}/g,''))){lv=lv==='ok'?'warn':lv;msg.push('브레이싱 안전성 계산서·연결 상세도를 첨부했다고 답했지만 첨부 글자·파일 이름에 브레이싱이 없음 — 기초 계산서만 왔는지 직접 확인(사례 7호: 의견서는 따로 짚지 않고 기종 확정 전체분 재제출로 묶음)')}}
     if(lv==='bad')nb++;if(lv==='warn')nw++;if(lv==='info')ni++;cnt[lv]=(cnt[lv]||0)+1;
     rows+=`<tr><td>${xe(lab(it.sec))} ${xe(it.n)})</td><td>${xe((it.title||'').replace(STRE,'').slice(0,50))}${st?` <span class="note">[총괄표: ${xe(st)}]</span>`:''}</td><td><span class="lv-${lv==='warn'?'info':lv}">${({ok:'대응',bad:'주의',warn:'확인',info:'미의뢰'})[lv]}</span> ${xe(msg.join(' · '))}</td></tr>`});
   // 교차 점검: 지하안전 협의 내용
   const C=[], A=all+ug.map(u=>u.F).join('');
+  // 타워크레인 공종(사례 7호 조건부 적정): 기종 확정 → 설치개요서·변경 전후 비교표·배치도 전후 / 설치·해체 계획 요소 / 충돌방지는 장치 나열 말고 당 현장 관리 방안
+  {const W8=Object.values(D).filter(d=>d.sec==='w8'&&d.st!=='향후반영');
+   if(W8.length){const T=W8.map(d=>(d.t&&d.t.text)||'').join('')+W8.map(d=>((d.t&&d.t.att)||[]).join(' ')).join(' '), OP=W8.map(d=>d.body).join('')+all;
+    const tc=(l,t)=>{C.push([l,'타워크레인 — '+t]);if(l==='bad')nb++;else if(l==='warn')nw++};
+    if(/기종확정|기종이?상이|기종변경/.test(OP)){const miss=[[/설치개요서|개요서/,'기종 확정에 따른 설치개요서'],[/비교표|변경전|당초/,'변경 전(최초)·후 비교표'],[/배치도/,'배치도(변경 전·후)'],[/제원표/,'기종별 제원표']].filter(([re])=>!re.test(T)).map(x=>x[1]);
+      if(miss.length)tc(miss.length>=2?'bad':'warn',`기종 확정 의견에 답하면서 ${miss.join('·')}이(가) 보이지 않음 — 의견서가 ‘설치개요서 작성(변경 전·후 비교표)·배치도(전·후 비교)’로 조건부(사례 7호)`)}
+    if(/설치|해체/.test(T+OP)){const EL=[[/임시적재|야적|적재/,'장비반입·자재(JIB 등) 임시적재 계획도'],[/신호수|감시자/,'신호수·접근금지 감시자 배치'],[/작업반경|붐/,'이동식크레인 위치·작업반경·붐 길이(평·단면, 스케일)'],[/전도/,'전도방지계획·전도 안전성'],[/지내력|아웃트리거/,'지내력·아웃트리거 검토'],[/중량표|유닛|최대인양하중|인양하중/,'최대 인양하중 산정근거(유닛별 중량표·JIB 중량)'],[/제원표/,'타워크레인·이동식크레인 제원표'],[/줄걸이|인양고리|슬링/,'줄걸이·인양고리 안전성']].filter(([re])=>!re.test(T)).map(x=>x[1]);
+      if(EL.length>=3)tc('bad',`설치·연장·해체 계획(호기별 설치/해체 구분)에 ${EL.join('·')}이(가) 보이지 않음 — 사례 7호 조건부 사유(그림 속 글자면 직접 확인)`);else if(EL.length)tc('warn','설치·해체 계획에 '+EL.join('·')+'이(가) 글자로 보이지 않음 — 직접 확인')}
+    if(/충돌방지/.test(OP)){const dev=/LED|모니터|MESH|무선|충돌방지장치|센서/i.test(T), mng=/선회(제한|금지|범위)|우선순위|운용순서|교신|무전|신호체계|작업구역(분리|구분)|높이차|간섭구간(관리|통제)|중첩구간(관리|통제|작업)/.test(T);
+      if(!mng)tc(dev?'bad':'warn',(dev?'충돌방지가 관련 장치 나열뿐':'충돌방지계획에 당 현장 관리 방안이 글자로 보이지 않음')+' — 당 현장 관리 방안(중첩구간 운용·선회 제한·교신 체계)과 장치 적용 방안, 외부 선회방지계획을 구체적으로(사례 7호, ‘관련 장치 나열 지양’)');
+      if(!/외부선회|외부침범|부지밖|대지밖|경계밖/.test(T))tc('warn','외부(대지 밖) 선회방지계획이 보이지 않음(사례 7호)')}}}
   const sw=t=>{const m=[...t.matchAll(/차수공법[:은는으로]*((?:[A-Z]\.){2,3}[A-Z]?|[A-Z]{2,4}(?=그라우팅|공법|GROUTING))/g)].map(m=>m[1].replace(/\./g,''));return [...new Set(m)]};
   const ugF=ug.map(u=>u.F).join(''), ugW=sw(ugF), planW=sw(docs.filter(d=>d.key0==='w2'||d.tables.some(t=>t.sec==='w2')).map(d=>d.F).join(''));
   const xyp=/협의내용/.test(A);
@@ -1148,6 +1164,7 @@ async function onFiles(files){
     if(noBu){fixFiles.add(f);continue}
     if(!isFixB(head,f.name)&&(/지하안전영향평가|지하안전평가/.test(flat(f.name))||/^.{0,60}지하안전(영향)?평가서/.test(head))){UG.push({name:f.name,F:flat(R.pages.join(' '))});fixFiles.add(f);continue}
     if(isFixB(head,f.name)){FB.push(readFixB(f,R,head));fixFiles.add(f);continue}
+    if(/구조검토서|계산서/.test(flat(f.name))&&keyFromName(f.name)&&R.pages.filter(p=>flat(p).length<60).length>=R.pages.length*0.6){const P=R.pages.map(flat);ATT.push({name:f.name,key:keyFromName(f.name),title:f.name.replace(/\.[a-z]+$/i,'').replace(/^[\d.\s]+/,'').slice(0,40),np:P.length,nfig:P.filter(x=>x.length<60).length,text:P.join('').slice(0,50000),scan:f});fixFiles.add(f);continue}
     if(/^.{0,24}※첨부\.?/.test(head)&&keyFromName(f.name)){const P=R.pages.map(flat);ATT.push({name:f.name,key:keyFromName(f.name),title:((head.match(/※첨부\.?([가-힣A-Za-z.·]{2,30})/)||[])[1]||'').replace(/^(.{3,}?)\1.*$/,'$1'),np:P.length,nfig:P.filter(x=>x.length<60).length,text:P.join('').slice(0,200000)});fixFiles.add(f);continue}
     if(isChg){let k=(head.match(/총괄안전관리계획[–\-]?([가나다라])\./)||head.match(/([가나다라])\.(?:건설공사의개요|현장특성분석|현장운영계획|비상시긴급조치계획)/)||[])[1];k=k?'t'+({가:'a',나:'b',다:'c',라:'d'})[k]:(fixKey(head)||'x');
       const F=flat(R.pages.join(' '));if(!CHG.some(d=>d.F===F))CHG.push({key:k,label:LBL[k]||k,F});fixFiles.add(f);continue}
@@ -1160,6 +1177,7 @@ async function onFiles(files){
   }catch(e){}}
   Object.keys(FX).forEach(k=>{if(!FX[k].isFix)delete FX[k]});
   let fixHtml='';
+  if(!FB.length)ATT.filter(a=>a.scan).forEach(a=>fixFiles.delete(a.scan)); // 보완서 없이 온 스캔 계산서는 원래대로 판독
   if(FB.length){const r=fixReportB(FB,UG,FB.map(d=>d.F).join(''),ATT);fixHtml+=r.html;files=files.filter(f=>!fixFiles.has(f));
     if(!files.length&&!CHG.length&&!Object.keys(FX).length){$('#upStat').textContent=`재검토(보완) 제출 판독 — 주의 ${r.nb}건 · 확인 ${r.nw}건 · 향후 보완 ${r.ni}건`;$('#upDiag').innerHTML=fixHtml;return}}
   if(CHG.length){const r=chgReport(CHG,new Set(CHG.map(d=>d.key)));fixHtml+=r.html;files=files.filter(f=>!fixFiles.has(f));
