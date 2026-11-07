@@ -354,7 +354,8 @@
     const exclude = site.exclude || [];
     // 기반시설(건축 불가 영역): 안쪽 금지 + 경계에서 exSetback(m) 띄움
     const exS = opt.exSetback || 0, exE = exclude.map(ex => ex.map((a, i) => [a, ex[(i + 1) % ex.length]]));
-    const test = (x, y) => { const p = rot([x, y], th); if (!testRaw(p[0], p[1]) || insideAny(p[0], p[1], exclude)) return false; return !exS || exE.every(es => es.every(([a, b]) => segDist(p, a, b) >= exS)); };
+    const keep = site.keep || [];   // 출입구·경사로 땅(건축 불가, 경계 띄움 없음 — shared/gate-zones.js)
+    const test = (x, y) => { const p = rot([x, y], th); if (!testRaw(p[0], p[1]) || insideAny(p[0], p[1], exclude) || insideAny(p[0], p[1], keep)) return false; return !exS || exE.every(es => es.every(([a, b]) => segDist(p, a, b) >= exS)); };
     const xs = R.map(p => p[0]), ys = R.map(p => p[1]);
     const xmin = Math.min(...xs), xmax = Math.max(...xs), ymin = Math.min(...ys), ymax = Math.max(...ys);
     const H = f => f * A.floorHeight_m + A.groundExtra_m;

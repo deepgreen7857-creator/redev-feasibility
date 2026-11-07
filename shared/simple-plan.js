@@ -22,9 +22,9 @@
   // 같은 대지·같은 방향 격자는 한 번만(동 타입·평형 배열마다 다시 만들지 않음)
   const GRIDC = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
   function gridAt(site, opt, th) {
-    let byTh = GRIDC && GRIDC.get(site); const key = th + '|' + JSON.stringify(site.setbacks || []) + '|' + (site.exclude || []).length;
+    let byTh = GRIDC && GRIDC.get(site); const key = th + '|' + JSON.stringify(site.setbacks || []) + '|' + JSON.stringify((site.exclude || []).concat(site.keep || []).map(e => e.map(p => [Math.round(p[0]), Math.round(p[1])])));   // 개수만 보면 출입구를 옮겨도 예전 격자를 씀
     if (byTh && byTh.has(key)) return byTh.get(key);
-    const test = G.buildableTest(site.pts, site.setbacks || []), ex = site.exclude || [], r = th * D2R;
+    const test = G.buildableTest(site.pts, site.setbacks || []), ex = (site.exclude || []).concat(site.keep || []), r = th * D2R;
     const L = site.pts.map(p => G.rot(p, -r)), xs = L.map(p => p[0]), ys = L.map(p => p[1]);
     const X0 = Math.floor(Math.min(...xs)), Y0 = Math.floor(Math.min(...ys)), W = Math.ceil(Math.max(...xs)) - X0 + 1, H = Math.ceil(Math.max(...ys)) - Y0 + 1;
     const okAt = (x, y) => { const p = G.rot([x, y], r); return test(p[0], p[1]) && !ex.some(e => G.inside(p[0], p[1], e)); };

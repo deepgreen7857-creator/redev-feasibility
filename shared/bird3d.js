@@ -246,6 +246,26 @@
     if (ring3) flat(ring3, lawn, 0.3 + LIFT);
     // 공원
     (D.parks || []).forEach(pk => flat(pk, lawn, 0.11));
+    // 단지 출입구(2026-11-08): 주출입구 = 진입광장 포장 + 문주(기둥 둘·지붕, 유효 높이 5.5m — 소방차 5m 이상), 주차장 출입구 = 지하 경사로(어두운 포장·옹벽), 부출입구 = 보행 포장
+    (D.gates || []).forEach(z => {
+      const P = (a, t) => [z.c[0] + z.u[0] * a + z.n[0] * t, z.c[1] + z.u[1] * a + z.n[1] * t], h = z.w / 2, rotY = Math.atan2(z.u[1], z.u[0]);
+      const box = (a, t, w, d, y0, hh, mat) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), mat); const p0 = P(a, t); m.position.set(p0[0], y0 + hh / 2, -p0[1]); m.rotation.y = rotY; m.castShadow = true; m.receiveShadow = true; scene.add(m); return m; };
+      const rect = (a0, a1, t0, t1) => [P(a0, t0), P(a1, t0), P(a1, t1), P(a0, t1)];
+      if (z.kind === 'main') {
+        flat(rect(-h, h, 0, z.D), STD(dusk ? 0x7a6f62 : 0xd9cdb8), 0.36 + LIFT);
+        flat(rect(-3, 3, 0, z.D), STD(dusk ? 0x5a524a : 0xb9ab95), 0.38 + LIFT);
+        const stone = STD(dusk ? 0x8e8576 : 0xcfc6b5, { roughness: 0.7 }), roof = STD(dusk ? 0x3b3836 : 0x55504b, { roughness: 0.6 });
+        [-1, 1].forEach(sg => box(sg * (h - 1), z.sb + 0.6, 1.2, 1.2, LIFT, 6.3, stone));
+        box(0, z.sb + 0.6, z.w, 3, LIFT + 5.5, 0.8, roof);
+      } else if (z.kind === 'park') {
+        flat(rect(-h, h, z.sb, z.D), STD(dusk ? 0x2a2b2e : 0x5d6063), 0.37 + LIFT);
+        const wall = STD(dusk ? 0x777068 : 0xbdb6aa);
+        [-1, 1].forEach(sg => box(sg * (h - 0.15), (z.sb + z.D) / 2, 0.3, z.D - z.sb, LIFT, 1.1, wall));
+        box(0, z.D - 0.4, z.w, 0.8, LIFT, 1.1, wall);
+      } else {
+        flat(rect(-h, h, 0, z.D), STD(dusk ? 0x7a6f62 : 0xd9cdb8), 0.36 + LIFT);
+      }
+    });
     // 구역 경계선(검토 모드만)
     if (opt.mode === 'review') scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(S.map(p => V(p, 0.4))), new THREE.LineBasicMaterial({ color: 0xc8322b })));
 

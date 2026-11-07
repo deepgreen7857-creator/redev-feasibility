@@ -119,7 +119,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       <div class="bar">
         <select id="siteSel" aria-label="구역 불러오기"><option value="">구역 불러오기…</option></select>
         <button id="mEdge" aria-pressed="true">경계 성격 바꾸기</button>
-        <button id="mEntry" aria-pressed="false">차량 출입구 찍기</button>
+        <button id="mEntry" aria-pressed="false">출입구 찍기</button>
         <button id="autoTag">경계 자동 지정</button>
         <button id="loadInfra">정비계획 기반시설 불러오기</button>
       </div>
@@ -152,9 +152,14 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       <div class="grid" style="margin-top:8px">
         <label>인동간격(높이 대비 배수)<input id="p_spacing" inputmode="decimal"><span class="note">법정 0.8(인천 조례 제32조⑤). 0.4~0.5로 낮추면 정비계획 도면 수준 밀도 — 같은 조문 단서(모든 세대 동지 9~15시 연속 2시간 일조)로 허용되는 적법 경로, 일조분석으로 입증. 위험요소 카드는 0.8 본문 거리와 단서를 함께 보여 줌 <button type="button" id="calibBtn">실제 정비계획 수준(사례 보정: 앞뒤 0.45 · 옆 4m)</button></span></label>
         <label>동 측면 간격 m<input id="p_sideGap" inputmode="decimal"></label>
-        <label>도로 경계 이격 m<input id="p_roadSb" inputmode="decimal"></label>
-        <label>간선도로 이격(소음) m<input id="p_artSb" inputmode="decimal"></label>
+        <label>도로변 건축한계선 m<input id="p_roadSb" inputmode="decimal"><span class="note">정비계획·지구단위계획 결정도의 건축한계선(도로경계선에서 후퇴) — 결정도가 있으면 그 값</span></label>
+        <label>간선도로변 건축한계선(소음 이격) m<input id="p_artSb" inputmode="decimal"></label>
         <label>대지경계 이격 m<input id="p_bndSb" inputmode="decimal"></label>
+        <label>주출입구 폭 m(문주·진입광장)<input id="p_gMainW" inputmode="decimal"></label>
+        <label>주출입구 깊이 m(건축한계선 안쪽)<input id="p_gMainD" inputmode="decimal"></label>
+        <label>주차장 경사로 폭 m<input id="p_gRampW" inputmode="decimal"><span class="note">2차로 6m 이상(주차장법 시행규칙 제6조제1항제5호, 제11조① 준용) + 벽체</span></label>
+        <label>지하 1층 바닥까지 높이 m(경사로 길이 = ÷17% + 완화 6m)<input id="p_gRampH" inputmode="decimal"></label>
+        <label>부출입구 폭 m<input id="p_gSubW" inputmode="decimal"></label>
         <label>저층 주거 인접부 층수 상한<input id="p_lowCap" inputmode="numeric"></label>
         <label>층수 상한 적용 거리 m<input id="p_lowDist" inputmode="decimal"></label>
         <label>통경축 방향(경관)<select id="p_axisB"><option value="0">남북 방향</option><option value="90">동서 방향</option><option value="45">북동–남서 방향</option><option value="135">북서–남동 방향</option></select></label>
@@ -257,8 +262,8 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../js/config.js?v=1"></script>
 <script src="../js/zonekit.js?v=79"></script>
 <script src="../shared/site-store.js?v=156"></script>
-<script src="../shared/arch-geom.js?v=34"></script>
-<script src="../shared/arch-check.js?v=12"></script>
+<script src="../shared/arch-geom.js?v=35"></script>
+<script src="../shared/arch-check.js?v=13"></script>
 <script src="../shared/sun-verify.js?v=2"></script>
 <script src="../shared/review-opinion.js?v=1"></script>
 <script src="../shared/panel-img.js?v=1"></script>
@@ -269,11 +274,12 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-<script src="../shared/bird3d.js?v=8"></script>
+<script src="../shared/bird3d.js?v=9"></script>
 <script src="../traffic/traffic-calc.js?v=5"></script>
 <script src="../shared/feas.js?v=148x1"></script>
 <script src="../shared/plan-import.js?v=2"></script>
-<script src="arch-draw.js?v=11"></script>
+<script src="../shared/gate-zones.js?v=1"></script>
+<script src="arch-draw.js?v=12"></script>
 <script src="arch.js?v=71"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>

@@ -16,7 +16,7 @@
 
   /* ---------- 대지 준비: 1m 격자로 건축 가능 칸 ---------- */
   function prep(site, opt) {
-    const test = G.buildableTest(site.pts, site.setbacks || []), ex = site.exclude || [];
+    const test = G.buildableTest(site.pts, site.setbacks || []), ex = (site.exclude || []).concat(site.keep || []);
     const xs = site.pts.map(p => p[0]), ys = site.pts.map(p => p[1]);
     const X0 = Math.floor(Math.min(...xs)), Y0 = Math.floor(Math.min(...ys)), W = Math.ceil(Math.max(...xs)) - X0 + 1, Hh = Math.ceil(Math.max(...ys)) - Y0 + 1;
     const free = new Uint8Array(W * Hh); let n = 0, cx = 0, cy = 0;

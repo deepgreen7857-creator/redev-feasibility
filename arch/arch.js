@@ -8,6 +8,7 @@
   const fmt = (v, d = 0) => num(v) === null ? '○○' : (+v).toLocaleString('ko-KR', { maximumFractionDigits: d });
   const TAGS = ['boundary', 'road', 'arterial', 'north', 'park', 'lowrise'];
   const TYPE_HEX = { 39: 0xf6e7e1, 49: 0xf3ead2, 59: 0xf3e6c8, 74: 0xe2ead0, 84: 0xd9eadc, 101: 0xd6e3e8, 114: 0xdde5f1 };
+  const GZ = window.GateZones;   // 출입구 자리(shared/gate-zones.js)
   let C = null, TC = null, site = null, pr = null, pts = null, tags = [], entries = [], exclude = [], exKinds = [], exFrom = '', lowEdges = [];
   let alts = [], cur = 0, map, lyrSite, lyrEdges, lyrEx, lyrBld, mode = 'edge', v3 = null, sunRes = null, ctx = [];
 
@@ -15,7 +16,7 @@
   const crit = id => C.items.find(i => i.id === id);
 
   /* ---------- 조건 입력 ---------- */
-  const FIELDS = { siteArea: 'p_siteArea', infra: 'p_infra', far: 'p_far', maxFloors: 'p_maxFloors', angleMode: 'p_angleMode', form: 'p_form', angle: 'p_angle', spacing: 'p_spacing', sideGap: 'p_sideGap', roadSb: 'p_roadSb', artSb: 'p_artSb', bndSb: 'p_bndSb', lowCap: 'p_lowCap', lowDist: 'p_lowDist', parkPer: 'p_parkPer', parkW: 'p_parkW', sunBase: 'p_sunBase', corner: 'p_corner', axisN: 'p_axisN', axisW: 'p_axisW', axisB: 'p_axisB', minFloors: 'p_minFloors', fh: 'p_fh', sf: 'p_sf' };
+  const FIELDS = { siteArea: 'p_siteArea', infra: 'p_infra', far: 'p_far', maxFloors: 'p_maxFloors', angleMode: 'p_angleMode', form: 'p_form', angle: 'p_angle', spacing: 'p_spacing', sideGap: 'p_sideGap', roadSb: 'p_roadSb', artSb: 'p_artSb', bndSb: 'p_bndSb', lowCap: 'p_lowCap', lowDist: 'p_lowDist', parkPer: 'p_parkPer', parkW: 'p_parkW', sunBase: 'p_sunBase', corner: 'p_corner', axisN: 'p_axisN', axisW: 'p_axisW', axisB: 'p_axisB', minFloors: 'p_minFloors', fh: 'p_fh', sf: 'p_sf', gMainW: 'p_gMainW', gMainD: 'p_gMainD', gRampW: 'p_gRampW', gRampH: 'p_gRampH', gSubW: 'p_gSubW' };
   function defaults() {
     const A = C.가정; let U = {}; try { U = JSON.parse(localStorage.getItem('jbs-urban-plan') || '{}'); } catch (e) { U = {}; }
     const v = site.v || {};
@@ -24,6 +25,7 @@
       angleMode: 'auto', angle: 0, form: 'rec',
       spacing: crit('spacing_ratio').값, sideGap: A.sideGap_m, roadSb: A.roadSetback_m, artSb: A.arterialSetback_m, bndSb: A.boundarySetback_m,
       lowCap: 15, lowDist: 30, parkPer: A.parkPerUnitPlan ?? 1.2, parkW: A.parkWidth_m ?? 20, sunBase: 'north', corner: (A.corner && A.corner.mode) || 'min10', axisN: 0, axisW: 20, axisB: 0, minFloors: A.minFloors, ...defaultMix(), fh: A.floorHeight_m, sf: U.supplyFactor ?? A.supplyFactor,
+      gMainW: GZ.DEF.mainW, gMainD: GZ.DEF.mainD, gRampW: GZ.DEF.rampW, gRampH: GZ.DEF.rampH, gSubW: GZ.DEF.subW,
     };
   }
   const TYPES = () => Object.keys(C.평면).filter(k => /^\d+$/.test(k));
@@ -107,10 +109,19 @@
     return run;
   }
   // 출입구는 도로 변에만, 최대 3곳 — 예전에 찍힌 것도 정리
+  //  종류(2026-11-08): main 주출입구(문주·진입광장) / park 주차장 출입구(지하 경사로) / sub 부출입구(보행) — 종류마다 차지하는 땅이 달라 배치에서 비움(shared/gate-zones.js)
   function cleanEntries() {
-    entries = entries.filter(en => ['road', 'arterial'].includes(tags[en.edge])).slice(0, 3);
-    entries.forEach((en, k) => { en.label = k === 0 ? '주출입' : `부출입${entries.length > 2 ? k : ''}`; });
+    entries = entries.filter(en => ['road', 'arterial'].includes(tags[en.edge])).slice(0, 4);
+    entries.forEach((en, k) => { if (!GZ.NAME[en.kind]) en.kind = k === 0 ? 'main' : 'sub'; });   // 예전 저장값(종류 없음): 첫째 주출입구, 나머지 부출입구
+    let hasMain = false; entries.forEach(en => { if (en.kind === 'main') { if (hasMain) en.kind = 'sub'; hasMain = true; } });   // 주출입구는 하나만
+    const tot = {}, cnt = {}; entries.forEach(en => { tot[en.kind] = (tot[en.kind] || 0) + 1; });
+    entries.forEach(en => { cnt[en.kind] = (cnt[en.kind] || 0) + 1; en.label = GZ.NAME[en.kind] + (tot[en.kind] > 1 ? cnt[en.kind] : ''); });
   }
+  const gateParams = () => { const p = P(); return { mainW: p.gMainW, mainD: p.gMainD, rampW: p.gRampW, rampH: p.gRampH, subW: p.gSubW }; };
+  const edgeSetbacks = () => { const p = P(); return tags.map(t => t === 'road' ? +p.roadSb : t === 'arterial' ? +p.artSb : +p.bndSb); };
+  // 출입구가 차지하는 땅(건축 불가) — 건축한계선(경계 이격) 안쪽까지 이어짐
+  const gateZones = sb => (pts && tags && tags.length === pts.length ? GZ.build(G.edges(pts), entries, sb || edgeSetbacks(), gateParams()) : []);
+  const GCOL = { main: '#c92a2a', park: '#1971c2', sub: '#e67700' };
   function drawSite() {
     lyrSite.clearLayers(); lyrEdges.clearLayers();
     if (!pts) return;
@@ -132,20 +143,29 @@
         const p = pr.to([ev.latlng.lng, ev.latlng.lat]), dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1];
         const t2 = Math.max(0.05, Math.min(0.95, ((p[0] - e.a[0]) * dx + (p[1] - e.a[1]) * dy) / (dx * dx + dy * dy)));
         const near = entries.findIndex(en => en.edge === i && Math.abs(en.t - t2) * e.len < 15);
-        if (near >= 0) { entries.splice(near, 1); }
+        // 이미 찍힌 자리를 다시 누르면 종류가 바뀜: 주출입구 → 주차장 출입구 → 부출입구 → 지움
+        if (near >= 0) { const en = entries[near], nx = { main: 'park', park: 'sub' }[en.kind]; if (nx) en.kind = nx; else entries.splice(near, 1); }
         else {
-          if (!['road', 'arterial'].includes(tags[i])) { msg(`이 변은 '${t.name}'입니다. 차량 출입구는 도로 쪽 변(파랑·보라)에만 찍을 수 있습니다. 도로인데 색이 다르면 [경계 성격 바꾸기]로 먼저 바꾸세요.`, true); return; }
-          if (entries.length >= 3) { msg('차량 출입구는 3곳까지 찍을 수 있습니다. 기존 표시를 눌러 지운 뒤 찍으세요.', true); return; }
-          entries.push({ edge: i, t: t2 });
+          if (!['road', 'arterial'].includes(tags[i])) { msg(`이 변은 '${t.name}'입니다. 출입구는 도로 쪽 변(파랑·보라)에만 찍을 수 있습니다. 도로인데 색이 다르면 [경계 성격 바꾸기]로 먼저 바꾸세요.`, true); return; }
+          if (entries.length >= 4) { msg('출입구는 4곳까지 찍을 수 있습니다. 기존 표시를 눌러(종류가 바뀌다 마지막에 지워짐) 지운 뒤 찍으세요.', true); return; }
+          const has = k => entries.some(en => en.kind === k);
+          entries.push({ edge: i, t: t2, kind: !has('main') ? 'main' : !has('park') ? 'park' : 'sub' });
         }
-        entries.forEach((en, k) => { en.label = k === 0 ? '주출입' : `부출입${entries.length > 2 ? k : ''}`; });
-        msg(entries.length ? `차량 출입구 ${entries.length}곳: ${entries.map(en => en.label).join(', ')}` : '차량 출입구를 모두 지웠습니다.');
-        drawSite(); saveState(); if (alts.length) renderPlan();
+        cleanEntries();
+        msg(entries.length ? `출입구 ${entries.length}곳: ${entries.map(en => en.label).join(', ')} — 찍힌 자리를 다시 누르면 주출입구 → 주차장 출입구 → 부출입구 → 지움 순으로 바뀝니다. 각 출입구 자리(문주·진입광장, 지하 경사로)에는 동을 놓지 않습니다.` : '출입구를 모두 지웠습니다.');
+        drawSite(); saveState(); invalidate();
       });
     });
     // 구역계: 적색 쇄선을 맨 위에
     L.polygon(pts.map(LL), { color: '#c8322b', weight: 2.5, dashArray: '12 4 2 4', fill: false, interactive: false }).addTo(lyrEdges);
-    entries.forEach(en => { const e = E[en.edge]; if (!e) return; const m = [e.a[0] + (e.b[0] - e.a[0]) * en.t, e.a[1] + (e.b[1] - e.a[1]) * en.t]; L.circleMarker(LL(m), { radius: 7, color: '#1d2a33', fillColor: '#fff', fillOpacity: 1, weight: 2 }).bindTooltip(en.label || '출입', { permanent: true, direction: 'top', offset: [0, -6] }).addTo(lyrEdges); });
+    // 출입구 자리(건축 불가): 주출입구 = 문주·진입광장, 주차장 출입구 = 지하 경사로, 부출입구 = 보행 출입
+    gateZones().forEach(z => {
+      const c = GCOL[z.kind];
+      L.polygon(z.poly.map(LL), { color: c, weight: 1.5, dashArray: '5 3', fillColor: c, fillOpacity: .16, interactive: false }).addTo(lyrEdges);
+      if (z.kind === 'main') [-1, 1].forEach(sg => L.circleMarker(LL(z.q(sg * (z.w / 2 - 1), z.sb)), { radius: 3, color: c, fillColor: c, fillOpacity: 1, weight: 1, interactive: false }).addTo(lyrEdges));
+      const en = z, m = z.q(0, 0);
+      L.circleMarker(LL(m), { radius: 7, color: c, fillColor: '#fff', fillOpacity: 1, weight: 3 }).bindTooltip(`${en.label}${z.kind === 'park' ? ` · 경사로 ${z.rampL.toFixed(0)}m` : z.kind === 'main' ? ' · 문주' : ''}`, { permanent: true, direction: 'top', offset: [0, -6] }).addTo(lyrEdges);
+    });
     $('#tagLegend').innerHTML = TAGS.map(k => `<span class="tag"><i style="background:${D.TAG[k].color}"></i>${D.TAG[k].name}</span>`).join('') + '<span class="tag"><i style="background:repeating-linear-gradient(90deg,#c8322b 0 7px,transparent 7px 9px,#c8322b 9px 10px,transparent 10px 12px)"></i>구역계</span>';
     renderLegend();
   }
@@ -180,8 +200,10 @@
       // 진입 가능 도로마다 그 도로에 붙은 가장 긴 변 가운데(최대 2곳). 검토 결과가 없으면 가장 긴 도로 변 하나
       const pickEdge = name => E.map((e, i) => ({ e, i })).filter(x => (name ? edgeRoad[x.i] === name : ['road', 'arterial'].includes(tags[x.i]))).sort((a, b) => b.e.len - a.e.len)[0];
       const ne = [];
-      (entryOK.length ? [...new Set(entryOK)] : [null]).forEach(nm => { if (ne.length >= 2) return; const x = pickEdge(nm); if (x && !ne.some(q => q.edge === x.i)) ne.push({ edge: x.i, t: 0.5 }); });
-      if (ne.length) { entries = ne; done.push(`차량 출입구 ${ne.length}곳(${entryOK.length ? '교통성 검토의 진입 가능 도로' : '가장 긴 도로 변'})`); }
+      (entryOK.length ? [...new Set(entryOK)] : [null]).forEach(nm => { if (ne.length >= 2) return; const x = pickEdge(nm); if (x && !ne.some(q => q.edge === x.i)) ne.push({ edge: x.i, t: 0.5, kind: ne.length ? 'park' : 'main' }); });
+      // 진입 도로가 하나뿐이면 같은 변에 주출입구와 주차장 출입구를 떨어뜨려 둠(변이 60m 이상일 때 — 보행·차량 동선 분리)
+      if (ne.length === 1 && E[ne[0].edge].len >= 60) { ne[0].t = 0.35; ne.push({ edge: ne[0].edge, t: 0.75, kind: 'park' }); }
+      if (ne.length) { entries = ne; done.push(`출입구 ${ne.length}곳(${ne.map(q => GZ.NAME[q.kind]).join('·')}, ${entryOK.length ? '교통성 검토의 진입 가능 도로' : '가장 긴 도로 변'})`); }
     }
     const lsDone = applyLandscape(E, edgeRoad); if (lsDone.length) done.push(...lsDone);
     site.arch = Object.assign(site.arch || {}, { reviewKey: reviewKey() });
@@ -252,8 +274,8 @@
     const sn = crit('sunlight_north').이격;
     return [
       ['boundary', `이격 ${n(p.bndSb)}m`],
-      ['road', `이격 ${n(p.roadSb)}m · 차량 출입구를 찍을 수 있음`],
-      ['arterial', `소음 이격 ${n(p.artSb)}m · 출입구 가능`],
+      ['road', `건축한계선 ${n(p.roadSb)}m · 출입구를 찍을 수 있음`],
+      ['arterial', `건축한계선(소음 이격) ${n(p.artSb)}m · 출입구 가능`],
       ['north', `일조 높이 제한: 높이 10m 이하 ${sn.높이10m이하_m}m, 초과 부분은 높이의 1/2 이상 이격`],
       ['park', `이격 ${n(p.bndSb)}m · 공원 폭 ${n(p.parkW)}m의 중심선(절반)을 인접 대지경계선으로(공동주택)`],
       ['lowrise', `경계에서 ${n(p.lowDist)}m 안은 ${n(p.lowCap)}층 이하`],
@@ -264,7 +286,7 @@
     const used = new Set(tags || []);
     leg.querySelector('ul').innerHTML = legendItems().map(([k, d]) => `<li class="${used.has(k) ? '' : 'off'}" title="${d}"><i style="background:${D.TAG[k].color}"></i><div>${D.TAG[k].name}<small>${d}</small></div></li>`).join('') +
       `<li><i style="background:repeating-linear-gradient(90deg,#c8322b 0 7px,transparent 7px 9px,#c8322b 9px 10px,transparent 10px 12px)"></i><div>구역계</div></li>` +
-      `<li><span class="ent"></span><div>차량 출입구</div></li>`;
+      Object.entries(GZ.NAME).map(([k, nm]) => { const z = GZ.size(k, gateParams()); return `<li class="${entries.some(en => en.kind === k) ? '' : 'off'}"><i style="background:${GCOL[k]}"></i><div>${nm}<small>${k === 'main' ? `문주·진입광장 폭 ${z.w}m · 건축한계선 안쪽 ${z.d}m 동 배치 안 함` : k === 'park' ? `지하 경사로 폭 ${z.w}m · 길이 약 ${z.d.toFixed(0)}m(직선 17%) 동 배치 안 함` : `보행 출입 폭 ${z.w}m`}</small></div></li>`; }).join('');
   }
   function initLegend() {
     const box = document.getElementById('map');
@@ -341,12 +363,12 @@
     entries = a.entries || []; exclude = (a.exclude || []).map(ex => ex.map(pr.to)); exKinds = (a.exKinds || []).slice(); exFrom = a.exFrom || ''; lowEdges = (a.lowEdges || []).filter(i => i < pts.length);
     // /urban 4탭에서 찍은 단지 출입구(z.infra.gates)가 있고 여기서 아직 출입구를 안 정했으면 그대로 가져옴 — 주차장 출입구 우선, 없으면 주·부출입구
     if (!entries.length && Array.isArray(site.urbanGates) && site.urbanGates.length) {
-      const gs = site.urbanGates.filter(g => g.kind === 'park').concat(site.urbanGates.filter(g => g.kind === 'main'), site.urbanGates.filter(g => g.kind === 'sub'));
+      const gs = site.urbanGates.filter(g => g.kind === 'main').concat(site.urbanGates.filter(g => g.kind === 'park'), site.urbanGates.filter(g => g.kind === 'sub'));
       const E = G.edges(pts);
-      gs.forEach(g => { if (!g.pt || entries.length >= 3) return; const q = pr.to([g.pt[1], g.pt[0]]);
+      gs.forEach(g => { if (!g.pt || entries.length >= 4) return; const q = pr.to([g.pt[1], g.pt[0]]);
         let best = null; E.forEach((e, i) => { const d = G.segDist(q, e.a, e.b); if (!best || d < best.d) { const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1], L2 = dx * dx + dy * dy || 1; best = { d, edge: i, t: Math.max(0.02, Math.min(0.98, ((q[0] - e.a[0]) * dx + (q[1] - e.a[1]) * dy) / L2)) }; } });
-        if (best && best.d < 30 && !entries.some(en => en.edge === best.edge && Math.abs(en.t - best.t) < 0.1)) entries.push({ edge: best.edge, t: best.t, from: 'urban' }); });
-      if (entries.length) setTimeout(() => msg(`/urban 정비계획에서 찍은 단지 출입구 ${entries.length}곳을 차량 출입구로 가져왔습니다(도로에 닿은 변만 남김). 옮기려면 [차량 출입구 찍기].`), 600);
+        if (best && best.d < 30 && !entries.some(en => en.edge === best.edge && Math.abs(en.t - best.t) < 0.1)) entries.push({ edge: best.edge, t: best.t, kind: g.kind, from: 'urban' }); });
+      if (entries.length) setTimeout(() => msg(`/urban 정비계획에서 찍은 단지 출입구 ${entries.length}곳(${entries.map(en => GZ.NAME[en.kind] || '출입구').join('·')})을 가져왔습니다(도로에 닿은 변만 남김). 출입구 자리에는 동을 놓지 않습니다. 옮기려면 [출입구 찍기].`), 600);
     }
     drawExclude();
     { const sp = filled(a.params); const hasMix = TYPES().some(t => sp['m' + t] !== undefined); const d0 = defaults(); if (hasMix) TYPES().forEach(t => { d0['m' + t] = ''; }); setP(Object.assign(d0, sp)); mixSum(); }
@@ -430,7 +452,7 @@
     const zz = String(((site && site.profile) || {}).zoning || '') + ' ' + String(((site && site.v) || {}).zoning || '');
     const noSun = /준주거|상업|공업/.test(zz) && !/전용주거|일반주거|제[123]종/.test(zz);
     return {
-      site: { pts, tags: noSun ? tags.map(t => (t === 'north' ? 'boundary' : t)) : tags, setbacks: sb, exclude: exclude.concat(axisStrips(p)), noSun },
+      site: { pts, tags: noSun ? tags.map(t => (t === 'north' ? 'boundary' : t)) : tags, setbacks: sb, exclude: exclude.concat(axisStrips(p)), keep: gateZones(sb).map(z => GZ.keepPoly(z)), noSun },
       opt: { units: C.평면, lib: C.평면_라이브러리, winRatio: winRatio(), edgeW: edgeWidths(), assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'rec' ? recForm().form : p.form === 'compare' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, lowEdges: lowEdges.slice(), parkWidth: +p.parkW || 0, southBase: p.sunBase === 'south', exSetback: +p.bndSb || 0 },
       lot, exA, p,
     };
@@ -518,7 +540,7 @@
   let SW = null; const SWCB = {};
   function simpleWorker() {
     if (SW) return SW;
-    SW = new Worker('simple-worker.js?v=18');
+    SW = new Worker('simple-worker.js?v=19');
     SW.onmessage = e => { const f = SWCB[e.data.id]; delete SWCB[e.data.id]; if (f) f(e.data); };
     SW.onerror = ev => { Object.values(SWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(SWCB).forEach(k => delete SWCB[k]); SW = null; };
     return SW;
@@ -587,7 +609,7 @@
   let PW = null; const PWCB = {};
   async function runDeep(I) {
     msg('심화 배치 계산 중… 골격·구획·방향·높이·동 형태를 바꿔 가며 반복 탐색합니다(기본형 후보 포함, 탐색 90초 + 기본형 계산 — 보통 2~3분). 이 창을 닫지 마세요.');
-    if (!PW) { PW = new Worker('plan-worker.js?v=19'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
+    if (!PW) { PW = new Worker('plan-worker.js?v=20'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
     const id = Date.now() + Math.random();
     const res = await new Promise(ok => { PWCB[id] = ok; PW.postMessage({ id, site: I.site, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }) }); });
     if (!res.r || !res.r.variants.length) throw new Error(res.err || '심화 배치 안을 만들지 못했습니다');
@@ -695,7 +717,7 @@
   async function runRefine() {
     const A = alts[cur], btn = $('#refineBtn'); if (!A || !btn) return;
     const { I, opt } = riskOpt(), id = Date.now();
-    if (!RW) { RW = new Worker('refine-worker.js?v=3'); RW.onmessage = e => { const d = e.data; if (d.prog) { const f = RWPROG[d.id]; if (f) f(d.prog); return; } const f = RWCB[d.id]; delete RWCB[d.id]; delete RWPROG[d.id]; if (f) f(d); }; RW.onerror = ev => { Object.values(RWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); RWCB = {}; RWPROG = {}; RW = null; }; }
+    if (!RW) { RW = new Worker('refine-worker.js?v=4'); RW.onmessage = e => { const d = e.data; if (d.prog) { const f = RWPROG[d.id]; if (f) f(d.prog); return; } const f = RWCB[d.id]; delete RWCB[d.id]; delete RWPROG[d.id]; if (f) f(d); }; RW.onerror = ev => { Object.values(RWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); RWCB = {}; RWPROG = {}; RW = null; }; }
     btn.disabled = true; btn.textContent = '다듬는 중…';
     const blds = JSON.parse(JSON.stringify(A.buildings.map(b => { const o = {}; ['id', 'poly', 'parts', 'cores', 'units', 'divs', 'walls', 'center', 'angle', 'floors', 'form', 'n', 't', 'mixT', 'inner', 'vname', 'dname', 'notes', 'wingUnits', 'partWing', 'unitWing', 'wingFloors', 'partFl', 'unitFl'].forEach(k => { if (b[k] !== undefined && typeof b[k] !== 'function') o[k] = b[k]; }); return o; })));
     const res = await new Promise(ok => { RWCB[id] = ok; RWPROG[id] = s => { btn.textContent = `다듬는 중… 순 ${fmt(s.net)}세대 · ${s.n}개동 · ${Math.round(s.ms / 1000)}초`; }; RW.postMessage({ id, site: I.site, blds, opt: Object.assign({}, opt, { lat: pr ? pr.lat0 : 37.46 }), budget: 90000 }); });
@@ -742,7 +764,7 @@
     const on = $('#dimShow'); if (!on || !on.checked || !window.JbsCheck || !alts[cur]) return null;
     try { const I = buildInput(); return JbsCheck.dims(I.site, alts[cur].buildings, Object.assign({}, I.opt, { crit: C.items, dimAll: !!($('#dimAll') || {}).checked })); } catch (e) { console.warn('치수선', e); return null; }
   }
-  const planOpts = extra => Object.assign({ site: pts, tags, setbacks: buildInput().site.setbacks, exclude, exKinds, entries, alt: alts[cur], title: site.name || '', coreW: C.가정.coreW_m, dims: planDims() }, extra || {});
+  const planOpts = extra => Object.assign({ site: pts, tags, setbacks: buildInput().site.setbacks, exclude, exKinds, entries, gates: gateZones(), roadSb: +P().roadSb, artSb: +P().artSb, alt: alts[cur], title: site.name || '', coreW: C.가정.coreW_m, dims: planDims() }, extra || {});
   document.addEventListener('change', e => { if (e.target && (e.target.id === 'dimShow' || e.target.id === 'dimAll') && alts.length) renderPlan(); });
   function renderPlan() { $('#planSvg').innerHTML = D.sitePlan(planOpts()); renderRisk(); }
   function riskOpt() { const I = buildInput(), legalSp = +((crit('spacing_ratio') || {}).값) || I.opt.spacing; return { I, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46, spacing: Math.max(legalSp, I.opt.spacing) }) }; }
@@ -943,7 +965,7 @@
       labels.push({ label: `${b.id || ''}동 ${b.floors}F`, c, top: b.floors });
     });
     const parks = exclude.filter((ex, i) => /공원|녹지/.test(exKinds[i] || ''));
-    const data = { site: pts, blds, labels, parks, ctx: ctx.map(c => ({ poly: c.poly, floors: c.floors })), roads: m.roads || [], aerial: m.near, aerialFar: m.far };
+    const data = { site: pts, blds, labels, parks, gates: gateZones(), ctx: ctx.map(c => ({ poly: c.poly, floors: c.floors })), roads: m.roads || [], aerial: m.near, aerialFar: m.far };
     const st = BIRD.st, el = $('#vbirdCanvas');
     $$('#birdBar [data-bk]').forEach(b => { const on = b.dataset.bk === 'labels' ? st.labels : st[b.dataset.bk] === b.dataset.bv; b.setAttribute('aria-pressed', on); b.classList.toggle('on', on); });
     const t0 = Date.now();
@@ -1020,7 +1042,8 @@
       ${I.site && I.site.noSun ? `<tr><th>정북 일조</th><td>적용 안 함 — 건축법 제61조①은 전용·일반주거지역만(이 구역 용도지역: 준주거·상업·공업)</td></tr>` : ''}<tr${I.site && I.site.noSun ? ' style="display:none"' : ''}><th>${I.p.sunBase === 'south' ? '정남 기준 일조' : '정북 일조'}</th><td>높이 10m 이하 ${sn.이격.높이10m이하_m}m, 초과 부분 높이의 1/2 이상(${I.p.sunBase === 'south' ? '남쪽을 향한 경계 변 — 구청장 등 고시가 있어야 적용' : '정북 인접대지 변'})<br><span class="note">${esc(sn.근거)}${I.p.sunBase === 'south' && crit('south_base') ? ' · ' + esc(crit('south_base').근거) : ''}</span></td></tr>
       <tr><th>도로·공원 사이</th><td>경계에 닿은 도로(실제 폭)·공원(폭 ${I.p.parkW}m)의 중심선을 인접 대지경계선으로 봄(공동주택) — 채광창·일조 모두<br><span class="note">${esc(crit('sun_open_space').근거)} — ${esc(crit('sun_open_space').상태)}</span></td></tr>
       ${(() => { const r = crit('window_relief'); return r ? `<tr><th>정비사업 완화</th><td>${Object.entries(r.값).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join('<br>')}<br><span class="note">${esc(r.근거)} — ${esc(r.상태)}</span></td></tr>` : ''; })()}
-      <tr><th>경계 이격</th><td>도로 ${I.p.roadSb}m · 간선도로 ${I.p.artSb}m · 대지경계 ${I.p.bndSb}m · 동 측면 ${I.p.sideGap}m <span class="note">(검토 가정값)</span></td></tr>
+      <tr><th>건축한계선·경계 이격</th><td>도로변 건축한계선 ${I.p.roadSb}m · 간선도로변 ${I.p.artSb}m · 대지경계 이격 ${I.p.bndSb}m · 동 측면 ${I.p.sideGap}m <span class="note">(검토 가정값 — 정비계획·지구단위계획 결정도의 건축한계선이 있으면 그 값으로)</span></td></tr>
+      ${(() => { const zs = gateZones(); return zs.length ? `<tr><th>출입구 자리(건축 불가)</th><td>${zs.map(z => `${esc(z.name)} 폭 ${fmt(z.w, 1)}m × 건축한계선 안쪽 ${fmt(z.d, 1)}m${z.kind === 'park' ? `(지하 1층 바닥까지 ${gateParams().rampH}m ÷ 17% + 완화구간)` : z.kind === 'main' ? '(문주·진입광장)' : ''}`).join('<br>')}<br><span class="note">${esc(GZ.BASIS.park)}. 문주 유효 높이 5m 이상(소방차 통행, 건축법 시행령 제41조·소방청 가이드라인 참고)</span></td></tr>` : ''; })()}
       <tr><th>동 모서리 근접</th><td>${({ off: '안 봄', min10: '모든 동 사이 최소 10m', rec: '최소 10m + 채광창 벽 직각선 좌우 45° 안에서 보이면 높은 동 높이 × 0.5', all: '모서리끼리 모두 높은 동 높이 × 0.5(최소 10m)' })[I.p.corner || 'min10']} <span class="note">(실무 기준·가정값 — 법정 아님. 시행령 제86조③2호는 직각 방향으로 마주 보는 부분만 적용, 서울 건축조례 최소 이격 10m·0.5배 차용)</span></td></tr>
       <tr><th>층수 배분</th><td>북쪽 줄을 높게, 남쪽 줄을 낮게(남저북고). 저층 주거 인접 변 ${I.p.lowDist}m 안은 ${I.p.lowCap}층 이하</td></tr></table>`;
   }
@@ -1144,7 +1167,7 @@
     else if (t.id === 'applyReview') { if (pts) autoTag({ entries: true }); }
     else if (t.id === 'loadInfra') { if (pts) importInfra(false); }
     else if (t.id === 'loadCtx') { if (pts) { t.classList.add('busy'); await loadContext(true); sunRes = null; v3 = null; if (alts.length) renderSun(); t.classList.remove('busy'); } }
-    else if (t.id === 'mEdge' || t.id === 'mEntry') { mode = t.id === 'mEdge' ? 'edge' : 'entry'; $('#mEdge').setAttribute('aria-pressed', mode === 'edge'); $('#mEntry').setAttribute('aria-pressed', mode === 'entry'); $('#modeHint').textContent = mode === 'edge' ? '지금: 경계 성격 바꾸기 — 경계선을 누를 때마다 성격이 바뀝니다(곡선처럼 이어진 짧은 변은 한꺼번에).' : '지금: 차량 출입구 찍기 — 도로 쪽 경계선(파랑·보라)을 누르면 출입구가 찍힙니다. 다 찍었으면 [경계 성격 바꾸기]를 눌러 빠져나오세요.'; if (pts) drawSite(); msg(mode === 'entry' ? '도로 쪽 경계선(파랑·보라)을 누르면 차량 출입구가 찍힙니다(최대 3곳, 표시 근처를 다시 누르면 지움).' : ''); }
+    else if (t.id === 'mEdge' || t.id === 'mEntry') { mode = t.id === 'mEdge' ? 'edge' : 'entry'; $('#mEdge').setAttribute('aria-pressed', mode === 'edge'); $('#mEntry').setAttribute('aria-pressed', mode === 'entry'); $('#modeHint').textContent = mode === 'edge' ? '지금: 경계 성격 바꾸기 — 경계선을 누를 때마다 성격이 바뀝니다(곡선처럼 이어진 짧은 변은 한꺼번에).' : '지금: 출입구 찍기 — 도로 쪽 경계선(파랑·보라)을 누르면 주출입구 → 주차장 출입구 → 부출입구 순으로 찍히고, 찍힌 자리를 다시 누르면 종류가 바뀝니다(마지막엔 지움). 다 찍었으면 [경계 성격 바꾸기]를 눌러 빠져나오세요.'; if (pts) drawSite(); msg(mode === 'entry' ? '도로 쪽 경계선(파랑·보라)을 누르면 출입구가 찍힙니다(최대 4곳). 출입구 자리(문주·진입광장, 지하 경사로)에는 동을 놓지 않습니다.' : ''); }
     else if (t.dataset.alt !== undefined) { cur = +t.dataset.alt; renderAlts(); drawBuildingsOnMap(); showView(curView); }
     else if (t.dataset.v) showView(t.dataset.v);
     else if (t.id === 'calcSun') { t.classList.add('busy'); msg('동지 일조 계산 중…'); await tick(); await tick(); computeSun(); renderSun(); t.classList.remove('busy'); msg(''); }
@@ -1159,7 +1182,7 @@
   $('#sunT').addEventListener('input', () => { if (alts.length) renderSun(); });
   $('#sun3').addEventListener('input', e => { const v = +e.target.value, h = Math.floor(v); $('#sun3v').textContent = `${String(h).padStart(2, '0')}:${String(Math.round((v - h) * 60)).padStart(2, '0')}`; if (v3) v3.setSun(v, pr.lat0); });
   $('#p_angleMode').addEventListener('change', () => { $('#p_angle').disabled = $('#p_angleMode').value === 'auto'; });
-  Object.values(FIELDS).forEach(id => $('#' + id).addEventListener('change', () => { saveState(); invalidate(); renderLegend(); if (/^p_axis|^p_bndSb/.test(id) && lyrEx && pts) drawExclude(); }));
+  Object.values(FIELDS).forEach(id => $('#' + id).addEventListener('change', () => { saveState(); invalidate(); renderLegend(); if (/^p_axis|^p_bndSb/.test(id) && lyrEx && pts) drawExclude(); if (/^p_g|Sb$/.test(id) && pts) drawSite(); }));
   $('#siteSel').addEventListener('change', e => {
     const x = e.target.value; if (!x) return;
     if (x.startsWith('s:')) load(JbsSite.get(x.slice(2)));
