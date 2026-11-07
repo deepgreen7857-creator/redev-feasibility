@@ -1232,11 +1232,13 @@ function boot() {
       if (!list.length) { msg.textContent = '검색 결과가 없습니다. 지번이나 도로명 주소로 다시 검색해 보세요.'; return; }
       // 찾은 위치를 보여 주고, 사용자가 [대표 지번으로 설정]을 눌러야 설정함
       const parcelOf = r => [r.sub, r.label].map(x => String(x || '')).find(x => /\d+(-\d+)?\s*$/.test(x) && /[동리가]\s+(산\s*)?\d/.test(x)) || '';
-      const rows = list.slice(0, 5);
+      // 같은 지번(또는 같은 이름)으로 나온 결과는 한 줄로 — 아파트 도로명 검색은 같은 557-1이 여러 줄로 옴
+      const seen = new Set(), rows = list.filter(r => { const k = parcelOf(r) || r.label; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 5);
+      // 버튼은 주소 바로 왼쪽에(오른쪽 끝에 두면 주소와 멀고 오른쪽 아래 [작업 저장] 안내에 가려짐)
       msg.innerHTML = `<b>찾은 위치 ${rows.length}곳</b> — 사업지 대표 지번을 골라 [대표 지번으로 설정]을 누르세요.
-        <ul class="rep-list" style="list-style:none;padding:0;margin:6px 0 0">${rows.map((r, i) => `<li style="display:flex;gap:8px;align-items:center;padding:4px 0;border-top:1px solid #eee">
-          <span style="flex:1"><b>${esc(r.label)}</b>${parcelOf(r) && parcelOf(r) !== r.label ? `<br><small>지번: ${esc(parcelOf(r))}</small>` : ''}</span>
-          <button type="button" class="btn small${i ? '' : ' primary'}" data-rep="${i}">대표 지번으로 설정</button></li>`).join('')}</ul>`;
+        <ul class="rep-list" style="list-style:none;padding:0;margin:6px 0 0;max-width:820px">${rows.map((r, i) => `<li style="display:flex;gap:12px;align-items:center;padding:6px 0;border-top:1px solid #eee">
+          <button type="button" class="btn small${i ? '' : ' primary'}" data-rep="${i}" style="flex:none">대표 지번으로 설정</button>
+          <span><b>${esc(r.label)}</b>${parcelOf(r) && parcelOf(r) !== r.label ? `<br><small>지번: ${esc(parcelOf(r))}</small>` : ''}</span></li>`).join('')}</ul>`;
       if (MapView.map) MapView.goTo(rows[0]);
       $$('[data-rep]', msg).forEach(btn => { btn.onclick = () => setRep(rows[+btn.dataset.rep]); });
     } catch (err) {
