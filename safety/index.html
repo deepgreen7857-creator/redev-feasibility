@@ -899,10 +899,12 @@ async function onFiles(files){
   for(const f of files){
     try{const R=await readAny(f); const c=classify(f.name,R.pages); const F=flat(R.pages.join(' '));
       const blank=R.paged?R.pages.map((p,i)=>flat(p).length<30?i+1:0).filter(Boolean):[];
+      // 글꼴 문제로 글자가 깨진 쪽(한글·영문이 거의 없고 이상한 글자만) — 판독 못 함
+      const garb=R.paged?R.pages.map((p,i)=>{const t=flat(p);if(t.length<30)return 0;const ok=(t.match(/[가-힣A-Za-z0-9]/g)||[]).length;return ok/t.length<0.35?i+1:0}).filter(Boolean):[];
       const hits=PLAN_RULES.filter(r=>r.on(c)&&r.t(F)).map(r=>[r.lv,r.m]);
       if(c.kind==='opinion') opin=parseOpinion(F);
       if(c.kind==='total'&&c.key==='가') ovPages=R.pages;
-      rows.push({f:f.name,c,n:R.pages.length,blank,hits,F});
+      rows.push({f:f.name,c,n:R.pages.length,blank,garb,hits,F});
       $('#upStat').textContent=`${rows.length} / ${files.length} 읽음…`;
     }catch(e){rows.push({f:f.name,c:{kind:'err',label:'읽기 실패'},n:0,blank:[],hits:[['bad',e.message||String(e)]]})}
   }
@@ -915,7 +917,7 @@ async function onFiles(files){
     const hits=PLAN_RULES.filter(x=>x.on(c)&&x.t(F+B)).map(x=>[x.lv,x.m]);
     BU_RULES.filter(x=>x.on(c)&&x.t(B,F)).forEach(x=>hits.push(['bad',x.m]));
     refCheck(F,B).forEach(t=>hits.push(['bad',t]));
-    merged.push({f:[...bon,...bu].map(r=>r.f).join(' + '),c:{...c,bu:false,pair:true},n:bon.reduce((a,r)=>a+r.n,0),nb:bu.reduce((a,r)=>a+r.n,0),blank:[...bon,...bu].flatMap(r=>r.blank),hits});});
+    merged.push({f:[...bon,...bu].map(r=>r.f).join(' + '),c:{...c,bu:false,pair:true},n:bon.reduce((a,r)=>a+r.n,0),nb:bu.reduce((a,r)=>a+r.n,0),blank:[...bon,...bu].flatMap(r=>r.blank),garb:[...bon,...bu].flatMap(r=>r.garb||[]),hits});});
   rows.length=0; merged.forEach(r=>rows.push(r));
   rows.forEach(r=>{if(r.c.kind==='work'&&!r.c.pair&&!r.c.bu) r.hits.push(['info','부록이 같이 없어서 계산서·상세도는 본편 글자로만 봤습니다 — 부록을 같이 올리면 계산서 유무와 “부록 참조” 대조까지 합니다'])});
   rows.forEach(r=>{if(r.c.kind==='total'&&!r.c.pair&&!r.c.bu&&/부록#?\d/.test(r.F||'')) r.hits.push(['info','본편이 부록을 참조합니다 — 부록을 같이 올리면 참조한 자료가 실제로 있는지 대조합니다'])});
@@ -930,7 +932,7 @@ async function onFiles(files){
   $('#upStat').textContent=`${files.length}개 파일 판독 — 주의 ${nb}건 · 확인 ${nw}건`;
   let h=`<h2 style="margin-top:14px">제출 파일 묶음 판독 <span class="auto">항목별 파일</span></h2>`;
   if(miss.length&&rows.some(r=>r.c.kind==='total'||r.c.kind==='work')) h+=`<div class="warn">이번에 올린 파일에 없는 항목: ${miss.join(', ')} — 제출 대상이면 같이 올려 점검하세요.</div>`;
-  h+='<table class="map"><thead><tr><th style="width:30%">파일 · 항목</th><th style="width:70px">쪽</th><th>점검 결과</th></tr></thead><tbody>'+rows.filter(r=>r.c.kind!=='opinion').map(r=>`<tr><td><b>${xe(r.c.label)}</b>${r.c.bu?' <span class="auto">부록</span>':''}${r.c.pair?' <span class="auto">본편+부록</span>':''}<br><span class="note" style="margin:0">${xe(r.f)}</span></td><td>${r.n}${r.nb?`<br><span class="note" style="margin:0">부록 ${r.nb}</span>`:''}${r.blank.length?`<br><span class="note" style="margin:0">그림 쪽 ${r.blank.length}</span>`:''}</td><td>${r.hits.length?'<ul class="diag" style="margin:0">'+r.hits.map(([l,t])=>`<li><span class="lv-${l==='warn'?'info':l}">${LV[l]}</span> ${xe(t)}</li>`).join('')+'</ul>':'<span class="lv-ok">적합</span> 규칙에 걸리는 항목 없음'}${r.blank.length?`<div class="note">글자가 없는(그림) 쪽 ${r.blank.slice(0,8).join(', ')}${r.blank.length>8?' 외':''} — 자동 점검이 못 본 부분이니 직접 확인</div>`:''}</td></tr>`).join('')+'</tbody></table>';
+  h+='<table class="map"><thead><tr><th style="width:30%">파일 · 항목</th><th style="width:70px">쪽</th><th>점검 결과</th></tr></thead><tbody>'+rows.filter(r=>r.c.kind!=='opinion').map(r=>`<tr><td><b>${xe(r.c.label)}</b>${r.c.bu?' <span class="auto">부록</span>':''}${r.c.pair?' <span class="auto">본편+부록</span>':''}<br><span class="note" style="margin:0">${xe(r.f)}</span></td><td>${r.n}${r.nb?`<br><span class="note" style="margin:0">부록 ${r.nb}</span>`:''}${r.blank.length?`<br><span class="note" style="margin:0">그림 쪽 ${r.blank.length}</span>`:''}</td><td>${r.hits.length?'<ul class="diag" style="margin:0">'+r.hits.map(([l,t])=>`<li><span class="lv-${l==='warn'?'info':l}">${LV[l]}</span> ${xe(t)}</li>`).join('')+'</ul>':'<span class="lv-ok">적합</span> 규칙에 걸리는 항목 없음'}${(r.garb||[]).length?`<div class="note">글자가 깨져 읽을 수 없는 쪽 ${r.garb.length}개(글꼴을 넣지 않고 PDF로 만든 계산서 등) — 자동 점검이 못 본 부분이니 직접 확인</div>`:''}${r.blank.length?`<div class="note">글자가 없는(그림) 쪽 ${r.blank.slice(0,8).join(', ')}${r.blank.length>8?' 외':''} — 자동 점검이 못 본 부분이니 직접 확인</div>`:''}</td></tr>`).join('')+'</tbody></table>';
   h+='<p class="note">점검 규칙은 실제 검토의견서(사례 1호, 조건부 적정)의 지적 사항에서 만들었습니다. 글자 검색이라 “있다/없다”의 신호일 뿐 판정이 아닙니다 — 사례가 쌓일수록 규칙을 늘립니다.</p>';
   if(opin){h+=`<h2>검토 의견서 판정 <span class="auto">${xe(opin.res||'')}</span></h2><table class="map"><thead><tr><th>항목</th><th>판정</th><th>주요 내용</th></tr></thead><tbody>${opin.out.map(r=>`<tr><td>${xe(r[0])}</td><td>${xe(r[1])}</td><td>${xe(r[2])}</td></tr>`).join('')}</tbody></table>
     <p class="note"><button class="btn" id="opToCase">지적 사항을 사례 탭 오류유형에 넣기</button></p>`;}
