@@ -416,9 +416,9 @@
 - 결과: 이화파크빌 402 11.04 취하 / 시도리 11.06 유찰 → 914.3만.
 ## ★ 공매(온비드) 수집 방식 변경 (2026.11.07 정민님 결정)
 - 공매는 서버 20분 자동 수집(collectTick)에서 뺐다(onbid·results·resultList). 20분마다 240초씩 쪼개 받아 원문이 하루 약 1,800건밖에 안 쌓이던 문제.
-- 대신 일괄 수집기 court-collector/src/onbid-bulk.cjs(미니PC, `공매받기.cmd`, 작업 스케줄러 'jbslab onbid bulk'(onbid-run.cmd) 매일 07:10·19:10)가 목록 전체 → 원문(진행 중 물건만) → 끝난 물건 결과 → 최근 4일 입찰결과목록을 한 번에 받는다. 원자료는 미니PC 외장하드 E:\공매원본\날짜\(목록·원문·결과 jsonl, 2026.11.07 정민님: 노트북 용량이 작아 저장은 미니PC E:에서만 — E: 없는 PC는 원자료 파일 안 남김), 기록은 court-collector\logs\onbid-날짜.log.
+- 대신 일괄 수집기 court-collector/src/onbid-bulk.cjs(미니PC, `공매받기.cmd`, 작업 스케줄러 'jbslab onbid bulk'(공매받기.cmd) 매일 01:10·13:10 — 05:17 판단기록장 전에 끝나게 2026.11.07 변경)가 목록 전체 → 원문(진행 중 물건만) → 끝난 물건 결과 → 최근 4일 입찰결과목록을 한 번에 받는다. 원자료는 미니PC 외장하드 E:\공매원본\날짜\(목록·원문·결과 jsonl, 2026.11.07 정민님: 노트북 용량이 작아 저장은 미니PC E:에서만 — E: 없는 PC는 원자료 파일 안 남김), 기록은 court-collector\logs\onbid-날짜.log.
 - 사이트 저장은 ingestCourt의 onbidKnown·onbidSave·onbidResultRows·onbidState 동작(토큰은 법원경매 수집기 .env와 같음). 관리자 화면 '수집 현황'의 온비드 '마지막 수집'은 일괄 수집이 끝까지 돈 날로 찍힌다(state/onbid.lastBulk에 건수·오류).
-- 점검 때: state/onbid.lastBulk.day가 오늘(07:10 이후)인지, errorCount·원문 받음/대상, 미니PC logs\onbid-날짜.log 확인.
+- 점검 때: state/onbid.lastBulk.day가 오늘(01:10·13:10 회차 뒤)인지, errorCount·원문 받음/대상, 미니PC logs\onbid-날짜.log 확인.
 - 같은 날 실거래 API 한도도 운영계정 기준(API별 10,000)으로 올림(전에는 970/1000에서 멈춤).
 
 ## 다음 새벽 작업 우선 할 일 (2026.11.08)
