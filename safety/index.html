@@ -1053,8 +1053,8 @@ function fixReportB(docs,ug,all,att){att=att||[];
   let rows='',nb=0,nw=0,ni=0;const cnt={};
   keys.forEach(k=>{const s=S2[k],d=D[k],it=d||s,op=it.body,st=(s&&s.st)||'';let lv,msg=[];
     const later=/향후/.test(st)||(d&&d.st==='향후반영');
-    const self=/변경$/.test((it.title||'').replace(/(보완완료|변경완료|향후보완)$/,''))&&!/보완$/.test(it.title);
-    if(later){lv='info';msg.push('향후 보완(해당 공종 착공 전 제출)로 답함 — 이번 차수에서도 조건부 적정으로 남을 항목, 착공 전 보완서 승인 필요')}
+    const tt=((s&&s.title)||it.title||'').replace(/(보완완료|변경완료|향후보완)$/,''), self=/^[^○]{0,30}변경(?:⇒|$)/.test(tt)||/^[^○⇒]{0,30}변경⇒/.test(it.title||'');
+    if(later){lv='info';msg.push('향후 보완(해당 공종 착공 전 제출)로 답함 — ‘검토 미의뢰’로 회신될 항목(별표 7 단서, 사례 6호), 해당 공종 착공 전 보완서 제출·승인 필요'+(/착공전(제출|보완)/.test(all)?'':' · 계획서에 ‘해당 공종 착공 전 제출’ 문구가 보이지 않음 — 문구가 있어야 미의뢰로 처리'))}
     else if(!d){if(it.sec&&it.sec[0]==='j'){lv='bad';msg.push('합동검토 보완 항목인데 조치 결과가 없음')}
       else if(!secHave.has(it.sec)){lv='bad';msg.push(`총괄표에는 ‘${st.replace('완료',' 완료')||'?'}’인데 이 항목의 조치계획 표(보완서)가 올라오지 않음`)}
       else{lv='warn';msg.push('총괄표에는 있는데 조치계획 표에서 같은 번호 항목을 찾지 못함 — 직접 확인')}}
@@ -1068,22 +1068,30 @@ function fixReportB(docs,ug,all,att){att=att||[];
       const T=t.text, Tall=all;
       if(/계산서/.test(op)&&t.np&&!/계산|검토|kN|ton|O\.?K/i.test(T)){lv=lv==='ok'?'warn':lv;msg.push('계산서를 요구했는데 첨부 글자에 계산 내용이 없음(그림 쪽이면 직접 확인)')}
       if(/계산서/.test(op)&&t.np&&/계산|kN|O\.?K/i.test(T)&&!/서명|날인|\(인\)|기술사/.test(T)){lv=lv==='ok'?'warn':lv;msg.push('안전성 계산서에 작성 기술인 서명·날인 흔적이 없음(시행규칙 제43조) — 그림 쪽이면 직접 확인')}
-      if(/시험발파/.test(op)&&(/시공시시험발파를실시|설계단계/.test(T+Tall)||!/시험발파결과|측정결과|계측결과/.test(T))){lv='warn';msg.push('시험발파 결과보고서가 아니라 설계 단계 보고서(사전 발파환경영향평가·설계보고서, “시공 시 시험발파 실시” 문구)로 답함 — 실제 시험발파 결과와 그에 따른 상세도가 없으면 착공 전 제출로 남을 수 있음')}
+      if(/시험발파/.test(op)&&(/시공시시험발파를실시|설계단계/.test(T+Tall)||!/시험발파결과|측정결과|계측결과/.test(T))){msg.push('참고: 시험발파 결과가 아니라 설계 단계 보고서(사전 발파환경영향평가·설계보고서)로 답함 — 사례 6호에서는 이걸로 적정 처리됨, 시공 시 시험발파 결과로 발파패턴 확정 여부는 현장 확인')}
+      // 의견이 도면에 표기하라고 한 항목이 첨부 도면 글자에 있는지(그림이면 못 봄)
+      if(t.np&&T.length>300){const TERMS=[['법면기울기',/법면|구배|기울기|1:\d/],['한계굴착고',/한계굴착/],['소단',/소단/],['되메우기높이',/되메우기|뒤채움/],['작업반경',/작업반경|반경/],['붐길이',/붐/],['진출입로',/진입로|진출입로|진입|출입로/],['이격거리',/이격/],['매설깊이',/매설깊이|심도|토피/]];
+        const miss=TERMS.filter(([k,re])=>op.includes(k)&&!re.test(T)).map(x=>x[0]);
+        if(miss.length){lv=lv==='bad'?'bad':'warn';msg.push('의견이 도면에 표기하라고 한 '+miss.join('·')+'이(가) 첨부 도면 글자에 없음 — 그림 속 글자면 직접 확인')}
+        if(/단별|단계별/.test(op)&&/굴착/.test(op)){const LV=/[EG]\.?L\.?\(?[+\-]\)?\d{1,3}\.\d{1,3}/g,nv=x=>+(x.match(/\d{1,3}\.\d{1,3}$/)||[0])[0],all=(T.match(LV)||[]).map(nv);
+          const seg=T.split(/(?=\d차(?:\(최종\))?굴착)/).filter(x=>/^\d차(?:\(최종\))?굴착/.test(x)).map(x=>x.slice(0,160));
+          const nsec=seg.filter(x=>/^1차/.test(x)).length||1, nlev=new Set(all).size; // 단계마다 바닥 레벨 하나 + 단면마다 지표 레벨 하나는 있어야 함
+          if(seg.length>=2&&nlev<seg.length+nsec){lv=lv==='bad'?'bad':'warn';msg.push(`시공순서도 굴착 ${seg.length}단계(단면 ${nsec}개)인데 적힌 레벨은 ${nlev}개뿐 — 각 단계별 굴착깊이 명시 필요(사례 6호 조건부)`)}}}
       if(/협의|입증|회신|회의록/.test(op)&&t.np&&t.nfig>=t.np-1){lv=lv==='ok'?'warn':lv;msg.push(/매설물|관리주체/.test(op)?'협의 서류가 그림(스캔)뿐 — 관리주체별(가스·통신·전기·상하수도) 회신·날인·협의 일자를 직접 확인':'협의 서류가 그림(스캔)뿐 — 협의 통보 기관·일자·조건을 직접 확인')}
       if(/사전조사/.test(op)){const T2=t.text;const ok=[/조사대상|대상건축물|대상시설물/.test(T2),/개요|규모|구조|준공/.test(T2),/균열|경사|조사항목|계측/.test(T2)];
         if(ok.every(Boolean)){const n=(T2.match(/3\.1\.\d{1,3}/g)||[]).length;msg.push('사전조사 보고서에 조사대상·시설물 개요·조사 항목(균열·경사 등)이 있음'+(n?` — 조사 건물 약 ${new Set(T2.match(/3\.1\.\d{1,3}/g)).size}곳`:''))}
         else if(t.np){lv=lv==='ok'?'warn':lv;msg.push('사전조사 계획·보고서에 '+['조사대상','시설물별 개요','조사 항목·방법'].filter((x,i)=>!ok[i]).join('·')+'이(가) 글자로 보이지 않음 — 직접 확인')}}
       if(/확인서/.test(op)&&!/확인서/.test(T)&&!/검토[·ㆍ]?확인서[^※]{0,30}(첨부|붙임)/.test(Tall.replace(op,''))){lv=lv==='ok'?'warn':lv;msg.push('확인서 쪽이 이 파일들에는 없음 — CSI 감리/발주청 확인 탭에 첨부했는지 확인(보완 차수부터 필수)')}
     }
-    if(self){lv=lv==='bad'?'bad':'warn';msg.push('검토의견에 없던 시공자 스스로의 변경 — 변경 전·후와 다른 공종·협의 내용(지하안전 등)에 미치는 영향 확인')}
+    if(self){lv='bad';msg.push('검토의견에 없던 시공자 스스로의 변경 — 보완 검토로는 검토하지 않음(“보완 외 자료는 검토의견 없음”, 사례 6호). CSI에서 그 공종 ‘변경’을 골라 변경검토를 따로 의뢰(변경 내용 요약, 개요서 등 변경 전·후 자료, 변경 쪽 위주) — 보완으로 내면 반려될 수 있음')}
     if(lv==='bad')nb++;if(lv==='warn')nw++;if(lv==='info')ni++;cnt[lv]=(cnt[lv]||0)+1;
-    rows+=`<tr><td>${xe(lab(it.sec))} ${xe(it.n)})</td><td>${xe((it.title||'').replace(STRE,'').slice(0,50))}${st?` <span class="note">[총괄표: ${xe(st)}]</span>`:''}</td><td><span class="lv-${lv==='warn'?'info':lv}">${({ok:'대응',bad:'주의',warn:'확인',info:'향후'})[lv]}</span> ${xe(msg.join(' · '))}</td></tr>`});
+    rows+=`<tr><td>${xe(lab(it.sec))} ${xe(it.n)})</td><td>${xe((it.title||'').replace(STRE,'').slice(0,50))}${st?` <span class="note">[총괄표: ${xe(st)}]</span>`:''}</td><td><span class="lv-${lv==='warn'?'info':lv}">${({ok:'대응',bad:'주의',warn:'확인',info:'미의뢰'})[lv]}</span> ${xe(msg.join(' · '))}</td></tr>`});
   // 교차 점검: 지하안전 협의 내용
   const C=[], A=all+ug.map(u=>u.F).join('');
   const sw=t=>{const m=[...t.matchAll(/차수공법[:은는으로]*((?:[A-Z]\.){2,3}[A-Z]?|[A-Z]{2,4}(?=그라우팅|공법|GROUTING))/g)].map(m=>m[1].replace(/\./g,''));return [...new Set(m)]};
   const ugF=ug.map(u=>u.F).join(''), ugW=sw(ugF), planW=sw(docs.filter(d=>d.key0==='w2'||d.tables.some(t=>t.sec==='w2')).map(d=>d.F).join(''));
   const xyp=/협의내용/.test(A);
-  if(ugW.length&&planW.length&&!planW.some(x=>ugW.includes(x))) {nb++;C.push(['bad',`차수공법이 지하안전영향평가서 기준(${ugW.join('·')})과 다름(이번 보완 ${planW.join('·')}) — 협의내용은 차수그라우팅을 바꿀 때 승인기관과 협의하도록 정함. 협의내용 조정 요청·승인기관 협의 자료, 바뀐 공법의 차수 성능(투수계수) 검토를 첨부했는지 확인`])}
+  if(ugW.length&&planW.length&&!planW.some(x=>ugW.includes(x))) {nb++;C.push(['bad',`차수공법이 지하안전영향평가서 기준(${ugW.join('·')})과 다름(이번 ${planW.join('·')}) — 협의내용은 차수그라우팅을 바꿀 때 승인기관과 협의하도록 정함. 변경검토를 의뢰할 때 협의내용 조정 요청·승인기관 협의 자료, 바뀐 공법의 차수 성능(투수계수) 검토를 함께 내야 함(검토원은 사례 6호에서 이 부분을 보완 외 자료로 보고 검토하지 않음 — 인허가청이 따로 챙길 사항)`])}
   const yUg=(ugF.slice(0,600).match(/(20\d\d)\.\s?(\d{1,2})\./)||[]), y0=(String(S.period||'')+' '+(S.start||'')).match(/(20\d\d)/), yPlan=(A.match(/공사기간(20\d\d)(?:년|-|\.)(\d{1,2})/)||[]);
   const ys=yUg[1]?+yUg[1]+(+yUg[2]-1)/12:0, yp=yPlan[1]?+yPlan[1]+(+yPlan[2]-1)/12:(y0?+y0[1]:0);
   if(ys&&yp&&yp-ys>=0.5&&/6개월이상착공이지연/.test(A)){nw++;C.push(['warn',`지하안전영향평가서는 ${yUg[1]}. ${yUg[2]}. 작성인데 착공은 ${yPlan[1]||y0[1]}년 — 협의내용(“협의 결과 통보일로부터 6개월 이상 착공이 지연될 경우 주변상황 확인, 공법 재검토 결과를 승인기관에 제출”)을 이행한 자료가 있는지 확인`])}
