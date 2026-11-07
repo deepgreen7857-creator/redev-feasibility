@@ -80,6 +80,8 @@ aside.rail{position:sticky;top:80px;align-self:start;display:flex;flex-direction
 .map th,.map td{border-bottom:1px solid var(--rule);padding:8px 6px;text-align:left;vertical-align:top}
 .map th{font-weight:600;border-bottom:2px solid var(--ink)}
 .map td.both{background:var(--link-soft)}
+.csi-steps{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 10px}.csi-steps div{flex:1 1 92px;border:1px solid var(--rule);padding:6px 6px 7px;font-size:11.5px;line-height:1.35;text-align:center;color:var(--ink2)}.csi-steps b{display:block;font-family:Fraunces,serif;font-size:15px}.csi-steps .done{background:var(--ok-soft);color:var(--ok)}.csi-steps .now{border:2px solid var(--accent);color:var(--accent);font-weight:600}.csi-steps .skip{opacity:.45;text-decoration:line-through}
+.fn{font-family:Consolas,monospace;font-size:11.5px;word-break:break-all}
 #e-hist td:nth-child(-n+2){white-space:nowrap}
 .warn{border-left:3px solid var(--accent);background:var(--accent-soft);padding:8px 12px;font-size:12.5px;margin:10px 0}
 .foot{color:var(--ink2);font-size:11.5px;margin-top:30px;border-top:1px solid var(--rule);padding-top:10px}
@@ -247,6 +249,25 @@ aside.rail{position:sticky;top:80px;align-self:start;display:flex;flex-direction
     <thead><tr><th style="width:30%">공통 입력</th><th style="width:35%">건진법 안전관리계획서 (CSI)</th><th>산안법 유해위험방지계획서 (공단)</th></tr></thead>
     <tbody id="d-map"></tbody>
   </table>
+  <h2>CSI 업로드 파일 목록 <span class="auto">CSI 1·2종 검토의뢰 → 안전관리계획서 탭</span></h2>
+  <p class="note">CSI에는 항목마다 본편과 부록편을 PDF로 따로 올립니다. 아래 파일명대로 저장하면 CSI 화면 순서와 그대로 맞습니다. 본편은 현장 운영에 쓰는 내용(총괄 80쪽 이내), 설계도서·구조계산서·도면은 부록편으로 보냅니다.</p>
+  <table class="map"><thead><tr><th style="width:24%">CSI 항목</th><th>본편 파일명</th><th>부록편 파일명</th><th style="width:70px">변경 재제출</th></tr></thead><tbody id="d-csi"></tbody></table>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center"><button class="btn" id="csiCopy">파일명 목록 복사</button><span class="note" id="csiMsg" style="margin:0"></span></div>
+  <p class="note">총괄은 <b>[본편]·[부록편]</b>, 공종별은 <b>_본문·_부록</b>으로 끝나고, 공종은 세부항목마다 따로 올립니다(예: 2.1. 가설공사(1. 가설비계) · (3. 가설장비)). 실제 CSI 등록 사례로 확인한 형식이며, <span class="auto">형식 추정</span> 표시는 아직 사례로 확인하지 못한 공종 번호·세부항목입니다. 파일명은 CSI가 정해 주지 않고 올리는 쪽이 붙이는 것이라 같은 현장 안에서도 섞여 쓰이기도 합니다(예: 공종인데 [본편]·[부록편]). 이 사이트는 위 규칙으로 통일합니다.</p>
+  <p class="note">CSI는 공종 세부항목마다 입력값도 받습니다 — 비계: 공사기간·최고 설치높이·비계 종류·벽이음(버팀대) 간격·벽체 브라켓 유무 / 가설장비: 공사기간·장비별 종류·기종·용량(t) 또는 높이(m) / 굴착: 최대 굴착깊이·적용공법(순타: 흙막이벽 종류·지지형식·지하수위, 역타, 합성형식)·복공·동시굴착·지하안전 영향성 검토 대상 여부(굴착 10m·20m 기준)와 굴착·흙막이 세부 공사기간 / 콘크리트: 건축물 공사기간·공법(RC·PC)·거푸집 종류·5m 이상 거푸집·작업발판 일체형 거푸집(갱폼·RCS 등)·동바리 종류·설치높이·전이구조·높이 10m 이상 외부작업 일체형 가설구조물(SWC 등) / 타워크레인: 브레이싱 설치 여부·대수별 기종·용량·작업반경·설치단수·설치높이·기초타입 / 건축설비: 공사기간. 계획서 본문과 이 값이 같아야 합니다.</p>
+  <h2>CSI 검토비 <span class="auto">건설공사 안전관리 업무수행 지침 제46조 · 국토안전관리원 검토비용 기준</span></h2>
+  <table class="form">
+    <tr><th>총 공사비</th><td><div class="unit"><input class="cell linked" data-k="amount" inputmode="numeric"><span>백만원</span></div></td>
+        <th>슬래브 최대 두께</th><td><div class="unit"><input class="cell" data-k="slab_t" inputmode="decimal"><span>m</span></div></td></tr>
+    <tr><th>동바리 최대 높이(층고)</th><td><div class="unit"><input class="cell" data-k="shore_h" inputmode="decimal"><span>m</span></div></td>
+        <th>기타 취약공종</th><td><div class="chk" style="flex-direction:column;gap:4px;padding:6px 4px">
+          <label><input type="checkbox" data-k="w_bridge"> 특수교량(FCM·MSS·ILM·PSM·거더런칭·현수교·사장교)</label>
+          <label><input type="checkbox" data-k="w_struct"> 특수구조 건축물(현수·입체·쉘·스페이스 프레임·막·트러스·비정형·PEB)</label></div></td></tr>
+  </table>
+  <p class="note">총 공사비는 공사원가+일반관리비+이윤+부가가치세 기준입니다(공사 개요의 공사금액과 같은 칸). 굴착고·층수·높이는 공사 개요 값으로 자동 판정합니다.</p>
+  <table class="map"><thead><tr><th style="width:34%">구분</th><th>근거</th><th style="width:18%;text-align:right">금액(VAT 별도)</th></tr></thead><tbody id="d-fee"></tbody></table>
+  <p class="note">특허공법·신기술 등은 관리원이 필요하다고 인정하면 취약공종으로 분류되어 합동검토회의 대상이 될 수 있습니다. 가상계좌는 발급일부터 한 달 안에 입금해야 하며, 발급 후에는 계획서 수정과 세금계산서 수정이 어렵습니다.</p>
+
   <h2>CSI 제출본 혼입 점검 <span class="auto">매뉴얼 표 7 불필요 서류</span></h2>
   <p class="note">CSI 제출본에 아래 자료가 들어 있으면 체크하세요. 하나라도 있으면 검토의뢰 반려 사유(2.4 나)입니다. 이 자료들은 공단 제출본이나 현장 보관용으로 따로 둡니다.</p>
   <div class="chk" style="flex-direction:column;gap:6px;padding:10px 0" id="d-mix"></div>
@@ -282,6 +303,14 @@ aside.rail{position:sticky;top:80px;align-self:start;display:flex;flex-direction
       <span class="note" id="snapInfo" style="margin:0"></span></div></td></tr>
   </table>
   <p class="note">순서: ① 공사 개요 탭에 승인받은 당시 내용을 넣고 저장 → ② 공사 개요 탭에서 바뀐 값만 고치면 아래에 변경 전·후가 자동으로 나옵니다.</p>
+
+  <h2>CSI 처리 단계 <span class="auto">1·2종 검토의뢰 절차</span></h2>
+  <div class="csi-steps" id="e-steps"></div>
+  <div class="chk" style="gap:14px;align-items:center;flex-wrap:wrap">
+    <label>현재 단계 <select class="cell" data-k="csi_step" style="width:auto;border:1px solid var(--rule)"><option value="">선택</option><option value="1">01 검토의뢰 작성</option><option value="2">02 정기안전점검 실시시기 등록</option><option value="3">03 안전관리계획서 등록</option><option value="4">04 수수료 납부</option><option value="5">05 건설사업관리기술인·공사감독자 검토·확인</option><option value="6">06 인·허가기관 및 발주청 승인</option><option value="7">07 검토의뢰 접수</option><option value="8">08 검토중</option><option value="9">09 검토완료</option></select></label>
+    <label>제출 차수 <input class="cell" data-k="csi_round" placeholder="최초제출 / 1차 변경" style="width:140px;border:1px solid var(--rule)"></label>
+    <label><input type="checkbox" data-k="no_cm"> 건설사업관리기술인·공사감독자가 지정되지 않은 공사</label>
+  </div>
 
   <div id="e-trans"></div>
 
@@ -417,6 +446,54 @@ const LABEL={name:'공사명',addr:'현장 소재지',owner:'발주자',permit:'
 const IMPACT={dig:'굴착 및 발파공사 · 흙막이 계산서 · 계측계획',floors:'대상 호 · 가설·콘크리트 공종',height:'산안법 대상(31m) · 비계 계획',area:'산안법 대상(3만㎡)',m_tower:'타워크레인 사용공사 · 기초·브레이싱 계산서',m_pile:'항타·항발기 세부 항목(개정 매뉴얼 강화)',m_drill:'천공기 반입·점검 계획',g_gang:'가설공사 · 갱폼 안전성 계산서',g_form5:'가설공사 · 동바리 계산서',g_earth2:'흙막이 지보공 계산서',g_scaf31:'비계 계산서 · 산안법 비계 작업',start:'공정표 · 안전활동계획표 · 정기안전점검 시기',end:'공정표 · 정기안전점검 시기',safety_mgr:'조직도(건진법) · 안전관리 조직표(산안법)',site_mgr:'조직도',kind:'대상 호 전반',use:'산안법 대상 시설 여부',blast:'굴착 및 발파 · 주변 피해방지'};
 const done=(...ks)=>ks.filter(Boolean).length>0 && ks.filter(Boolean).every(k=>S[k]&&String(S[k]).trim());
 
+const CSI_STEPS=['검토의뢰 작성','정기안전점검 실시시기 등록','안전관리계획서 등록','수수료 납부','건설사업관리기술인·공사감독자 검토·확인','인·허가기관 및 발주청 승인','검토의뢰 접수','검토중','검토완료'];
+const CSI_TOTAL=[['g1','가. 건설공사의 개요','1. 총괄 - 가. 건설공사의 개요'],['g2','나. 현장 특성 분석','1. 총괄 - 나. 현장 특성 분석'],['g3','다. 현장운영계획','1. 총괄 - 다. 현장운영계획'],['g4','라. 비상시 긴급조치계획','1. 총괄 - 라. 비상시 긴급조치계획']];
+// 공종 번호: 2.1 가설·2.2 굴착및발파·2.3 콘크리트·2.7 건축설비·2.8 타워크레인은 실제 CSI 등록 사례로 확인, 2.4~2.6은 순서로 추정
+const CSI_WORK={'가설공사':[1,'가설공사',1],'굴착 및 발파공사':[2,'굴착공사 및 발파공사',1],'콘크리트 공사':[3,'콘크리트공사',1],'강구조물 공사':[4,'강구조물공사'],'성토 및 절토공사':[5,'성토 및 절토공사'],'해체공사':[6,'해체공사'],'건축설비공사':[7,'건축설비공사',1],'타워크레인 사용공사':[8,'타워크레인 사용공사',1]};
+function csiFiles(ctpa){
+  const L=CSI_TOTAL.map(([id,t,f])=>({id:'csi_re_'+id,t:'총괄 · '+t,b:f+'[본편].pdf',a:f+'[부록편].pdf',ok:1}));
+  ctpaWork(ctpa).map(([w])=>[w,CSI_WORK[w]||[9,w]]).sort((x,y)=>x[1][0]-y[1][0]).forEach(([w,[no,n,ok]])=>{
+    const head=`2. 공종별 - 2.${no}. ${n}`, tail=n.startsWith('굴착')?' (수직구 포함)':n.startsWith('콘크리트')?' (PC 구조 포함)':'';
+    const subs=n==='가설공사'?[['1. 가설비계',1],...(S.g_form5||S.g_gang||S.g_earth2||S.g_scaf31||S.g_bracket||S.g_ext10||S.g_complex||S.g_power?[['2. (세부항목명 확인 필요)',0]]:[]),...(S.m_tower||S.m_pile||S.m_drill?[['3. 가설장비',1]]:[])]:n.startsWith('굴착')?[['1. 굴착공사',1],...(S.g_earth2||num('dig')>=2?[['2. 흙막이공사',1]]:[])]:[[null,1]];
+    subs.forEach(([sub,sok])=>{const f=head+(sub?`(${sub})`:'');L.push({id:'csi_re_w'+(n+(sub||'')).replace(/[\s.()]/g,''),t:`공종 · 2.${no}. ${n}${tail}${sub?' — '+sub:''}`,b:f+'_본문.pdf',a:f+'_부록.pdf',ok:ok&&sok})});
+  });
+  return L;
+}
+function renderCsi(ctpa){
+  const L=csiFiles(ctpa);
+  $('#d-csi').innerHTML=ctpa.length?L.map(x=>`<tr><td>${x.t}${x.ok?'':' <span class="auto">형식 추정</span>'}</td><td class="fn">${x.b}</td><td class="fn">${x.a}</td><td style="text-align:center"><input type="checkbox" data-k="${x.id}"></td></tr>`).join(''):'<tr><td colspan="4" class="note">건진법 안전관리계획 대상이 아니면 CSI 제출이 없습니다. 공사 개요의 규모·공종을 입력하세요.</td></tr>';
+  $$('#d-csi [data-k]').forEach(el=>el.checked=!!S[el.dataset.k]);
+  const cur=+S.csi_step||0;
+  $('#e-steps').innerHTML=CSI_STEPS.map((t,i)=>{const n=i+1,skip=n===5&&S.no_cm;return `<div class="${skip?'skip':n<cur?'done':n===cur?'now':''}"><b>${String(n).padStart(2,'0')}</b>${t}${skip?'<br>(지정되지 않음)':''}</div>`}).join('');
+  return L;
+}
+const won=v=>Math.round(v).toLocaleString()+'원';
+function weakList(){
+  const W=[];
+  if(S.w_bridge) W.push(['특수교량','FCM·MSS·ILM 등 특수공법 교량']);
+  if(num('dig')>=20) W.push(['굴착공',`최대 굴착고 ${S.dig}m — 20m 이상`]);
+  if(num('slab_t')>=1||num('shore_h')>=10) W.push(['동바리공',[num('slab_t')>=1&&`슬래브 두께 ${S.slab_t}m`,num('shore_h')>=10&&`동바리 높이 ${S.shore_h}m`].filter(Boolean).join(' · ')+' — 1m 이상 또는 10m 이상']);
+  if(num('floors')>=50||num('height')>=200||S.w_struct) W.push(['건축물',[num('floors')>=50&&`지상 ${S.floors}층`,num('height')>=200&&`높이 ${S.height}m`,S.w_struct&&'특수구조'].filter(Boolean).join(' · ')+' — 초고층(50층·200m 이상) 또는 특수구조']);
+  return W;
+}
+function renderFee(ctpa,CSIL){
+  if(!ctpa.length){$('#d-fee').innerHTML='<tr><td colspan="3" class="note">건진법 안전관리계획 대상일 때 계산합니다.</td></tr>';return}
+  const amt=num('amount')*1e6, R=[];
+  if(!amt) R.push(['총괄 안전관리계획서 검토비','총 공사비를 넣으세요',null]);
+  else{const [f,b]=amt<3e10?[1050000,'300억 미만']:amt<=5e10?[1250000,'300억~500억']:[1550000,'500억 초과'];R.push(['총괄 안전관리계획서 검토비',`총 공사비 ${(amt/1e8).toLocaleString(undefined,{maximumFractionDigits:1})}억 — ${b}`,f])}
+  const W=weakList(); W.forEach(([t,d])=>R.push(['취약공종 검토비 · '+t,d,1200000]));
+  if(!W.length) R.push(['취약공종 검토비','해당 없음',0]);
+  let tot=R.reduce((a,r)=>a+(r[2]||0),0);
+  let rows=R.map(([a,b,c])=>`<tr><td>${a}</td><td>${b}</td><td style="text-align:right">${c==null?'—':won(c)}</td></tr>`).join('');
+  rows+=`<tr><td><b>최초 검토의뢰 합계</b></td><td>부가가치세 포함 ${won(tot*1.1)}</td><td style="text-align:right"><b>${won(tot)}</b></td></tr>`;
+  // 공법변경 재검토
+  const wk=W.map(w=>w[0]);
+  const reW=[...new Set((CSIL||[]).filter(x=>S[x.id]&&x.b.startsWith('2.')).map(x=>(x.b.match(/2\.\d+\. [^(_\[]+/)||[''])[0].trim()))];
+  if(reW.length){let rt=0;const lines=reW.map(w=>{const weak=(/굴착/.test(w)&&wk.includes('굴착공'))||(/콘크리트|가설/.test(w)&&wk.includes('동바리공'))||(/교량/.test(w)&&wk.includes('특수교량'));const f=weak?1200000:600000;rt+=f;return `<tr><td>재검토비(공법변경) · ${w}</td><td>${weak?'취약공종':'일반공종'} 건당</td><td style="text-align:right">${won(f)}</td></tr>`}).join('');
+    rows+=lines+`<tr><td><b>변경 재검토 합계</b></td><td>재제출 체크한 공종 기준 · 부가가치세 포함 ${won(rt*1.1)}</td><td style="text-align:right"><b>${won(rt)}</b></td></tr>`}
+  else rows+='<tr><td>재검토비(공법변경)</td><td>승인 후 공법변경으로 재검토할 때 — 위 파일 목록에서 공종의 "변경 재제출"을 체크하면 계산(일반 600,000원 · 취약 1,200,000원 / 건)</td><td style="text-align:right">—</td></tr>';
+  $('#d-fee').innerHTML=rows;
+}
 function render(){
   const isha=judgeISHA(), ctpa=judgeCTPA();
   // rail
@@ -463,8 +540,9 @@ function render(){
   const pt=num('pg_total'),pw=num('pg_work');
   const pgMsg=[pt>80&&`총괄 본편 ${pt}쪽 — 80쪽 초과`,pw>430&&`공종별 본편 ${pw}쪽 — 430쪽 초과`].filter(Boolean);
   $('#d-pg').innerHTML=pgMsg.length?`<div class="warn">${pgMsg.join('<br>')} · 반려 사유(2.4 사). 설계도면·계산서 전체는 부록편으로 옮기세요.</div>`:'';
+  const CSIL=renderCsi(ctpa); renderFee(ctpa,CSIL);
   // E
-  renderChange(isha,ctpa);
+  renderChange(isha,ctpa,CSIL);
   // risk
   const risks=[...mixed.map(([,t])=>'불필요 서류: '+t.split('(')[0]),...pgMsg];
   const chg=S.base&&diffKeys().length;
@@ -482,7 +560,7 @@ function render(){
 const SNAPKEYS=Object.keys(LABEL);
 function fmt(k,v){if(v===true)return '있음';if(v===false||v===undefined||v===null||v==='')return '—';return String(v)}
 function diffKeys(){if(!S.base)return [];return SNAPKEYS.filter(k=>fmt(k,S.base[k])!==fmt(k,S[k]))}
-function renderChange(isha,ctpa){
+function renderChange(isha,ctpa,CSIL){
   $('#snapInfo').textContent=S.base?`저장된 승인본: ${S.base_at||''} (${Object.keys(S.base).filter(k=>S.base[k]).length}개 항목)`:'아직 저장된 승인본이 없습니다';
   // 전환 판단
   const fr=S.first_rcv, cr=S.chg_rcv, CUT='2026-06-01'; let tr='';
@@ -518,6 +596,9 @@ function renderChange(isha,ctpa){
     if(ks.some(k=>k.startsWith('g_')||k.startsWith('m_')||k==='dig')) todo.push(['자체안전점검표(Hold Point)','별지 제10호 — 변경 공종별 작성(2.4 아)']);
     todo.push(['산안법 계획서 해당 부분 수정','같은 변경을 유해위험방지계획서에도 반영해 현장 비치']);
   }
+  const re=(CSIL||[]).filter(x=>S[x.id]);
+  if(re.length) todo.push(['CSI 재제출 파일 '+re.length+'개',re.map(x=>x.b.replace(/_본문\.pdf|\[본편\]\.pdf/,'')).join(' / ')+' — 본편·부록 모두']);
+  if(ks.length&&S.no_cm) todo.push(['공사감독자 지정 여부 확인','건설사업관리기술인·공사감독자 미지정 공사 — CSI 5단계는 건너뛰지만 발주청 승인 절차는 그대로']);
   $('#e-todo').innerHTML=todo.map(([t,d])=>`<li><span class="t">${t}</span><span class="state s-todo">준비</span><span class="d">${d}</span></li>`).join('');
   // history
   const H=S.hist||[];
@@ -794,6 +875,8 @@ function makeXlsx(){
   if(R.risk.length) add('반려위험점검',[['점검 결과'],...R.risk.map(t=>[t])],[90]);
   XLSX.writeFile(wb,`안전관리계획_변경자료_${safeName()}_${today()}.xlsx`);
 }
+$('#csiCopy').onclick=async()=>{const L=csiFiles(judgeCTPA());const txt=L.map(x=>x.b+'\n'+x.a).join('\n');
+  try{await navigator.clipboard.writeText(txt);$('#csiMsg').textContent=`${L.length*2}개 파일명을 복사했습니다.`}catch(e){$('#csiMsg').textContent='복사하지 못했습니다. 표에서 직접 복사해 주세요.'}};
 $('#outDocx').onclick=makeDocx; $('#outXlsx').onclick=makeXlsx;
 
 function makeSummary(){
