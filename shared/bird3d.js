@@ -196,7 +196,10 @@
     // 주변 건물: 모형 = 낮고 어두운 블록(지붕은 항공사진), 검토 = 실제 높이
     const ctxSide = STD(dusk ? 0x3a3a3c : 0xc4c0b6), ctxTop = aerialT ? new THREE.MeshStandardMaterial({ map: aerialT, roughness: 1 }) : STD(dusk ? 0x56565a : 0xd6d2c8);
     const ctxReview = STD(dusk ? 0x5b6068 : 0xb7bcbd);
-    const EYE = opt.view === 'persp' ? (opt.eye || [cx - span * 0.2, cy - span * 1.05]) : null;
+    const ROT = (+opt.rot || 0) * Math.PI / 180; // 시점 돌리기(도, 단지 중심 기준)
+    const rotP = (x, y) => { const dx = x - cx, dy = y - cy; return [cx + dx * Math.cos(ROT) - dy * Math.sin(ROT), cy + dx * Math.sin(ROT) + dy * Math.cos(ROT)]; };
+    // 투시도 눈: 단지 남쪽, 예전보다 가깝게(건물이 화면 높이의 2/3쯤)
+    const EYE = opt.view === 'persp' ? (opt.eye || rotP(cx - span * 0.15, cy - span * 0.98)) : null;
     let fore = null;
     if (EYE) { // 눈 위치 ~ 단지 남쪽 끝까지 부채꼴: 비워서 앞마당(잔디·나무)으로
       const ang = Math.atan2(cy - EYE[1], cx - EYE[0]), L = Math.hypot(cx - EYE[0], cy - EYE[1]) * 0.8, wd = 0.62;
@@ -373,7 +376,7 @@
       if (rnd() < (inPark ? 0.7 : grove ? 0.5 : 0.1)) trees.push([px, py, 0.7 + rnd() * 0.7]);
       else if (rnd() < (grove ? 0.35 : 0.12)) shrubs.push([px, py, 0.6 + rnd() * 0.8]);
     }
-    if (fore) { const fb2 = turf.bbox(foreF); for (let x = fb2[0]; x <= fb2[2]; x += 7) for (let y = fb2[1]; y <= fb2[3]; y += 7) { const px = x + (rnd() - .5) * 6, py = y + (rnd() - .5) * 6; if (!inPoly(px, py, foreF)) continue; const de = Math.hypot(px - EYE[0], py - EYE[1]); if (de < 30) continue; const rr = rnd(); if (rr < (de < 110 ? 0.04 : 0.3)) trees.push([px, py, 0.8 + rnd() * 0.9]); else if (rr < 0.6) shrubs.push([px, py, 0.8 + rnd() * 1.2]); } }
+    if (fore) { const fb2 = turf.bbox(foreF); for (let x = fb2[0]; x <= fb2[2]; x += 7) for (let y = fb2[1]; y <= fb2[3]; y += 7) { const px = x + (rnd() - .5) * 6, py = y + (rnd() - .5) * 6; if (!inPoly(px, py, foreF)) continue; const de = Math.hypot(px - EYE[0], py - EYE[1]); if (de < 30) continue; const aOff = Math.abs(Math.atan2(py - EYE[1], px - EYE[0]) - Math.atan2(cy - EYE[1], cx - EYE[0])); const side = aOff > 0.32; const rr = rnd(); if (rr < (side ? 0.35 : 0.015)) trees.push([px, py, 0.8 + rnd() * 0.9]); else if (rr < (side ? 0.55 : 0.12)) shrubs.push([px, py, 0.6 + rnd() * 0.8]); } }
     pathSegs.forEach(([x1, y1, x2, y2, w]) => { const L = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / L, uy = (y2 - y1) / L; for (let t = 6; t < L - 4; t += 9) { const qx = x1 + ux * t - uy * (w / 2 + 1.6), qy = y1 + uy * t + ux * (w / 2 + 1.6); if (inPoly(qx, qy, siteF) && !nearB(qx, qy) && !onPath(qx, qy)) trees.push([qx, qy, 0.8]); } });
     // 동 둘레 관목
     baseShrub.forEach(t => shrubs.push(t));
@@ -418,9 +421,9 @@
       if (far) { flat(quad(A, B, n, w - sw, w, -ext, L + ext), sideM, 0.16); flat(quad(A, B, n, w - sw, w - sw + 0.25, -ext, L + ext), curbM, 0.2); streetRings.push(quad(A, B, n, w - sw, w, -ext, L + ext)); }
       const cwW = cw1 - cw0, mid = cw0 + cwW / 2;
       if (cwW >= 9) for (let t = -lx; t < L + lx; t += 6) if (inR(t + 3, mid)) { addLine('y', quad(A, B, n, mid - 0.3, mid - 0.15, t, t + 6)); addLine('y', quad(A, B, n, mid + 0.15, mid + 0.3, t, t + 6)); }
-      const dashAt = o => { for (let t = -lx; t < L + lx; t += 8) if (inR(t + 1.5, o)) addLine('w', quad(A, B, n, o - 0.08, o + 0.08, t, t + 3)); };
+      const dashAt = o => { for (let t = -lx; t < L + lx; t += 12) if (inR(t + 1.5, o)) addLine('w', quad(A, B, n, o - 0.08, o + 0.08, t, t + 3)); };
       if (cwW < 9) dashAt(mid);
-      else for (let k = 1; cw0 + k * 3.3 < mid - 1.2; k++) { dashAt(cw0 + k * 3.3); dashAt(cw1 - k * 3.3); }
+      else for (let k = 1; k <= 2 && cw0 + k * 3.5 < mid - 1.2; k++) { dashAt(cw0 + k * 3.5); dashAt(cw1 - k * 3.5); }
       // 보도 가로수·가로등
       for (let t = 2; t < L; t += 8) { const px = A[0] + (B[0] - A[0]) * t / L, py = A[1] + (B[1] - A[1]) * t / L; trees.push([px + n[0] * sw * 0.45, py + n[1] * sw * 0.45, 0.85]); if (far && w < 40) trees.push([px + n[0] * (w - sw * 0.45), py + n[1] * (w - sw * 0.45), 0.85]); }
       for (let t = 6; t < L; t += 24) { const px = A[0] + (B[0] - A[0]) * t / L, py = A[1] + (B[1] - A[1]) * t / L; streetLamps.push([px + n[0] * (sw - 0.5), py + n[1] * (sw - 0.5), 9]); if (far) streetLamps.push([px + n[0] * (w - sw + 0.5), py + n[1] * (w - sw + 0.5), 9]); }
@@ -470,7 +473,7 @@
           M.compose(P.set(t[0], liftAt(t[0], t[1]), -t[1]), q, Sc.set(w, h, 1)); im.setMatrixAt(i, M);
           // 색조: 무리별 짙음/옅음 + 나무마다 조금씩
           const v = toneAt(t[0], t[1]);
-          let k = v > 0.9 ? 1.28 : v < -0.6 ? 0.62 : 0.95; k *= 0.9 + rnd() * 0.22; if (dusk) k *= 0.82;
+          let k = v > 0.9 ? 1.28 : v < -0.6 ? 0.62 : 0.95; k *= 0.9 + rnd() * 0.22; if (dusk) k *= 1.05;
           const warm = v > 0.9 ? 1.06 : 1;
           im.setColorAt(i, col.setRGB(k * warm, k * (v > 0.9 ? 1.04 : 1), k * (v < -0.6 ? 0.92 : 0.86)));
         });
@@ -544,15 +547,15 @@
     if (opt.view === 'persp') {
       // 투시도: 남쪽 멀리(구역 폭의 1.5배) 높이 12m에서, 하늘이 화면 절반
       const ep = EYE;
-      camera.fov = 40; camera.position.set(ep[0], 16, -ep[1]);
+      camera.fov = 44; camera.position.set(ep[0], 14, -ep[1]);
       camera.lookAt(new THREE.Vector3(cx, 52, -cy));
     } else {
       const v = views[opt.view] || views.bird, look = new THREE.Vector3(cx, v.y, -cy), dist = span * v.d;
-      camera.fov = v.fov; camera.position.set(look.x + dist * Math.cos(v.el) * Math.sin(v.az), look.y + dist * Math.sin(v.el), look.z + dist * Math.cos(v.el) * Math.cos(v.az)); camera.lookAt(look);
+      const az = v.az + ROT; camera.fov = v.fov; camera.position.set(look.x + dist * Math.cos(v.el) * Math.sin(az), look.y + dist * Math.sin(v.el), look.z + dist * Math.cos(v.el) * Math.cos(az)); camera.lookAt(look);
     }
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld(); plantTrees(camera);
-    { const cd = camera.position.distanceTo(new THREE.Vector3(cx, 0, -cy)); scene.fog.near = cd * (opt.view === 'persp' ? 1.3 : 0.95); scene.fog.far = cd * (opt.view === 'wide' ? 2.6 : 4); }
+    { const cd = camera.position.distanceTo(new THREE.Vector3(cx, 0, -cy)); scene.fog.near = cd * (opt.view === 'persp' ? 1.3 : 0.95); scene.fog.far = cd * (opt.view === 'wide' ? 3.4 : opt.view === 'persp' ? 4 : 5.5); }
 
     /* ----- 후처리: 빛 번짐 + 가장자리 어둡게 ----- */
     let draw = () => renderer.render(scene, camera);
@@ -579,7 +582,7 @@
         const blurSrc = taps.map(t => `s += texture2D(tDiffuse, vUv + vec2(${t[0].toFixed(3)}, ${t[1].toFixed(3)}) * px * rad).rgb * ${t[2].toFixed(2)};`).join('\n');
         const wsum = taps.reduce((a, t) => a + t[2], 0) + 1;
         comp.addPass(new THREE.ShaderPass({
-          uniforms: { tDiffuse: { value: null }, tMask: { value: maskT }, px: { value: new THREE.Vector2(1 / (W * opt.pr), 1 / (H * opt.pr)) }, rad: { value: (opt.view === 'persp' ? 2.0 : 2.6) * opt.pr }, amt: { value: dusk ? 0.55 : 0.35 }, dark: { value: dusk ? 0.78 : 0.9 } },
+          uniforms: { tDiffuse: { value: null }, tMask: { value: maskT }, px: { value: new THREE.Vector2(1 / (W * opt.pr), 1 / (H * opt.pr)) }, rad: { value: (opt.view === 'persp' ? 1.8 : 1.7) * opt.pr }, amt: { value: dusk ? 0.55 : 0.35 }, dark: { value: dusk ? 0.78 : 0.9 } },
           vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
           fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tMask; uniform vec2 px; uniform float rad; uniform float amt; uniform float dark; varying vec2 vUv;
             void main(){
