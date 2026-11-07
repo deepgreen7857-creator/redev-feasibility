@@ -366,6 +366,10 @@
     const MODS_REP = {}; types.forEach(t => { MODS_REP[t] = MODS_ALL[t].filter(m => !m.v || m.vrep); if (!MODS_REP[t].length) MODS_REP[t] = MODS_ALL[t]; });
     const hasVar = types.some(t => MODS_ALL[t].length > MODS_REP[t].length);
     let MODS = MODS_REP;
+    // 혼합형: 직전에 판상을 놓았으면 탑상부터, 탑상을 놓았으면 판상부터 시도 → 판상·탑상이 번갈아 섬(2026-11-08 학익장미 시험에서 판상만 보이던 것)
+    let wantTower = false;
+    const ordM = ms => form !== 'mix' ? ms : ms.filter(m => (m.form === 'tower') === wantTower).concat(ms.filter(m => (m.form === 'tower') !== wantTower));
+    const picked = m => { if (form === 'mix') wantTower = m.form !== 'tower'; };
     const Dmax = Math.max(...types.flatMap(t => MODS_REP[t].map(m => m.D)));
 
     // 한 줄 채우기: 형태 그룹 fm(같은 형태의 모듈들)으로 [y0, y0+D] 띠를 채움. cols는 복사본에 반영
@@ -383,8 +387,8 @@
           const order = types.slice().sort((a, b) => (cols[a] / tot - want[a]) - (cols[b] / tot - want[b]));
           let pick = null;
           const prev = items.length ? items[items.length - 1].m : null, x0 = m => (prev ? x + gapOf(prev, m) : x);
-          for (const t of order) { for (const m of MODS[t]) { if (x0(m) + m.L <= e + 1e-6) { pick = m; break; } } if (pick) break; }
-          if (!pick) break;
+          for (const t of order) { for (const m of ordM(MODS[t])) { if (x0(m) + m.L <= e + 1e-6) { pick = m; break; } } if (pick) break; }
+          if (!pick) break; picked(pick);
           const px = x0(pick); items.push({ x: px, m: pick }); cols[pick.t] += pick.n; x = px + pick.L;
         }
         if (!items.length) return;
@@ -398,6 +402,7 @@
       return out.length ? { D, items: out, cols, units: out.reduce((a, it) => a + it.m.n, 0) } : null;
     }
     function place(rowFloors) {
+      wantTower = false;
       const blds = []; let cols = {}; types.forEach(t => { cols[t] = 0; });
       let y0 = ymin, row = 0;
       while (y0 < ymax) {
@@ -537,6 +542,7 @@
     // mode: 기본 = 세 번 훑기(평형 비율 한도), 'single' = '그 자리 최고 층수'로 한 번에 채움(부족한 평형부터),
     //  'legacy' = 예전 방식(층당 세대로 세고 0차만 한도 — 평형은 쏠려도 용적률이 가장 큰 경우가 있어 후보로 남김). placeBest가 모두 해 보고 고름
     function pack(F, mode) {
+      wantTower = false;
       const single = mode === 'single', legacy = mode === 'legacy';
       const blds = [], cols = {}; types.forEach(t => { cols[t] = 0; }); let colsTot = 0;   // colsTot = cols 합(평형 한도 검사를 칸마다 다시 더하지 않게, 2026-11-05 속도)
       const st = opt.quick ? 3 : GW * GH > 25000 ? 2 : 1; // 큰 구역은 2m 간격(방향 고르기용 빠른 추정은 3m)
@@ -560,8 +566,8 @@
             for (const strict of (types.length < 2 ? [false] : legacy ? [pass === 0] : pass < 2 ? [true] : [true, false])) {
             if (pick) break;
             for (const t of order) {
-              for (const m0 of MODS[t]) {
-                if (strict && over(m0, F, pass)) break;
+              for (const m0 of ordM(MODS[t])) {
+                if (strict && over(m0, F, pass)) { if (form === 'mix') continue; break; }
                 if (!fits(m0, x, y)) continue;
                 const m = flip(m0, x, y);
                 // 가벼운 인동간격 검사를 먼저, 높이 제한 계산은 그다음(느림)
@@ -581,7 +587,7 @@
             }
             }
             if (!pick) { if (isFinite(jump) && jump - st > x) x = Math.ceil(jump) - st; continue; }
-            const m = pick;
+            const m = pick; picked(m);
             blds.push({ row: 0, t: m.t, n: m.n, form: m.form, mod: m, floors: pf, L: m.L, D: m.D, rx: x, ry: y });
             cols[m.t] += m.n * (legacy ? 1 : pf); colsTot += m.n * (legacy ? 1 : pf); order = ordOf(); x = Math.ceil(x + m.L + A.sideGap_m) - st;
           }
@@ -618,7 +624,7 @@
     // 세대당 지상 연면적: 평면 라이브러리의 공급면적(전용+주거공용). 없으면 전용 × 환산계수
     const supOf = t => (+U[t].공급 > 0 ? +U[t].공급 : U[t].전용 * A.supplyFactor);
     const gfaOf = blds => blds.reduce((s, b) => s + b.n * b.floors * supOf(b.t), 0);
-    const finish = blds => { blds.forEach(b => { b.cap = capFloors(b); b.floors = Math.min(b.floors, b.cap); }); return blds.filter(b => b.floors >= A.minFloors); };
+    const finish = blds => { blds.forEach(b => { b.cap = capFloors(b); b.floors = Math.min(b.floors, b.cap); if (form === 'mix' && b.form !== 'tower' && blds.some(o => o.form === 'tower')) b.floors = Math.max(A.minFloors, Math.min(b.floors, Math.ceil(b.floors * 0.8))); }); return blds.filter(b => b.floors >= A.minFloors); };
 
     // 균일 층수 F를 낮은 쪽부터 올려 목표 용적률 이하 최대 찾기 → 북쪽 줄부터 한 층씩 올려 목표에 맞춤(남저북고)
     const target = opt.lot * opt.far / 100;
