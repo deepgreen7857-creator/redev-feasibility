@@ -2126,7 +2126,9 @@ const GATE = {
       L.circleMarker(sg.pt, { radius: 14, color: cc, weight: 2.5, dashArray: '4 3', fillColor: '#fff', fillOpacity: 0.6 })
         .bindTooltip(`추천 ${this.KIND[nk]} — ${sg.jibun} 도로(현황 약 ${sg.w}m) · 누르면 여기에 ${this.KIND[nk]}를 놓음`, { sticky: true })
         .on('click', ev => { L.DomEvent.stop(ev); this.put(z, nk, { lat: sg.pt[0], lng: sg.pt[1] }); }).addTo(layer);
-      L.marker(sg.pt, { interactive: false, icon: L.divIcon({ className: 'gate-lbl', html: `<span style="background:#fff;color:${cc};border:1.5px dashed ${cc};padding:1px 6px;border-radius:4px;font-size:12px;font-weight:700;white-space:nowrap">추천 ${this.KIND[nk]}</span>`, iconSize: null, iconAnchor: [-16, 10] }) }).addTo(layer);
+      // 이미 놓은 출입구와 40m 안이면 추천 이름표를 위로 올려 겹치지 않게
+      const near = this.list(z).some(g => turf.distance(turf.point([g.pt[1], g.pt[0]]), turf.point([sg.pt[1], sg.pt[0]]), { units: 'meters' }) < 40);
+      L.marker(sg.pt, { interactive: false, icon: L.divIcon({ className: 'gate-lbl', html: `<span style="background:#fff;color:${cc};border:1.5px dashed ${cc};padding:1px 6px;border-radius:4px;font-size:12px;font-weight:700;white-space:nowrap">추천 ${this.KIND[nk]}</span>`, iconSize: null, iconAnchor: near ? [-16, 38] : [-16, 10] }) }).addTo(layer);
     }
     this.list(z).forEach((g, i) => {
       const r = g.kind === 'main' || g.kind === 'park' ? this.roadAt(z, g.pt) : null;
@@ -3377,6 +3379,7 @@ function gateSugHtml(a, pl, zz, gl) {
     if (!c.length) return `<div class="note" style="margin:6px 0">추천할 ${GATE.KIND[kind]} 자리가 없습니다(조건에 맞는 경계 도로 없음). 지도를 보고 직접 찍으세요.</div>`;
     return `<div style="background:#fff;border:1.5px dashed ${col[kind]};border-radius:6px;padding:8px 10px;margin:6px 0">
     <b style="color:${col[kind]}">추천 ${GATE.KIND[kind]}</b> — ${desc(c[0])}
+    ${kind === 'main' && inf.entry ? entryNeeds(inf.entry, pl.units, c[0]) : ''}
     <div style="margin:5px 0"><button type="button" class="btn sm" style="background:${col[kind]};color:#fff;border-color:${col[kind]}" data-gatesug="${kind}:0">${moving ? `추천 자리로 ${GATE.KIND[kind]} 옮기기` : `추천 자리에 ${GATE.KIND[kind]} 놓기`}</button></div>
     ${c.length > 1 ? `<div class="note">다른 후보: ${c.slice(1, 3).map((x, i) => `<button type="button" class="btn ghost sm" data-gatesug="${kind}:${i + 1}">${i + 2}순위</button> ${desc(x)}`).join('<br>')}</div>` : ''}
     <div class="u" style="margin-top:3px">추천 기준: ${BASIS[kind]} 공원·녹지·종교용지·학교 등 획지가 아닌 땅의 경계와 일방통행·4m 미만 도로는 뺐습니다. 버스·보행 동선과 주변 단지 출입구는 반영하지 않았으니 지도를 보고 판단하세요.</div>
@@ -3394,6 +3397,21 @@ function gateSugHtml(a, pl, zz, gl) {
     else h += '<div class="note" style="margin:6px 0">✔ 주출입구·부출입구·주차장 출입구를 모두 정했습니다. 아래 검사표를 확인하고 다음 단계(정비기반시설)로 넘어가세요.</div>';
   }
   return h;
+}
+// 주출입구(진입도로) 추천에 따라오는 조건과 정비기반시설 확폭량(개략) — 추천 칸과 진입도로 판단 칸이 같이 씀
+//  구역 안: 닿은 길이 × 모자라는 폭(구역 쪽으로 넓힘 → 정비기반시설 도로, 획지에서 빠짐)
+//  병목이면 구역 밖: 같은 도로 필지의 나머지 길이(≈필지 면적÷현황 폭 − 닿은 길이) × 모자라는 폭 — 도시계획도로 결정 또는 구역 편입 검토
+function entryNeeds(e, units, x) {
+  const q = (e.per || {})[x.pnu] || {}, W = e.W, lack = Math.max(0, W - x.w), front = q.front || x.front || 0, len = q.len || 0;
+  const inA = Math.round(x.inArea > 0 ? x.inArea : front * lack), outL = x.partial || q.partial ? Math.max(0, Math.round(len - front)) : 0, outA = Math.round(outL * lack);
+  const li = [];
+  li.push(`<b>① 진입도로 폭 ${W}m 이상</b> — 계획 ${fmt(units)}세대(주택건설기준 등에 관한 규정 제25조①). ${esc(x.jibun)} 도로 현황 약 ${x.w}m${lack >= 0.3 ? ` → <b>${fmt(lack, 1)}m 모자람</b>` : ' → 충족'}`);
+  if (lack >= 0.3) {
+    li.push(`<b>② 구역 안 확폭(정비기반시설 도로)</b> — 구역 쪽 경계를 ${fmt(lack, 1)}m 물려 도로로 내놓음: 닿은 길이 약 ${fmt(front)}m × ${fmt(lack, 1)}m ≈ <b>${fmt(inA)}㎡</b>. 이 면적은 획지에서 빠지고 기반시설(도로)로 들어감`);
+    if (outL > 0) li.push(`<b>③ 구역 밖 확폭(병목 해소)</b> — 구역에 닿은 구간만 넓히면 앞뒤가 ${x.w}m로 좁은 병목. 같은 도로의 나머지 약 ${fmt(outL)}m도 ${W}m로 넓히려면 약 <b>${fmt(outA)}㎡</b>(개략, 양쪽 어디서 넓힐지는 미정) — 도시계획도로 결정 또는 정비구역 편입 검토. 합계 약 <b>${fmt(inA + outA)}㎡</b>`);
+  }
+  li.push(`<b>${lack >= 0.3 ? (outL > 0 ? '④' : '③') : '②'} 넓은 도로까지 이어짐</b> — 진입도로는 ${W}m 폭으로 간선도로(기간도로)까지 이어져야 함. 그 너머 구간은 지도로 확인`);
+  return `<div style="margin:6px 0 2px;padding:6px 8px;background:#f8f9fb;border-radius:5px"><div class="u" style="margin-bottom:2px">이 추천에 필요한 조건과 정비기반시설 확폭(개략)</div>${li.map(t => `<div style="margin:2px 0">${t}</div>`).join('')}</div>`;
 }
 function gateEntryHtml(a, pl, zz, gl) {
   const inf = pl.infra, e = inf && inf.entry; if (!e || !zz.roads) return '';
@@ -3415,7 +3433,8 @@ function gateEntryHtml(a, pl, zz, gl) {
     .filter(o => (o.q.front || 0) >= 10).sort((m, n) => m.area - n.area).slice(0, 4);
   const cur = add >= 0.3 ? (p.area || 0) : 0;
   const oth = others.length ? `<div class="note" style="margin-top:4px">다른 경계 도로에 주출입구를 두면(제25조① ${e.W}m 기준, 개략): ${others.map(o => `${esc(o.x.jibun)}(현황 ${o.x.w}m) ${o.lack >= 0.3 ? `확폭 ${fmt(o.lack, 1)}m·약 ${fmt(o.area)}㎡` : '확폭 없음'}${o.q.partial ? '·병목 주의' : ''}${o.area < cur - 50 ? ' <b>← 지금보다 적음</b>' : ''}`).join(' / ')}. 점을 그 도로 쪽 경계로 끌어 옮기면 바로 다시 계산됩니다.</div>` : '';
-  return `<div style="background:#fff8e6;border:1px solid #f0d58c;border-radius:6px;padding:8px 10px;margin:6px 0">${line}${warns.map(w => `<div class="warn" style="margin-top:3px">⚠ ${w}</div>`).join('')}${oth}<div class="u" style="margin-top:3px">현황 폭은 필지 모양으로 추정한 값입니다. 교통성 검토에서 확정합니다.</div></div>`;
+  const needs = e.mode === 3 ? '' : entryNeeds(e, pl.units, { pnu: r.pnu, jibun: r.jibun, w: r.w, partial: !!p.partial, front: p.front, inArea: (p.add || 0) >= 0.3 ? p.area : 0 });
+  return `<div style="background:#fff8e6;border:1px solid #f0d58c;border-radius:6px;padding:8px 10px;margin:6px 0">${line}${warns.map(w => `<div class="warn" style="margin-top:3px">⚠ ${w}</div>`).join('')}${needs}${oth}<div class="u" style="margin-top:3px">현황 폭은 필지 모양으로 추정한 값입니다. 교통성 검토에서 확정합니다.</div></div>`;
 }
 // ===== 추천안 자동 진행 (2026-11-04 사용자 요구) =====
 // "일반인은 출입구를 어디 둘지 모른다 — 구역계만 정하면 추천안이 그냥 떠야 하고, 그 추천에 따라 기반시설 → 교통성 검토로 이어져야 한다.
