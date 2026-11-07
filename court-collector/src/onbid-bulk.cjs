@@ -24,9 +24,8 @@ const onbid = require(path.join(REPO, 'auction-server', 'functions', 'src', 'lib
 
 const args = process.argv.slice(2);
 const DRY = args.includes('--dry');
+const DETAIL_ONLY = args.includes('--detail-only'); // 목록은 건너뛰고 DB에서 원문 빠진 진행 물건만 받음(목록을 방금 받은 뒤 다시 돌릴 때)
 const LIMIT = (() => { const i = args.indexOf('--limit'); return i >= 0 ? Number(args[i + 1]) || 0 : 0; })();
-const CONCURRENCY = 4;          // 동시에 4건 — 공공데이터 API는 사람 속도 제한이 없지만 서버에 무리 주지 않게
-const PAUSE_MS = 150;           // 호출 사이 잠깐 쉼
 
 // ── 설정 읽기 ─────────────────────────────────────────
 function readEnv(file) {
@@ -78,13 +77,34 @@ async function post(body, tries = 4) {
   throw last;
 }
 
-// 여러 건을 동시에(CONCURRENCY) 처리
+// 한 건씩, 속도 자동 조절: 공공데이터 API가 초당 한도 초과(코드 23)를 돌려주면 간격을 늘리고 그 물건은 뒤로 미뤄 다시 받는다.
+//  (2026-11-07 첫 실행: 동시에 4건 → 코드 23이 쏟아져 3분에 21건. 간격을 맞추면 초당 한도 안에서 끊김 없이 받는다)
+const isRate = (e) => e && String(e.code) === '23';
+let gap = 250; // ms — 성공이 이어지면 조금씩 줄이고, 23이면 두 배로
 async function pool(list, fn) {
-  let i = 0;
-  const workers = Array.from({ length: Math.min(CONCURRENCY, list.length) }, async () => {
-    while (i < list.length) { const k = i++; await fn(list[k], k); await sleep(PAUSE_MS); }
-  });
-  await Promise.all(workers);
+  let queue = list.map((it, k) => ({ it, k, tries: 0 }));
+  for (let round = 0; queue.length && round < 6; round++) {
+    const later = [];
+    let ok = 0;
+    for (const job of queue) {
+      const r = await fn(job.it, job.k);
+      if (r === 'rate') {
+        gap = Math.min(5000, gap * 2);
+        job.tries++;
+        later.push(job);
+        await sleep(gap * 4);
+      } else {
+        ok++;
+        if (ok % 20 === 0 && gap > 120) gap = Math.max(120, Math.round(gap * 0.9));
+      }
+      if (r === 'stop') return;
+      await sleep(gap);
+    }
+    if (later.length) log(`초당 한도로 미룬 ${later.length}건 다시 받음(간격 ${gap}ms, ${round + 2}번째)`);
+    queue = later;
+    if (queue.length) await sleep(30000);
+  }
+  if (queue.length) log(`끝내 못 받은 ${queue.length}건 — 다음 실행에서 다시`);
 }
 
 const isQuota = (e) => e && String(e.code) === '22';
@@ -109,7 +129,7 @@ async function main() {
   // 2) 목록 전체(수도권 전부 + 파산자산 전국 + 수도권 밖 땅·섬) — 끝까지
   const listed = new Map();
   let stopped = null;
-  for (const part of onbid.partitions()) {
+  for (const part of (DETAIL_ONLY ? [] : onbid.partitions())) {
     for (let pageNo = 1; ; pageNo++) {
       let page;
       try {
@@ -123,20 +143,23 @@ async function main() {
       for (const it of items) listed.set(it.id, it);
       appendJsonl('목록.jsonl', items);
       if (!page.rows.length || pageNo * 100 >= page.total) break;
-      await sleep(PAUSE_MS);
+      await sleep(gap);
     }
     log(`목록 ${part.label}: 누적 ${listed.size}건`);
     if (stopped) break;
   }
   stats.listRows = listed.size;
   // 목록이 한 건도 안 왔으면(인터넷·키·서비스 문제) 여기서 멈춘다 — 빈 결과로 '오늘 수집 완료'를 찍지 않게
-  if (!listed.size) throw new Error(`목록을 한 건도 받지 못함 — ${stats.errors[0] || stopped || '원인 불명'}`);
+  if (DETAIL_ONLY) {
+    for (const k of known.values()) if (k.cltrMngNo && k.pbctCdtnNo) listed.set(k.id, { id: k.id, cltrMngNo: k.cltrMngNo, pbctCdtnNo: k.pbctCdtnNo, bidEnd: k.bidEnd, pnu: k.hasPnu ? 'y' : null });
+    log(`목록 건너뜀 — DB 물건 ${listed.size}건에서 원문 빠진 것만`);
+  } else if (!listed.size) throw new Error(`목록을 한 건도 받지 못함 — ${stats.errors[0] || stopped || '원인 불명'}`);
   if (stopped) err(stopped);
 
   // 3) 목록 저장 → 서버가 '새로 들어왔거나 회차·최저가·상태가 바뀐 물건'을 알려 줌
   const all = [...listed.values()];
   const needDetail = new Set();
-  for (let i = 0; i < all.length; i += 200) {
+  for (let i = 0; i < (DETAIL_ONLY ? 0 : all.length); i += 200) {
     const chunk = all.slice(i, i + 200);
     try {
       const r = await post({ action: 'onbidSave', items: chunk });
@@ -164,7 +187,7 @@ async function main() {
     try { await post({ action: 'onbidSave', merge: true, items: send }); } catch (e) { err(`원문 저장: ${e.message}`); if (e.fatal) throw e; }
   };
   await pool(todo, async (it, k) => {
-    if (quotaHit) return;
+    if (quotaHit) return 'stop';
     try {
       const raw = await onbid.fetchDetail({ cltrMngNo: it.cltrMngNo, pbctCdtnNo: it.pbctCdtnNo, serviceKey: KEY, raw: true });
       const at = new Date().toISOString();
@@ -177,11 +200,13 @@ async function main() {
         buf.push(doc); stats.details++;
       }
     } catch (e) {
-      if (isQuota(e) || isAuth(e)) { quotaHit = true; err(`원문 중단: ${e.message}`); return; }
+      if (isRate(e)) return 'rate';
+      if (isQuota(e) || isAuth(e)) { quotaHit = true; err(`원문 중단: ${e.message}`); return 'stop'; }
       err(`원문 ${it.id}: ${e.message}`);
     }
     if (buf.length >= 50) await flush();
-    if ((k + 1) % 500 === 0) log(`원문 ${k + 1}/${todo.length} (받음 ${stats.details}, 빈 원문 ${stats.detailEmpty})`);
+    if ((stats.details + stats.detailEmpty) % 500 === 0 && stats.details) log(`원문 받음 ${stats.details}/${todo.length} (빈 원문 ${stats.detailEmpty}, 간격 ${gap}ms)`);
+    return 'ok';
   });
   await flush();
   log(`원문 끝: 받음 ${stats.details}, 빈 원문 ${stats.detailEmpty}${quotaHit ? ' — 한도·인증으로 중단' : ''}`);
@@ -201,7 +226,8 @@ async function main() {
         if (info) upd.bidInfo = info;
         if (result) { upd.result = result; stats.results++; } else stats.resultPending++;
         out.push(upd);
-      } catch (e) { if (!isQuota(e)) err(`결과 ${k.id}: ${e.message}`); }
+      } catch (e) { if (isRate(e)) return 'rate'; if (!isQuota(e)) err(`결과 ${k.id}: ${e.message}`); }
+      return 'ok';
     });
     appendJsonl('결과.jsonl', out);
     for (let i = 0; i < out.length; i += 200) {
