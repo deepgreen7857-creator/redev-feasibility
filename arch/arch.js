@@ -431,11 +431,19 @@
     const noSun = /준주거|상업|공업/.test(zz) && !/전용주거|일반주거|제[123]종/.test(zz);
     return {
       site: { pts, tags: noSun ? tags.map(t => (t === 'north' ? 'boundary' : t)) : tags, setbacks: sb, exclude: exclude.concat(axisStrips(p)), noSun },
-      opt: { units: C.평면, lib: C.평면_라이브러리, winRatio: winRatio(), edgeW: edgeWidths(), assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'compare' || p.form === 'rec' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, lowEdges: lowEdges.slice(), parkWidth: +p.parkW || 0, southBase: p.sunBase === 'south', exSetback: +p.bndSb || 0 },
+      opt: { units: C.평면, lib: C.평면_라이브러리, winRatio: winRatio(), edgeW: edgeWidths(), assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'rec' ? recForm().form : p.form === 'compare' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, lowEdges: lowEdges.slice(), parkWidth: +p.parkW || 0, southBase: p.sunBase === 'south', exSetback: +p.bndSb || 0 },
       lot, exA, p,
     };
   }
   const tick = () => new Promise(r => setTimeout(r, 0));
+  // 추천형: 요즘 단지는 판상형만으로 짓는 곳이 드물어 판상+탑상 혼합을 기본으로, 좁은 땅은 탑상형 — 배치는 한 번만(시간 그대로)
+  function recForm() {
+    if (!pts || pts.length < 3) return { form: 'mix', why: '' };
+    const bb = pts.reduce((m, q) => [Math.min(m[0], q[0]), Math.min(m[1], q[1]), Math.max(m[2], q[0]), Math.max(m[3], q[1])], [1e9, 1e9, -1e9, -1e9]);
+    const ha = G.area(pts) / 1e4, minD = Math.min(bb[2] - bb[0], bb[3] - bb[1]);
+    if (ha < 1.0 || minD < 70) return { form: 'tower', why: `추천형: 구역이 ${ha.toFixed(1)}ha${minD < 70 ? `, 짧은 변 ${Math.round(minD)}m로 좁아` : '로 작아'} 탑상형으로 배치` };
+    return { form: 'mix', why: `추천형: 요즘 단지 주류인 판상+탑상 혼합으로 배치(남향 판상동 + 조망·스카이라인용 탑상동)` };
+  }
   async function run() {
     if (!pts) { msg('구역계가 없습니다.', true); return; }
     const I = buildInput();
@@ -473,27 +481,7 @@
       if (!best) throw new Error('어느 방향으로도 동이 들어가지 않습니다');
       alts = best.r.map(x => Object.assign(x, { angle: best.a, form: I.opt.form }));
       if ($('#basicCard')) $('#basicCard').hidden = true;
-      let recWhy = '';
-      if (I.p.form === 'rec') {
-        // 추천형: 구역 모양으로 후보 형태 2~3개만 골라 만들어 보고(전부 만들면 오래 걸림) 목표 충족 → 남향 비율 → 세대수 순으로 하나 고름
-        const bb = pts.reduce((m, p) => [Math.min(m[0], p[0]), Math.min(m[1], p[1]), Math.max(m[2], p[0]), Math.max(m[3], p[1])], [1e9, 1e9, -1e9, -1e9]);
-        const ew = bb[2] - bb[0], ns = bb[3] - bb[1], areaHa = G.area(pts) / 1e4;
-        const cands = areaHa < 1.2 ? ['tower', 'mix'] : ns > ew * 1.6 ? ['tower', 'mix', 'slab'] : ew > ns * 1.3 ? ['slab', 'L'] : ['slab', 'mix', 'L'];
-        const SOUTH = { slab: 3, L: 2, mix: 2, tower: 1, Y: 1, court: 0 };
-        const res = [];
-        for (const fm of cands) {
-          const bf = fm === 'slab' ? best : await searchAngle(fm, `추천형 후보 ${G.FORM_NAME[fm]}`);
-          if (!bf) continue;
-          bf.r.filter(x => x.units > 0).forEach(x => res.push(Object.assign(x, { angle: bf.a, form: fm })));
-        }
-        if (!res.length) throw new Error('어느 형태도 들어가지 않습니다');
-        const reach = x => x.gfa >= x.target * 0.97 ? 1 : 0;
-        res.sort((a, b) => (reach(b) - reach(a)) || (SOUTH[b.form] - SOUTH[a.form]) || (Math.abs(a.maxFloors - 25) - Math.abs(b.maxFloors - 25)) || (b.units - a.units));
-        // 추천 1안 + 다른 형태 최고안 하나씩(비교용)
-        const top = res[0], others = cands.filter(f => f !== top.form).map(f => res.find(x => x.form === f)).filter(Boolean);
-        alts = [top, ...others].map((x, i) => Object.assign(x, { label: `${i ? '' : '추천 · '}${G.FORM_NAME[x.form]} · ${x.label}` }));
-        recWhy = `추천형: 구역 ${areaHa.toFixed(1)}ha · ${ns > ew * 1.6 ? '남북으로 긴 모양' : ew > ns * 1.3 ? '동서로 긴 모양' : '정형에 가까운 모양'}이라 ${cands.map(f => G.FORM_NAME[f]).join('·')}을 만들어 봄 → ${G.FORM_NAME[top.form]}${reach(top) ? '(목표 용적률 충족, ' : '('}${SOUTH[top.form] >= 2 ? '남향 세대 많음' : '좁은 땅에 유리'})`;
-      }
+      const recWhy = I.p.form === 'rec' ? recForm().why : '';
       if (I.p.form === 'compare') {
         // 형태 비교: 같은 방향에서 형태마다 대안을 만들고, 형태별로 최고 층수 25층에 가장 가까운 안 하나씩
         alts = [];
@@ -507,9 +495,9 @@
           alts.push(Object.assign(pick, { angle: bf.a, form: fm, label: `${G.FORM_NAME[fm]} · ${pick.label}` }));
         }
         if (!alts.length) throw new Error('어느 형태도 들어가지 않습니다');
-      } else if (I.p.form !== 'rec') alts.forEach(x => { x.label = `${G.FORM_NAME[I.opt.form] || '판상형'} · ${x.label}`; });
+      } else alts.forEach(x => { x.label = `${I.p.form === 'rec' ? '추천 · ' : ''}${G.FORM_NAME[I.opt.form] || '판상형'} · ${x.label}`; });
       // 기본 선택: 최고 층수가 25층에 가장 가까운 안(재개발 일반 규모) — 추천형은 첫 안
-      cur = I.p.form === 'rec' ? 0 : alts.reduce((bi, x, i) => Math.abs(x.maxFloors - 25) < Math.abs(alts[bi].maxFloors - 25) ? i : bi, 0);
+      cur = alts.reduce((bi, x, i) => Math.abs(x.maxFloors - 25) < Math.abs(alts[bi].maxFloors - 25) ? i : bi, 0);
       if (I.p.form === 'compare') { const pref = ['slab', 'mix', 'tower', 'L', 'Y', 'court'], ok = alts.map((x, i) => [x, i]).filter(([x]) => x.gfa >= x.target * 0.97).sort((a, b) => pref.indexOf(a[0].form) - pref.indexOf(b[0].form)); if (ok.length) cur = ok[0][1]; else cur = alts.reduce((bi, x, i) => x.gfa > alts[bi].gfa ? i : bi, 0); }
       if (false) cur = alts.reduce((bi, x, i) => (x.gfa > alts[bi].gfa * 1.01 || (x.gfa > alts[bi].gfa * 0.99 && x.units > alts[bi].units)) ? i : bi, 0);
       if (I.p.angleMode === 'auto') $('#p_angle').value = alts[cur].angle;
