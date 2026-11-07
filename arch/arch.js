@@ -376,7 +376,7 @@
     const el = $('#exInfo'), inp = $('#p_infra'); if (!el) return;
     if (!exclude.length) { el.innerHTML = ''; if (inp) inp.disabled = false; return; }
     const sum = {}; exclude.forEach((ex, i) => { const k = exKinds[i] || '직접 그림'; sum[k] = (sum[k] || 0) + Math.abs(G.area(ex)); });
-    const tot = Object.values(sum).reduce((a, b) => a + b, 0), siteA = pts ? Math.abs(G.area(pts)) : 0;
+    const tot = Object.values(sum).reduce((a, b) => a + b, 0), siteA = num(P().siteArea) || (pts ? Math.abs(G.area(pts)) : 0); // 배치 계산과 같은 기준(구역 면적 칸에 값이 있으면 그 값)
     el.innerHTML = `<b>건축 불가(정비기반시설) 반영됨</b>${exFrom.startsWith('urban:') ? ' — /urban 정비계획에서' : ''}: ${Object.entries(sum).map(([k, v]) => `${esc(k)} ${fmt(v)}㎡`).join(' · ')} · 합 ${fmt(tot)}㎡${siteA ? ` → 획지 약 ${fmt(siteA - tot)}㎡` : ''}. 지도의 초록(공원)·회색(도로) 부분에는 동을 놓지 않습니다.`;
     if (inp) inp.disabled = true;
   }
