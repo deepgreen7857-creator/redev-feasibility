@@ -948,10 +948,10 @@
       return;
     }
     if (b.id === 'birdPng') {
-      if (!BIRD.data) return; const el = $('#vbirdCanvas');
-      const r = JbsBird.render(el, BIRD.data, Object.assign({}, BIRD.st, { w: el.clientWidth || 1200, h: el.clientHeight || 620, pr: 2 }));
-      const a = document.createElement('a'); a.download = `${site.name || '조감도'}_${({ wide: '광역조감도', semi: '반조감도', bird: '조감도', persp: '투시도' })[BIRD.st.view]}.png`; a.href = r.png(); a.click();
-      renderBird(); return;
+      // 화면에 보이는 그대로 내려받기(다시 그리지 않음)
+      if (!BIRD.last || !BIRD.last.png) return;
+      const a = document.createElement('a'); a.download = `${site.name || '조감도'}_${({ wide: '광역조감도', semi: '반조감도', bird: '조감도', persp: '투시도' })[BIRD.st.view]}${BIRD.st.look === 'dusk' ? '_해질녘' : ''}${BIRD.st.rot ? '_' + BIRD.st.rot + '도' : ''}.png`; a.href = BIRD.last.png(); a.click();
+      return;
     }
     if (b.dataset.rot !== undefined) { const d = +b.dataset.rot; BIRD.st.rot = d === 0 ? 0 : (((BIRD.st.rot || 0) + d) % 360 + 360) % 360; renderBird(); return; }
     if (b.dataset.bk === 'labels') BIRD.st.labels = !BIRD.st.labels; else BIRD.st[b.dataset.bk] = b.dataset.bv;
