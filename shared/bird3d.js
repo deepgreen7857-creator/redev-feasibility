@@ -135,7 +135,7 @@
     if (D.aerial && D.aerial.img) { aB = D.aerial; aerialT = aerTex(aB); }
     const groundMat = new THREE.MeshStandardMaterial({ color: dusk ? 0x4a4b45 : 0xb3b1a6, roughness: 1 });
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize), groundMat);
-    ground.rotation.x = -Math.PI / 2; ground.position.set(cx, -0.1, -cy); ground.receiveShadow = true; scene.add(ground);
+    ground.rotation.x = -Math.PI / 2; ground.position.set(cx, -2.5, -cy); ground.receiveShadow = true; scene.add(ground);
     const worldUV = (geo, flatY, B) => { // 항공사진 좌표로 UV
       B = B || aB; const p = geo.attributes.position, uv = new Float32Array(p.count * 2);
       for (let i = 0; i < p.count; i++) { const X = p.getX(i), Y = flatY ? -p.getZ(i) : p.getY(i); uv[i * 2] = (X - B.x0) / (B.x1 - B.x0); uv[i * 2 + 1] = (Y - B.y0) / (B.y1 - B.y0); }
@@ -145,7 +145,7 @@
       const pg = new THREE.PlaneGeometry(B.x1 - B.x0, B.y1 - B.y0, 1, 1); pg.rotateX(-Math.PI / 2); pg.translate((B.x0 + B.x1) / 2, y, -(B.y0 + B.y1) / 2);
       worldUV(pg, true, B); const m = new THREE.Mesh(pg, new THREE.MeshStandardMaterial({ map: T, roughness: 1 })); m.receiveShadow = true; scene.add(m);
     };
-    if (D.aerialFar && D.aerialFar.img) aerPlane(D.aerialFar, aerTex(D.aerialFar), -0.06); // 바깥: 넓은 저해상도
+    if (D.aerialFar && D.aerialFar.img) aerPlane(D.aerialFar, aerTex(D.aerialFar), -1.2); // 바깥: 넓은 저해상도
     if (aerialT) aerPlane(aB, aerialT, 0);
     const flat = (ring, mat, y, holes) => {
       const sh = new THREE.Shape(ring.map(p => new THREE.Vector2(p[0], p[1])));
@@ -362,7 +362,7 @@
       semi: { fov: 32, el: 0.36, d: 1.75, az: -0.5, y: 25 },     // 반조감도: 낮은 비스듬
       bird: { fov: 30, el: 0.78, d: 1.6, az: -0.45, y: 20 },     // 조감도: 높은 비스듬, 단지가 화면 가득
     };
-    const camera = new THREE.PerspectiveCamera(30, W / H, 1, span * 60);
+    const camera = new THREE.PerspectiveCamera(30, W / H, 3, span * 40);
     if (opt.view === 'persp') {
       // 투시도: 남쪽 멀리(구역 폭의 1.5배) 높이 12m에서, 하늘이 화면 절반
       const ep = EYE;
