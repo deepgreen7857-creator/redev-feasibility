@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <script src="/shared/gate.js"></script>
-<script src="/shared/sitenav.js?v=3"></script>
+<script src="/shared/sitenav.js?v=4"></script>
 <meta name="robots" content="noindex, nofollow">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -157,6 +157,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       <div class="bar" style="margin-top:14px">
         <button class="primary" id="run">배치안 만들기</button>
         <button id="confirm" disabled>이 안으로 확정</button>
+        <button id="toPanel" title="확정한 안으로 A0 판넬·사업 단계별 팸플릿 만들기(/panel)">판넬·팸플릿</button>
       </div>
       <div class="msg" id="msg" role="status"></div>
       <div class="nextsteps" id="nextSteps" hidden></div>
@@ -195,7 +196,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
         <span class="tag">시점</span><button data-bk="view" data-bv="wide">광역조감도</button><button data-bk="view" data-bv="semi">반조감도</button><button data-bk="view" data-bv="bird">조감도</button><button data-bk="view" data-bv="persp">투시도</button>
         <span class="tag">빛</span><button data-bk="look" data-bv="day">낮</button><button data-bk="look" data-bv="dusk">해질녘</button>
         <span class="tag">주변</span><button data-bk="mode" data-bv="model">모형(낮춤)</button><button data-bk="mode" data-bv="review">검토(실제 높이)</button>
-        <button data-bk="labels" data-bv="1">동 번호</button><button id="birdPng">PNG 저장(2배)</button>
+        <button data-bk="labels" data-bv="1">동 번호</button><button id="birdPng">PNG 저장(2배)</button><button id="birdToPanel" title="지금 보이는 조감도(2배)를 이 구역의 판넬 그림으로 보내고 판넬·팸플릿 화면을 새 창으로 엽니다">판넬로 보내기</button>
       </div>
       <div id="vbirdCanvas" style="width:100%;height:620px;border-radius:6px;overflow:hidden;border:1px solid var(--line);background:#1b2028"></div>
       <p class="note" id="birdNote">이해를 돕기 위한 이미지이며 정비계획 수립 과정에서 변경될 수 있습니다.</p>
@@ -210,10 +211,12 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="../js/config.js?v=1"></script>
 <script src="../js/zonekit.js?v=79"></script>
-<script src="../shared/site-store.js?v=10"></script>
+<script src="../shared/site-store.js?v=156"></script>
 <script src="../shared/arch-geom.js?v=29"></script>
-<script src="../shared/arch-check.js?v=10"></script>
-<script src="../shared/sun-verify.js?v=1"></script>
+<script src="../shared/arch-check.js?v=12"></script>
+<script src="../shared/sun-verify.js?v=2"></script>
+<script src="../shared/review-opinion.js?v=1"></script>
+<script src="../shared/panel-img.js?v=1"></script>
 <script src="../shared/mass3d.js?v=1"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
@@ -221,12 +224,12 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-<script src="../shared/bird3d.js?v=4"></script>
+<script src="../shared/bird3d.js?v=5"></script>
 <script src="../traffic/traffic-calc.js?v=5"></script>
 <script src="../shared/feas.js?v=148"></script>
 <script src="../shared/plan-import.js?v=2"></script>
-<script src="arch-draw.js?v=10"></script>
-<script src="arch.js?v=53"></script>
+<script src="arch-draw.js?v=11"></script>
+<script src="arch.js?v=60"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>
 </body>

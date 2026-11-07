@@ -224,7 +224,8 @@ const Tabs = {
         act = `<button class="btn small on" id="btnAddrAdd">필지 추가·빼기 끝내기</button> <span class="note">지도에서 더하거나 뺄 필지를 누르세요</span>`;
       } else if (done) {
         act = `<p style="margin:0 0 6px"><b class="good">✓ 구역 지정 완료</b> <span class="note">${esc(S.area.confirmedAt || '')} · 필지 ${fmt(nL)}개</span></p>
-          <button class="btn small primary" id="btnZoneNext">다음: 빠른 사업성 →</button> <button class="btn small" id="btnZoneReopen">필지 다시 고치기</button>`;
+          <button class="btn small primary" id="btnZoneNext">다음: 빠른 사업성 →</button> <button class="btn small" id="btnZoneReopen">필지 다시 고치기</button>
+          <a class="btn small" href="arch/?project=1&go=bird" target="_blank" rel="noopener" title="이 구역계로 개략 배치안을 만든 뒤 조감도까지 바로 그립니다(새 창, 큰 구역은 1~2분)">이 구역으로 조감도 보기 ↗</a>`;
       } else {
         act = `<p style="margin:0 0 6px"><b>더 넣을 필지가 있나요?</b></p>
           ${holes ? `<p class="warn" style="margin:0 0 6px">구역 안에 빠진 빈칸이 ${holes}곳 있습니다 — 갇힌 필지가 아닌지 지도에서 확인하세요.</p>` : ''}
@@ -760,7 +761,36 @@ const App = {
     rerender ? t.render() : t.refresh();
   },
 
+  // 도로명으로 잡혀 지번이 비었으면, 그 위치의 연속지적 필지에서 지번을 찾아 대표 지번으로 채움
+  async fillParcelFromPt() {
+    if (S.meta.parcel || !S.meta.addrPt || !VWorld.enabled) return false;
+    try {
+      const f = await VWorld.parcelAt(S.meta.addrPt[1], S.meta.addrPt[0]);
+      const pp = (f && f.properties) || {}, addr = String(pp.addr || pp.jibun || '');
+      const m = addr.match(/(\S+[동리가])\s+((산\s*)?\d+(-\d+)?)/); if (!m) return false;
+      S.meta.parcel = `${m[1]} ${m[2].replace(/\s+/g, '')}`; S.meta.repInfo = null;
+      App.update(true); App.persist();
+      Tabs.overview.loadRep({ lat: S.meta.addrPt[1], lon: S.meta.addrPt[0] });
+      return true;
+    } catch (e) { return false; }
+  },
+
+  // 1단계 끝 '할 일 확인' 칸: 사업 유형·구역명·대표 지번 세 가지가 됐는지 보여 줌
+  ovCheck(warn) {
+    const ck = document.getElementById('ovCheck'); if (!ck) return;
+    const nm = S.meta.name && S.meta.name !== '새 정비사업', rep = !!S.meta.parcel || !!S.area.geojson, roadOnly = !S.meta.parcel && !!S.meta.addrPt && !S.area.geojson;
+    const row = (ok, t, how) => `<li class="${ok ? 'ok' : 'todo'}"><b>${ok ? '✓' : '○'}</b> ${t}${ok ? '' : ` <span class="note">— ${how}</span>`}</li>`;
+    const all = nm && rep;
+    ck.classList.toggle('warn', !!warn && !rep);
+    ck.innerHTML = `<p style="margin:0 0 4px"><b>${all ? '1단계 끝 — [다음: 구역계]로 넘어가세요' : '1단계에서 할 일'}</b></p><ul>
+      ${row(true, `사업 유형: ${TYPES[S.meta.type].label}`, '')}
+      ${row(nm, '구역명', '위 2번 칸에 씁니다')}
+      ${row(rep, S.meta.parcel ? `대표 지번: ${esc(S.meta.parcel)}` : '대표 지번', roadOnly ? '위치(주소)는 도로명으로 잡혔지만 지번이 비어 있습니다 <button type="button" class="btn small primary" onclick="App.fillParcelFromPt().then(ok => { if (!ok) alert(\'이 위치에서 지번을 찾지 못했습니다. 위 3번에서 지번(예: ○○동 123-4)으로 검색해 [대표 지번으로 설정]을 누르세요.\'); })">이 위치에서 대표 지번 찾기</button>' : '위 3번에서 주소를 검색하고 찾은 위치의 <b>[대표 지번으로 설정]</b>까지 눌러야 합니다(지번을 써 두기만 하면 반영되지 않음)')}
+      </ul>${warn && !rep ? '<p class="warn" style="margin:6px 0 0">대표 지번을 정하지 않았습니다. 정하면 2단계에서 [이 필지로 구역 만들기]로 바로 구역이 그려집니다. 그래도 넘어가려면 [다음]을 한 번 더 누르세요(지도에서 필지를 직접 골라야 함).</p>' : ''}`;
+  },
+
   kpis() {
+    this.ovCheck();
     const rp = REGION_PRESETS[S.criteria.region];
     const rs = $('#regionSelect');
     if (rs) rs.value = S.criteria.region;
@@ -1202,11 +1232,13 @@ function boot() {
       if (!list.length) { msg.textContent = '검색 결과가 없습니다. 지번이나 도로명 주소로 다시 검색해 보세요.'; return; }
       // 찾은 위치를 보여 주고, 사용자가 [대표 지번으로 설정]을 눌러야 설정함
       const parcelOf = r => [r.sub, r.label].map(x => String(x || '')).find(x => /\d+(-\d+)?\s*$/.test(x) && /[동리가]\s+(산\s*)?\d/.test(x)) || '';
-      const rows = list.slice(0, 5);
+      // 같은 지번(또는 같은 이름)으로 나온 결과는 한 줄로 — 아파트 도로명 검색은 같은 557-1이 여러 줄로 옴
+      const seen = new Set(), rows = list.filter(r => { const k = parcelOf(r) || r.label; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 5);
+      // 버튼은 주소 바로 오른쪽에 붙여서(화면 오른쪽 끝에 두면 주소와 멀고 오른쪽 아래 [작업 저장] 안내에 가려짐)
       msg.innerHTML = `<b>찾은 위치 ${rows.length}곳</b> — 사업지 대표 지번을 골라 [대표 지번으로 설정]을 누르세요.
-        <ul class="rep-list" style="list-style:none;padding:0;margin:6px 0 0">${rows.map((r, i) => `<li style="display:flex;gap:8px;align-items:center;padding:4px 0;border-top:1px solid #eee">
-          <span style="flex:1"><b>${esc(r.label)}</b>${parcelOf(r) && parcelOf(r) !== r.label ? `<br><small>지번: ${esc(parcelOf(r))}</small>` : ''}</span>
-          <button type="button" class="btn small${i ? '' : ' primary'}" data-rep="${i}">대표 지번으로 설정</button></li>`).join('')}</ul>`;
+        <ul class="rep-list" style="list-style:none;padding:0;margin:6px 0 0;max-width:820px">${rows.map((r, i) => `<li style="display:flex;gap:12px;align-items:center;padding:6px 0;border-top:1px solid #eee">
+          <span><b>${esc(r.label)}</b>${parcelOf(r) && parcelOf(r) !== r.label ? `<br><small>지번: ${esc(parcelOf(r))}</small>` : ''}</span>
+          <button type="button" class="btn small${i ? '' : ' primary'}" data-rep="${i}" style="flex:none">대표 지번으로 설정</button></li>`).join('')}</ul>`;
       if (MapView.map) MapView.goTo(rows[0]);
       $$('[data-rep]', msg).forEach(btn => { btn.onclick = () => setRep(rows[+btn.dataset.rep]); });
     } catch (err) {
@@ -1239,6 +1271,7 @@ function boot() {
       S.meta.addrPt = [r.lon, r.lat]; S.meta.addrZoneOk = '';
       S.meta.parcel = [r.sub, r.label].map(x => String(x || '')).find(x => /\d+(-\d+)?\s*$/.test(x) && /[동리가]\s+(산\s*)?\d/.test(x)) || '';
       await Auto.location(r);
+      if (!S.meta.parcel) await App.fillParcelFromPt(); // 도로명 검색이라 지번이 안 왔으면 그 위치 필지에서 찾음
       const pp = Tabs.area.parcelParts();
       S.meta.repInfo = null;
       App.update(); App.persist();
@@ -1261,9 +1294,21 @@ function boot() {
     nav.className = 'step-nav';
     if (i > 0) nav.innerHTML += `<button class="btn" data-goto="${order[i - 1]}">← ${$(`#tabs a[data-tab="${order[i - 1]}"]`).textContent.slice(1)}</button>`;
     if (i < order.length - 1) nav.innerHTML += `<button class="btn primary" data-goto="${order[i + 1]}">다음: ${$(`#tabs a[data-tab="${order[i + 1]}"]`).textContent.slice(1)} →</button>`;
+    if (t === 'overview') { const ck = document.createElement('div'); ck.id = 'ovCheck'; ck.className = 'ov-check'; $('#tab-' + t).append(ck); }
     $('#tab-' + t).append(nav);
   });
-  $$('.step-nav [data-goto]').forEach(b => { b.onclick = () => App.go(b.dataset.goto); });
+  $$('.step-nav [data-goto]').forEach(b => {
+    b.onclick = () => {
+      // 1단계 → 2단계: 대표 지번을 안 정했으면 넘기기 전에 알려 줌(지번을 써 두기만 하고 [대표 지번으로 설정]을 안 누르는 경우가 많음)
+      if (App.current === 'overview' && b.dataset.goto === 'area' && !S.meta.parcel && !S.area.geojson && !b.dataset.force) {
+        const ck = $('#ovCheck'); App.ovCheck(true);
+        if (ck) ck.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        b.dataset.force = '1'; setTimeout(() => { delete b.dataset.force; }, 15000);
+        return;
+      }
+      App.go(b.dataset.goto);
+    };
+  });
   $('#btnParcelsToArea').onclick = () => MapView.parcelsToArea();
   $('#showParcels').onchange = e => { S.area.showParcels = e.target.checked; MapView.drawParcels(); App.persist(); };
   $$('[data-csv]').forEach(b => { b.onclick = () => csvAction(b.dataset.csv, b.dataset.act); });

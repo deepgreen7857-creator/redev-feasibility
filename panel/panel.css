@@ -1,0 +1,86 @@
+/* /panel 판넬·팸플릿 — 화면(미리보기)과 인쇄(실제 크기 mm) 공용 */
+:root{--ink:#1f2933;--mute:#5b6670;--line:#cfd6dd;--acc:#e8590c;--park:#6fbf7e;--road:#b9bec4;--bg:#eef1f4}
+*{box-sizing:border-box}
+body{margin:0;word-break:keep-all;overflow-wrap:break-word;font-family:'IBM Plex Sans KR',system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+header.top{display:flex;align-items:baseline;gap:10px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line)}
+header.top h1{font-size:18px;margin:0 0 0 8px}
+header.top .sub{color:var(--mute);font-size:13px}
+.layout{display:grid;grid-template-columns:320px 1fr;gap:0;min-height:calc(100vh - 100px)}
+.ctl{background:#fff;border-right:1px solid var(--line);padding:12px 14px;overflow:auto}
+.ctl h2{font-size:14px;margin:14px 0 6px}
+.ctl label{display:block;font-size:13px;margin:6px 0}
+.ctl label input:not([type=checkbox]),.ctl select{display:block;width:100%;margin-top:3px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font:inherit}
+.ctl label.chk{display:flex;gap:6px;align-items:center}
+.note{color:var(--mute);font-size:12px;line-height:1.5}
+button.primary{width:100%;padding:10px;border:0;border-radius:8px;background:var(--ink);color:#fff;font:inherit;font-weight:600;cursor:pointer;margin-top:10px}
+.stage{padding:16px;overflow:auto}
+#sheets .wrapS{margin:0 auto 18px;position:relative}
+#sheets .sheet{background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.15);transform-origin:top left;position:absolute;left:0;top:0;overflow:hidden}
+@media (max-width:820px){.layout{grid-template-columns:1fr}.ctl{border-right:0;border-bottom:1px solid var(--line)}}
+
+/* ---------- 판넬(A0) — 단위 mm ---------- */
+.panel{font-size:7mm;line-height:1.45;display:grid;gap:8mm;padding:22mm}
+.panel.P{width:841mm;height:1189mm;grid-template-rows:auto 470mm 1fr auto auto}
+.panel.L{width:1189mm;height:841mm;grid-template-columns:1.45fr 1fr;grid-template-rows:auto 1fr auto;column-gap:14mm}
+.panel .hd{border-bottom:2.2mm solid var(--ink);padding-bottom:6mm;display:flex;justify-content:space-between;align-items:flex-end;gap:10mm}
+.panel.L .hd{grid-column:1/-1}
+.panel .hd h1{font-size:26mm;line-height:1.15;margin:0;letter-spacing:-.5mm}
+.panel .hd .st{font-size:11mm;color:var(--acc);font-weight:700;margin-top:3mm}
+.panel .hd .mark{font-size:7mm;color:var(--mute);text-align:right;white-space:nowrap}
+.panel .bird{background:#dfe5ea;border-radius:4mm;overflow:hidden;display:grid;place-items:center;color:var(--mute);font-size:9mm}
+.panel .bird img{width:100%;height:100%;object-fit:cover}
+.panel .row2{display:grid;grid-template-columns:1.1fr 1fr;gap:12mm;min-height:0}
+.panel .box{border:.6mm solid var(--line);border-radius:3mm;padding:7mm;min-height:0;overflow:hidden}
+.panel .box h3{font-size:10mm;margin:0 0 4mm;border-left:2.4mm solid var(--acc);padding-left:4mm}
+.panel table{width:100%;border-collapse:collapse;font-size:7mm}
+.panel th,.panel td{border-bottom:.4mm solid var(--line);padding:2.2mm 2mm;text-align:left;vertical-align:top}
+.panel th{color:var(--mute);font-weight:500;width:38%}
+.panel td.n{text-align:right;font-variant-numeric:tabular-nums}
+.panel .flow{display:flex;flex-wrap:wrap;gap:3mm;align-items:center;font-size:6.5mm}
+.panel .flow span{border:.5mm solid var(--line);border-radius:20mm;padding:2mm 5mm;background:#fff}
+.panel .flow span.on{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700}
+.panel .flow i{color:#adb5bd;font-style:normal}
+.panel .ft{display:flex;justify-content:space-between;gap:10mm;font-size:6.5mm;color:var(--mute);border-top:.6mm solid var(--line);padding-top:5mm}
+.panel.L .ft{grid-column:1/-1}
+.panel .colL{display:grid;grid-template-rows:1.25fr 1fr;gap:10mm;min-height:0}
+.panel .colR{display:grid;grid-auto-rows:min-content;gap:9mm;min-height:0;overflow:hidden}
+.panel ul{margin:0;padding-left:8mm}
+.panel svg{width:100%;height:100%;display:block}
+
+/* ---------- 팸플릿(A4 가로 3단) — 단위 mm ---------- */
+.pam{width:297mm;height:210mm;display:grid;grid-template-columns:repeat(3,99mm);font-size:3.25mm;line-height:1.55}
+.pam .pn{padding:10mm 8mm 9mm;border-right:.2mm dashed #d0d5da;overflow:hidden;display:flex;flex-direction:column;gap:3mm}
+.pam .pn:last-child{border-right:0}
+.pam h2{font-size:4.6mm;margin:0;border-left:1.4mm solid var(--acc);padding-left:2.4mm}
+.pam h3{font-size:3.7mm;margin:1mm 0 0}
+.pam p{margin:0}
+.pam ul{margin:0;padding-left:4.5mm}
+.pam li{margin:.6mm 0}
+.pam .cover{background:var(--ink);color:#fff;justify-content:space-between}
+.pam .cover .stg{font-size:4mm;color:#ffb38a;font-weight:700}
+.pam .cover h1{font-size:8.2mm;line-height:1.25;margin:2mm 0}
+.pam .cover .one{font-size:4.3mm;line-height:1.5}
+.pam .cover .when{font-size:3.6mm;border-top:.3mm solid #556270;padding-top:3mm}
+.pam .cover .mk{font-size:3mm;color:#aab4be}
+.pam table{width:100%;border-collapse:collapse;font-size:3.05mm}
+.pam th,.pam td{border-bottom:.2mm solid var(--line);padding:1.2mm 1mm;text-align:left;vertical-align:top}
+.pam th{width:30%;color:var(--mute);font-weight:500}
+.pam .req{background:#fff6f0;border:.3mm solid #ffd2b8;border-radius:2mm;padding:2.5mm}
+.pam .req b{color:#b54708}
+.pam .qa p.q{font-weight:700;margin-top:1.4mm}
+.pam .chk{display:inline-block;width:3mm;height:3mm;border:.3mm solid var(--ink);margin-right:1.4mm;vertical-align:-.4mm}
+.pam .survey .q{font-weight:600;margin-top:1.6mm}
+.pam .survey .a{display:flex;flex-wrap:wrap;gap:1mm 4mm}
+.pam .small{font-size:2.7mm;color:var(--mute)}
+.pam .plan{height:62mm;border:.3mm solid var(--line);border-radius:2mm;overflow:hidden;flex:none}
+.pam .plan svg{width:100%;height:100%;display:block}
+.pam .warn{font-size:2.7mm;color:#b54708}
+
+@media print{
+  body{background:#fff}
+  header.top,.ctl,#siteNav,#planSteps,#jbsWorkBtn,.jbs-work{display:none!important}
+  .layout{display:block}
+  .stage{padding:0;overflow:visible}
+  #sheets .wrapS{margin:0;width:auto!important;height:auto!important;page-break-after:always;break-after:page}
+  #sheets .sheet{position:static;transform:none!important;box-shadow:none}
+}

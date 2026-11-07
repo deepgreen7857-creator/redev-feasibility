@@ -1,14 +1,14 @@
 /* 사이트 공통 길잡이(2026-11-04 사용자 결정 '탭이 물 흐르듯이')
  * 오른쪽 끝 [▶ 사용법 영상](2026-11-07 사용자 결정 '홈페이지 위에 매뉴얼 버튼, 쇼츠나 길지 않은 롱폼') — 목록은 shared/manuals.json
  * 1단: 페이지 — 정비사업 사업성 검토 · 정비계획 검토 · 정비경매 리포트 · 주식 모의투자 · 안전관리계획서 · 검토서 라이브러리
- * 2단(정비계획 검토 쪽 화면만): 1 주출입구 설정 → 2 정비기반시설 지정 → 3 교통성 검토 → 4 환경성 검토 → 5 경관성 검토 → 6 건축계획 수립
+ * 2단(정비계획 검토 쪽 화면만): 1 주출입구 설정 → 2 정비기반시설 지정 → 3 교통성 검토 → 4 환경성 검토 → 5 경관성 검토 → 6 건축계획 수립 → 7 판넬·팸플릿(/panel)
  *   /urban의 4탭(단지 출입구)·3탭(기반시설)과 /traffic·/env·/landscape·/arch를 한 줄로 이음. /urban은 탭을 바꿀 때 JbsNav.mark()로 표시를 옮김
  * 페이지마다 <script src="/shared/sitenav.js"></script>(workfile.js 앞)만 넣으면 됨. sticky-top.js가 이 두 줄도 위에 고정함 */
 (() => {
   const P = location.pathname.replace(/index\.html$/, '');
   const PAGES = [
     { k: 'main', name: '정비사업 사업성 검토', href: '/', on: p => p === '/' },
-    { k: 'plan', name: '정비계획 검토(시험판)', href: '/urban/', on: p => /^\/(urban|traffic|env|landscape|arch)\//.test(p) },
+    { k: 'plan', name: '정비계획 검토(시험판)', href: '/urban/', on: p => /^\/(urban|traffic|env|landscape|arch|panel)\//.test(p) },
     { k: 'auction', name: '정비경매 리포트', href: '/auction/', on: p => /^\/auction\//.test(p) },
     { k: 'stock', name: '주식 모의투자', href: '/stock/', on: p => /^\/stock\//.test(p) },
     { k: 'safety', name: '안전관리계획서(시험판)', href: '/safety/', on: p => /^\/safety\//.test(p) },
@@ -21,6 +21,7 @@
     { n: 4, name: '환경성 검토', href: '/env/', on: () => /^\/env\//.test(P) },
     { n: 5, name: '경관성 검토', href: '/landscape/', on: () => /^\/landscape\//.test(P) },
     { n: 6, name: '건축계획 수립', href: '/arch/', on: () => /^\/arch\//.test(P) },
+    { n: 7, name: '판넬·팸플릿', href: '/panel/', on: () => /^\/panel\//.test(P) },   // 2026-11-07 사용자 목록 8·9
   ];
   const css = `
 #siteNav{display:flex;gap:2px;align-items:stretch;overflow-x:auto;background:#1f2933;padding:0 12px;scrollbar-width:thin;font-family:inherit}

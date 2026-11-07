@@ -320,8 +320,9 @@
 
   /* ---------- 구역 불러오기 ---------- */
   function fillSel() {
-    const saved = JbsSite.list(), urb = JbsSite.urbanZones();
+    const saved = JbsSite.list(), urb = JbsSite.urbanZones(), pz = JbsSite.projectZone && JbsSite.projectZone();
     $('#siteSel').innerHTML = '<option value="">구역 불러오기…</option>' +
+      (pz ? `<optgroup label="사업성 검토(첫 화면)에 그린 구역계"><option value="p:">${esc((pz.meta && pz.meta.name !== '새 정비사업' && pz.meta.name) || '사업성 검토 구역')} 가져오기</option></optgroup>` : '') +
       (saved.length ? `<optgroup label="저장한 구역">${saved.map(x => `<option value="s:${x.id}"${site && site.id === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</optgroup>` : '') +
       (urb.length ? `<optgroup label="/urban 정비계획 검토의 안">${urb.map(x => `<option value="u:${x.key}">${x.key}안 가져오기</option>`).join('')}</optgroup>` : '');
   }
@@ -506,7 +507,7 @@
   let SW = null; const SWCB = {};
   function simpleWorker() {
     if (SW) return SW;
-    SW = new Worker('simple-worker.js?v=16');
+    SW = new Worker('simple-worker.js?v=18');
     SW.onmessage = e => { const f = SWCB[e.data.id]; delete SWCB[e.data.id]; if (f) f(e.data); };
     SW.onerror = ev => { Object.values(SWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(SWCB).forEach(k => delete SWCB[k]); SW = null; };
     return SW;
@@ -575,7 +576,7 @@
   let PW = null; const PWCB = {};
   async function runDeep(I) {
     msg('심화 배치 계산 중… 골격·구획·방향·높이·동 형태를 바꿔 가며 반복 탐색합니다(기본형 후보 포함, 탐색 90초 + 기본형 계산 — 보통 2~3분). 이 창을 닫지 마세요.');
-    if (!PW) { PW = new Worker('plan-worker.js?v=17'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
+    if (!PW) { PW = new Worker('plan-worker.js?v=19'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
     const id = Date.now() + Math.random();
     const res = await new Promise(ok => { PWCB[id] = ok; PW.postMessage({ id, site: I.site, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }) }); });
     if (!res.r || !res.r.variants.length) throw new Error(res.err || '심화 배치 안을 만들지 못했습니다');
@@ -665,15 +666,44 @@
     try { localStorage.setItem('jbs-sunsim-cache', JSON.stringify(data)); } catch (e) { msg('브라우저 저장 공간이 모자라 시뮬레이터로 넘기지 못했습니다.', true); return; }
     window.open('sunsim.html', '_blank');
   }
+  // 동 목록(월드 좌표) → 대안 하나(시뮬레이터 받기·일조 연계 다듬기 공용). mixT 없는 동은 t·n으로
+  function altFromBuildings(list, label, vname) {
+    const I = buildInput(), As = I.opt.assume, H = f => f * As.floorHeight_m + As.groundExtra_m, sup = t => (C.평면[t] ? (+C.평면[t].공급 > 0 ? +C.평면[t].공급 : C.평면[t].전용 * As.supplyFactor) : (+t || 84) * As.supplyFactor);
+    const blds = list.map((b, i) => { const mt = b.mixT || (b.t ? { [b.t]: b.n || 1 } : {}), t = Object.keys(mt).sort((x, y) => mt[y] - mt[x])[0] || '84', th = (b.angle || 0) * Math.PI / 180, loc = b.poly.map(p => G.rot(p, -th)), xs = loc.map(p => p[0]), ys = loc.map(p => p[1]);
+      return Object.assign({}, b, { id: i + 1, t, mixT: mt, L: Math.max(...xs) - Math.min(...xs), D: Math.max(...ys) - Math.min(...ys), center: b.poly.reduce((a, p) => [a[0] + p[0] / b.poly.length, a[1] + p[1] / b.poly.length], [0, 0]), cap: b.floors, divs: [], vname: b.vname || b.dname || vname }); });
+    // 계단식(날개별 층수) 동은 세대 조각 층수 합 ÷ (조각 수 × 최고 층수) 비율로 줄임(JbsCheck stepK와 같음)
+    const kOf = b => (Array.isArray(b.unitFl) && b.unitFl.length && b.floors > 0 ? b.unitFl.reduce((a, f) => a + f, 0) / (b.unitFl.length * b.floors) : 1);
+    const byType = {}; blds.forEach(b => Object.keys(b.mixT).forEach(t => { byType[t] = (byType[t] || 0) + Math.round(b.mixT[t] * b.floors * kOf(b)); }));
+    const gfa = blds.reduce((s, b) => s + Object.keys(b.mixT).reduce((c, t) => c + b.mixT[t] * b.floors * sup(t), 0) * kOf(b), 0), ba = blds.reduce((s, b) => s + Math.abs(G.area(b.poly)), 0), mf = Math.max(...blds.map(b => b.floors));
+    blds.forEach(b => { if (b.wingFloors) b.vname = `${b.vname || b.dname || ''} · 날개 ${b.wingFloors.join('/')}층`; });
+    return { label, buildings: blds, units: blds.reduce((s, b) => s + Math.round((b.n || 0) * b.floors * kOf(b)), 0), gfa, far: gfa / I.lot * 100, bcr: ba / I.lot * 100, byType, maxFloors: mf, maxHeight: H(mf), H, angle: 0, form: 'mix', target: I.lot * I.opt.far / 100, imported: true };
+  }
+  /* 일조 연계 다듬기(2026-11-07, 사용자 목록 2): 지금 대안에서 출발 → shared/sun-refine.js(워커 arch/refine-worker.js, 시간 예산 90초)
+     결과는 대안 하나를 더함. 세대수는 '순세대'(동지 2시간 미달 세대를 뺀 값 — 저층 3개 층 안 미달은 필로티·커뮤니티로 비움, 그보다 많은 줄은 못 씀) */
+  let RW = null, RWCB = {}, RWPROG = {};
+  async function runRefine() {
+    const A = alts[cur], btn = $('#refineBtn'); if (!A || !btn) return;
+    const { I, opt } = riskOpt(), id = Date.now();
+    if (!RW) { RW = new Worker('refine-worker.js?v=3'); RW.onmessage = e => { const d = e.data; if (d.prog) { const f = RWPROG[d.id]; if (f) f(d.prog); return; } const f = RWCB[d.id]; delete RWCB[d.id]; delete RWPROG[d.id]; if (f) f(d); }; RW.onerror = ev => { Object.values(RWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); RWCB = {}; RWPROG = {}; RW = null; }; }
+    btn.disabled = true; btn.textContent = '다듬는 중…';
+    const blds = JSON.parse(JSON.stringify(A.buildings.map(b => { const o = {}; ['id', 'poly', 'parts', 'cores', 'units', 'divs', 'walls', 'center', 'angle', 'floors', 'form', 'n', 't', 'mixT', 'inner', 'vname', 'dname', 'notes', 'wingUnits', 'partWing', 'unitWing', 'wingFloors', 'partFl', 'unitFl'].forEach(k => { if (b[k] !== undefined && typeof b[k] !== 'function') o[k] = b[k]; }); return o; })));
+    const res = await new Promise(ok => { RWCB[id] = ok; RWPROG[id] = s => { btn.textContent = `다듬는 중… 순 ${fmt(s.net)}세대 · ${s.n}개동 · ${Math.round(s.ms / 1000)}초`; }; RW.postMessage({ id, site: I.site, blds, opt: Object.assign({}, opt, { lat: pr ? pr.lat0 : 37.46 }), budget: 90000 }); });
+    btn.disabled = false; btn.textContent = '일조 연계 다듬기';
+    if (!res.r) { msg('일조 연계 다듬기를 하지 못했습니다: ' + (res.err || ''), true); return; }
+    const r = res.r, B = r.best, S0 = r.start;
+    const alt = altFromBuildings(r.blds, `일조 다듬기 순 ${fmt(B.net)}세대`, '일조 연계 다듬기');
+    const k = B.gross ? B.net / B.gross : 1; alt.grossUnits = alt.units; alt.units = B.net; alt.gfa *= k; alt.far *= k; Object.keys(alt.byType).forEach(t => { alt.byType[t] = Math.round(alt.byType[t] * k); });
+    alt.refine = { start: S0, best: B, steps: r.steps.length, tries: r.tries, ms: r.ms, from: A.label };
+    alts.push(alt); cur = alts.length - 1; sunRes = null; v3 = null; renderAlts(); showView('plan'); drawBuildingsOnMap();
+    msg(`일조 연계 다듬기: '${A.label}'에서 출발 — 순 ${fmt(S0.net)} → ${fmt(B.net)}세대(세대 ${fmt(B.gross)} 중 저층 비움 ${fmt(B.low)} · 못 쓰는 줄 ${fmt(B.dead)}), ${r.blds.length}개동, ${fmt(r.tries)}번 시도 ${Math.round(r.ms / 1000)}초${B.legal ? '' : ' · 규칙 위반 남음: ' + B.bad.join(', ')}. 동 사이 본문 거리는 단서(모든 세대 동지 2시간)로 갈음한 배치입니다.`);
+  }
+  document.addEventListener('click', e => { if (e.target && e.target.id === 'refineBtn') runRefine(); });
+  // 판넬·팸플릿(2026-11-07, 사용자 목록 8·9): 확정안이 있는 이 구역으로 /panel
+  document.addEventListener('click', e => { if (!e.target || e.target.id !== 'toPanel') return; if (site && site.id) { if (!(site.arch && site.arch.chosen) && !confirm('아직 [이 안으로 확정]을 하지 않았습니다. 확정 전이면 판넬에 배치도·건축 개요가 비어 나옵니다. 그래도 열까요?')) return; location.href = '/panel/?site=' + encodeURIComponent(site.id); } else location.href = '/panel/'; });
   function takeSunSim() {
     let r = null; try { r = JSON.parse(localStorage.getItem('jbs-sunsim-back-cache') || 'null'); } catch (e) { r = null; }
     if (!r || !r.buildings || !r.buildings.length) { msg('시뮬레이터에서 [이 배치를 건축계획 화면으로]를 먼저 누르세요.', true); return; }
-    const I = buildInput(), As = I.opt.assume, H = f => f * As.floorHeight_m + As.groundExtra_m, sup = t => (C.평면[t] ? (+C.평면[t].공급 > 0 ? +C.평면[t].공급 : C.평면[t].전용 * As.supplyFactor) : (+t || 84) * As.supplyFactor);
-    const blds = r.buildings.map((b, i) => { const mt = b.mixT || {}, t = Object.keys(mt).sort((x, y) => mt[y] - mt[x])[0] || '84', th = (b.angle || 0) * Math.PI / 180, loc = b.poly.map(p => G.rot(p, -th)), xs = loc.map(p => p[0]), ys = loc.map(p => p[1]);
-      return Object.assign({}, b, { id: i + 1, t, L: Math.max(...xs) - Math.min(...xs), D: Math.max(...ys) - Math.min(...ys), center: b.poly.reduce((a, p) => [a[0] + p[0] / b.poly.length, a[1] + p[1] / b.poly.length], [0, 0]), cap: b.floors, divs: [], vname: b.dname || '시뮬레이터' }); });
-    const byType = {}; blds.forEach(b => Object.keys(b.mixT).forEach(t => { byType[t] = (byType[t] || 0) + b.mixT[t] * b.floors; }));
-    const gfa = blds.reduce((s, b) => s + Object.keys(b.mixT).reduce((c, t) => c + b.mixT[t] * b.floors * sup(t), 0), 0), ba = blds.reduce((s, b) => s + Math.abs(G.area(b.poly)), 0), mf = Math.max(...blds.map(b => b.floors));
-    alts = [{ label: '일조 시뮬레이터에서 받은 배치', buildings: blds, units: blds.reduce((s, b) => s + b.n * b.floors, 0), gfa, far: gfa / I.lot * 100, bcr: ba / I.lot * 100, byType, maxFloors: mf, maxHeight: H(mf), H, angle: 0, form: 'mix', target: I.lot * I.opt.far / 100, imported: true }];
+    alts = [altFromBuildings(r.buildings, '일조 시뮬레이터에서 받은 배치', '시뮬레이터')];
     cur = 0; sunRes = null; v3 = null;
     $('#out').hidden = false; $('#confirm').disabled = false; if ($('#basicCard')) $('#basicCard').hidden = true;
     renderAlts(); showView('plan'); drawBuildingsOnMap();
@@ -712,7 +742,7 @@
       if (!A.__risk.pv) A.__risk.pv = JbsCheck.unitSun(I.site, A.buildings, opt);
       const vo = { fh: I.opt.assume.floorHeight_m, groundExtra: I.opt.assume.groundExtra_m, lat: pr ? pr.lat0 : 37.46, lon: pr ? pr.lon0 : 126.65, onProgress: (i, n) => { btn.textContent = `검산 중… ${i}/${n}`; } };
       const r = await JbsSunVerify.check(A.buildings, A.__risk.pv, vo), rk = await JbsSunVerify.check(A.buildings, A.__risk.pv, Object.assign({}, vo, { basis: 'kst', onProgress: null }));
-      A.__risk.sv = JbsSunVerify.html(r, rk, esc); renderRisk();
+      A.__risk.sv = JbsSunVerify.html(r, rk, esc); A.__risk.svr = { sun: r.sun, kstLost: rk.lost.ray }; renderRisk();
     } catch (e) { console.warn('정밀 검산', e); if (out) out.textContent = '정밀 검산을 하지 못했습니다: ' + e.message; btn.disabled = false; btn.textContent = '정밀 검산(1분 간격 광선)'; }
   }
   document.addEventListener('click', e => { if (e.target && e.target.id === 'sunVerifyBtn') runSunVerify(); });
@@ -737,10 +767,18 @@
       ${hard.length ? `<h4>법정 기준 위반(이대로는 안 됨)</h4><ul>${hard.map(rule).join('')}</ul>` : `<p>법정 기준(대지 경계·${spR.length ? '' : '동 사이 거리·'}정북 일조·채광창 이격·용적률·건폐율) 위반 없음</p>`}
       ${spR.length ? `<h4>동 사이 거리 — 본문 거리 미달, 단서로 허용 가능</h4><p class="note">시행령 제86조③2호는 본문(가목 높이 × 조례 배수 등)과 단서(그 대지의 모든 세대가 동지 9~15시 연속 2시간 이상 일조를 확보하는 거리 이상)가 함께 있는 조문입니다. 본문 거리에 못 미쳐도 세대별 일조분석으로 단서를 입증하면 적법 — 실제 고층 정비계획 대부분이 이 방식입니다.</p><ul>${spR.map(rule).join('')}</ul>` : ''}
       ${pv ? `<h4>세대별 일조 — 단서 충족 여부(${esc(pv.근거)})</h4><p>${pv.ok ? `모든 세대(${fmt(pv.total)}세대)가 동지 연속 2시간 이상 — 단서 적용 검토 가능` : `${fmt(pv.total)}세대 중 <b>${fmt(pv.lost)}세대</b>가 2시간 미달 → 이대로면 단서 불충족. 미달 세대를 필로티·비주거로 비우면 순 ${fmt(A.units - pv.lost)}세대, 아니면 동 간격·엇갈림·옆 틈을 넓혀 다시 배치. 동별: ${Object.entries(pv.per).filter(([, q]) => q.lost).map(([k, q]) => `${esc(k)}동 ${q.lost}/${q.total}`).join(', ')}`}. <span class="note">${esc(pv.메모)}</span></p>` : ''}
+      <p><button id="refineBtn" title="지금 대안에서 출발해 동을 옮기고 돌리고 층수를 바꾸고 빼고 끼워 넣고, V자 꼭짓점형(2+2·4+2·4+4호)·일자 2·4·6호 동으로 바꿔 끼우며, 규칙(대지 경계 채광창 이격·정북·용적률 등)은 지키고 동지 2시간 미달 세대를 뺀 순세대가 늘어나는 쪽으로 다듬습니다(최대 90초)">일조 연계 다듬기</button> <span class="note">동 사이 본문 거리 대신 단서(모든 세대 동지 9~15시 연속 2시간)로 가는 배치를 찾습니다. 결과는 대안 하나로 더해집니다${A.refine ? ` · 이 대안: '${esc(A.refine.from)}'에서 순 ${fmt(A.refine.start.net)} → ${fmt(A.refine.best.net)}세대(저층 비움 ${fmt(A.refine.best.low)} · 못 쓰는 줄 ${fmt(A.refine.best.dead)})` : ''}.</span></p>
       ${window.JbsSunVerify ? (A.__risk.sv ? `<div id="sunVerifyOut">${A.__risk.sv}</div>` : `<p><button id="sunVerifyBtn" title="엔진과 다른 방법(따로 계산한 동지 태양 위치·1분 간격·창에서 해 쪽 광선)으로 세대별 일조를 다시 판정해 엔진 결과와 대조">정밀 검산(1분 간격 광선)</button> <span id="sunVerifyOut" class="note">세대별 일조 판정을 상용 일조분석 도구와 같은 광선 방식으로 다시 봐서 엔진 판정과 대조합니다${pv ? '' : '(세대별 일조도 함께 계산)'}.</span></p>`) : ''}
       ${risks.length ? `<h4>심의·민원 위험(경험 — 탈락 아님)</h4><ul>${risks.map(risk).join('')}</ul>` : ''}
+      ${window.JbsOpinion ? `<details class="opinion"><summary><b>담당자 검토 의견(문안)</b> — 보완 요구·검토 의견에 붙여 쓰기</summary><textarea id="riskOpinion" rows="8" style="width:100%;font-size:13px" readonly>${esc(JbsOpinion.text(v, pv, A.__risk.svr, { landscape: (site.constraints || {}).landscape }))}</textarea><p><button id="riskOpCopy">문안 복사</button> <span class="note">위 검사 결과(동 이름·숫자·근거)로 만든 초안입니다. 붙여 쓴 뒤 구역 사정에 맞게 고치세요.</span></p></details>` : ''}
       <p class="note">규칙은 법령·조례 숫자, 경험 항목은 심의·협의에서 지적되기 쉬운 것(가정값 포함). 인허가 및 심의 과정에서 변동될 수 있습니다.</p></details>`;
   }
+  // 검토 의견 문안 복사(2026-11-07)
+  document.addEventListener('click', async e => {
+    if (!e.target || e.target.id !== 'riskOpCopy') return; const ta = $('#riskOpinion'); if (!ta) return;
+    try { await navigator.clipboard.writeText(ta.value); } catch (er) { ta.removeAttribute('readonly'); ta.select(); try { document.execCommand('copy'); } catch (e2) { /* 무시 */ } ta.setAttribute('readonly', ''); }
+    e.target.textContent = '복사했습니다'; setTimeout(() => { e.target.textContent = '문안 복사'; }, 1500);
+  });
 
   // 동지 일조: 구역 밖 주변 땅(평지·기존 건물 없음 가정)의 일조 시간
   /* ---------- 주변 기존 건물(브이월드 GIS건물통합정보) ----------
@@ -903,6 +941,12 @@
   }
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('#birdBar button'); if (!b) return;
+    if (b.id === 'birdToPanel') {   // 2026-11-07: 판넬로 바로 보내기(/panel이 IndexedDB에서 읽음)
+      if (!BIRD.data || !window.JbsPanelImg || !site || !site.id) { msg('조감도를 먼저 그리고, 구역이 저장되어 있어야 합니다.', true); return; } const el = $('#vbirdCanvas');
+      const r = JbsBird.render(el, BIRD.data, Object.assign({}, BIRD.st, { w: el.clientWidth || 1200, h: el.clientHeight || 620, pr: 2 }));
+      fetch(r.png()).then(x => x.blob()).then(bl => JbsPanelImg.put(site.id, bl, { view: BIRD.st.view })).then(() => { renderBird(); msg('조감도를 판넬로 보냈습니다. 새 창의 판넬·팸플릿 화면에 들어가 있습니다.'); window.open('/panel/?site=' + encodeURIComponent(site.id), '_blank'); }).catch(er => msg('판넬로 보내지 못했습니다: ' + er.message, true));
+      return;
+    }
     if (b.id === 'birdPng') {
       if (!BIRD.data) return; const el = $('#vbirdCanvas');
       const r = JbsBird.render(el, BIRD.data, Object.assign({}, BIRD.st, { w: el.clientWidth || 1200, h: el.clientHeight || 620, pr: 2 }));
@@ -1105,6 +1149,7 @@
   $('#siteSel').addEventListener('change', e => {
     const x = e.target.value; if (!x) return;
     if (x.startsWith('s:')) load(JbsSite.get(x.slice(2)));
+    else if (x === 'p:') { const s = JbsSite.fromProject(); if (s) load(s); }
     else { const s = JbsSite.fromUrban(x.slice(2)); if (s) load(s); }
   });
 
@@ -1117,10 +1162,17 @@
       const sp = crit('spacing_ratio');
       $('#ruleNote').textContent = `인동간격 기본값 ${sp.값}배는 검토 가정값입니다(법 하한 ${sp.법정하한}배, 인천시 건축 조례 확인 필요). 층고·코어·이격·평면 공급면적도 가정값입니다.`;
       const q = new URLSearchParams(location.search);
-      let first = q.get('urban') ? JbsSite.fromUrban(q.get('urban')) : null;
+      let first = q.get('project') ? JbsSite.fromProject() : q.get('urban') ? JbsSite.fromUrban(q.get('urban')) : null;
       if (!first && q.get('site')) first = JbsSite.get(q.get('site'));
       if (!first) { let cur2 = ''; try { cur2 = localStorage.getItem('jbs.sites.current') || ''; } catch (e) { cur2 = ''; } first = cur2 ? JbsSite.get(cur2) : null; }
       if (!first) { const u = JbsSite.urbanZones(); first = u.length ? JbsSite.fromUrban(u[0].key) : null; }
       load(first || { name: '', v: {} });
+      // ?go=bird: 사업성 검토 화면의 [조감도 보기]로 왔으면 배치안을 바로 만들고 조감도 탭을 엶
+      if (q.get('go') === 'bird' && first && pts) setTimeout(async () => {
+        // 첫 화면 재건축 구역: 처음 한 번은 기존 세대(전유부) 평형 비율로 배치
+        const a0 = (site.arch || {}).params || {};
+        if (site.source === 'project' && site.plan && site.plan.type === 'recon' && !TYPES().some(t => a0['m' + t])) { const ex = existingMix(); if (ex) { TYPES().forEach(k => { $('#p_m' + k).value = ex.mix[k] ?? ''; }); mixSum(); } }
+        msg('배치안을 만든 뒤 조감도를 그립니다(큰 구역은 1~2분)…'); await run(); if (alts.length) showView('bird');
+      }, 300);
     });
 })();

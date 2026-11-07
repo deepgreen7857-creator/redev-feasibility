@@ -501,3 +501,10 @@ tr.qk-cur td:first-child { outline: 2px solid var(--ink); outline-offset: -2px; 
 .cs-d.mid { background: #fff3d6; color: #8a5a00; }
 .cs-d.bad { background: #fde3e1; color: #a1271d; }
 .qk-cases h4 { margin: 16px 0 6px; font-size: .95rem; }
+/* 1단계 끝 할 일 확인 칸 */
+.ov-check { margin-top: 24px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: #f7faf8; }
+.ov-check ul { list-style: none; margin: 0; padding: 0; }
+.ov-check li { padding: 3px 0; }
+.ov-check li.ok b { color: #1e7a46; }
+.ov-check li.todo b { color: #c25a12; }
+.ov-check.warn { border: 2px solid #c8322b; background: #fff7f3; }

@@ -83,10 +83,10 @@
     });
     // 치수선: 실제 / 기준(초록 통과 · 빨강 위반 · 주황 권고 · 회색 참고). 이름표는 겹치지 않게 아래로 밀어 놓음
     if (o.dims && o.dims.length) {
-      const DC = { 통과: '#1a7f37', 위반: '#d00', 권고: '#e07000', 참고: '#777' }, TAGN = { spacing: '인동', sun: '일조', window: '채광', corridor: '통경', corner: '모서리' }, boxes = [];
+      const DC = { 통과: '#1a7f37', 위반: '#d00', 권고: '#e07000', 참고: '#777' }, TAGN = { spacing: '인동', sun: '일조', window: '채광', corridor: '통경', corner: '모서리', privacy: '시선' }, boxes = [];
       o.dims.forEach(d => {
         const c = DC[d.판정] || '#777', a = d.a, b = d.b, dx = b[0] - a[0], dy = b[1] - a[1], Ln = Math.hypot(dx, dy) || 1, ux = dx / Ln, uy = dy / Ln, px = -uy, py = ux, t = 2.6 * u;
-        s += `<line x1="${X(a[0])}" y1="${Y(a[1])}" x2="${X(b[0])}" y2="${Y(b[1])}" stroke="${c}" stroke-width="${0.9 * u}"${d.kind === 'corridor' || d.kind === 'corner' ? ` stroke-dasharray="${3 * u} ${2 * u}"` : ''}/>`;
+        s += `<line x1="${X(a[0])}" y1="${Y(a[1])}" x2="${X(b[0])}" y2="${Y(b[1])}" stroke="${c}" stroke-width="${0.9 * u}"${d.kind === 'corridor' || d.kind === 'corner' || d.kind === 'privacy' ? ` stroke-dasharray="${3 * u} ${2 * u}"` : ''}/>`;
         [a, b].forEach((q, k) => { const sg = k ? -1 : 1; s += `<polygon points="${P(q)} ${P([q[0] + sg * ux * 4 * u + px * 1.6 * u, q[1] + sg * uy * 4 * u + py * 1.6 * u])} ${P([q[0] + sg * ux * 4 * u - px * 1.6 * u, q[1] + sg * uy * 4 * u - py * 1.6 * u])}" fill="${c}"/><line x1="${X(q[0] - px * t)}" y1="${Y(q[1] - py * t)}" x2="${X(q[0] + px * t)}" y2="${Y(q[1] + py * t)}" stroke="${c}" stroke-width="${0.7 * u}"/>`; });
         const txt = `${TAGN[d.kind] || ''} ${d.글}`, fs = 5.2 * u, w = txt.length * fs * 0.56 + 3 * u;
         let mx = +X((a[0] + b[0]) / 2), my = +Y((a[1] + b[1]) / 2), g = 0;

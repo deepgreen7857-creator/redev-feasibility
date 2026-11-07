@@ -118,7 +118,7 @@
     const dusk = opt.look === 'dusk';
     const W = opt.w, H = opt.h;
     if (g.__jbsBirdR) { try { g.__jbsBirdR.dispose(); } catch (e) { /* 무시 */ } }
-    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); g.__jbsBirdR = renderer;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, logarithmicDepthBuffer: true }); // 바닥 층(포장·잔디·길)이 몇 cm 차이로 겹쳐 줄무늬로 깜빡이던 것(깊이 정밀도) 막음 g.__jbsBirdR = renderer;
     renderer.setPixelRatio(opt.pr); renderer.setSize(W, H);
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputEncoding = THREE.sRGBEncoding;
@@ -154,14 +154,15 @@
     scene.fog = new THREE.Fog(fogCol, span * 3, span * 10); // 카메라 정한 뒤 다시 맞춤
 
     // 빛
-    const hemi = new THREE.HemisphereLight(dusk ? 0x8a9cc6 : 0xdfeaf5, dusk ? 0x2e2620 : 0x8a8270, dusk ? 0.42 : 0.3); scene.add(hemi);
-    const sun = new THREE.DirectionalLight(dusk ? 0xffa868 : 0xfff1dc, dusk ? 1.0 : 1.45); sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.5;
+    const hemi = new THREE.HemisphereLight(dusk ? 0x8a9cc6 : 0xdfeaf5, dusk ? 0x2e2620 : 0x8a8270, dusk ? 0.42 : 0.26); scene.add(hemi);
+    const sun = new THREE.DirectionalLight(dusk ? 0xffa868 : 0xfff1dc, dusk ? 1.0 : 1.85); sun.castShadow = true;
+    sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.8;
     const sc = sun.shadow.camera, R = span * 1.3; sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 1; sc.far = span * 12;
     const tgt = new THREE.Vector3(cx, 0, -cy), dd = span * 4;
     const sAz = dusk ? 1.15 : -0.6, sAlt = dusk ? 0.2 : 0.75; // 해질녘: 서쪽 낮게 / 낮: 남동 높게(방위: 남=0, 서=+)
     sun.position.set(tgt.x - dd * Math.cos(sAlt) * Math.sin(sAz), dd * Math.sin(sAlt), tgt.z + dd * Math.cos(sAlt) * Math.cos(sAz));
     sun.target.position.copy(tgt); scene.add(sun); scene.add(sun.target);
+    const SUN2 = [-Math.sin(sAz), -Math.cos(sAz)]; // 땅 위에서 해가 있는 쪽(지역 좌표)
 
     // 땅: 항공사진(있으면) — 구역 밖은 어둡게
     const groundSize = span * 30;
@@ -220,7 +221,7 @@
     });
 
     /* ----- 단지 바닥: 잔디 + 순환로 + 보행로 ----- */
-    const lawnC = (() => { const [c, x] = cv(256, 256); x.fillStyle = dusk ? '#4f6b3a' : '#5f8a40'; x.fillRect(0, 0, 256, 256); for (let i = 0; i < 3000; i++) { x.fillStyle = `rgba(${30 + rnd() * 40},${60 + rnd() * 50},${20 + rnd() * 30},.35)`; x.fillRect(rnd() * 256, rnd() * 256, 2, 2); } return c; })();
+    const lawnC = (() => { const [c, x] = cv(256, 256); x.fillStyle = dusk ? '#56713e' : '#76a04c'; x.fillRect(0, 0, 256, 256); for (let i = 0; i < 3000; i++) { x.fillStyle = `rgba(${30 + rnd() * 40},${60 + rnd() * 50},${20 + rnd() * 30},.35)`; x.fillRect(rnd() * 256, rnd() * 256, 2, 2); } return c; })();
     const lawn = new THREE.MeshStandardMaterial({ map: tex(lawnC, span / 20, span / 20), roughness: 1 });
     const pave = STD(dusk ? 0x9b8a72 : 0xc2b49a);
     if (LIFT) {
@@ -233,10 +234,10 @@
     flat(S, pave, 0.05 + LIFT);
     if (fore) flat(fore, lawn, 0.03);
     const ring1 = mBuf(S, -4), ring2 = mBuf(S, -11), ring3 = mBuf(S, -14);
-    if (ring1) flat(ring1, lawn, 0.07 + LIFT);
+    if (ring1) flat(ring1, lawn, 0.15 + LIFT);
     // 단지 순환로(붉은 포장)
-    if (ring2 && ring3) flat(ring2, STD(dusk ? 0x6d4a3e : 0xa8735f), 0.09 + LIFT, [ring3]);
-    if (ring3) flat(ring3, lawn, 0.1 + LIFT);
+    if (ring2 && ring3) flat(ring2, STD(dusk ? 0x6d4a3e : 0xa8735f), 0.25 + LIFT, [ring3]);
+    if (ring3) flat(ring3, lawn, 0.3 + LIFT);
     // 공원
     (D.parks || []).forEach(pk => flat(pk, lawn, 0.11));
     // 구역 경계선(검토 모드만)
@@ -271,7 +272,8 @@
         const nx = (q[1] - p[1]) / L, ny = -(q[0] - p[0]) / L, ox = nx * 0.02, oy = ny * 0.02;
         const base = bk.P.length / 3, ru = nB / 4, rv = nF / 4, SEG = 4;
         for (let r = 0; r <= SEG; r++) {
-          const z = z0 + (z1 - z0) * r / SEG, f = 0.62 + 0.38 * Math.min(1, z / 45); // 아래층일수록 어둡게(땅 가까운 그늘)
+          const face = nx * SUN2[0] + ny * SUN2[1]; // 해 쪽 벽 1, 반대쪽 -1 → 그늘 벽을 더 어둡게(명암 대비)
+          const z = z0 + (z1 - z0) * r / SEG, f = (0.62 + 0.38 * Math.min(1, z / 45)) * (dusk ? 1 : face < 0 ? 0.72 + 0.18 * (1 + face) : 1); // 아래층일수록 어둡게(땅 가까운 그늘)
           [[p, 0], [q, 1]].forEach(([w, u]) => { bk.P.push(w[0] + ox, z, -(w[1] + oy)); bk.U.push(u * ru, r / SEG * rv); bk.N.push(nx, 0, -ny); bk.C.push(f, f, f); });
         }
         for (let r = 0; r < SEG; r++) { const a = base + r * 2; bk.I.push(a, a + 1, a + 3, a, a + 3, a + 2); }
@@ -321,6 +323,39 @@
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false })); sp.position.set(l.c[0], Z0 + l.top * FH + 16, -l.c[1]); sp.scale.set(20, 6, 1); scene.add(sp);
     });
 
+    /* ----- 단지 조경: 중앙 광장 + 동을 잇는 산책로 + 놀이터 (나무는 이 둘레로) ----- */
+    const footF = foot.map(tp), fbb = footF.map(f => turf.bbox(f));
+    const inFoot = (x, y, pad) => foot.some((q, i) => x >= fbb[i][0] - pad && x <= fbb[i][2] + pad && y >= fbb[i][1] - pad && y <= fbb[i][3] + pad && (inPoly(x, y, footF[i]) || q.some((a, k) => { const b = q[(k + 1) % q.length], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / L2)); return Math.hypot(a[0] + dx * t - x, a[1] + dy * t - y) < pad; })));
+    const r3F = ring3 ? tp(ring3) : siteF;
+    // 광장 자리: 동에서 가장 먼 빈 땅(격자 탐색)
+    let plaza = null;
+    { const bx = turf.bbox(r3F); let best = 0;
+      for (let x = bx[0]; x <= bx[2]; x += 4) for (let y = bx[1]; y <= bx[3]; y += 4) {
+        if (!inPoly(x, y, r3F)) continue; let d = 1e9;
+        foot.forEach(q => q.forEach((a, k) => { const b = q[(k + 1) % q.length], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / L2)); d = Math.min(d, Math.hypot(a[0] + dx * t - x, a[1] + dy * t - y)); }));
+        const dc = Math.hypot(x - cx, y - cy) * 0.15; if (d - dc > best) { best = d - dc; plaza = [x, y, Math.min(24, d - 3)]; }
+      } }
+    const pathSegs = []; // [x1,y1,x2,y2,폭]
+    const plazaStone = STD(dusk ? 0xa49c8e : 0xe6dfd1), pathM = STD(dusk ? 0x948a7a : 0xd9cfbd), playM = STD(dusk ? 0x8c4a38 : 0xd47a52), playM2 = STD(dusk ? 0x3f5a78 : 0x5a8ccf);
+    const disc = (x, y, r, mat, h, seg) => { const ring = []; for (let k = 0; k < (seg || 40); k++) { const a = k / (seg || 40) * Math.PI * 2; ring.push([x + r * Math.cos(a), y + r * Math.sin(a)]); } flat(ring, mat, h); return ring; };
+    let play = null;
+    if (plaza && plaza[2] >= 7) {
+      const [px, py, pr0] = plaza;
+      disc(px, py, pr0, plazaStone, 0.45 + LIFT);
+      disc(px, py, pr0 * 0.55, pathM, 0.5 + LIFT);
+      disc(px, py, pr0 * 0.42, lawn, 0.55 + LIFT); // 가운데 둥근 잔디(바닥 분수·조형물 자리)
+      // 동 입구 → 광장 산책로
+      const org = []; // 세대 조각이 많아도 동마다 길 하나(20m 안 조각은 한 동으로)
+      foot.forEach(q => { const c = q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length], [0, 0]); const o = org.find(o2 => Math.hypot(o2[0] / o2[2] - c[0], o2[1] / o2[2] - c[1]) < 20); if (o) { o[0] += c[0]; o[1] += c[1]; o[2]++; } else org.push([c[0], c[1], 1]); });
+      org.forEach(o => pathSegs.push([o[0] / o[2], o[1] / o[2], px, py, 3]));
+      // 광장 → 단지 순환로(네 방향)
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => { let x = px, y = py, n = 0; while (n++ < 200 && inPoly(x + dx * 2, y + dy * 2, r3F) && !inFoot(x + dx * 2, y + dy * 2, 1.5)) { x += dx * 2; y += dy * 2; } if (Math.hypot(x - px, y - py) > pr0 + 4) pathSegs.push([px, py, x, y, 4]); });
+      // 놀이터: 광장 옆 동에서 떨어진 빈 땅
+      for (let k = 0; k < 12 && !play; k++) { const a = k / 12 * Math.PI * 2 + 0.4, d = pr0 + 9, x = px + d * Math.cos(a), y = py + d * Math.sin(a); if (inPoly(x, y, r3F) && !inFoot(x, y, 9)) play = [x, y]; }
+      if (play) { disc(play[0], play[1], 6.5, playM, 0.5 + LIFT, 24); disc(play[0] + 2, play[1] - 1, 2.6, playM2, 0.56 + LIFT, 20); }
+    }
+    pathSegs.forEach(([x1, y1, x2, y2, w]) => { const L = Math.hypot(x2 - x1, y2 - y1); if (L < 2) return; const ux = (x2 - x1) / L, uy = (y2 - y1) / L, nx2 = -uy * w / 2, ny2 = ux * w / 2; flat([[x1 + nx2, y1 + ny2], [x2 + nx2, y2 + ny2], [x2 - nx2, y2 - ny2], [x1 - nx2, y1 - ny2]], pathM, 0.38 + LIFT); });
+    const onPath = (x, y) => (plaza && Math.hypot(x - plaza[0], y - plaza[1]) < plaza[2] + 1.5) || (play && Math.hypot(x - play[0], y - play[1]) < 8) || pathSegs.some(([x1, y1, x2, y2, w]) => { const dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / L2)); return Math.hypot(x1 + dx * t - x, y1 + dy * t - y) < w / 2 + 1.2; });
     /* ----- 나무·관목 ----- */
     const bufFoot = foot.map(q => tp(mBuf(q, 4.5) || q)), fb = bufFoot.map(f => turf.bbox(f));
     const nearB = (x, y) => bufFoot.some((f, i) => x >= fb[i][0] && x <= fb[i][2] && y >= fb[i][1] && y <= fb[i][3] && inPoly(x, y, f));
@@ -332,11 +367,14 @@
     for (let x = x0; x <= x1; x += 6) for (let y = y0; y <= y1; y += 6) {
       const px = x + (rnd() - .5) * 4.5, py = y + (rnd() - .5) * 4.5;
       const inSite = inPoly(px, py, siteF), inPark = parkF.some(f => inPoly(px, py, f));
-      if (!inSite && !inPark) continue; if (nearB(px, py) || onLoop(px, py)) continue;
-      if (rnd() < (inPark ? 0.7 : 0.62)) trees.push([px, py, 0.7 + rnd() * 0.7]);
-      else if (rnd() < 0.6) shrubs.push([px, py, 0.6 + rnd() * 0.8]);
+      if (!inSite && !inPark) continue; if (nearB(px, py) || onLoop(px, py) || onPath(px, py)) continue;
+      // 단지 안은 무리 지어 심고 사이는 잔디로 비움(빽빽한 숲처럼 보이지 않게)
+      const grove = Math.sin(px / 19 + 0.7) + Math.cos(py / 23 + 1.1) > 0.35;
+      if (rnd() < (inPark ? 0.7 : grove ? 0.5 : 0.1)) trees.push([px, py, 0.7 + rnd() * 0.7]);
+      else if (rnd() < (grove ? 0.35 : 0.12)) shrubs.push([px, py, 0.6 + rnd() * 0.8]);
     }
     if (fore) { const fb2 = turf.bbox(foreF); for (let x = fb2[0]; x <= fb2[2]; x += 7) for (let y = fb2[1]; y <= fb2[3]; y += 7) { const px = x + (rnd() - .5) * 6, py = y + (rnd() - .5) * 6; if (!inPoly(px, py, foreF)) continue; const de = Math.hypot(px - EYE[0], py - EYE[1]); if (de < 30) continue; const rr = rnd(); if (rr < (de < 110 ? 0.04 : 0.3)) trees.push([px, py, 0.8 + rnd() * 0.9]); else if (rr < 0.6) shrubs.push([px, py, 0.8 + rnd() * 1.2]); } }
+    pathSegs.forEach(([x1, y1, x2, y2, w]) => { const L = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / L, uy = (y2 - y1) / L; for (let t = 6; t < L - 4; t += 9) { const qx = x1 + ux * t - uy * (w / 2 + 1.6), qy = y1 + uy * t + ux * (w / 2 + 1.6); if (inPoly(qx, qy, siteF) && !nearB(qx, qy) && !onPath(qx, qy)) trees.push([qx, qy, 0.8]); } });
     // 동 둘레 관목
     baseShrub.forEach(t => shrubs.push(t));
     // 단지 안쪽 둘레 나무
@@ -349,7 +387,7 @@
     const roadF = (D.roads || []).filter(r => r.length > 2).map(r => { try { return tp(r); } catch (e) { return null; } }).filter(Boolean);
     const rbb = roadF.map(f => turf.bbox(f));
     const inRoad = (x, y) => roadF.some((f, i) => x >= rbb[i][0] && x <= rbb[i][2] && y >= rbb[i][1] && y <= rbb[i][3] && inPoly(x, y, f));
-    const streetLamps = [], streetRings = [], streets = [];
+    const streetLamps = [], streetRings = [], streets = [], bare = [];
     const sideM = STD(dusk ? 0x5f5a54 : 0x6f6a62), curbM = STD(dusk ? 0x8a847c : 0xbdb8ae), asphM = STD(dusk ? 0x0b0b0c : 0x0c0d0e, { roughness: 0.95 });
     const yelM = new THREE.MeshBasicMaterial({ color: dusk ? 0xa8851a : 0xe3b21c }), whM = new THREE.MeshBasicMaterial({ color: dusk ? 0xb8b8b8 : 0xf4f4f4 });
     const lineBuf = { y: [], w: [] }; // 차선 사각형을 모았다가 한 덩어리로 그림(조각마다 그리면 수천 개 → 느려짐)
@@ -361,9 +399,15 @@
       if (inPoly(mx0 + n[0] * 1.5, my0 + n[1] * 1.5, siteF)) n = [-n[0], -n[1]];
       const widthAt = t => { const px = A[0] + (B[0] - A[0]) * t, py = A[1] + (B[1] - A[1]) * t; let w = 0; for (let d = 1; d <= 60; d++) { if (inRoad(px + n[0] * d, py + n[1] * d)) w = d; else if (d - w > 3) break; } return w; };
       const ws = [0.25, 0.5, 0.75].map(widthAt).sort((x, y) => x - y), w = ws[1];
-      if (w < 4) continue;
+      if (w < 4) { bare.push({ A, B, L, n }); continue; }
       streets.push({ A, B, L, n, w });
     }
+    // 도로 필지가 안 잡힌 변도 경계 밖 보도 띠(2.5m)·연석·가로수·가로등을 둘러 구역 경계가 드러나게
+    bare.forEach(({ A, B, L, n }) => {
+      const r1 = quad(A, B, n, 0, 2.5, 0, L); flat(r1, sideM, 0.16); flat(quad(A, B, n, 2.25, 2.5, 0, L), curbM, 0.2); streetRings.push(r1);
+      for (let t = 4; t < L - 2; t += 9) { const px = A[0] + (B[0] - A[0]) * t / L, py = A[1] + (B[1] - A[1]) * t / L; trees.push([px + n[0] * 1.2, py + n[1] * 1.2, 0.8]); }
+      for (let t = 10; t < L; t += 26) { const px = A[0] + (B[0] - A[0]) * t / L, py = A[1] + (B[1] - A[1]) * t / L; streetLamps.push([px + n[0] * 2, py + n[1] * 2, 6]); }
+    });
     roadF.forEach((f, i) => { const c = [(rbb[i][0] + rbb[i][2]) / 2, (rbb[i][1] + rbb[i][3]) / 2]; if (Math.hypot(c[0] - cx, c[1] - cy) < span * 1.3) { const r = f.geometry.coordinates[0].slice(0, -1); flat(r, asphM, 0.1); streetRings.push(r); } });
     streets.forEach(({ A, B, L, n, w }) => {
       const sw = w >= 25 ? 5 : w >= 12 ? 3.5 : 2, far = w >= 12, cw0 = sw, cw1 = far ? w - sw : w, ext = Math.min(6, sw + 2), lx = L >= 25 ? Math.min(40, L * 0.6) : ext;
