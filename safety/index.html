@@ -752,7 +752,7 @@ async function readAny(file){
   if(ext==='doc'||ext==='xls') throw new Error('구형 오피스 파일입니다. 워드·엑셀에서 DOCX·XLSX로 다시 저장해 올려 주세요.');
   throw new Error('PDF · HWPX · DOCX · XLSX 파일만 읽을 수 있습니다.');
 }
-const sq=t=>t.replace(/[ \t]+/g,' ');
+const sq=t=>t.replace(/[\u0000-\u0008\u000b-\u001f-]/g,' ').replace(/[ \t]+/g,' ');
 function grab(all,re){const m=all.match(re);return m?sq(m[1]).trim():''}
 function maxNum(all,re){let mx=0;for(const m of all.matchAll(re)){const v=parseFloat(m[1].replace(/,/g,''));if(v>mx&&v<10000)mx=v}return mx?String(mx):''}
 function toDate(t){const m=t&&t.match(/(20\d{2})\s*[.\-년]\s*(\d{1,2})\s*[.\-월]\s*(\d{1,2})/);return m?`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`:''}
@@ -827,7 +827,7 @@ function diagnose(pages,R){
 }
 
 /* ---------- CSI 제출 파일 묶음 판독 (항목별 파일 여러 개) ---------- */
-const flat=t=>t.replace(/\s+/g,'');
+const flat=t=>t.replace(/[\s\u0000-\u001f-]+/g,'');
 function classify(name,pages){
   const head=flat(pages.slice(0,3).join(' ')), fn=flat(name), F=flat(pages.join(' '));
   if(/안전관리계획서검토의견서/.test(head)) return {kind:'opinion',label:'국토안전관리원 검토 의견서'};
@@ -987,16 +987,21 @@ function fixReport(groups){
 function chgReport(docs,allKeys){
   // docs: [{key,label,F,pages}]  allKeys: 이번에 올라온 항목 key 묶음
   const F=docs.map(d=>d.F).join(''), C=[];
-  const what=[...new Set([...F.matchAll(/§([가-힣·\s]{2,20}?변경)/g)].map(m=>m[1]))];
+  const what=[...new Set([...F.matchAll(/§([가-힣·\s]{2,20}?변경)/g),...F.matchAll(/(?<![\d.])\d\)([가-힣·,\s]{2,40}?변경)(?![가-힣]*사항)/g)].map(m=>m[1]))];
   const has=re=>re.test(F);
   C.push(has(/변경전/)&&has(/변경후/)?['ok','변경 전·후 표가 있습니다']:['bad','변경 전·후 비교표가 없습니다 — 본편 앞에 첨부(매뉴얼 2.2 작성기준 8)']);
   if(/변경비교표※첨부/.test(F)) C.push(['warn','“변경비교표 ※ 첨부”라고만 적힌 빈 쪽이 있습니다 — 비교표가 앞 요약표뿐인지, 실제 첨부가 빠졌는지 확인']);
-  C.push(has(/개정이력|관리대장|별지제3호/)?['ok','개정이력 관리대장이 있습니다']:['bad','개정이력 관리대장(별지 제3호)이 없습니다 — 변경 차수마다 기록']);
+  C.push(has(/개정이력|관리대장|별지제3호/)?['ok','개정이력 관리대장이 있습니다']:['warn','개정이력 관리대장(별지 제3호)이 보이지 않습니다 — 매뉴얼상 변경 차수마다 기록하나, 사례 4호(변경 3차)는 없이도 적정 처리됨']);
   C.push(has(/검토[·ㆍ.]?확인서|검토의견서/)?['ok','건설사업관리기술인 검토·확인서 흔적이 있습니다']:['warn','건설사업관리기술인 검토·확인서가 파일에 없습니다 — 변경차수는 필수(반려 가). CSI 감리 확인 탭 첨부 여부와 개정 최신 서식인지 확인']);
-  const org=/시공자|현장대리인|안전관리자|안전총괄/.test(what.join(''));
+  const W=what.join(' ');
+  if(/공사기간|공사개요/.test(W)&&/공사기간/.test(F)) C.push(['warn','공사기간이 바뀌면 CSI ‘정기안전점검 실시시기’ 탭·공정표(투입시점)·안전활동계획표도 새 기간으로 — 함께 바꿨는지 확인']);
+  if(/공사금액|공사개요/.test(W)&&!allKeys.has('tc')) C.push(['bad','공사금액이 바뀌었는데 다. 현장운영계획(안전관리비 집행계획·정기안전점검 비용) 변경 제출이 없습니다']);
+  if(/공사금액/.test(W)||/공사금액/.test(F)&&allKeys.has('tc')) C.push(['info','공사금액 변경 → 안전관리비 집행계획서(별지 제7호) 항목별 금액·정기안전점검 비용 변경 확인. 검토원은 순공사비를 확인하지 못하므로 금액 적정성은 발주자·시공자가 확인']);
+  if(/발주자/.test(F)&&/변경/.test(W)&&/발주자/.test(W+F.slice(0,400))) C.push(['info','발주자가 바뀌면 표지·안전관리비 집행계획서 발주자란·검토 결과 통보처도 새 발주자로']);
+  const org=/시공자|현장대리인|안전관리자|안전총괄/.test(W);
   if(org){
-    if(!allKeys.has('tc')) C.push(['bad','시공자·현장대리인이 바뀌었는데 다. 현장운영계획(안전관리 조직도·직무)은 변경 제출되지 않았습니다']);
-    if(!allKeys.has('td')) C.push(['bad','시공자·현장대리인이 바뀌었는데 라. 비상시 긴급조치계획(내·외부 비상연락망·비상동원조직)은 변경 제출되지 않았습니다']);
+    if(!allKeys.has('tc')) C.push(['warn','시공자·현장대리인이 바뀌었는데 다. 현장운영계획(안전관리 조직도·직무)은 변경 제출되지 않았습니다 — 매뉴얼상 현행화 대상이나, 사례 3·4호에서 검토원은 따로 지적하지 않음(현장 비치본 현행화 확인)']);
+    if(!allKeys.has('td')) C.push(['warn','시공자·현장대리인이 바뀌었는데 라. 비상시 긴급조치계획(내·외부 비상연락망·비상동원조직)은 변경 제출되지 않았습니다 — 사례 4호 의견서에서 라는 ‘이전검토 완료’로 그대로 적정 처리됨(현장 비치본 연락망 현행화 확인)']);
     C.push(['info','시공자가 바뀌면 안전관리비 집행·정기안전점검 계약 주체, 표지·서명란도 새 시공자로 — 산안법 유해위험방지계획서도 같은 변경을 반영해 현장 비치(법 제42조)']);
   }
   const LV={bad:'주의',warn:'확인',info:'참고',ok:'적합'};
@@ -1019,8 +1024,9 @@ async function onFiles(files){
   const FX={}; const LBL={ta:'총괄 가. 개요',tb:'총괄 나. 현장특성',tc:'총괄 다. 운영계획',td:'총괄 라. 비상시',w1:'2.1 가설',w2:'2.2 굴착·발파',w3:'2.3 콘크리트',w4:'2.4 강구조',w5:'2.5 성토·절토',w6:'2.6 해체',w7:'2.7 건축설비',w8:'2.8 타워크레인'};
   const fixFiles=new Set(), CHG=[];
   for(const f of files){try{const R=await readAny(f);const head=flat(R.pages.slice(0,2).join(' ')).slice(0,400);
-    const isFix=/안전관리계획서보완사항/.test(head), isBu=/부록#\d/.test(head.slice(0,300)), isChg=/안전관리계획서\(변경\)|안전관리계획서변경\//.test(head);
-    if(isChg){let k=(head.match(/총괄안전관리계획[–\-]?([가나다라])\./)||[])[1];k=k?'t'+({가:'a',나:'b',다:'c',라:'d'})[k]:(fixKey(head)||'x');
+    const isFix=/안전관리계획서보완사항/.test(head), isBu=/부록#\d/.test(head.slice(0,300)), isChg=/안전관리계획서\(변경\)|안전관리계획서변경\/|변경사항/.test(head), noBu=/부록편목차※첨부없음/.test(head);
+    if(noBu){fixFiles.add(f);continue}
+    if(isChg){let k=(head.match(/총괄안전관리계획[–\-]?([가나다라])\./)||head.match(/([가나다라])\.(?:건설공사의개요|현장특성분석|현장운영계획|비상시긴급조치계획)/)||[])[1];k=k?'t'+({가:'a',나:'b',다:'c',라:'d'})[k]:(fixKey(head)||'x');
       const F=flat(R.pages.join(' '));if(!CHG.some(d=>d.F===F))CHG.push({key:k,label:LBL[k]||k,F});fixFiles.add(f);continue}
     let k=fixKey(head);
     if(!k&&isBu){const a=head.slice(0,40).match(/^[가-아]\.(가설|굴착|콘크리트|강구조|성토|해체|건축설비|타워)/),b=head.slice(0,40).match(/^([가나다라])\.(건설공사의개요|현장특성분석|현장운영계획|비상시긴급조치계획)/);k=a?'w'+FIXWORK[a[1]]:b?'t'+b[1]:''}
@@ -1031,7 +1037,7 @@ async function onFiles(files){
   }catch(e){}}
   Object.keys(FX).forEach(k=>{if(!FX[k].isFix)delete FX[k]});
   let fixHtml='';
-  if(CHG.length){const r=chgReport(CHG,new Set(CHG.map(d=>d.key)));fixHtml+=r.html;
+  if(CHG.length){const r=chgReport(CHG,new Set(CHG.map(d=>d.key)));fixHtml+=r.html;files=files.filter(f=>!fixFiles.has(f));
     if(!files.filter(f=>!fixFiles.has(f)).length&&!Object.keys(FX).some(k=>FX[k].isFix)){$('#upStat').textContent=`변경 제출 판독 — 주의 ${r.nb}건 · 확인 ${r.nw}건`;$('#upDiag').innerHTML=fixHtml;return}}
   if(Object.keys(FX).length){const r=fixReport(FX);fixHtml+=r.html;files=files.filter(f=>!fixFiles.has(f));
     if(!files.length){$('#upStat').textContent=`재검토(보완) 제출 판독 — 주의 ${r.nb}건 · 확인 ${r.nw}건`;$('#upDiag').innerHTML=fixHtml;return}}

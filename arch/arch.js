@@ -21,7 +21,7 @@
     const v = site.v || {};
     return {
       siteArea: v.siteArea || '', infra: U.infraRatio ?? 25, far: v.far || U.farCustom || 250, maxFloors: (+v.floors > 0 ? +v.floors : A.maxFloors),
-      angleMode: 'auto', angle: 0, form: 'slab',
+      angleMode: 'auto', angle: 0, form: 'rec',
       spacing: crit('spacing_ratio').값, sideGap: A.sideGap_m, roadSb: A.roadSetback_m, artSb: A.arterialSetback_m, bndSb: A.boundarySetback_m,
       lowCap: 15, lowDist: 30, parkPer: A.parkPerUnitPlan ?? 1.2, parkW: A.parkWidth_m ?? 20, sunBase: 'north', corner: (A.corner && A.corner.mode) || 'min10', axisN: 0, axisW: 20, axisB: 0, minFloors: A.minFloors, ...defaultMix(), fh: A.floorHeight_m, sf: U.supplyFactor ?? A.supplyFactor,
     };
@@ -431,7 +431,7 @@
     const noSun = /준주거|상업|공업/.test(zz) && !/전용주거|일반주거|제[123]종/.test(zz);
     return {
       site: { pts, tags: noSun ? tags.map(t => (t === 'north' ? 'boundary' : t)) : tags, setbacks: sb, exclude: exclude.concat(axisStrips(p)), noSun },
-      opt: { units: C.평면, lib: C.평면_라이브러리, winRatio: winRatio(), edgeW: edgeWidths(), assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'compare' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, lowEdges: lowEdges.slice(), parkWidth: +p.parkW || 0, southBase: p.sunBase === 'south', exSetback: +p.bndSb || 0 },
+      opt: { units: C.평면, lib: C.평면_라이브러리, winRatio: winRatio(), edgeW: edgeWidths(), assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'compare' || p.form === 'rec' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, lowEdges: lowEdges.slice(), parkWidth: +p.parkW || 0, southBase: p.sunBase === 'south', exSetback: +p.bndSb || 0 },
       lot, exA, p,
     };
   }
@@ -473,6 +473,27 @@
       if (!best) throw new Error('어느 방향으로도 동이 들어가지 않습니다');
       alts = best.r.map(x => Object.assign(x, { angle: best.a, form: I.opt.form }));
       if ($('#basicCard')) $('#basicCard').hidden = true;
+      let recWhy = '';
+      if (I.p.form === 'rec') {
+        // 추천형: 구역 모양으로 후보 형태 2~3개만 골라 만들어 보고(전부 만들면 오래 걸림) 목표 충족 → 남향 비율 → 세대수 순으로 하나 고름
+        const bb = pts.reduce((m, p) => [Math.min(m[0], p[0]), Math.min(m[1], p[1]), Math.max(m[2], p[0]), Math.max(m[3], p[1])], [1e9, 1e9, -1e9, -1e9]);
+        const ew = bb[2] - bb[0], ns = bb[3] - bb[1], areaHa = G.area(pts) / 1e4;
+        const cands = areaHa < 1.2 ? ['tower', 'mix'] : ns > ew * 1.6 ? ['tower', 'mix', 'slab'] : ew > ns * 1.3 ? ['slab', 'L'] : ['slab', 'mix', 'L'];
+        const SOUTH = { slab: 3, L: 2, mix: 2, tower: 1, Y: 1, court: 0 };
+        const res = [];
+        for (const fm of cands) {
+          const bf = fm === 'slab' ? best : await searchAngle(fm, `추천형 후보 ${G.FORM_NAME[fm]}`);
+          if (!bf) continue;
+          bf.r.filter(x => x.units > 0).forEach(x => res.push(Object.assign(x, { angle: bf.a, form: fm })));
+        }
+        if (!res.length) throw new Error('어느 형태도 들어가지 않습니다');
+        const reach = x => x.gfa >= x.target * 0.97 ? 1 : 0;
+        res.sort((a, b) => (reach(b) - reach(a)) || (SOUTH[b.form] - SOUTH[a.form]) || (Math.abs(a.maxFloors - 25) - Math.abs(b.maxFloors - 25)) || (b.units - a.units));
+        // 추천 1안 + 다른 형태 최고안 하나씩(비교용)
+        const top = res[0], others = cands.filter(f => f !== top.form).map(f => res.find(x => x.form === f)).filter(Boolean);
+        alts = [top, ...others].map((x, i) => Object.assign(x, { label: `${i ? '' : '추천 · '}${G.FORM_NAME[x.form]} · ${x.label}` }));
+        recWhy = `추천형: 구역 ${areaHa.toFixed(1)}ha · ${ns > ew * 1.6 ? '남북으로 긴 모양' : ew > ns * 1.3 ? '동서로 긴 모양' : '정형에 가까운 모양'}이라 ${cands.map(f => G.FORM_NAME[f]).join('·')}을 만들어 봄 → ${G.FORM_NAME[top.form]}${reach(top) ? '(목표 용적률 충족, ' : '('}${SOUTH[top.form] >= 2 ? '남향 세대 많음' : '좁은 땅에 유리'})`;
+      }
       if (I.p.form === 'compare') {
         // 형태 비교: 같은 방향에서 형태마다 대안을 만들고, 형태별로 최고 층수 25층에 가장 가까운 안 하나씩
         alts = [];
@@ -486,9 +507,9 @@
           alts.push(Object.assign(pick, { angle: bf.a, form: fm, label: `${G.FORM_NAME[fm]} · ${pick.label}` }));
         }
         if (!alts.length) throw new Error('어느 형태도 들어가지 않습니다');
-      } else alts.forEach(x => { x.label = `${G.FORM_NAME[I.opt.form] || '판상형'} · ${x.label}`; });
-      // 기본 선택: 최고 층수가 25층에 가장 가까운 안(재개발 일반 규모)
-      cur = alts.reduce((bi, x, i) => Math.abs(x.maxFloors - 25) < Math.abs(alts[bi].maxFloors - 25) ? i : bi, 0);
+      } else if (I.p.form !== 'rec') alts.forEach(x => { x.label = `${G.FORM_NAME[I.opt.form] || '판상형'} · ${x.label}`; });
+      // 기본 선택: 최고 층수가 25층에 가장 가까운 안(재개발 일반 규모) — 추천형은 첫 안
+      cur = I.p.form === 'rec' ? 0 : alts.reduce((bi, x, i) => Math.abs(x.maxFloors - 25) < Math.abs(alts[bi].maxFloors - 25) ? i : bi, 0);
       if (I.p.form === 'compare') { const pref = ['slab', 'mix', 'tower', 'L', 'Y', 'court'], ok = alts.map((x, i) => [x, i]).filter(([x]) => x.gfa >= x.target * 0.97).sort((a, b) => pref.indexOf(a[0].form) - pref.indexOf(b[0].form)); if (ok.length) cur = ok[0][1]; else cur = alts.reduce((bi, x, i) => x.gfa > alts[bi].gfa ? i : bi, 0); }
       if (false) cur = alts.reduce((bi, x, i) => (x.gfa > alts[bi].gfa * 1.01 || (x.gfa > alts[bi].gfa * 0.99 && x.units > alts[bi].units)) ? i : bi, 0);
       if (I.p.angleMode === 'auto') $('#p_angle').value = alts[cur].angle;
@@ -496,7 +517,7 @@
       $('#out').hidden = false; $('#confirm').disabled = false;
       renderAlts(); showView('plan'); drawBuildingsOnMap();
       const A = alts[cur];
-      msg(`${alts.length}개 대안을 만들었습니다(${I.p.form === 'compare' ? '형태마다 방향을 따로 찾음, 선택한 안 ' : '주동 방향 '}${alts[cur].angle >= 0 ? '+' : ''}${alts[cur].angle}°). 획지 ${fmt(I.lot)}㎡ 기준 목표 용적률 ${fmt(I.opt.far)}%${A.far < I.opt.far * 0.97 ? ' — 이 구역 조건으로는 목표에 못 미칩니다(최대 ' + fmt(Math.max(...alts.map(x => x.far)), 1) + '%)' : ''}.`);
+      msg(`${recWhy ? recWhy + '. ' : ''}${alts.length}개 대안을 만들었습니다(${I.p.form === 'compare' ? '형태마다 방향을 따로 찾음, 선택한 안 ' : '주동 방향 '}${alts[cur].angle >= 0 ? '+' : ''}${alts[cur].angle}°). 획지 ${fmt(I.lot)}㎡ 기준 목표 용적률 ${fmt(I.opt.far)}%${A.far < I.opt.far * 0.97 ? ' — 이 구역 조건으로는 목표에 못 미칩니다(최대 ' + fmt(Math.max(...alts.map(x => x.far)), 1) + '%)' : ''}.`);
       $('#out').scrollIntoView({ behavior: 'smooth' });
     } catch (e) { console.error(e); msg('배치를 만들지 못했습니다: ' + e.message, true); }
     finally { $('#run').classList.remove('busy'); }
@@ -935,7 +956,7 @@
     $$('#birdBar [data-bk]').forEach(b => { const on = b.dataset.bk === 'labels' ? st.labels : st[b.dataset.bk] === b.dataset.bv; b.setAttribute('aria-pressed', on); b.classList.toggle('on', on); });
     const t0 = Date.now();
     const W0 = el.clientWidth >= 320 ? el.clientWidth : 1200, H0 = el.clientHeight >= 200 ? el.clientHeight : 620; // 창이 접혀 폭이 0에 가까우면 기본 크기로
-    BIRD.last = JbsBird.render(el, data, { view: st.view, look: st.look, mode: st.mode, labels: st.labels, w: W0, h: H0, pr: 1 });
+    BIRD.last = JbsBird.render(el, data, { view: st.view, look: st.look, mode: st.mode, labels: st.labels, rot: st.rot || 0, w: W0, h: H0, pr: 1 });
     BIRD.data = data;
     $('#birdNote').textContent = `${A.label} · ${A.buildings.length}개동 ${fmt(A.units)}세대 · 최고 ${A.maxFloors}층 — 바닥 브이월드 항공사진, 주변 건물 ${fmt(ctx.length)}동. 그리는 데 ${((Date.now() - t0) / 1000).toFixed(1)}초. 이해를 돕기 위한 이미지이며 정비계획 수립 과정에서 변경될 수 있습니다.`;
   }
@@ -948,11 +969,12 @@
       return;
     }
     if (b.id === 'birdPng') {
-      if (!BIRD.data) return; const el = $('#vbirdCanvas');
-      const r = JbsBird.render(el, BIRD.data, Object.assign({}, BIRD.st, { w: el.clientWidth || 1200, h: el.clientHeight || 620, pr: 2 }));
-      const a = document.createElement('a'); a.download = `${site.name || '조감도'}_${({ wide: '광역조감도', semi: '반조감도', bird: '조감도', persp: '투시도' })[BIRD.st.view]}.png`; a.href = r.png(); a.click();
-      renderBird(); return;
+      // 화면에 보이는 그대로 내려받기(다시 그리지 않음)
+      if (!BIRD.last || !BIRD.last.png) return;
+      const a = document.createElement('a'); a.download = `${site.name || '조감도'}_${({ wide: '광역조감도', semi: '반조감도', bird: '조감도', persp: '투시도' })[BIRD.st.view]}${BIRD.st.look === 'dusk' ? '_해질녘' : ''}${BIRD.st.rot ? '_' + BIRD.st.rot + '도' : ''}.png`; a.href = BIRD.last.png(); a.click();
+      return;
     }
+    if (b.dataset.rot !== undefined) { const d = +b.dataset.rot; BIRD.st.rot = d === 0 ? 0 : (((BIRD.st.rot || 0) + d) % 360 + 360) % 360; renderBird(); return; }
     if (b.dataset.bk === 'labels') BIRD.st.labels = !BIRD.st.labels; else BIRD.st[b.dataset.bk] = b.dataset.bv;
     renderBird();
   });
