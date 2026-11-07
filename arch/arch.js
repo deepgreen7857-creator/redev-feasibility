@@ -320,8 +320,9 @@
 
   /* ---------- 구역 불러오기 ---------- */
   function fillSel() {
-    const saved = JbsSite.list(), urb = JbsSite.urbanZones();
+    const saved = JbsSite.list(), urb = JbsSite.urbanZones(), pz = JbsSite.projectZone && JbsSite.projectZone();
     $('#siteSel').innerHTML = '<option value="">구역 불러오기…</option>' +
+      (pz ? `<optgroup label="사업성 검토(첫 화면)에 그린 구역계"><option value="p:">${esc((pz.meta && pz.meta.name !== '새 정비사업' && pz.meta.name) || '사업성 검토 구역')} 가져오기</option></optgroup>` : '') +
       (saved.length ? `<optgroup label="저장한 구역">${saved.map(x => `<option value="s:${x.id}"${site && site.id === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</optgroup>` : '') +
       (urb.length ? `<optgroup label="/urban 정비계획 검토의 안">${urb.map(x => `<option value="u:${x.key}">${x.key}안 가져오기</option>`).join('')}</optgroup>` : '');
   }
@@ -1105,6 +1106,7 @@
   $('#siteSel').addEventListener('change', e => {
     const x = e.target.value; if (!x) return;
     if (x.startsWith('s:')) load(JbsSite.get(x.slice(2)));
+    else if (x === 'p:') { const s = JbsSite.fromProject(); if (s) load(s); }
     else { const s = JbsSite.fromUrban(x.slice(2)); if (s) load(s); }
   });
 
@@ -1117,10 +1119,12 @@
       const sp = crit('spacing_ratio');
       $('#ruleNote').textContent = `인동간격 기본값 ${sp.값}배는 검토 가정값입니다(법 하한 ${sp.법정하한}배, 인천시 건축 조례 확인 필요). 층고·코어·이격·평면 공급면적도 가정값입니다.`;
       const q = new URLSearchParams(location.search);
-      let first = q.get('urban') ? JbsSite.fromUrban(q.get('urban')) : null;
+      let first = q.get('project') ? JbsSite.fromProject() : q.get('urban') ? JbsSite.fromUrban(q.get('urban')) : null;
       if (!first && q.get('site')) first = JbsSite.get(q.get('site'));
       if (!first) { let cur2 = ''; try { cur2 = localStorage.getItem('jbs.sites.current') || ''; } catch (e) { cur2 = ''; } first = cur2 ? JbsSite.get(cur2) : null; }
       if (!first) { const u = JbsSite.urbanZones(); first = u.length ? JbsSite.fromUrban(u[0].key) : null; }
       load(first || { name: '', v: {} });
+      // ?go=bird: 사업성 검토 화면의 [조감도 보기]로 왔으면 배치안을 바로 만들고 조감도 탭을 엶
+      if (q.get('go') === 'bird' && first && pts) setTimeout(async () => { msg('배치안을 만든 뒤 조감도를 그립니다(큰 구역은 1~2분)…'); await run(); if (alts.length) showView('bird'); }, 300);
     });
 })();

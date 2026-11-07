@@ -224,7 +224,8 @@ const Tabs = {
         act = `<button class="btn small on" id="btnAddrAdd">필지 추가·빼기 끝내기</button> <span class="note">지도에서 더하거나 뺄 필지를 누르세요</span>`;
       } else if (done) {
         act = `<p style="margin:0 0 6px"><b class="good">✓ 구역 지정 완료</b> <span class="note">${esc(S.area.confirmedAt || '')} · 필지 ${fmt(nL)}개</span></p>
-          <button class="btn small primary" id="btnZoneNext">다음: 빠른 사업성 →</button> <button class="btn small" id="btnZoneReopen">필지 다시 고치기</button>`;
+          <button class="btn small primary" id="btnZoneNext">다음: 빠른 사업성 →</button> <button class="btn small" id="btnZoneReopen">필지 다시 고치기</button>
+          <a class="btn small" href="arch/?project=1&go=bird" target="_blank" rel="noopener" title="이 구역계로 개략 배치안을 만든 뒤 조감도까지 바로 그립니다(새 창, 큰 구역은 1~2분)">이 구역으로 조감도 보기 ↗</a>`;
       } else {
         act = `<p style="margin:0 0 6px"><b>더 넣을 필지가 있나요?</b></p>
           ${holes ? `<p class="warn" style="margin:0 0 6px">구역 안에 빠진 빈칸이 ${holes}곳 있습니다 — 갇힌 필지가 아닌지 지도에서 확인하세요.</p>` : ''}

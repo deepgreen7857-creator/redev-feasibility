@@ -63,6 +63,22 @@
       if (!site.plan.type) site.plan.type = 'redev';
       return this.save(site);
     },
+    // 사업성 검토 화면(첫 화면)에 그린 구역계를 바로 공통 구역으로 — /urban을 거치지 않고 /arch 배치·조감도로 (2026-11-07)
+    projectZone() {
+      try { const pj = JSON.parse(localStorage.getItem('jbsc.project.v1') || 'null'), st = pj && (pj.state || pj); return st && st.area && st.area.geojson && !(st.meta && /예시/.test(st.meta.memo || '')) ? st : null; } catch (e) { return null; }
+    },
+    fromProject() {
+      const st = this.projectZone(); if (!st) return null;
+      const g = st.area.geojson, gj = g.type === 'Feature' ? { type: 'Feature', properties: {}, geometry: g.geometry } : { type: 'Feature', properties: {}, geometry: g };
+      const exist = this.list().find(x => x.source === 'project');
+      const site = exist || { plan: {}, profile: {} };
+      const m = st.meta || {};
+      site.source = 'project'; site.geojson = gj;
+      site.name = (m.name && m.name !== '새 정비사업') ? m.name : '사업성 검토 구역';
+      site.profile = site.profile || {}; if (m.zoning) site.profile.zoning = m.zoning;
+      site.plan = site.plan || {}; site.plan.type = m.type === 'reconstruction' ? 'recon' : m.type === 'garo' ? 'garo' : 'redev';
+      return this.save(site);
+    },
   };
   // /urban 4탭(개략 건축계획)의 계획값을 공통 구역에 넣음 → 교통성·환경성·높이경관 검토서가 그대로 씀
   // plan: { units, byType:{39,49,59,74,84,101,114 중 쓰는 것}(전용㎡ → 임대 포함 세대수), far, bcr, floors, towers, gfa, retailGFA,
