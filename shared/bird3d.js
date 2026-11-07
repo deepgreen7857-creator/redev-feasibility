@@ -321,7 +321,7 @@
     const rbb = roadF.map(f => turf.bbox(f));
     const inRoad = (x, y) => roadF.some((f, i) => x >= rbb[i][0] && x <= rbb[i][2] && y >= rbb[i][1] && y <= rbb[i][3] && inPoly(x, y, f));
     const streetLamps = [], streetRings = [], streets = [];
-    const sideM = STD(dusk ? 0x76706a : 0xbdb6a8), curbM = STD(dusk ? 0x9a948c : 0xe2ded6), asphM = STD(dusk ? 0x26282c : 0x45484c, { roughness: 0.8 });
+    const sideM = STD(dusk ? 0x5f5a54 : 0x8f897f), curbM = STD(dusk ? 0x8a847c : 0xcfcac0), asphM = STD(dusk ? 0x1d1f22 : 0x2b2d30, { roughness: 0.85 });
     const yelM = new THREE.MeshBasicMaterial({ color: dusk ? 0xa8851a : 0xe3b21c }), whM = new THREE.MeshBasicMaterial({ color: dusk ? 0xb8b8b8 : 0xf4f4f4 });
     const quad = (A, B, n, o1, o2, t1, t2) => { const L = Math.hypot(B[0] - A[0], B[1] - A[1]), ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L; const P0 = [A[0] + ux * t1, A[1] + uy * t1], P1 = [A[0] + ux * t2, A[1] + uy * t2]; return [[P0[0] + n[0] * o1, P0[1] + n[1] * o1], [P1[0] + n[0] * o1, P1[1] + n[1] * o1], [P1[0] + n[0] * o2, P1[1] + n[1] * o2], [P0[0] + n[0] * o2, P0[1] + n[1] * o2]]; };
     for (let i = 0; i < S.length; i++) {
@@ -333,15 +333,17 @@
       if (w < 4) continue;
       streets.push({ A, B, L, n, w });
     }
+    roadF.forEach((f, i) => { const c = [(rbb[i][0] + rbb[i][2]) / 2, (rbb[i][1] + rbb[i][3]) / 2]; if (Math.hypot(c[0] - cx, c[1] - cy) < span * 1.3) { const r = f.geometry.coordinates[0].slice(0, -1); flat(r, asphM, 0.1); streetRings.push(r); } });
     streets.forEach(({ A, B, L, n, w }) => {
-      const sw = w >= 25 ? 5 : w >= 12 ? 3.5 : 2, far = w >= 12, cw0 = sw, cw1 = far ? w - sw : w, ext = Math.min(6, sw + 2);
+      const sw = w >= 25 ? 5 : w >= 12 ? 3.5 : 2, far = w >= 12, cw0 = sw, cw1 = far ? w - sw : w, ext = Math.min(6, sw + 2), lx = 70;
+      const inR = (t, o) => inRoad(A[0] + (B[0] - A[0]) * t / L + n[0] * o, A[1] + (B[1] - A[1]) * t / L + n[1] * o);
       const r1 = quad(A, B, n, 0, sw, -ext, L + ext), r2 = quad(A, B, n, cw0, cw1, -ext, L + ext);
       flat(r1, sideM, 0.16); flat(quad(A, B, n, sw - 0.25, sw, -ext, L + ext), curbM, 0.2); flat(r2, asphM, 0.12);
       streetRings.push(r1, r2);
       if (far) { flat(quad(A, B, n, w - sw, w, -ext, L + ext), sideM, 0.16); flat(quad(A, B, n, w - sw, w - sw + 0.25, -ext, L + ext), curbM, 0.2); streetRings.push(quad(A, B, n, w - sw, w, -ext, L + ext)); }
       const cwW = cw1 - cw0, mid = cw0 + cwW / 2;
-      if (cwW >= 9) { flat(quad(A, B, n, mid - 0.3, mid - 0.15, -ext, L + ext), yelM, 0.19); flat(quad(A, B, n, mid + 0.15, mid + 0.3, -ext, L + ext), yelM, 0.19); }
-      const dashAt = o => { for (let t = -ext; t < L + ext; t += 8) flat(quad(A, B, n, o - 0.08, o + 0.08, t, Math.min(t + 3, L + ext)), whM, 0.19); };
+      if (cwW >= 9) for (let t = -lx; t < L + lx; t += 6) if (inR(t + 3, mid)) { flat(quad(A, B, n, mid - 0.3, mid - 0.15, t, t + 6), yelM, 0.19); flat(quad(A, B, n, mid + 0.15, mid + 0.3, t, t + 6), yelM, 0.19); }
+      const dashAt = o => { for (let t = -lx; t < L + lx; t += 8) if (inR(t + 1.5, o)) flat(quad(A, B, n, o - 0.08, o + 0.08, t, t + 3), whM, 0.19); };
       if (cwW < 9) dashAt(mid);
       else for (let k = 1; cw0 + k * 3.3 < mid - 1.2; k++) { dashAt(cw0 + k * 3.3); dashAt(cw1 - k * 3.3); }
       // 보도 가로수·가로등
