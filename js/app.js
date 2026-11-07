@@ -826,6 +826,7 @@ const App = {
     if (MapView.marker) { MapView.marker.remove(); MapView.marker = null; }
     ['#jibunList', '#jibunBase', '#anchorTarget', '#ovSearchInput', '#searchInput'].forEach(s => { const e = $(s); if (e) e.value = ''; });
     ['#jibunMsg', '#jibunReport', '#pickMsg', '#surveySyncMsg', '#refMsg', '#exportMsg', '#ovSearchMsg', '#searchResults'].forEach(s => { const e = $(s); if (e) e.innerHTML = ''; });
+    if (window.JbsProject) window.JbsProject.clear();   // 처음으로 = 사업명도 비움(shared/project.js)
     this.replaceState(defaultState());
     this.go('overview');
   },

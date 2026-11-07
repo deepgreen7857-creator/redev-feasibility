@@ -56,10 +56,18 @@
 - /urban 정비계획 탭을 열면 계획값을 localStorage 'jbs-urban-out'에 저장 → 본 화면 기반시설 산정 방식 '정비계획(/urban) 계획값'이 비율로 씀
 - 과소필지: 분할제한면적 미만 '토지'(지목 무관), 분모는 전체 필지(인천 정비조례 제2조제5호·제5조①2나)
 
+## 사업명은 한 곳(shared/project.js) — 2026-11-08 사용자 요구 '구역명 적어놔도 이어지지 않는다'
+- 원본: localStorage 'jbs.project.v1' {name}. 사업성 meta.name·/urban Z.title·공통 구역 site.name(/traffic·/env·/landscape·/arch·/panel·/decision·/proc·/topo가 읽음)은 사본
+- 페이지를 열 때 <head>에서 원본 → 사본으로 맞춤(화면 코드보다 먼저). 열린 다른 창은 storage 이벤트로 스스로 고침(사본을 다른 창이 덮어쓰지 않음 → 사업성 '다른 창에서 바뀜' 경고 안 뜸)
+- 이름을 고치는 곳: 머리줄 '현재 사업 [이름 고치기]', 사업성 사업명 칸, /urban 구역명 칸, 검토서 도구 '구역 이름' 칸 → 모두 JbsProject.setName. 사업성 saveState·/urban saveZ는 JbsProject.offer로 알림(프로그램이 넣은 이름도 놓치지 않게)
+- [새 사업] = 자동 백업 → 모든 화면 비움 → 새 이름. 사업성 '처음으로'는 사업명도 비움(JbsProject.clear)
+- **새 화면에서 사업명을 따로 저장하지 말 것.** 화면에 이름이 필요하면 JbsProject.name()을 읽고, 이름 칸을 만들면 JbsProject.setName을 부를 것. 새 페이지 <head>에 gate.js 다음 `<script src="/shared/project.js?v=…">`
+- 시험: `node tools/ui-test/project-ui.js`(23항목 — 처음 맞추기·화면 간 이어짐·열린 창 바로 바뀜·처음으로). 사업명·화면 연결을 건드렸으면 push 전에 반드시 통과
+
 ## 수정 후 확인 순서
 1. `node --check js/<수정한 파일>.js`
 2. `index.html`의 `?v=` 번호 올리기 (모든 스크립트·CSS 같은 번호)
-3. 1~8탭을 차례로 열어 콘솔 오류가 없는지 확인
+3. 1~8탭을 차례로 열어 콘솔 오류가 없는지 확인 + `node tools/ui-test/project-ui.js`(화면 연결 시험, 실패 0이어야 함)
 4. 그다음 push
 
 ## 주의
