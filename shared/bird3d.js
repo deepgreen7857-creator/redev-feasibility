@@ -271,6 +271,7 @@
       const sh = new THREE.Shape(Rg.map(p => new THREE.Vector2(p[0], p[1])));
       const body = new THREE.ExtrudeGeometry(sh, { depth: zT - 0.05, bevelEnabled: false }); body.rotateX(-Math.PI / 2);
       const bm = new THREE.Mesh(body, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false })); bm.castShadow = true; scene.add(bm); // 그림자 전용
+      const eg = new THREE.EdgesGeometry(body, 25); const el = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: dusk ? 0x2a2e36 : 0x5d636b, transparent: true, opacity: 0.75 })); el.position.y = 0.02; scene.add(el); // 또렷한 윤곽
       // 옥상: 녹화(가운데) + 난간
       const roof = new THREE.Mesh(new THREE.ShapeGeometry(sh), roofP); roof.rotation.x = -Math.PI / 2; roof.position.y = zT; roof.receiveShadow = true; scene.add(roof);
       const inner = mBuf(Rg, -1.6); if (inner && inner.length > 2) flat(inner, roofG, zT + 0.15);
@@ -479,19 +480,20 @@
       const rt = new THREE.WebGLMultisampleRenderTarget(W * opt.pr, H * opt.pr, { format: THREE.RGBAFormat, encoding: THREE.sRGBEncoding });
       const comp = new THREE.EffectComposer(renderer, rt); comp.setPixelRatio(opt.pr); comp.setSize(W, H);
       comp.addPass(new THREE.RenderPass(scene, camera));
-      if (dusk) comp.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 0.5, 0.45, 0.93));
+      if (dusk) comp.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 0.45, 0.3, 0.985));
       if (THREE.ShaderPass) {
         // 단지 범위(바닥 + 동 기둥 + 옥탑)를 화면에 비춘 그림 → 흐릿한 경계의 '초점 판'
         const [mc, mx] = cv(Math.round(W / 2), Math.round(H / 2)), sx = mc.width, sy = mc.height;
         const prj = (x, h, y) => { const v = new THREE.Vector3(x, h, -y).project(camera); return [(v.x + 1) / 2 * sx, (1 - v.y) / 2 * sy]; };
-        const fillPts = pts => { if (pts.length < 3) return; mx.beginPath(); pts.forEach((p, i) => i ? mx.lineTo(p[0], p[1]) : mx.moveTo(p[0], p[1])); mx.closePath(); mx.fill(); };
+        const fillPts = (pts, grow) => { if (pts.length < 3) return; mx.beginPath(); pts.forEach((p, i) => i ? mx.lineTo(p[0], p[1]) : mx.moveTo(p[0], p[1])); mx.closePath(); mx.fill(); if (grow) { mx.lineJoin = 'round'; mx.lineWidth = grow; mx.strokeStyle = mx.fillStyle; mx.stroke(); } };
         mx.fillStyle = '#000'; mx.fillRect(0, 0, sx, sy); mx.fillStyle = '#fff';
         const inFront = (x, h, y) => new THREE.Vector3(x, h, -y).applyMatrix4(camera.matrixWorldInverse).z < 0;
         fillPts(S.map(p => prj(p[0], 0, p[1]))); fillPts(S.map(p => prj(p[0], 10, p[1])));
         mx.fillStyle = '#ccc'; streetRings.forEach(r => fillPts(r.map(p => prj(p[0], 0, p[1])))); mx.fillStyle = '#fff';
-        D.blds.forEach(b => { const zT = Z0 + (b.floors || 15) * FH + 9; fillPts(hullOf(b.ring.map(p => prj(p[0], 0, p[1])).concat(b.ring.map(p => prj(p[0], zT, p[1]))))); });
+        D.blds.forEach(b => { const zT = Z0 + (b.floors || 15) * FH + 9; fillPts(hullOf(b.ring.map(p => prj(p[0], 0, p[1])).concat(b.ring.map(p => prj(p[0], zT, p[1])))), Math.max(6, sx / 45)); });
         if (fore) fillPts(fore.filter(p => inFront(p[0], 0, p[1])).map(p => prj(p[0], 0, p[1])));
-        const [bc, bx] = cv(sx, sy); bx.filter = `blur(${Math.round(sx / 60)}px)`; bx.drawImage(mc, 0, 0);
+        if (opt.view === 'persp') { const by = Math.min(...D.blds.map(b => Math.min(...b.ring.map(p => prj(p[0], 0, p[1])[1])))); mx.fillStyle = '#fff'; mx.fillRect(0, by - sy * 0.02, sx, sy); } // 투시도: 앞마당까지 또렷하게
+        const [bc, bx] = cv(sx, sy); bx.filter = `blur(${Math.max(2, Math.round(sx / 160))}px)`; bx.drawImage(mc, 0, 0);
         const maskT = new THREE.CanvasTexture(bc);
         const taps = []; for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; taps.push([Math.cos(a), Math.sin(a), 1.0], [Math.cos(a + 0.26) * 2.1, Math.sin(a + 0.26) * 2.1, 0.7]); }
         const blurSrc = taps.map(t => `s += texture2D(tDiffuse, vUv + vec2(${t[0].toFixed(3)}, ${t[1].toFixed(3)}) * px * rad).rgb * ${t[2].toFixed(2)};`).join('\n');
@@ -508,6 +510,8 @@
               vec3 sh = c.rgb + (c.rgb - nb) * 0.9;                       // 단지: 또렷하게
               float l = dot(sh, vec3(0.299, 0.587, 0.114)); sh = mix(vec3(l), sh, 1.12); sh = (sh - 0.5) * 1.06 + 0.5;
               float lo = dot(bl, vec3(0.299, 0.587, 0.114)); vec3 ou = mix(vec3(lo), bl, 0.7) * dark;   // 밖: 흐리고 옅고 어둡게
+              float det = smoothstep(0.012, 0.07, length(c.rgb - bl));   // 하늘처럼 밋밋한 곳은 효과 없음
+              sh = mix(c.rgb, sh, det); ou = mix(bl, ou, det);
               vec3 o = mix(ou, sh, m);
               vec2 d = vUv - 0.5; o *= 1.0 - amt * dot(d, d) * 1.6;
               gl_FragColor = vec4(clamp(o, 0.0, 1.0), c.a);
