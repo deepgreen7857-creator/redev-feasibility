@@ -21,7 +21,7 @@ const Quick = {
   // 정비기반시설 비율 3단계 — 평균·보수는 실무 경험치(가정값, 인천 고시 사례로 보정 전). 최소는 구역마다 자동 계산
   get INFRA() { const A = JbsFeas.get(); return { avg: A.infraAvg, cons: A.infraCons, minFallback: A.infraMinFallback, parkPerUnit: A.parkPerUnit }; },
   // 시장 값은 공통 가정값(shared/feas.js)에서 읽음 — /urban 사업성 탭과 같은 값
-  FEAS_KEYS: ['mix59', 'mix114', 'generalPrice', 'memberRatio', 'conPrice', 'etcPct', 'priorMul', 'avgLand', 'rentRatio', 'gfaFactor', 'resRatio', 'rentPrice', 'shopPrice'],
+  FEAS_KEYS: ['mix59', 'mix114', 'generalPrice', 'memberRatio', 'conPrice', 'etcPct', 'priorMul', 'houseMul', 'avgLand', 'rentRatio', 'gfaFactor', 'resRatio', 'rentPrice', 'shopPrice'],
   // 공사비 단계(기준 공사비 대비) — 구역마다 고름(S.quick.conLevel)
   CON_LV: [['low', '낮게', -5], ['base', '기준', 0], ['high', '높게', 5], ['higher', '많이 높게', 10]],
   conMul(q) { const l = this.CON_LV.find(x => x[0] === (q.conLevel || 'base')); return 1 + (l ? l[2] : 0) / 100; },
@@ -63,10 +63,11 @@ const Quick = {
     const syncZone = () => { if (!q.zoneManual && S.meta.zoning && q.zoneSrc !== S.meta.zoning) { q.zone = this.zoneKey(S.meta.zoning); q.zoneSrc = S.meta.zoning; } };
     // 조합원 수도 처음 연 때 값에 고정되던 것 → 구역·조서(건축물 전유 호수·건물 없는 대지·소유자 수)로 다시 추정. 직접 고치면 유지(membersManual)
     const syncMembers = () => { if (q.membersManual) return; try { const m = Math.round(num(Assume.defaults().members)); if (m > 0 && m !== num(q.members)) q.members = m; } catch (e) { /* 조서 없음 */ } };
+    if (q.init && !q.farStepV2) { q.farStepV2 = true; if (q.farStep === 'calc') q.farStep = 'base'; }   // 1회차는 기준용적률에서 출발(2026-11-07) — 예전 기본값(산식)을 한 번만 바꿈
     if (q.init) { if (!q.infraLevel) q.infraLevel = 'avg'; syncZone(); syncMembers(); this.FEAS_KEYS.forEach(k => { q[k] = A[k]; }); return q; }
     const a = Assume.defaults();
     Object.assign(q, {
-      init: true, zone: this.zoneKey(S.meta.zoning), farStep: 'calc', farCustom: 250, infraLevel: 'avg', infraPct: 25,
+      init: true, farStepV2: true, zone: this.zoneKey(S.meta.zoning), farStep: 'base', farCustom: 250, infraLevel: 'avg', infraPct: 25,
       mix59: 40, sizePct: 100, rentRatio: a.rentRatio, members: a.members, avgLand: 0,
       generalPrice: a.generalPrice, memberRatio: a.memberRatio, conPrice: a.conPrice, etcPct: a.etcPct,
       priorMul: a.priorMul, gfaFactor: a.gfaFactor, resRatio: a.resRatio, rentPrice: a.rentPrice, shopPrice: a.shopPrice, target: 100,
@@ -133,6 +134,10 @@ const Quick = {
       t.prior.mode = 'manual';
       t.prior.manual = Math.max(0, f.site - f.old) * num(q.avgLand) * v.priorMul;
       priorNote = `평균 공시지가 ${fmt(q.avgLand)}만원/㎡ × ${fmt(f.site - f.old)}㎡ × ${v.priorMul}`;
+    } else if (Calc.useHousePrice(t)) {
+      const hm = num(q.houseMul) || num(JbsFeas.get().houseMul) || 1.7; t.prior.houseMul = hm;
+      const hl = t.lands.filter(l => num(l.housePrice) > 0), hn = hl.reduce((a, l) => a + num(l.houseN), 0), rest = t.lands.length - hl.length;
+      priorNote = `공동주택가격 ${fmtEok(Calc.housePriceTotal(t))}(${fmt(hn)}세대, ${esc(String(hl[0].houseYear || ''))}년) × ${hm}${rest ? ` + 나머지 ${rest}필지 공시지가 × ${v.priorMul}` : ''}`;
     } else if (t.prior.mode === 'estimate') priorNote = `공시지가 합계 × ${v.priorMul}`;
     const r = Calc.result(t, m);
     return { p, r, f, t, v, priorNote };
@@ -568,8 +573,38 @@ ${[['59', p.u59], ['84', p.u84], ['114', p.u114]].filter(([, n]) => n > 0).map((
 
 // ---------- 탭 ----------
 Tabs.quick = {
+  // 재건축: 구역 필지의 공동주택가격(브이월드 getApartHousingPriceAttr)을 한 번 조회해 필지별 합계를 l.housePrice(만원)에 둠
+  async fetchHousePrices() {
+    if (this._hpBusy || S.meta.type !== 'reconstruction' || !window.VWorld || !VWorld.enabled) return;
+    const todo = S.lands.filter(l => l.pnu && !l.sample && l.houseAt === undefined);
+    if (!todo.length) return;
+    this._hpBusy = true;
+    try {
+      const yr = new Date().getFullYear();
+      for (const l of todo) {
+        let got = null;
+        for (const y of [yr, yr - 1]) {
+          let rows = [];
+          for (let pg = 1; pg <= 5; pg++) {
+            const d = await jsonp('https://api.vworld.kr/ned/data/getApartHousingPriceAttr', { pnu: l.pnu, key: VWorld.key, domain: VWorld.domain, format: 'json', numOfRows: 1000, pageNo: pg, stdrYear: String(y) }, 20000).catch(() => null);
+            const f = (d && d.apartHousingPrices && d.apartHousingPrices.field) || [];
+            rows = rows.concat(f); if (f.length < 1000) break;
+          }
+          if (rows.length) {
+            const u = {}; rows.forEach(r => { u[`${r.aphusNm}|${r.dongNm}|${r.hoNm}`] = num(r.pblntfPc); });   // 같은 호가 여러 줄로 오므로 동·호로 하나만
+            const v = Object.values(u);
+            got = { housePrice: v.reduce((a, b) => a + b, 0) / 10000, houseN: v.length, houseYear: y, houseName: [...new Set(rows.map(r => r.aphusNm))].join('·') };
+            break;
+          }
+        }
+        Object.assign(l, got || { housePrice: 0, houseN: 0 }, { houseAt: new Date().toLocaleString('sv-SE').slice(0, 16) });
+      }
+      saveState(); App.update(true);
+    } finally { this._hpBusy = false; }
+  },
   render() {
     Quick.ensure();
+    this.fetchHousePrices();
     const zs = $('#qk_zone');
     if (zs && !zs.options.length) zs.innerHTML = Quick.zones().map(z => `<option value="${esc(z)}">${esc(z.replace(/_/g, ' '))}</option>`).join('');
     bindInputs($('#tab-quick'));
