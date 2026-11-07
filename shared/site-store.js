@@ -77,6 +77,8 @@
       site.name = (m.name && m.name !== '새 정비사업') ? m.name : '사업성 검토 구역';
       site.profile = site.profile || {}; if (m.zoning) site.profile.zoning = m.zoning;
       site.plan = site.plan || {}; site.plan.type = m.type === 'reconstruction' ? 'recon' : m.type === 'garo' ? 'garo' : 'redev';
+      // 1단계 계획 용적률·용도지역을 배치 조건으로(첫 화면 값과 같게)
+      site.v = site.v || {}; const far = +((st.plan || {}).far) || 0; if (far > 0) site.v.far = String(far); if (m.zoning) site.v.zoning = m.zoning;
       return this.save(site);
     },
   };

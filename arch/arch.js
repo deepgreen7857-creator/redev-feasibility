@@ -1160,6 +1160,11 @@
       if (!first) { const u = JbsSite.urbanZones(); first = u.length ? JbsSite.fromUrban(u[0].key) : null; }
       load(first || { name: '', v: {} });
       // ?go=bird: 사업성 검토 화면의 [조감도 보기]로 왔으면 배치안을 바로 만들고 조감도 탭을 엶
-      if (q.get('go') === 'bird' && first && pts) setTimeout(async () => { msg('배치안을 만든 뒤 조감도를 그립니다(큰 구역은 1~2분)…'); await run(); if (alts.length) showView('bird'); }, 300);
+      if (q.get('go') === 'bird' && first && pts) setTimeout(async () => {
+        // 첫 화면 재건축 구역: 처음 한 번은 기존 세대(전유부) 평형 비율로 배치
+        const a0 = (site.arch || {}).params || {};
+        if (site.source === 'project' && site.plan && site.plan.type === 'recon' && !TYPES().some(t => a0['m' + t])) { const ex = existingMix(); if (ex) { TYPES().forEach(k => { $('#p_m' + k).value = ex.mix[k] ?? ''; }); mixSum(); } }
+        msg('배치안을 만든 뒤 조감도를 그립니다(큰 구역은 1~2분)…'); await run(); if (alts.length) showView('bird');
+      }, 300);
     });
 })();
