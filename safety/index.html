@@ -837,15 +837,32 @@ function classify(name,pages){
   if(!m&&app) m=[0,'가','건설공사의개요'];
   const bu=(/부록/.test(fn)&&!/본문|본편(?!.*부록)/.test(fn.replace(/부록편/,'')))||/부록편/.test(head.slice(0,300));
   if(m) return {kind:'total',key:m[1],label:`총괄 · ${m[1]}. ${({'건설공사의개요':'건설공사의 개요','현장특성분석':'현장 특성 분석','현장운영계획':'현장운영계획','비상시긴급조치계획':'비상시 긴급조치계획'})[m[2]]}`,bu};
-  const w=head.match(/2\.([1-8])\.?(가설|굴착|콘크리트|강구조|성토|해체|건축설비|타워)/)||fn.match(/2\.([1-8])\.?(가설|굴착|콘크리트|강구조|성토|해체|건축설비|타워)/);
+  const w=head.match(/공종별[–\-]?2\.([1-8])\.?(가설|굴착|콘크리트|강구조|성토|해체|건축설비|타워)/)||fn.match(/공종별[–\-]?2\.([1-8])\.?(가설|굴착|콘크리트|강구조|성토|해체|건축설비|타워)/);
   if(w){const sub=(head.match(new RegExp('2\\.'+w[1]+'\\.(\\d)\\.?([가-힣]{2,12})'))||fn.match(/\((\d)\.([가-힣]{2,12})\)/)||[]);
     return {kind:'work',no:+w[1],label:`공종 · 2.${w[1]} ${({가설:'가설공사',굴착:'굴착공사 및 발파공사',콘크리트:'콘크리트공사',강구조:'강구조물공사',성토:'성토 및 절토공사',해체:'해체공사',건축설비:'건축설비공사',타워:'타워크레인 사용공사'})[w[2]]}${sub[1]?` — ${sub[1]}. ${sub[2]}`:''}`,sub:sub[1]?+sub[1]:0,bu}}
+  if(/합동검토회의/.test(head.slice(0,300)+fn)){const t=(head.slice(0,300).match(/(동바리|굴착|특수교량|건축물|초고층|특수구조)/)||fn.match(/(동바리|굴착|교량|건축물)/)||[,'취약공종'])[1];
+    return {kind:'joint',no:t==='동바리'?3:t==='굴착'?2:0,label:`합동검토회의 자료 · ${t}${t==='동바리'?'공':''}`,topic:t,bu}}
+  // 시공사가 자체 번호(1 가설·2 굴착…)를 붙인 경우: 첫머리에 나오는 공종 이름으로 CSI 2.n에 맞춤
+  const NAMES=[['가설공사','가설'],['굴착공사및발파공사','굴착'],['굴착공사','굴착'],['흙막이','굴착'],['발파공사','굴착'],['콘크리트공사','콘크리트'],['철근콘크리트','콘크리트'],['강구조물','강구조'],['성토및절토','성토'],['해체공사','해체'],['건축설비','건축설비'],['타워크레인','타워']];
+  const h2=head.slice(0,400); let best=null;
+  NAMES.forEach(([k,v])=>{const i=h2.indexOf(k);if(i>=0&&(!best||i<best.i))best={i,v}});
+  if(best&&!/총괄안전관리계획/.test(h2.slice(0,best.i))){
+    const no=FIXWORK[best.v], sm=flat(pages.slice(0,6).join(' ')).match(/(\d)\.(\d)\.?([가-힣·]{2,14}?)페이지/)||fn.match(/(\d)[._](\d)[._]?([가-힣]{2,10})/);
+    return {kind:'work',no,label:`공종 · 2.${no} ${({가설:'가설공사',굴착:'굴착공사 및 발파공사',콘크리트:'콘크리트공사',강구조:'강구조물공사',성토:'성토 및 절토공사',해체:'해체공사',건축설비:'건축설비공사',타워:'타워크레인 사용공사'})[best.v]}`,subName:sm?sm[3]:'',sub:sm?+sm[2]:0,bu,own:true}}
   return {kind:'whole',label:'구분 못 함(통합 문서로 봄)'};
 }
 // 사례 1호 검토의견서(조건부 적정)에서 나온 지적을 규칙으로 — 글자 없는(그림) 쪽은 못 봄
 const PLAN_RULES=[
  {on:c=>c.kind==='total'&&c.key==='가',t:F=>!/검토[·ㆍ.]?확인서|검토의견서/.test(F.replace(/구비서류.{0,80}/g,'')),lv:'bad',m:'건설사업관리기술인(공사감독자) 검토의견서·확인서가 본문에 없습니다 — 구비서류 목록에만 있음. 미제출 시 반려 등 불이익(영 제98조제2항)'},
  {on:c=>c.kind==='total'&&c.key==='가',t:F=>(S.first_rcv||S.chg_rcv||'9')>='2026-06-01',lv:'warn',m:'개정 매뉴얼(2026. 6. 1.) 뒤 접수분 — 건설사업관리기술인 검토의견서·확인서는 개정 최신 서식으로(옛 서식이면 다음 차수 반려, 사례 2호)'},
+ {on:c=>c.kind==='total'&&c.key==='가',t:F=>['굴토','설계안전성','취약공종','지하안전'].some(w=>!F.includes(w)),lv:'warn',m:'공사개요서에 지하안전평가·굴토(구조)심의·설계안전성검토·취약공종 대상 여부와 감리자 내용을 모두 적었는지 확인 — 하나라도 빠지면 보완(사례 5호)'},
+ {on:c=>c.kind==='total'&&c.key==='나',t:F=>/사전조사/.test(F)&&!/조사항목|조사방법|조사대상/.test(F),lv:'warn',m:'인접 시설물 사전조사 계획에 조사대상·시설물별 개요·조사 항목·방법이 보이지 않습니다(사례 5호)'},
+ {on:c=>c.kind==='work'&&c.no===1,t:F=>/천공기|항타/.test(F)&&!/진출입로/.test(F),lv:'warn',m:'천공기·항타기 진출입로 계획(폭·경사도, 전도 방지)이 보이지 않습니다(사례 5호)'},
+ {on:c=>c.kind==='work'&&c.no===2,t:F=>/지하안전/.test(S.csi_judge||'')||num('dig')>=10,lv:'warn',m:'(소규모) 지하안전영향평가서와 협의 내용 사본을 굴착 공종에 첨부했는지 확인 — 지하안전법 제10조·제23조, 재협의 시 재협의 통보서까지(사례 5호)'},
+ {on:c=>c.kind==='work'&&c.no===2&&!!S.blast,t:F=>!/시험발파/.test(F),lv:'bad',m:'폭발물 사용인데 시험발파 계획서(결과보고서)·발파 시공 상세도(천공·장약·순서)가 없습니다'},
+ {on:c=>c.kind==='work'&&c.no===7,t:F=>!/동선(구분|분리)|동선계획/.test(F),lv:'warn',m:'설비작업 중 근로자·건설기계(지게차 등) 동선 구분계획(도면)이 보이지 않습니다(사례 5호)'},
+ {on:c=>c.kind==='work'&&c.no===8,t:F=>!/충돌방지/.test(F),lv:'warn',m:'타워크레인 간 충돌방지계획이 보이지 않습니다(여러 대 설치 시, 사례 5호)'},
+ {on:c=>c.kind==='work'&&c.no===8,t:F=>/기종(미정|추후)|추후선정/.test(F),lv:'info',m:'타워크레인 기종 미정 — 기종이 바뀌면 개요서·제원표·설치 상세도 포함 공종 전체를 다시 제출(사례 5호)'},
  {on:c=>c.kind==='total'&&c.key==='나',t:F=>/매설물|지장물/.test(F)&&!/회신|회의록|공문|날인/.test(F),lv:'bad',m:'매설물 관리주체 협의 입증서류(회신 공문·날인 회의록)가 보이지 않습니다 — ‘협의 결과’ 제목이나 ‘부록 참조’만으로는 부족, 공사 영향범위 안 지장물 전부 표기'},
  {on:c=>c.kind==='total'&&c.key==='나',t:F=>num('dig')>=10&&!/지하안전/.test(F),lv:'bad',m:'굴착 10m 이상인데 지하안전평가 요약이 없습니다'},
  {on:c=>c.kind==='work',t:F=>!/자체안전점검|HoldPoint|H\/P/i.test(F),lv:'bad',m:'자체안전점검표(Hold Point, 별지 제10호)가 없습니다 — 반려 사유'},
@@ -908,14 +925,14 @@ function parseCsiOverview(text){
   X.cls12=/[12]종\s*시설물/.test(tgt); X.m_drill=/천공기/.test(tgt); X.m_pile=/항타/.test(tgt); X.m_tower=/타워\s*크레인/.test(tgt);
   X.g_gang=/작업발판\s*일체형\s*거푸집/.test(tgt); X.g_form5=/5미터\s*이상인\s*거푸집/.test(tgt); X.g_earth2=/흙막이/.test(tgt);
   X.g_ext10=/외부작업/.test(tgt); X.g_complex=/복합형/.test(tgt); X.g_scaf31=/31미터|비계/.test(tgt); X.g_bracket=/브라켓/.test(tgt); X.g_tsup=/터널\s*지보공/.test(tgt);
-  X.dig10=/10미터\s*이상\s*굴착|지하\s*10/.test(tgt); X.fl16=/16층\s*이상/.test(tgt);
+  X.dig10=/10미터\s*이상\s*굴착|지하\s*10/.test(tgt); X.fl16=/16층\s*이상/.test(tgt); X.blast=/폭발물/.test(tgt);
   X._kind=val(/^공사구분\s*/); X._civil=val(/^토목[·ㆍ]?건축\s*구분\s*/); X._judge=val(/^심의\s*및\s*검토대상\s*여부\s*/); X._state=val(/^진행상태\s*/); X._no=val(/^접수\s*번호\s*/);
   X._tgt=tgt.split('\n').map(x=>x.trim()).filter(Boolean);
   return X;
 }
 function showCsiOverview(X){
   const keys=['name','addr','start','end','amount','builder','permit','first_rcv'];
-  const flags=[['cls12','1종·2종 시설물'],['m_drill','천공기(10m 이상)'],['m_pile','항타·항발기'],['m_tower','타워크레인'],['g_gang','작업발판 일체형 거푸집'],['g_form5','거푸집·동바리 5m 이상'],['g_earth2','흙막이 지보공 2m 이상'],['g_ext10','외부작업 일체형 가설구조물'],['g_complex','복합형 가설구조물'],['g_scaf31','비계 31m 이상'],['g_bracket','브라켓 비계'],['g_tsup','터널 지보공']];
+  const flags=[['cls12','1종·2종 시설물'],['blast','폭발물 사용'],['m_drill','천공기(10m 이상)'],['m_pile','항타·항발기'],['m_tower','타워크레인'],['g_gang','작업발판 일체형 거푸집'],['g_form5','거푸집·동바리 5m 이상'],['g_earth2','흙막이 지보공 2m 이상'],['g_ext10','외부작업 일체형 가설구조물'],['g_complex','복합형 가설구조물'],['g_scaf31','비계 31m 이상'],['g_bracket','브라켓 비계'],['g_tsup','터널 지보공']];
   const diff=flags.filter(([k])=>!!X[k]!==!!S[k]&&(S.name||S.floors)).map(([k,t])=>`${t}: CSI ${X[k]?'해당':'없음'} / 지금 입력 ${S[k]?'해당':'없음'}`);
   let h=`<h2 style="margin-top:14px">CSI 의뢰개요 <span class="auto">${xe(X._no||'')} · ${xe(X._state||'')}</span></h2>
   <table class="map"><tbody>${keys.filter(k=>X[k]).map(k=>`<tr><td style="width:30%">${LABEL[k]||({amount:'공사금액(백만원)',first_rcv:'CSI 접수일'})[k]||k}</td><td>${xe(X[k])}</td></tr>`).join('')}
@@ -1016,7 +1033,7 @@ async function onFiles(files){
     if(R&&/의뢰\s*개요/.test(R.pages[0]||'')&&/공사명/.test(R.pages[0])){const X=parseCsiOverview(R.pages[0]);
       $('#upStat').textContent=`${files[0].name} · CSI 의뢰개요를 읽었습니다`;$('#upEx').innerHTML='';$('#upDiag').innerHTML=showCsiOverview(X);
       $('#csiOvApply').onclick=()=>{Object.keys(X).filter(k=>!k.startsWith('_')&&!['dig10','fl16'].includes(k)).forEach(k=>{if(X[k]!==''&&X[k]!==undefined)S[k]=X[k]});
-        if(X.fl16&&!num('floors'))S.floors='16'; if(!S.kind)S.kind='신축'; S.summary=makeSummary(); bindAll();save();render();
+        S.csi_judge=X._judge||''; if(X.fl16&&!num('floors'))S.floors='16'; if(X.dig10&&num('dig')<10){S.dig='10';S._digGuess=1} if(!S.kind)S.kind='신축'; S.summary=makeSummary(); bindAll();save();render();
         $('#upStat').innerHTML='<span class="lv-ok">CSI 의뢰개요 값으로 채웠습니다.</span> 층수·면적 등 CSI에 없는 값은 공사 개요 탭에서 넣으세요.'};
       return}}
   if(files.length===1){const R=await readAny(files[0]).catch(e=>null);if(R&&classify(files[0].name,R.pages).kind==='whole'){return onFile(files[0])}}
@@ -1055,19 +1072,37 @@ async function onFiles(files){
     }catch(e){rows.push({f:f.name,c:{kind:'err',label:'읽기 실패'},n:0,blank:[],hits:[['bad',e.message||String(e)]]})}
   }
   // 같은 항목의 본편·부록을 한 줄로 묶어 다시 점검
-  const gkey=r=>r.c.kind==='total'?'t'+r.c.key:r.c.kind==='work'?'w'+r.c.no+'.'+(r.c.sub||0):'x'+r.f;
+  const gkey=r=>r.c.kind==='total'?'t'+r.c.key:r.c.kind==='work'?'w'+r.c.no:r.c.kind==='joint'?'j'+r.c.topic:'x'+r.f;
   const G=new Map();rows.forEach(r=>{let k=gkey(r);if(r.c.bu&&r.c.kind==='work'&&!r.c.sub){const b=rows.find(x=>!x.c.bu&&x.c.kind==='work'&&x.c.no===r.c.no);if(b)k=gkey(b)}if(!G.has(k))G.set(k,[]);G.get(k).push(r)});
   const merged=[];G.forEach(list=>{const bon=list.filter(r=>!r.c.bu),bu=list.filter(r=>r.c.bu);
-    if(!bu.length||!bon.length||!['total','work'].includes(list[0].c.kind)){list.forEach(r=>{if(r.c.bu&&r.c.kind!=='err')r.hits=[['info','본편 파일 없이 부록만 올라왔습니다 — 본편과 함께 올리면 참조·계산서를 대조합니다']];merged.push(r)});return}
+    if((!bu.length&&bon.length<2)||!bon.length||!['total','work'].includes(list[0].c.kind)){list.forEach(r=>{if(r.c.bu&&r.c.kind!=='err')r.hits=[['info','본편 파일 없이 부록만 올라왔습니다 — 본편과 함께 올리면 참조·계산서를 대조합니다']];merged.push(r)});return}
     const F=bon.map(r=>r.F).join(''),B=bu.map(r=>r.F).join(''),c=bon[0].c;
     const hits=PLAN_RULES.filter(x=>x.on(c)&&x.t(F+B)).map(x=>[x.lv,x.m]);
     BU_RULES.filter(x=>x.on(c)&&x.t(B,F)).forEach(x=>hits.push(['bad',x.m]));
-    refCheck(F,B).forEach(t=>hits.push(['bad',t]));
-    merged.push({f:[...bon,...bu].map(r=>r.f).join(' + '),c:{...c,bu:false,pair:true},n:bon.reduce((a,r)=>a+r.n,0),nb:bu.reduce((a,r)=>a+r.n,0),blank:[...bon,...bu].flatMap(r=>r.blank),garb:[...bon,...bu].flatMap(r=>r.garb||[]),hits});});
+    if(B) refCheck(F,B).forEach(t=>hits.push(['bad',t]));
+    const subs=[...new Set(bon.map(r=>r.c.subName||(r.c.label.split(' — ')[1]||'')).filter(Boolean))];
+    merged.push({f:[...bon,...bu].map(r=>r.f).join(' + '),F:F+B,c:{...c,bu:false,pair:!!bu.length,label:c.label.split(' — ')[0]+(subs.length>1?` (${subs.join(' · ')})`:'')},n:bon.reduce((a,r)=>a+r.n,0),nb:bu.reduce((a,r)=>a+r.n,0),blank:[...bon,...bu].flatMap(r=>r.blank),garb:[...bon,...bu].flatMap(r=>r.garb||[]),hits});});
   rows.length=0; merged.forEach(r=>rows.push(r));
+  // 합동검토회의 자료: 취약공종 표시·검토비, 짝 공종에 붙는 기본 점검
+  {const J={};rows.filter(r=>r.c.kind==='joint').forEach(r=>{const k=r.c.topic;if(!J[k]){J[k]=r;return}J[k].F=(J[k].F||'')+(r.F||'');J[k].f+=' + '+r.f;J[k].n+=r.n;J[k].blank=J[k].blank.concat(r.blank);r._drop=1});
+   for(let i=rows.length-1;i>=0;i--)if(rows[i]._drop)rows.splice(i,1);}
+  rows.forEach(r=>{if(r.c.kind!=='joint')return;const F=r.F||'';r.hits=[];
+    if(r.c.topic==='동바리'){const t=F.match(/슬래브두께(?:가)?([\d.]+)m이상/);r.hits.push(['info',`취약공종(동바리공) 합동검토회의 대상${t?` — 슬래브 두께 ${t[1]}m 이상`:''}: 검토비 1,200,000원 추가, 합동검토회의 진행`]);
+      if(!S.slab_t&&t){S.slab_t=t[1];save()}
+      if(!/하부슬래브|지지슬래브|타설층하부/.test(F))r.hits.push(['bad','동바리 지지(하부) 슬래브 안전성 검토가 보이지 않습니다']);
+      if(!/수평연결재|가새/.test(F))r.hits.push(['warn','수평연결재·가새 설치 계획이 보이지 않습니다(높은 동바리)']);
+      if(!/타설순서|분할타설|타설계획/.test(F))r.hits.push(['warn','두꺼운 슬래브 타설순서·분할타설 계획이 보이지 않습니다']);
+      if(!/압축강도|존치/.test(F))r.hits.push(['warn','동바리 존치기간·해체시기(압축강도 확인) 계획이 보이지 않습니다']);
+      if(!/정기안전점검/.test(F))r.hits.push(['warn','자체안전점검표만 있고 정기안전점검 시기·내용, 안전점검 공정표 등 공정별 안전점검계획이 보이지 않습니다(사례 5호 합동검토 지적)']);
+      if(!/신호수|작업지휘자/.test(F))r.hits.push(['warn','콘크리트 타설계획도에 신호수·작업지휘자 배치가 보이지 않습니다'])}
+    else r.hits.push(['info','취약공종 합동검토회의 자료 — 검토비 1,200,000원 추가']);});
+  {const ga=rows.find(r=>r.c.kind==='total'&&r.c.key==='가'), gw=rows.find(r=>r.c.kind==='work'&&r.c.no===2);
+   if(ga&&gw&&ga.F&&gw.F){const a=(ga.F.match(/지하10미터이상을?굴착하는건설공사[^H\d]{0,12}H=?([\d.]+)m/)||ga.F.match(/최대굴착깊이\(?m?\)?([\d.]+)/)||[])[1],
+     b=Math.max(0,...[...gw.F.matchAll(/Hmax=?([\d.]+)m/g)].map(m=>+m[1]));
+     if(a&&b&&Math.abs(+a-b)>0.3) ga.hits.push(['bad',`공사개요서 최대 굴착깊이 ${a}m ↔ 굴착공사 개요서 Hmax ${b}m — 서로 다릅니다${(+a<10)!==(b<10)?' (10m 이상 굴착 수립대상·지하안전평가 판정이 갈림)':''}`]);}}
   rows.forEach(r=>{if(r.c.kind==='work'&&!r.c.pair&&!r.c.bu) r.hits.push(['info','부록이 같이 없어서 계산서·상세도는 본편 글자로만 봤습니다 — 부록을 같이 올리면 계산서 유무와 “부록 참조” 대조까지 합니다'])});
   rows.forEach(r=>{if(r.c.kind==='total'&&!r.c.pair&&!r.c.bu&&/부록#?\d/.test(r.F||'')) r.hits.push(['info','본편이 부록을 참조합니다 — 부록을 같이 올리면 참조한 자료가 실제로 있는지 대조합니다'])});
-  const order=r=>r.c.kind==='total'?' abcd'.indexOf({가:'a',나:'b',다:'c',라:'d'}[r.c.key]):r.c.kind==='work'?10+r.c.no+(r.c.sub||0)/10:r.c.kind==='opinion'?99:50;
+  const order=r=>r.c.kind==='joint'?10+(r.c.no||9)+0.5:r.c.kind==='total'?' abcd'.indexOf({가:'a',나:'b',다:'c',라:'d'}[r.c.key]):r.c.kind==='work'?10+r.c.no+(r.c.sub||0)/10:r.c.kind==='opinion'?99:50;
   rows.sort((a,b)=>order(a)-order(b));
   const have=new Set(rows.filter(r=>r.c.kind==='work').map(r=>r.c.no)), haveT=new Set(rows.filter(r=>r.c.kind==='total').map(r=>r.c.key));
   const miss=['가','나','다','라'].filter(k=>!haveT.has(k)).map(k=>'총괄 '+k);
