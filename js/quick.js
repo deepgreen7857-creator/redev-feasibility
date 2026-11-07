@@ -79,13 +79,17 @@ const Quick = {
     const site = Calc.siteArea(S); if (!(site > 0)) return { v: this.INFRA.minFallback, basis: '구역 면적 없음' };
     const old = this.existingInfra(S);
     if (!S.lands.length) return { v: this.INFRA.minFallback, basis: '토지조서가 없어 15%로 둠(가정) — 토지조서를 채우면 구역에 맞게 다시 계산' };
-    let v = Math.max(old / site * 100, 5), units = 0;
-    for (let k = 0; k < 3; k++) {   // 세대수가 비율에 따라 바뀌므로 몇 번 맞춤
+    // 법정 공원은 정비계획 5만㎡ 이상일 때만(도시공원법 시행규칙 별표 2) — 그 미만이면 기존 국공유 시설 면적만(2026-11-07 학익장미 39,217㎡: 공원 1,766㎡를 넣어 최소가 과다했음)
+    const parkOn = site >= 50000;
+    let v = Math.max(old / site * 100, parkOn ? 5 : 0), units = 0;
+    if (parkOn) for (let k = 0; k < 3; k++) {   // 세대수가 비율에 따라 바뀌므로 몇 번 맞춤
       units = this.evaluate({ ...q, infraLevel: 'custom', infraPct: v }).p.total;
-      v = Math.max(old / site * 100, units * this.INFRA.parkPerUnit / site * 100);
+      v = Math.max(old / site * 100, units * this.INFRA.parkPerUnit / site * 100, 5);
     }
     v = Math.ceil(v * 2) / 2;
-    return { v, basis: `기존 국공유 도로 등 ${fmt(old)}㎡(${fmt(old / site * 100, 1)}%)와 법정 공원 세대당 2㎡(${fmt(units)}세대 → ${fmt(units * 2)}㎡) 중 큰 값` };
+    return { v, basis: parkOn
+      ? `기존 국공유 도로 등 ${fmt(old)}㎡(${fmt(old / site * 100, 1)}%)와 법정 공원(구역 5만㎡ 이상 — 세대당 2㎡ ${fmt(units)}세대 → ${fmt(units * 2)}㎡ 또는 부지 5%) 중 큰 값`
+      : `기존 국공유 도로 등 ${fmt(old)}㎡(${fmt(old / site * 100, 1)}%) — 구역이 5만㎡ 미만이라 법정 공원 확보 의무 없음(도시공원법 시행규칙 별표 2). 진입도로 확폭은 /urban 정비기반시설에서 더함` };
   },
   levelPct(q, lv) { return lv === 'min' ? this.minInfra(q).v : lv === 'cons' ? this.INFRA.cons : lv === 'custom' ? num(q.infraPct) : this.INFRA.avg; },
 
