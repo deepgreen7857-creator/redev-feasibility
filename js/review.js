@@ -1497,7 +1497,7 @@ ${log ? `<section><h2 style="font-size:17px">판단 변경 이력</h2><table><tr
   function drawMap(keepView) {
     if (!R.zone) return;
     if (!R.leaflet) {
-      R.leaflet = L.map('rvMap', { preferCanvas: true, maxZoom: 21 });
+      R.leaflet = wheelOnClick(L.map('rvMap', { preferCanvas: true, maxZoom: 21 }));
       if (VWorld.enabled) L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${VWorld.key}/white/{z}/{y}/{x}.png`, { maxZoom: 21, maxNativeZoom: 19, opacity: 0.6 }).addTo(R.leaflet);
       // 지도 오른쪽 아래 모서리를 끌어 높이를 바꾸면 지도도 다시 맞춤
       if (window.ResizeObserver) new ResizeObserver(() => R.leaflet && R.leaflet.invalidateSize()).observe($r('rvMap'));

@@ -2306,6 +2306,9 @@ function initLeaflet() {
     dl.edit.handlers.edit.tooltip = { text: '흰 네모(꼭짓점)를 끌어 고치세요', subtext: "다 고쳤으면 '꼭짓점 고치기 끝내기'를 누르세요" };
   } catch (e) { /* 무시 */ }
   LM = L.map('lmap', { maxZoom: 21 }).setView(Z.center, Z.zoom);
+  // 2026-11-08: 지도를 한 번 누른 뒤에만 휠 확대·축소(페이지를 내리다 지도가 축소되던 것), Ctrl+휠은 바로
+  LM.scrollWheelZoom.disable(); LM.getContainer().addEventListener('mousedown', () => LM.scrollWheelZoom.enable()); LM.getContainer().addEventListener('mouseleave', () => LM.scrollWheelZoom.disable());
+  LM.getContainer().addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); LM.setZoom(LM.getZoom() + (e.deltaY < 0 ? 1 : -1)); } }, { passive: false });
   const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
   if (VW.ok) {
     const k = VW.key, attr = '&copy; <a href="https://www.vworld.kr">VWorld</a>';
