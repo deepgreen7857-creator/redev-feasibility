@@ -60,6 +60,8 @@
 .nextsteps{margin-top:10px;padding:10px 12px;border:1px solid var(--ink);border-radius:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px}
 .btnlink{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:6px 12px;color:var(--ink);text-decoration:none;background:var(--sheet)}
 .btnlink.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+#birdBar button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:600}
+#birdBar .tag{margin-left:8px}
 .bar button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:600}
 .modehint{font-size:13px;margin:6px 0 0;padding:6px 10px;border-radius:6px;background:var(--accent-soft)}
 details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px}
@@ -174,6 +176,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       <button role="tab" data-v="plan" aria-selected="true">배치도</button>
       <button role="tab" data-v="sun" aria-selected="false">동지 일조</button>
       <button role="tab" data-v="m3d" aria-selected="false">3D</button>
+      <button role="tab" data-v="bird" aria-selected="false">조감도</button>
       <button role="tab" data-v="sum" aria-selected="false">개요·세대 구성</button>
       <button role="tab" data-v="unit" aria-selected="false">표준 평면</button>
     </div>
@@ -186,6 +189,16 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
       <div class="row"><button data-cam="sw">남서에서</button><button data-cam="se">남동에서</button><button data-cam="n">북쪽에서</button><button data-cam="top">위에서</button>
         <label class="tag">해 위치(동지) <input type="range" id="sun3" min="8" max="16" step="0.25" value="12"> <b id="sun3v">12:00</b></label><button id="dl3d">그림 저장</button></div>
       <div id="v3d"></div><p class="note">끌기: 돌리기 · 휠: 확대 · 오른쪽 끌기(또는 Shift+끌기): 이동</p>
+    </div>
+    <div class="view" id="vbird" hidden>
+      <div class="row" id="birdBar">
+        <span class="tag">시점</span><button data-bk="view" data-bv="wide">광역조감도</button><button data-bk="view" data-bv="semi">반조감도</button><button data-bk="view" data-bv="bird">조감도</button><button data-bk="view" data-bv="persp">투시도</button>
+        <span class="tag">빛</span><button data-bk="look" data-bv="day">낮</button><button data-bk="look" data-bv="dusk">해질녘</button>
+        <span class="tag">주변</span><button data-bk="mode" data-bv="model">모형(낮춤)</button><button data-bk="mode" data-bv="review">검토(실제 높이)</button>
+        <button data-bk="labels" data-bv="1">동 번호</button><button id="birdPng">PNG 저장(2배)</button>
+      </div>
+      <div id="vbirdCanvas" style="height:620px;border-radius:6px;overflow:hidden;border:1px solid var(--line);background:#1b2028"></div>
+      <p class="note" id="birdNote">이해를 돕기 위한 이미지이며 정비계획 수립 과정에서 변경될 수 있습니다.</p>
     </div>
     <div class="view" id="vsum" hidden></div>
     <div class="view" id="vunit" hidden><div class="plans" id="plans"></div><p class="note">표준 평면은 개략 배치 검토용 예시 치수입니다. 실제 단위세대 설계는 건축사가 합니다.</p></div>
@@ -202,11 +215,18 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="../shared/arch-check.js?v=10"></script>
 <script src="../shared/sun-verify.js?v=1"></script>
 <script src="../shared/mass3d.js?v=1"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="../shared/bird3d.js?v=1"></script>
 <script src="../traffic/traffic-calc.js?v=5"></script>
 <script src="../shared/feas.js?v=148"></script>
 <script src="../shared/plan-import.js?v=2"></script>
 <script src="arch-draw.js?v=10"></script>
-<script src="arch.js?v=48"></script>
+<script src="arch.js?v=49"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>
 </body>

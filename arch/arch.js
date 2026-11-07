@@ -691,8 +691,8 @@
   function showView(v) {
     curView = v;
     $$('.otabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.v === v));
-    ['plan', 'sun', 'm3d', 'sum', 'unit'].forEach(k => { $('#v' + k).hidden = k !== v; });
-    ({ plan: renderPlan, sun: renderSun, m3d: render3d, sum: renderSum, unit: renderUnits })[v]();
+    ['plan', 'sun', 'm3d', 'bird', 'sum', 'unit'].forEach(k => { $('#v' + k).hidden = k !== v; });
+    ({ plan: renderPlan, sun: renderSun, m3d: render3d, bird: renderBird, sum: renderSum, unit: renderUnits })[v]();
   }
   // 치수선(인동·정북 일조·채광창 이격 — 2026-11-05 사용자 요구 '치수선을 그대로 표시하면 바로 보임'): 검사 부품 JbsCheck.dims
   function planDims() {
@@ -847,6 +847,78 @@
     if (!v3) v3 = Mass3D.create($('#v3d'), { site: pts, buildings: blds, context: cx, sunHour: +$('#sun3').value, lat: pr.lat0 });
     else v3.setBuildings(blds, cx);
   }
+  /* ---------- 조감도·투시도(shared/bird3d.js, 2026-11-07) ----------
+     지금 대안의 동(세대 조각을 합친 바깥선)·층수 + 주변 건물(ctx) + 도로 필지·항공사진(브이월드, 구역마다 한 번 받아 창 안에서만 기억) */
+  const BIRD = { st: { view: 'bird', look: 'day', mode: 'model', labels: false }, memo: {} };
+  const K_DEG = 111320;
+  function unionRing(parts) {
+    // 세대 조각들을 하나의 바깥선으로(turf는 경위도 기준이라 미터를 잠깐 도 단위로)
+    try {
+      let u = null;
+      parts.forEach(q => { const f = turf.polygon([[...q, q[0]].map(p => [p[0] / K_DEG, p[1] / K_DEG])]); u = u ? turf.union(u, f) : f; });
+      const g = u.geometry, rings = g.type === 'Polygon' ? [g.coordinates[0]] : g.coordinates.map(c => c[0]);
+      return rings.map(r => G.openRing(r).map(p => [p[0] * K_DEG, p[1] * K_DEG]));
+    } catch (e) { return parts; }
+  }
+  async function birdAerial(z, half) {
+    const lon0 = pr.lon0, lat0 = pr.lat0, kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+    const lon2x = lon => (lon + 180) / 360 * 2 ** z, lat2y = lat => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * 2 ** z;
+    const x2lon = x => x / 2 ** z * 360 - 180, y2lat = y => Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** z))) * 180 / Math.PI;
+    const xa = Math.floor(lon2x(lon0 - half / kx)), xb = Math.floor(lon2x(lon0 + half / kx)), ya = Math.floor(lat2y(lat0 + half / ky)), yb = Math.floor(lat2y(lat0 - half / ky));
+    const c = document.createElement('canvas'); c.width = (xb - xa + 1) * 256; c.height = (yb - ya + 1) * 256; const g2 = c.getContext('2d');
+    const jobs = [];
+    for (let x = xa; x <= xb; x++) for (let y = ya; y <= yb; y++) jobs.push(new Promise(res => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => { g2.drawImage(im, (x - xa) * 256, (y - ya) * 256); res(); }; im.onerror = res; im.src = `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Satellite/${z}/${y}/${x}.jpeg`; }));
+    await Promise.all(jobs);
+    return { img: c, x0: (x2lon(xa) - lon0) * kx, x1: (x2lon(xb + 1) - lon0) * kx, y1: (y2lat(ya) - lat0) * ky, y0: (y2lat(yb + 1) - lat0) * ky };
+  }
+  async function birdRoads() {
+    // 구역 둘레 250m 안 도로 필지(지목 '도') — 경계 가로(보도·차선)와 아스팔트에 씀
+    const [x0, y0, x1, y1] = turf.bbox(site.geojson), dLat = 250 / 110540, dLon = 250 / (Math.cos(pr.lat0 * Math.PI / 180) * 111320);
+    const fs = await VWorld.dataAll('LP_PA_CBND_BUBUN', `BOX(${x0 - dLon},${y0 - dLat},${x1 + dLon},${y1 + dLat})`, 20);
+    const out = [];
+    fs.filter(f => /도$/.test((f.properties || {}).jibun || '')).forEach(f => { const g = f.geometry; (g.type === 'Polygon' ? [g.coordinates[0]] : g.coordinates.map(c => c[0])).forEach(r => out.push(G.openRing(r).map(pr.to))); });
+    return out;
+  }
+  async function birdPrep() {
+    const key = site.id || 'site', m = BIRD.memo[key] || (BIRD.memo[key] = {});
+    const jobs = [];
+    if (!m.roads && typeof VWorld !== 'undefined') jobs.push(birdRoads().then(r => { m.roads = r; }).catch(() => { m.roads = []; }));
+    if (!m.near && typeof VWORLD_KEY !== 'undefined') jobs.push(birdAerial(18, 520).then(a => { m.near = a; }).catch(() => {}), birdAerial(16, 2600).then(a => { m.far = a; }).catch(() => {}));
+    if (!ctx.length) jobs.push(loadContext(false));
+    if (jobs.length) { $('#birdNote').textContent = '항공사진·도로·주변 건물을 불러오는 중입니다…'; await Promise.all(jobs); }
+    return m;
+  }
+  async function renderBird() {
+    if (!alts.length || !window.JbsBird) return;
+    const A = alts[cur], m = await birdPrep();
+    const blds = [], labels = [];
+    A.buildings.forEach(b => {
+      const parts = (b.parts && b.parts.length ? b.parts : [b.poly]).filter(q => q && q.length > 2);
+      const rings = unionRing(parts);
+      rings.forEach((r, i) => blds.push({ ring: r, floors: b.floors, top: i === 0 }));
+      const c = b.center || parts[0].reduce((a, p) => [a[0] + p[0] / parts[0].length, a[1] + p[1] / parts[0].length], [0, 0]);
+      labels.push({ label: `${b.id || ''}동 ${b.floors}F`, c, top: b.floors });
+    });
+    const parks = exclude.filter((ex, i) => /공원|녹지/.test(exKinds[i] || ''));
+    const data = { site: pts, blds, labels, parks, ctx: ctx.map(c => ({ poly: c.poly, floors: c.floors })), roads: m.roads || [], aerial: m.near, aerialFar: m.far };
+    const st = BIRD.st, el = $('#vbirdCanvas');
+    $$('#birdBar [data-bk]').forEach(b => { const on = b.dataset.bk === 'labels' ? st.labels : st[b.dataset.bk] === b.dataset.bv; b.setAttribute('aria-pressed', on); b.classList.toggle('on', on); });
+    const t0 = Date.now();
+    BIRD.last = JbsBird.render(el, data, { view: st.view, look: st.look, mode: st.mode, labels: st.labels, w: el.clientWidth, h: el.clientHeight, pr: 1 });
+    BIRD.data = data;
+    $('#birdNote').textContent = `${A.label} · ${A.buildings.length}개동 ${fmt(A.units)}세대 · 최고 ${A.maxFloors}층 — 바닥 브이월드 항공사진, 주변 건물 ${fmt(ctx.length)}동. 그리는 데 ${((Date.now() - t0) / 1000).toFixed(1)}초. 이해를 돕기 위한 이미지이며 정비계획 수립 과정에서 변경될 수 있습니다.`;
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('#birdBar button'); if (!b) return;
+    if (b.id === 'birdPng') {
+      if (!BIRD.data) return; const el = $('#vbirdCanvas');
+      const r = JbsBird.render(el, BIRD.data, Object.assign({}, BIRD.st, { w: el.clientWidth, h: el.clientHeight, pr: 2 }));
+      const a = document.createElement('a'); a.download = `${site.name || '조감도'}_${({ wide: '광역조감도', semi: '반조감도', bird: '조감도', persp: '투시도' })[BIRD.st.view]}.png`; a.href = r.png(); a.click();
+      renderBird(); return;
+    }
+    if (b.dataset.bk === 'labels') BIRD.st.labels = !BIRD.st.labels; else BIRD.st[b.dataset.bk] = b.dataset.bv;
+    renderBird();
+  });
   function parkingRow(A) {
     if (!TC || !window.TrafficCalc) return '';
     const g = groups(A.byType);
