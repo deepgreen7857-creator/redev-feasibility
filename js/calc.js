@@ -113,8 +113,16 @@ const Calc = {
     const p = s.prior;
     if (p.mode === 'manual') return num(p.manual);
     if (p.mode === 'members') return s.members.reduce((a, m) => a + num(m.prior), 0);
+    // 재건축: 공동주택가격(브이월드, 필지별 세대 가격 합 — 빠른 사업성에서 조회해 l.housePrice에 둠) × 배율
+    //  공동주택가격이 없는 필지(상가·부속 대지 등)는 공시지가 × 보정배율(2026-11-07 학익장미: 공시지가 방식 961억 vs 고시 종전 1,789억)
+    if (this.useHousePrice(s)) {
+      const hm = num(p.houseMul) || (window.JbsFeas ? num(JbsFeas.get().houseMul) : 0) || 1.7;
+      return s.lands.reduce((a, l) => a + (num(l.housePrice) > 0 ? num(l.housePrice) * hm : num(l.area) * num(l.price) / 10000 * num(p.multiplier)), 0);
+    }
     return this.officialLandValue(s) * num(p.multiplier);
   },
+  useHousePrice(s) { return s.meta.type === 'reconstruction' && s.prior.mode === 'estimate' && s.lands.some(l => num(l.housePrice) > 0); },
+  housePriceTotal(s) { return s.lands.reduce((a, l) => a + num(l.housePrice), 0); },
 
   result(s, m = {}) {
     const rev = this.revenue(s, m);

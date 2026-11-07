@@ -40,6 +40,7 @@ function applyJson(j) {
     // 준주거(순수 공동주택) — 2030 기본계획 변경 고시 제2026-96호 원문 대조값(2026-11-06 계획 용도지역에 추가, 용현동 유원아파트 시험)
     if (bz['준주거지역_순수공동주택']) RULES.far['준주거지역'] = bz['준주거지역_순수공동주택'];
     if (bz['역세권_준주거지역_순수공동주택']) RULES.far['준주거지역(역세권)'] = bz['역세권_준주거지역_순수공동주택'];
+    if (bz['준공업지역_공동주택']) RULES.far['준공업지역'] = bz['준공업지역_공동주택'];   // 사례값 300%(인천 첫 준공업 재건축) — 단계 미확인
     RULES.natHousing = { redevelopment: j.national_housing_ratio.redevelopment };
     RULES.status = { far: j.far.status };
     RULES.farFormula = j.far.max_incentive_formula || null;
@@ -377,6 +378,16 @@ async function importProject(id) {
     Object.keys(z.inArea).forEach(k => { CACHE.blds[k] = byP[k] || []; });
     z.fetchedAt = new Date().toLocaleString('sv-SE').slice(0, 16); z.from = 'project';
   }
+  // 사업성 검토의 사업명·1회차 가정(용도지역·용적률 단계·기반시설 비율)을 이어받음 — 두 화면 세대수가 달라지지 않게(2026-11-07 학익장미: 사업성 708세대인데 /urban 1,078세대)
+  const m = p.meta || {}, q = p.quick || {};
+  if (m.title && !Z.title) Z.title = m.title;
+  // 사업성 검토 용도지역 이름 → /urban 이름
+  const qz = ({ '준주거지역_순수공동주택': '준주거지역', '역세권_준주거지역_순수공동주택': '준주거지역(역세권)', '준공업지역_공동주택': '준공업지역' })[q.zone] || q.zone;
+  if (qz && RULES.far[qz]) { z.planZone = qz; P.zone = qz; }
+  if (q.farStep) { P.farMode = q.farStep === 'custom' ? 'custom' : q.farStep; if (q.farStep === 'custom' && q.farCustom) P.farCustom = num(q.farCustom); }
+  const ir = { avg: 25, cons: 30, custom: num(q.infraPct) }[q.infraLevel];
+  if (ir > 0) P.infraRatio = ir;
+  saveP(); syncTitle();
   saveZ(); saveCache();
   S.region = id; D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); fitZone(id); render();
   if (!lands.length) { fetchZone(id); return; }
@@ -624,7 +635,8 @@ function analyze(key) {
   bs.forEach(b => { const a = b.pid != null ? D.parcels[b.pid].access : null; if (a === true) accN++; else if (a == null) accU++; });
   const du = bs.reduce((s, b) => s + densityUnits(b), 0);
   const landArea = ps.reduce((s, p) => s + landA(p), 0);
-  const zoneArea = {}; ps.forEach(p => { const z = p.zone || '미확인'; zoneArea[z] = (zoneArea[z] || 0) + landA(p); });
+  // 토지특성의 용도지역1이 그 필지의 주된 용도지역 — '준공업지역, 일반공업지역'처럼 걸친 필지는 면적을 용도지역1에 넣고 걸친 용도지역은 따로 표시(2026-11-07 학익장미: 경계에 몇 ㎡ 걸친 일반공업에 필지 전체 면적이 붙던 문제)
+  const zoneArea = {}, zoneTouch = {}; ps.forEach(p => { const zs = String(p.zone || '').split(/\s*,\s*/).filter(Boolean); const z = zs[0] || '미확인'; zoneArea[z] = (zoneArea[z] || 0) + landA(p); zs.slice(1).forEach(t => { zoneTouch[t] = (zoneTouch[t] || 0) + 1; }); });
   const bsOf = p => (D.map ? (D.regions[key].blds[p.pnu] || []) : p.blds);
   let owners = 0; const names = new Set();
   ps.forEach(p => {
@@ -635,7 +647,7 @@ function analyze(key) {
   const priorLand = ps.reduce((s, p) => s + landA(p) * p.price, 0);
   const needUnits = bs.filter(b => b.needUnits).length;
   return {
-    key, area, ps, bs, N, oldN, unknownN, ghostN: ghosts.length, fa, oldFa, smallN, accN, accU, du, landArea, zoneArea, owners: Math.max(owners, 1), priorLand, needUnits, bsOf, estN,
+    key, area, ps, bs, N, oldN, unknownN, ghostN: ghosts.length, fa, oldFa, smallN, accN, accU, du, landArea, zoneArea, zoneTouch, owners: Math.max(owners, 1), priorLand, needUnits, bsOf, estN,
     oldRatio: N ? oldN / N : 0, oldFaRatio: fa ? oldFa / fa : 0, smallRatio: ps.length ? smallN / ps.length : 0,
     // 미확인 건축물이 있으면 접도율은 범위(accRatio ~ accMax)
     accRatio: N ? accN / N : 0, accMax: N ? (accN + accU) / N : 0, density: du / (area / 10000),
@@ -795,6 +807,7 @@ const TOWERS = {
 function defaultPlanZone(a) {
   const za = Object.entries((a && a.zoneArea) || {}).filter(([k]) => k !== '미확인').sort((x, y) => y[1] - x[1]);
   if (za.length && RULES.far['준주거지역'] && za.every(([k]) => /준주거/.test(k))) return '준주거지역';
+  if (za.length && RULES.far['준공업지역'] && /준공업/.test(za[0][0])) return '준공업지역';   // 준공업 재건축(인천 첫 사례 300%)
   const top = za.length ? za[0][0] : '';
   if (/제2종일반주거/.test(top) && RULES.far['제2종일반주거지역']) return '제2종일반주거지역';
   return '제3종일반주거지역';   // 제3종·제1종·공업·기타 현황은 제3종 가정(공업지역은 용도지역 변경 전제 — 화면에 경고)
@@ -802,7 +815,8 @@ function defaultPlanZone(a) {
 function planZoneStore(a) { return a && a.key && Z.zones[a.key] ? Z.zones[a.key] : null; }
 function industrialNote(a) {
   const ks = Object.keys((a && a.zoneArea) || {}).filter(k => /공업/.test(k)); if (!ks.length) return '';
-  return `<span class="u warn" style="display:block;margin-top:2px">현황에 ${ks.map(esc).join('·')}이 있습니다 — 계획 용도지역(${esc(P.zone.replace('일반주거지역', ''))})은 용도지역 변경(정비계획 결정 시 주거지역 지정)을 전제로 한 가정입니다. 공업지역 그대로의 용적률은 이 목록에 없습니다.</span>`;
+  if (/준공업/.test(P.zone)) return `<span class="u warn" style="display:block;margin-top:2px">준공업지역 300%는 인천 첫 준공업 재건축 구역이 인센티브·공공시설 제공으로 도달한 상한용적률(사례값)입니다 — 준공업의 기준·허용용적률은 확인 중이라 지금은 세 단계 모두 300%로 들어가 있습니다.</span>`;
+  return `<span class="u warn" style="display:block;margin-top:2px">현황에 ${ks.map(esc).join('·')}이 있습니다 — 계획 용도지역(${esc(P.zone.replace('일반주거지역', ''))})은 용도지역 변경(정비계획 결정 시 주거지역 지정)을 전제로 한 가정입니다. 준공업 그대로 계획하면 '준공업지역'을 고르세요.</span>`;
 }
 function syncPlanZone(a) {
   if (!a || !a.key) return;
@@ -2886,7 +2900,7 @@ function renderPlan(a) {
   side.innerHTML = `<h2>${regName()} 정비계획 (토지이용·밀도)</h2>
   ${D.map ? infraSection(a, pl) : ''}
   <div class="form">
-    <div class="field"><label for="zone">용도지역(계획)</label><select id="zone">${Object.keys(RULES.far).map(k => `<option>${k}</option>`).join('')}</select><span class="u">현황: ${Object.entries(a.zoneArea).map(([z, v]) => esc(z.replace('일반주거지역', '')) + ' ' + fmt(v) + '㎡').join(', ')}</span>${industrialNote(a)}</div>
+    <div class="field"><label for="zone">용도지역(계획)</label><select id="zone">${Object.keys(RULES.far).map(k => `<option>${k}</option>`).join('')}</select><span class="u">현황: ${Object.entries(a.zoneArea).map(([z, v]) => esc(z.replace('일반주거지역', '')) + ' ' + fmt(v) + '㎡').join(', ')}</span>${Object.keys(a.zoneTouch || {}).length ? ` <span class="note">(경계에 ${Object.entries(a.zoneTouch).map(([z, n]) => esc(z) + ' ' + n + '필지').join(', ')} 일부 걸침 — 토지특성 용도지역2)</span>` : ''}${industrialNote(a)}</div>
     ${prop ? '' : field('infraRatio', '정비기반시설 비율(도로·공원·학교 등)', P.infraRatio, D.map ? '구역 면적 대비 % · 직접 입력' : '구역 면적 대비 %, 예시 가정', 'min=0 max=60 step=1')}
     <div class="field"><label for="farMode">적용 용적률</label><select id="farMode"><option value="base">기준용적률 ${far.base}%</option><option value="allowed">허용용적률 ${far.allowed}%</option><option value="max">상한용적률 ${far.max}%</option>${pl.farCalc ? `<option value="calc">산식(공공시설 제공) ${pl.farCalc.v}%</option>` : ''}<option value="custom">직접 입력</option></select><span class="u">2030 기본계획 · ${pressBadge}</span></div>
     ${P.farMode === 'custom' ? field('farCustom', '계획 용적률', P.farCustom, `% (상한 ${far.max}% 이내로 제한)`) : ''}

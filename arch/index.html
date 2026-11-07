@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <script src="/shared/gate.js"></script>
-<script src="/shared/sitenav.js?v=4"></script>
+<script src="/shared/sitenav.js?v=5"></script>
 <meta name="robots" content="noindex, nofollow">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -67,6 +67,7 @@
 .guide-note h4{margin:12px 0 4px;font-size:14px}
 .guide-note p,.guide-note ul{margin:0 0 4px}
 .guide-note ul{padding-left:20px}
+.guide-note .gn-law{margin:4px 0 6px;padding:6px 10px;background:#fff;border:1px dashed #e0c7b0;border-radius:6px;font-size:13px}
 #birdBar{flex-wrap:wrap;gap:6px 14px;align-items:center}
 #birdBar .bgrp{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 #birdBar .bgrp.act{gap:6px;margin-left:auto}
@@ -172,6 +173,7 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
         <button class="primary" id="run">배치안 만들기</button>
         <button id="confirm" disabled>이 안으로 확정</button>
         <button id="toPanel" title="확정한 안으로 A0 판넬·사업 단계별 팸플릿 만들기(/panel)">판넬·팸플릿</button>
+        <button id="toDecision" title="확정한 안으로 정비계획 결정조서 + 지구단위계획 결정조서(안) 만들기(/decision)">결정조서(안)</button>
       </div>
       <div class="msg" id="msg" role="status"></div>
       <div class="nextsteps" id="nextSteps" hidden></div>
@@ -198,7 +200,8 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
         </ul>
         <h4>3. 아직 반영되지 않은 것</h4>
         <ul>
-          <li>교통성·환경성(일조·바람)·경관성 검토 결과 — 결과는 볼 수 있지만 배치를 자동으로 고치지는 않습니다</li>
+          <li><b>정비계획 수립·정비구역 지정에 반드시 필요한 교통성·환경성·경관성 기본검토와, 그 결과를 반영한 건축계획(배치) 수정</b>
+          <div class="gn-law">정비구역 지정은 구역만 정하거나 정비계획만 세우는 일이 아닙니다. 교통성·환경성·경관성을 기본적으로 검토하고, 그 결과로 건축계획을 손본 뒤에 도시계획위원회 심의를 받습니다. 이 기본검토가 없으면 심의 전 사전검토 단계에서 막혀 심의에 올라가지 못합니다. 이 사이트에서 검토 결과는 정비계획 검토 화면에서 볼 수 있지만, 그 결과에 맞춰 배치를 다시 짜는 일은 아직 자동으로 되지 않습니다.</div></li>
           <li>땅의 높낮이(지형), 지하주차장 출입 동선, 상가·부대복리시설 위치</li>
           <li>학교·공공시설 협의, 구청·도시계획위원회 등 심의 의견</li>
         </ul>
@@ -267,10 +270,10 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;margin-top:10px
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 <script src="../shared/bird3d.js?v=7"></script>
 <script src="../traffic/traffic-calc.js?v=5"></script>
-<script src="../shared/feas.js?v=148"></script>
+<script src="../shared/feas.js?v=148x1"></script>
 <script src="../shared/plan-import.js?v=2"></script>
 <script src="arch-draw.js?v=11"></script>
-<script src="arch.js?v=68"></script>
+<script src="arch.js?v=69"></script>
 <script src="../shared/workfile.js?v=8"></script>
 <script src="../shared/sticky-top.js?v=2"></script>
 </body>

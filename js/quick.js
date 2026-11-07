@@ -14,13 +14,14 @@ const Quick = {
       '제3종일반주거지역': { base: 230, allowed: 250, max: 285 },
       '준주거지역_순수공동주택': { base: 230, allowed: 250, max: 300 },
       '역세권_준주거지역_순수공동주택': { base: 250, allowed: 270, max: 360 },
+      '준공업지역_공동주택': { base: 300, allowed: 300, max: 300 },   // 사례값(인천 첫 준공업 재건축 정비계획 300%) — 단계 미확인
     },
     max_incentive_formula: { public_facility_build: 1.5 },
   },
   // 정비기반시설 비율 3단계 — 평균·보수는 실무 경험치(가정값, 인천 고시 사례로 보정 전). 최소는 구역마다 자동 계산
   get INFRA() { const A = JbsFeas.get(); return { avg: A.infraAvg, cons: A.infraCons, minFallback: A.infraMinFallback, parkPerUnit: A.parkPerUnit }; },
   // 시장 값은 공통 가정값(shared/feas.js)에서 읽음 — /urban 사업성 탭과 같은 값
-  FEAS_KEYS: ['mix59', 'mix114', 'generalPrice', 'memberRatio', 'conPrice', 'etcPct', 'priorMul', 'avgLand', 'rentRatio', 'gfaFactor', 'resRatio', 'rentPrice', 'shopPrice'],
+  FEAS_KEYS: ['mix59', 'mix114', 'generalPrice', 'memberRatio', 'conPrice', 'etcPct', 'priorMul', 'houseMul', 'avgLand', 'rentRatio', 'gfaFactor', 'resRatio', 'rentPrice', 'shopPrice'],
   // 공사비 단계(기준 공사비 대비) — 구역마다 고름(S.quick.conLevel)
   CON_LV: [['low', '낮게', -5], ['base', '기준', 0], ['high', '높게', 5], ['higher', '많이 높게', 10]],
   conMul(q) { const l = this.CON_LV.find(x => x[0] === (q.conLevel || 'base')); return 1 + (l ? l[2] : 0) / 100; },
@@ -45,6 +46,7 @@ const Quick = {
   zones() { return Object.keys(this.far().by_zone); },
   zoneKey(z) {
     z = String(z || '');
+    if (/준공업/.test(z)) return '준공업지역_공동주택';
     if (/역세권/.test(z) && /준주거/.test(z)) return '역세권_준주거지역_순수공동주택';
     if (/준주거/.test(z)) return '준주거지역_순수공동주택';
     if (/제3종/.test(z)) return '제3종일반주거지역';
@@ -61,10 +63,11 @@ const Quick = {
     const syncZone = () => { if (!q.zoneManual && S.meta.zoning && q.zoneSrc !== S.meta.zoning) { q.zone = this.zoneKey(S.meta.zoning); q.zoneSrc = S.meta.zoning; } };
     // 조합원 수도 처음 연 때 값에 고정되던 것 → 구역·조서(건축물 전유 호수·건물 없는 대지·소유자 수)로 다시 추정. 직접 고치면 유지(membersManual)
     const syncMembers = () => { if (q.membersManual) return; try { const m = Math.round(num(Assume.defaults().members)); if (m > 0 && m !== num(q.members)) q.members = m; } catch (e) { /* 조서 없음 */ } };
+    if (q.init && !q.farStepV2) { q.farStepV2 = true; if (q.farStep === 'calc') q.farStep = 'base'; }   // 1회차는 기준용적률에서 출발(2026-11-07) — 예전 기본값(산식)을 한 번만 바꿈
     if (q.init) { if (!q.infraLevel) q.infraLevel = 'avg'; syncZone(); syncMembers(); this.FEAS_KEYS.forEach(k => { q[k] = A[k]; }); return q; }
     const a = Assume.defaults();
     Object.assign(q, {
-      init: true, zone: this.zoneKey(S.meta.zoning), farStep: 'calc', farCustom: 250, infraLevel: 'avg', infraPct: 25,
+      init: true, farStepV2: true, zone: this.zoneKey(S.meta.zoning), farStep: 'base', farCustom: 250, infraLevel: 'avg', infraPct: 25,
       mix59: 40, sizePct: 100, rentRatio: a.rentRatio, members: a.members, avgLand: 0,
       generalPrice: a.generalPrice, memberRatio: a.memberRatio, conPrice: a.conPrice, etcPct: a.etcPct,
       priorMul: a.priorMul, gfaFactor: a.gfaFactor, resRatio: a.resRatio, rentPrice: a.rentPrice, shopPrice: a.shopPrice, target: 100,
@@ -79,13 +82,17 @@ const Quick = {
     const site = Calc.siteArea(S); if (!(site > 0)) return { v: this.INFRA.minFallback, basis: '구역 면적 없음' };
     const old = this.existingInfra(S);
     if (!S.lands.length) return { v: this.INFRA.minFallback, basis: '토지조서가 없어 15%로 둠(가정) — 토지조서를 채우면 구역에 맞게 다시 계산' };
-    let v = Math.max(old / site * 100, 5), units = 0;
-    for (let k = 0; k < 3; k++) {   // 세대수가 비율에 따라 바뀌므로 몇 번 맞춤
+    // 법정 공원은 정비계획 5만㎡ 이상일 때만(도시공원법 시행규칙 별표 2) — 그 미만이면 기존 국공유 시설 면적만(2026-11-07 학익장미 39,217㎡: 공원 1,766㎡를 넣어 최소가 과다했음)
+    const parkOn = site >= 50000;
+    let v = Math.max(old / site * 100, parkOn ? 5 : 0), units = 0;
+    if (parkOn) for (let k = 0; k < 3; k++) {   // 세대수가 비율에 따라 바뀌므로 몇 번 맞춤
       units = this.evaluate({ ...q, infraLevel: 'custom', infraPct: v }).p.total;
-      v = Math.max(old / site * 100, units * this.INFRA.parkPerUnit / site * 100);
+      v = Math.max(old / site * 100, units * this.INFRA.parkPerUnit / site * 100, 5);
     }
     v = Math.ceil(v * 2) / 2;
-    return { v, basis: `기존 국공유 도로 등 ${fmt(old)}㎡(${fmt(old / site * 100, 1)}%)와 법정 공원 세대당 2㎡(${fmt(units)}세대 → ${fmt(units * 2)}㎡) 중 큰 값` };
+    return { v, basis: parkOn
+      ? `기존 국공유 도로 등 ${fmt(old)}㎡(${fmt(old / site * 100, 1)}%)와 법정 공원(구역 5만㎡ 이상 — 세대당 2㎡ ${fmt(units)}세대 → ${fmt(units * 2)}㎡ 또는 부지 5%) 중 큰 값`
+      : `기존 국공유 도로 등 ${fmt(old)}㎡(${fmt(old / site * 100, 1)}%) — 구역이 5만㎡ 미만이라 법정 공원 확보 의무 없음(도시공원법 시행규칙 별표 2). 진입도로 확폭은 /urban 정비기반시설에서 더함` };
   },
   levelPct(q, lv) { return lv === 'min' ? this.minInfra(q).v : lv === 'cons' ? this.INFRA.cons : lv === 'custom' ? num(q.infraPct) : this.INFRA.avg; },
 
@@ -127,6 +134,10 @@ const Quick = {
       t.prior.mode = 'manual';
       t.prior.manual = Math.max(0, f.site - f.old) * num(q.avgLand) * v.priorMul;
       priorNote = `평균 공시지가 ${fmt(q.avgLand)}만원/㎡ × ${fmt(f.site - f.old)}㎡ × ${v.priorMul}`;
+    } else if (Calc.useHousePrice(t)) {
+      const hm = num(q.houseMul) || num(JbsFeas.get().houseMul) || 1.7; t.prior.houseMul = hm;
+      const hl = t.lands.filter(l => num(l.housePrice) > 0), hn = hl.reduce((a, l) => a + num(l.houseN), 0), rest = t.lands.length - hl.length;
+      priorNote = `공동주택가격 ${fmtEok(Calc.housePriceTotal(t))}(${fmt(hn)}세대, ${esc(String(hl[0].houseYear || ''))}년) × ${hm}${rest ? ` + 나머지 ${rest}필지 공시지가 × ${v.priorMul}` : ''}`;
     } else if (t.prior.mode === 'estimate') priorNote = `공시지가 합계 × ${v.priorMul}`;
     const r = Calc.result(t, m);
     return { p, r, f, t, v, priorNote };
@@ -562,8 +573,38 @@ ${[['59', p.u59], ['84', p.u84], ['114', p.u114]].filter(([, n]) => n > 0).map((
 
 // ---------- 탭 ----------
 Tabs.quick = {
+  // 재건축: 구역 필지의 공동주택가격(브이월드 getApartHousingPriceAttr)을 한 번 조회해 필지별 합계를 l.housePrice(만원)에 둠
+  async fetchHousePrices() {
+    if (this._hpBusy || S.meta.type !== 'reconstruction' || typeof VWorld === 'undefined' || !VWorld.enabled) return;
+    const todo = S.lands.filter(l => l.pnu && !l.sample && !l.houseAt);
+    if (!todo.length) return;
+    this._hpBusy = true;
+    try {
+      const yr = new Date().getFullYear();
+      for (const l of todo) {
+        let got = null;
+        for (const y of [yr, yr - 1]) {
+          let rows = [];
+          for (let pg = 1; pg <= 5; pg++) {
+            const d = await jsonp('https://api.vworld.kr/ned/data/getApartHousingPriceAttr', { pnu: l.pnu, key: VWorld.key, domain: VWorld.domain, format: 'json', numOfRows: 1000, pageNo: pg, stdrYear: String(y) }, 20000).catch(() => null);
+            const f = (d && d.apartHousingPrices && d.apartHousingPrices.field) || [];
+            rows = rows.concat(f); if (f.length < 1000) break;
+          }
+          if (rows.length) {
+            const u = {}; rows.forEach(r => { u[`${r.aphusNm}|${r.dongNm}|${r.hoNm}`] = num(r.pblntfPc); });   // 같은 호가 여러 줄로 오므로 동·호로 하나만
+            const v = Object.values(u);
+            got = { housePrice: v.reduce((a, b) => a + b, 0) / 10000, houseN: v.length, houseYear: y, houseName: [...new Set(rows.map(r => r.aphusNm))].join('·') };
+            break;
+          }
+        }
+        Object.assign(l, got || { housePrice: 0, houseN: 0 }, { houseAt: new Date().toLocaleString('sv-SE').slice(0, 16) });
+      }
+      saveState(); App.update(true);
+    } finally { this._hpBusy = false; }
+  },
   render() {
     Quick.ensure();
+    this.fetchHousePrices();
     const zs = $('#qk_zone');
     if (zs && !zs.options.length) zs.innerHTML = Quick.zones().map(z => `<option value="${esc(z)}">${esc(z.replace(/_/g, ' '))}</option>`).join('');
     bindInputs($('#tab-quick'));
@@ -683,6 +724,8 @@ Tabs.quick = {
     if (!(r.prior > 0)) warn.push('종전자산이 0입니다. 3탭 토지조서(공시지가)를 채우거나, 아래 <b>평균 공시지가</b>를 넣으면 비례율이 나옵니다.');
     if (!num(q.members)) warn.push('조합원 수가 0입니다. 토지등소유자 수(추정)를 넣으세요.');
     if (p.short) warn.push(`조합원 ${fmt(q.members)}명보다 분양 세대가 ${fmt(p.short)}세대 부족합니다.`);
+    // 현황이 공업지역(준공업·일반공업)인데 계획 용도지역 목록은 주거·준주거뿐 — 용도지역 변경을 전제로 한 가정임을 밝힘(2026-11-06 학익장미)
+    if (/공업/.test(String(S.meta.zoning || ''))) warn.push(/준공업/.test(String(q.zone)) ? '준공업지역 300%는 인천 첫 준공업 재건축 구역이 인센티브·공공시설 제공으로 도달한 상한용적률(사례값)입니다. 준공업의 기준·허용용적률은 확인 중이라 지금은 세 단계 모두 300%로 들어가 있습니다.' : `현황 용도지역이 ${esc(String(S.meta.zoning))}입니다. 위 용적률은 정비계획 결정 때 ${esc(String(q.zone).replace(/_/g, ' '))}으로 바꾸는 것을 전제로 한 가정입니다. 준공업 그대로 계획하면 용도지역에서 '준공업지역 공동주택'을 고르세요.`);
     if (q.farStep === 'calc' && !S.lands.length) warn.push('토지조서가 없어 기존 공공시설(도로 등) 면적을 0으로 보고 산식 용적률을 냈습니다. 실제로는 기존 도로를 빼야 해서 용적률이 더 낮을 수 있습니다.');
     const tgt = num(q.target) || 100;
     out.innerHTML = this.layoutLine(q0, f) + `
