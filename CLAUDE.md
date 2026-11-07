@@ -65,6 +65,7 @@
 ## 주의
 - 사이트 전체 관리자 잠금(2026-11-02, 사용자 결정 — 아직 공개 전): 모든 페이지 <head> 맨 앞에 `<script src="/shared/gate.js"></script>` + robots noindex. 새 페이지를 만들면 반드시 넣을 것(/data는 자체 잠금). 관리자 = deepgreen7857@gmail.com, 로그인은 /data·/auction과 공유(jbslab-auction). 화면 잠금일 뿐 저장소가 공개라 코드·json은 GitHub·직접 주소로 보임 — 개인정보는 여전히 커밋 금지. 공개 시점에 gate.js 태그를 빼면 됨
 - 사이트 공통 길잡이(2026-11-04, 사용자 결정 '탭이 물 흐르듯이'): `shared/sitenav.js`가 body 맨 위에 1단 페이지 줄(#siteNav: 정비사업 사업성 검토 / 정비계획 검토 / 정비경매 리포트 / 주식 모의투자 / 안전관리계획서)과, 정비계획 쪽 화면(/urban·/traffic·/env·/landscape·/arch)에는 2단 '정비계획 순서'(#planSteps: 1 주출입구 설정(/urban 4탭 gate) → 2 정비기반시설 지정(/urban 3탭) → 3 교통성 → 4 환경성 → 5 경관성 → 6 건축계획 수립(/arch) → 사업성으로)를 넣음. /urban은 탭을 바꿀 때 JbsNav.mark(S.tab). 새 페이지에도 gate.js 다음에 넣을 것(/auction은 빌드 앱이라 아직 안 들어감). 사업성 화면 탭은 1 사업 개요 ~ 3 빠른 사업성 ~ 9 검토 모드
+- 사용법 영상 버튼(2026-11-07, 사용자 결정 '홈페이지 위에 매뉴얼 버튼, 쇼츠나 길지 않은 롱폼'): sitenav.js 1단 오른쪽 끝 [▶ 사용법 영상] → `shared/manuals.json`(pages: 경로 앞부분별 {title, id(유튜브 ID), kind shorts·long}, channel)에서 이 페이지 목록을 창으로, 누르면 youtube-nocookie 임베드 재생. 자동재생·시청 강제·보상 금지(유튜브 가짜 참여 정책). 영상을 올리면 manuals.json의 id만 채우면 됨
 - 머리줄·단계 탭 고정(2026-11-04, 사용자 요구): `shared/sticky-top.js`가 .topbar → #kpis(창 850px 이상만) → #tabs, header.top → nav.steps/nav.tools를 차례로 sticky로 붙이고 높이 합을 --sticky-h로 남김. 새 페이지에도 workfile.js 다음에 넣을 것
 - `_비공개/` 폴더(명부 등 개인정보)는 절대 커밋 금지 (`.gitignore`에 있음)
 - 브이월드 키는 `www.jbslab.co.kr` 도메인 전용. 로컬에서 시험할 때는 콘솔에서 `VWorld.domain`을 `'www.jbslab.co.kr'`로 바꿔야 지적도·토지특성이 조회됨
