@@ -761,6 +761,20 @@ const App = {
     rerender ? t.render() : t.refresh();
   },
 
+  // 도로명으로 잡혀 지번이 비었으면, 그 위치의 연속지적 필지에서 지번을 찾아 대표 지번으로 채움
+  async fillParcelFromPt() {
+    if (S.meta.parcel || !S.meta.addrPt || !VWorld.enabled) return false;
+    try {
+      const f = await VWorld.parcelAt(S.meta.addrPt[1], S.meta.addrPt[0]);
+      const pp = (f && f.properties) || {}, addr = String(pp.addr || pp.jibun || '');
+      const m = addr.match(/(\S+[동리가])\s+((산\s*)?\d+(-\d+)?)/); if (!m) return false;
+      S.meta.parcel = `${m[1]} ${m[2].replace(/\s+/g, '')}`; S.meta.repInfo = null;
+      App.update(true); App.persist();
+      Tabs.overview.loadRep({ lat: S.meta.addrPt[1], lon: S.meta.addrPt[0] });
+      return true;
+    } catch (e) { return false; }
+  },
+
   // 1단계 끝 '할 일 확인' 칸: 사업 유형·구역명·대표 지번 세 가지가 됐는지 보여 줌
   ovCheck(warn) {
     const ck = document.getElementById('ovCheck'); if (!ck) return;
@@ -771,7 +785,7 @@ const App = {
     ck.innerHTML = `<p style="margin:0 0 4px"><b>${all ? '1단계 끝 — [다음: 구역계]로 넘어가세요' : '1단계에서 할 일'}</b></p><ul>
       ${row(true, `사업 유형: ${TYPES[S.meta.type].label}`, '')}
       ${row(nm, '구역명', '위 2번 칸에 씁니다')}
-      ${row(rep, S.meta.parcel ? `대표 지번: ${esc(S.meta.parcel)}` : '대표 지번', roadOnly ? '위치(주소)는 도로명으로 잡혔지만 지번을 못 찾았습니다. 위 3번에서 <b>지번</b>(예: ○○동 123-4)으로 다시 검색해 <b>[대표 지번으로 설정]</b>을 누르세요' : '위 3번에서 주소를 검색하고 찾은 위치의 <b>[대표 지번으로 설정]</b>까지 눌러야 합니다(지번을 써 두기만 하면 반영되지 않음)')}
+      ${row(rep, S.meta.parcel ? `대표 지번: ${esc(S.meta.parcel)}` : '대표 지번', roadOnly ? '위치(주소)는 도로명으로 잡혔지만 지번이 비어 있습니다 <button type="button" class="btn small primary" onclick="App.fillParcelFromPt().then(ok => { if (!ok) alert(\'이 위치에서 지번을 찾지 못했습니다. 위 3번에서 지번(예: ○○동 123-4)으로 검색해 [대표 지번으로 설정]을 누르세요.\'); })">이 위치에서 대표 지번 찾기</button>' : '위 3번에서 주소를 검색하고 찾은 위치의 <b>[대표 지번으로 설정]</b>까지 눌러야 합니다(지번을 써 두기만 하면 반영되지 않음)')}
       </ul>${warn && !rep ? '<p class="warn" style="margin:6px 0 0">대표 지번을 정하지 않았습니다. 정하면 2단계에서 [이 필지로 구역 만들기]로 바로 구역이 그려집니다. 그래도 넘어가려면 [다음]을 한 번 더 누르세요(지도에서 필지를 직접 골라야 함).</p>' : ''}`;
   },
 
@@ -1255,6 +1269,7 @@ function boot() {
       S.meta.addrPt = [r.lon, r.lat]; S.meta.addrZoneOk = '';
       S.meta.parcel = [r.sub, r.label].map(x => String(x || '')).find(x => /\d+(-\d+)?\s*$/.test(x) && /[동리가]\s+(산\s*)?\d/.test(x)) || '';
       await Auto.location(r);
+      if (!S.meta.parcel) await App.fillParcelFromPt(); // 도로명 검색이라 지번이 안 왔으면 그 위치 필지에서 찾음
       const pp = Tabs.area.parcelParts();
       S.meta.repInfo = null;
       App.update(); App.persist();
