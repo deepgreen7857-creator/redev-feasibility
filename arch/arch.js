@@ -857,7 +857,7 @@
     const xa = Math.floor(lon2x(lon0 - half / kx)), xb = Math.floor(lon2x(lon0 + half / kx)), ya = Math.floor(lat2y(lat0 + half / ky)), yb = Math.floor(lat2y(lat0 - half / ky));
     const c = document.createElement('canvas'); c.width = (xb - xa + 1) * 256; c.height = (yb - ya + 1) * 256; const g2 = c.getContext('2d');
     const jobs = [];
-    for (let x = xa; x <= xb; x++) for (let y = ya; y <= yb; y++) jobs.push(new Promise(res => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => { g2.drawImage(im, (x - xa) * 256, (y - ya) * 256); res(); }; im.onerror = res; im.src = `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Satellite/${z}/${y}/${x}.jpeg`; }));
+    for (let x = xa; x <= xb; x++) for (let y = ya; y <= yb; y++) jobs.push(new Promise(res => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => { g2.drawImage(im, (x - xa) * 256, (y - ya) * 256); res(); }; im.onerror = res; setTimeout(res, 12000); im.src = `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Satellite/${z}/${y}/${x}.jpeg`; }));
     await Promise.all(jobs);
     return { img: c, x0: (x2lon(xa) - lon0) * kx, x1: (x2lon(xb + 1) - lon0) * kx, y1: (y2lat(ya) - lat0) * ky, y0: (y2lat(yb + 1) - lat0) * ky };
   }
@@ -875,7 +875,9 @@
     if (!m.roads && typeof VWorld !== 'undefined') jobs.push(birdRoads().then(r => { m.roads = r; }).catch(() => { m.roads = []; }));
     if (!m.near && typeof VWORLD_KEY !== 'undefined') jobs.push(birdAerial(18, 520).then(a => { m.near = a; }).catch(() => {}), birdAerial(16, 2600).then(a => { m.far = a; }).catch(() => {}));
     if (!ctx.length) jobs.push(loadContext(false));
-    if (jobs.length) { $('#birdNote').textContent = '항공사진·도로·주변 건물을 불러오는 중입니다…'; await Promise.all(jobs); }
+    // 하나라도 늦으면 기다리지 않고 있는 것만으로 그림(25초)
+    const cap = j => Promise.race([j.catch(() => {}), new Promise(r => setTimeout(r, 25000))]);
+    if (jobs.length) { $('#birdNote').textContent = '항공사진·도로·주변 건물을 불러오는 중입니다…'; await Promise.all(jobs.map(cap)); }
     return m;
   }
   async function renderBird() {

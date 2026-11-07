@@ -247,12 +247,14 @@
     const accentHex = accents.map(a => parseInt(a.slice(1), 16));
     const ccw = r => { let a = 0; for (let i = 0; i < r.length; i++) { const p = r[i], q = r[(i + 1) % r.length]; a += p[0] * q[1] - q[0] * p[1]; } return a > 0 ? r : r.slice().reverse(); };
     const lit = dusk ? 0.42 : 0;
-    const sets = accents.map(a => ({ front: facade('front', a, lit), side: facade('side', a, lit), base: facade('base', a, dusk ? 1 : 0), crown: facade('crown', a, lit * 0.6) }));
+    const fk = (k, a, l) => { const r = facade(k, a, l); r.kind = k; return r; };
+    const sets = accents.map(a => ({ front: fk('front', a, lit), side: fk('side', a, lit), base: fk('base', a, dusk ? 1 : 0), crown: fk('crown', a, lit * 0.6) }));
     const foot = [], baseShrub = []; // 동 바깥 벽 앞 관목(안쪽 벽은 빼고)
     const roofG = STD(dusk ? 0x5f7a48 : 0x8fb36a), roofP = STD(0xd9d5cc), parap = STD(0xeeebe4, { roughness: 0.6 });
     const glow = []; // 빛 점(가로등·옥탑)
     // 동 번호로 묶기(가장 가까운 라벨) → 같은 동은 같은 색
     const dongOf = b => { const c = turf.centroid(tp(b.ring)).geometry.coordinates; let bi = 0, bd = 1e9; (D.labels || []).forEach((l, i) => { const d = Math.hypot(l.c[0] - c[0], l.c[1] - c[1]); if (d < bd) { bd = d; bi = i; } }); return bi; };
+    const WB = {}, PIL = { P: [], I: [] };
     D.blds.forEach(b => {
       const di = dongOf(b), set = sets[di % sets.length], F = b.floors || 15;
       const zB = Z0 + 2 * FH, zC = Z0 + (F - 2) * FH, zT = Z0 + F * FH;
@@ -262,15 +264,17 @@
       const inR2 = (x, y, r) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], q = r[j]; if ((a[1] > y) !== (q[1] > y) && x < (q[0] - a[0]) * (y - a[1]) / (q[1] - a[1]) + a[0]) c = !c; } return c; };
       const innerWall = (p, q, L) => { if (!others.length) return false; const nx = (q[1] - p[1]) / L, ny = -(q[0] - p[0]) / L, mx = (p[0] + q[0]) / 2 + nx * 0.35, my = (p[1] + q[1]) / 2 + ny * 0.35; return others.some(o => inR2(mx, my, o)); };
       const band = (p, q, L, z0, z1, pair, nF, side) => {
+        // 벽마다 재질·텍스처를 새로 만들지 않고, (색 묶음·종류)별 버킷에 모아 한 덩어리로 그림 — 반복은 UV에 담음
         const nB = Math.max(1, Math.round(L / 3.3));
-        const mat = new THREE.MeshStandardMaterial({ map: tex(pair[0], nB / 4, nF / 4), emissive: 0xffffff, emissiveMap: tex(pair[1], nB / 4, nF / 4), emissiveIntensity: dusk ? 1.0 : 0, envMap: ENV, roughness: side ? 0.85 : 0.5, metalness: side ? 0 : 0.15, envMapIntensity: dusk ? (side ? 0.15 : 0.45) : (side ? 0.3 : 0.6), color: dusk ? 0xdcd8d0 : 0xe6e6e6 });
-        const pg = new THREE.PlaneGeometry(L, z1 - z0, 1, 4), pp = pg.attributes.position, vc = new Float32Array(pp.count * 3);
-        for (let k = 0; k < pp.count; k++) { const z = (z0 + z1) / 2 + pp.getY(k), f = 0.62 + 0.38 * Math.min(1, z / 45); vc[k * 3] = vc[k * 3 + 1] = vc[k * 3 + 2] = f; } // 아래층일수록 어둡게(땅 가까운 그늘)
-        pg.setAttribute('color', new THREE.BufferAttribute(vc, 3)); mat.vertexColors = true;
-        const m = new THREE.Mesh(pg, mat);
-        const nx = (q[1] - p[1]) / L, ny = -(q[0] - p[0]) / L;
-        m.position.set((p[0] + q[0]) / 2 + nx * 0.02, (z0 + z1) / 2, -((p[1] + q[1]) / 2 + ny * 0.02)); m.rotation.y = Math.atan2(nx, -ny);
-        m.castShadow = true; m.receiveShadow = true; scene.add(m);
+        const key = di % sets.length + '|' + pair.kind + '|' + (side ? 1 : 0);
+        const bk = WB[key] || (WB[key] = { pair, side, P: [], U: [], N: [], C: [], I: [] });
+        const nx = (q[1] - p[1]) / L, ny = -(q[0] - p[0]) / L, ox = nx * 0.02, oy = ny * 0.02;
+        const base = bk.P.length / 3, ru = nB / 4, rv = nF / 4, SEG = 4;
+        for (let r = 0; r <= SEG; r++) {
+          const z = z0 + (z1 - z0) * r / SEG, f = 0.62 + 0.38 * Math.min(1, z / 45); // 아래층일수록 어둡게(땅 가까운 그늘)
+          [[p, 0], [q, 1]].forEach(([w, u]) => { bk.P.push(w[0] + ox, z, -(w[1] + oy)); bk.U.push(u * ru, r / SEG * rv); bk.N.push(nx, 0, -ny); bk.C.push(f, f, f); });
+        }
+        for (let r = 0; r < SEG; r++) { const a = base + r * 2; bk.I.push(a, a + 1, a + 3, a, a + 3, a + 2); }
       };
       for (let i = 0; i < Rg.length; i++) {
         const p = Rg[i], q = Rg[(i + 1) % Rg.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]); if (L < 0.4 || innerWall(p, q, L)) continue;
@@ -279,8 +283,7 @@
         band(p, q, L, zB, zC, side ? set.side : set.front, F - 4, side);
         band(p, q, L, zC, zT, side ? set.side : set.crown, 2, side);
         // 필로티 그늘
-        const pmm = new THREE.Mesh(new THREE.PlaneGeometry(L, Z0), STD(0x2e3439)); const nx = (q[1] - p[1]) / L, ny = -(q[0] - p[0]) / L;
-        pmm.position.set((p[0] + q[0]) / 2, Z0 / 2, -(p[1] + q[1]) / 2); pmm.rotation.y = Math.atan2(nx, -ny); scene.add(pmm);
+        { const b0 = PIL.P.length / 3; PIL.P.push(p[0], 0, -p[1], q[0], 0, -q[1], p[0], Z0, -p[1], q[0], Z0, -q[1]); PIL.I.push(b0, b0 + 1, b0 + 3, b0, b0 + 3, b0 + 2); }
       }
       const sh = new THREE.Shape(Rg.map(p => new THREE.Vector2(p[0], p[1])));
       const body = new THREE.ExtrudeGeometry(sh, { depth: zT - 0.05, bevelEnabled: false }); body.rotateX(-Math.PI / 2);
@@ -301,6 +304,17 @@
         if (dusk) { const s = new THREE.Mesh(new THREE.BoxGeometry(Math.min(16, e1.L * 0.55) + 0.2, 0.35, 1.3), new THREE.MeshBasicMaterial({ color: 0xfff1d0 })); s.position.set(c[0], zT + 8.1, -c[1]); s.rotation.y = e1.ang; scene.add(s); }
       }
     });
+    // 모아 둔 벽을 버킷마다 한 덩어리로(재질·텍스처는 버킷당 한 벌)
+    Object.values(WB).forEach(bk => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(bk.P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(bk.N, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(bk.U, 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(bk.C, 3)); g.setIndex(bk.I);
+      const side = bk.side, pair = bk.pair;
+      if (!pair.T) pair.T = [tex(pair[0], 1, 1), tex(pair[1], 1, 1)];
+      const mat = new THREE.MeshStandardMaterial({ map: pair.T[0], emissive: 0xffffff, emissiveMap: pair.T[1], emissiveIntensity: dusk ? 1.0 : 0, envMap: ENV, roughness: side ? 0.85 : 0.5, metalness: side ? 0 : 0.15, envMapIntensity: dusk ? (side ? 0.15 : 0.45) : (side ? 0.3 : 0.6), color: dusk ? 0xdcd8d0 : 0xe6e6e6, vertexColors: true, side: THREE.DoubleSide });
+      const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; scene.add(m);
+    });
+    if (PIL.I.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(PIL.P, 3)); g.setIndex(PIL.I); g.computeVertexNormals(); scene.add(new THREE.Mesh(g, STD(0x2e3439, { side: THREE.DoubleSide }))); }
     // 동 번호(검토용)
     if (opt.labels) (D.labels || []).forEach(l => {
       const [c, x] = cv(300, 90); x.fillStyle = 'rgba(255,255,255,.9)'; x.fillRect(0, 0, 300, 90); x.fillStyle = '#2b2f33'; x.font = 'bold 46px sans-serif'; x.textAlign = 'center'; x.fillText(l.label, 150, 62);
