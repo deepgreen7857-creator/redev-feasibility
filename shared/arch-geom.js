@@ -607,12 +607,16 @@
       const packV = md => { MODS = MODS_ALL; try { return finish(pack(F, md)); } finally { MODS = MODS_REP; } };
       const multi = types.length > 1, cands = [];
       const add = (k, b) => { b.__k = k; cands.push(b); };
-      if (!opt.quick) add('row', finish(place(() => F)));
-      add('pack', finish(pack(F)));
-      // 혼합형: 판상·탑상 번갈아 놓기(alt)와 예전 순서(판상 먼저) 둘 다 만들어 보고, 세대가 크게 줄지 않으면 탑상이 섞인 쪽을 고름
-      if (form === 'mix') { altOn = false; try { if (!opt.quick) add('row0', finish(place(() => F))); add('pack0', finish(pack(F))); } finally { altOn = true; } }
-      if (multi && !opt.quick) { add('single', finish(pack(F, 'single'))); add('legacy', finish(pack(F, 'legacy'))); }
-      if (hasVar) { add('packV', packV()); if (multi && !opt.quick) { add('singleV', packV('single')); add('legacyV', packV('legacy')); } }
+      // 혼합형: 판상·탑상 번갈아 놓기(alt)와 예전 순서(판상 먼저) 둘 다 모든 방식으로 만들어 보고, 연면적이 크게 줄지 않으면 탑상이 섞인 쪽을 고름
+      for (const ao of (form === 'mix' ? [true, false] : [true])) {
+        altOn = ao; const sfx = ao ? '' : '0';
+        try {
+          if (!opt.quick) add('row' + sfx, finish(place(() => F)));
+          add('pack' + sfx, finish(pack(F)));
+          if (multi && !opt.quick) { add('single' + sfx, finish(pack(F, 'single'))); add('legacy' + sfx, finish(pack(F, 'legacy'))); }
+          if (hasVar) { add('packV' + sfx, packV()); if (multi && !opt.quick) { add('singleV' + sfx, packV('single')); add('legacyV' + sfx, packV('legacy')); } }
+        } finally { altOn = true; }
+      }
       // 연면적이 가장 큰 후보의 97% 이상인 것 중 평형 비율이 가장 잘 맞는 것(같으면 연면적 큰 것)
       //  목표 연면적을 넘는 부분은 나중에 동을 빼서 맞추므로 비교에서는 목표까지만 셈
       const gv = c => Math.min(gfaOf(c), target > 0 ? target : Infinity), top = Math.max(...cands.map(gv));
