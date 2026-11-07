@@ -321,9 +321,13 @@
     });
     if (PIL.I.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(PIL.P, 3)); g.setIndex(PIL.I); g.computeVertexNormals(); scene.add(new THREE.Mesh(g, STD(0x2e3439, { side: THREE.DoubleSide }))); }
     // 동 번호(검토용)
+    const labelPts = [];
     if (opt.labels) (D.labels || []).forEach(l => {
-      const [c, x] = cv(300, 90); x.fillStyle = 'rgba(255,255,255,.9)'; x.fillRect(0, 0, 300, 90); x.fillStyle = '#2b2f33'; x.font = 'bold 46px sans-serif'; x.textAlign = 'center'; x.fillText(l.label, 150, 62);
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false })); sp.position.set(l.c[0], Z0 + l.top * FH + 16, -l.c[1]); sp.scale.set(20, 6, 1); scene.add(sp);
+      // 화면에서 늘 같은 크기로 또렷하게(멀어도 작아지지 않음, 색 보정·안개 안 받음)
+      const [c, x] = cv(320, 96); x.fillStyle = 'rgba(255,255,255,.95)'; x.fillRect(0, 0, 320, 96); x.strokeStyle = '#2b2f33'; x.lineWidth = 4; x.strokeRect(2, 2, 316, 92); x.fillStyle = '#1f2327'; x.font = 'bold 52px sans-serif'; x.textAlign = 'center'; x.fillText(l.label, 160, 66);
+      const T = new THREE.CanvasTexture(c); T.encoding = THREE.sRGBEncoding; T.anisotropy = 4;
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: T, depthTest: false, sizeAttenuation: false, toneMapped: false, fog: false })); sp.renderOrder = 999;
+      sp.position.set(l.c[0], Z0 + l.top * FH + 10, -l.c[1]); sp.scale.set(0.07, 0.021, 1); scene.add(sp); labelPts.push([l.c[0], Z0 + l.top * FH + 10, l.c[1]]);
     });
 
     /* ----- 단지 조경: 중앙 광장 + 동을 잇는 산책로 + 놀이터 (나무는 이 둘레로) ----- */
@@ -575,6 +579,7 @@
         mx.fillStyle = '#ccc'; streetRings.forEach(r => fillPts(r.map(p => prj(p[0], 0, p[1])))); mx.fillStyle = '#fff';
         D.blds.forEach(b => { const zT = Z0 + (b.floors || 15) * FH + 9; fillPts(hullOf(b.ring.map(p => prj(p[0], 0, p[1])).concat(b.ring.map(p => prj(p[0], zT, p[1])))), Math.max(6, sx / 45)); });
         if (fore) fillPts(fore.filter(p => inFront(p[0], 0, p[1])).map(p => prj(p[0], 0, p[1])));
+        labelPts.forEach(q => { const [px2, py2] = prj(q[0], q[1], q[2]); mx.fillRect(px2 - sy * 0.07, py2 - sy * 0.03, sy * 0.14, sy * 0.06); }); // 동 번호 칸은 흐리지 않음
         if (opt.view === 'persp') { const by = Math.min(...D.blds.map(b => Math.min(...b.ring.map(p => prj(p[0], 0, p[1])[1])))); mx.fillStyle = '#fff'; mx.fillRect(0, by - sy * 0.02, sx, sy); } // 투시도: 앞마당까지 또렷하게
         const [bc, bx] = cv(sx, sy); bx.filter = `blur(${Math.max(2, Math.round(sx / 160))}px)`; bx.drawImage(mc, 0, 0);
         const maskT = new THREE.CanvasTexture(bc);
