@@ -334,6 +334,8 @@
     const streetLamps = [], streetRings = [], streets = [];
     const sideM = STD(dusk ? 0x5f5a54 : 0x6f6a62), curbM = STD(dusk ? 0x8a847c : 0xbdb8ae), asphM = STD(dusk ? 0x0b0b0c : 0x0c0d0e, { roughness: 0.95 });
     const yelM = new THREE.MeshBasicMaterial({ color: dusk ? 0xa8851a : 0xe3b21c }), whM = new THREE.MeshBasicMaterial({ color: dusk ? 0xb8b8b8 : 0xf4f4f4 });
+    const lineBuf = { y: [], w: [] }; // 차선 사각형을 모았다가 한 덩어리로 그림(조각마다 그리면 수천 개 → 느려짐)
+    const addLine = (kind, ring) => lineBuf[kind].push(ring);
     const quad = (A, B, n, o1, o2, t1, t2) => { const L = Math.hypot(B[0] - A[0], B[1] - A[1]), ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L; const P0 = [A[0] + ux * t1, A[1] + uy * t1], P1 = [A[0] + ux * t2, A[1] + uy * t2]; return [[P0[0] + n[0] * o1, P0[1] + n[1] * o1], [P1[0] + n[0] * o1, P1[1] + n[1] * o1], [P1[0] + n[0] * o2, P1[1] + n[1] * o2], [P0[0] + n[0] * o2, P0[1] + n[1] * o2]]; };
     for (let i = 0; i < S.length; i++) {
       const A = S[i], B = S[(i + 1) % S.length], L = Math.hypot(B[0] - A[0], B[1] - A[1]); if (L < 3) continue;
@@ -346,20 +348,26 @@
     }
     roadF.forEach((f, i) => { const c = [(rbb[i][0] + rbb[i][2]) / 2, (rbb[i][1] + rbb[i][3]) / 2]; if (Math.hypot(c[0] - cx, c[1] - cy) < span * 1.3) { const r = f.geometry.coordinates[0].slice(0, -1); flat(r, asphM, 0.1); streetRings.push(r); } });
     streets.forEach(({ A, B, L, n, w }) => {
-      const sw = w >= 25 ? 5 : w >= 12 ? 3.5 : 2, far = w >= 12, cw0 = sw, cw1 = far ? w - sw : w, ext = Math.min(6, sw + 2), lx = 70;
+      const sw = w >= 25 ? 5 : w >= 12 ? 3.5 : 2, far = w >= 12, cw0 = sw, cw1 = far ? w - sw : w, ext = Math.min(6, sw + 2), lx = L >= 25 ? Math.min(40, L * 0.6) : ext;
       const inR = (t, o) => inRoad(A[0] + (B[0] - A[0]) * t / L + n[0] * o, A[1] + (B[1] - A[1]) * t / L + n[1] * o);
       const r1 = quad(A, B, n, 0, sw, -ext, L + ext), r2 = quad(A, B, n, cw0, cw1, -ext, L + ext);
       flat(r1, sideM, 0.16); flat(quad(A, B, n, sw - 0.25, sw, -ext, L + ext), curbM, 0.2); flat(r2, asphM, 0.12);
       streetRings.push(r1, r2);
       if (far) { flat(quad(A, B, n, w - sw, w, -ext, L + ext), sideM, 0.16); flat(quad(A, B, n, w - sw, w - sw + 0.25, -ext, L + ext), curbM, 0.2); streetRings.push(quad(A, B, n, w - sw, w, -ext, L + ext)); }
       const cwW = cw1 - cw0, mid = cw0 + cwW / 2;
-      if (cwW >= 9) for (let t = -lx; t < L + lx; t += 6) if (inR(t + 3, mid)) { flat(quad(A, B, n, mid - 0.3, mid - 0.15, t, t + 6), yelM, 0.19); flat(quad(A, B, n, mid + 0.15, mid + 0.3, t, t + 6), yelM, 0.19); }
-      const dashAt = o => { for (let t = -lx; t < L + lx; t += 8) if (inR(t + 1.5, o)) flat(quad(A, B, n, o - 0.08, o + 0.08, t, t + 3), whM, 0.19); };
+      if (cwW >= 9) for (let t = -lx; t < L + lx; t += 6) if (inR(t + 3, mid)) { addLine('y', quad(A, B, n, mid - 0.3, mid - 0.15, t, t + 6)); addLine('y', quad(A, B, n, mid + 0.15, mid + 0.3, t, t + 6)); }
+      const dashAt = o => { for (let t = -lx; t < L + lx; t += 8) if (inR(t + 1.5, o)) addLine('w', quad(A, B, n, o - 0.08, o + 0.08, t, t + 3)); };
       if (cwW < 9) dashAt(mid);
       else for (let k = 1; cw0 + k * 3.3 < mid - 1.2; k++) { dashAt(cw0 + k * 3.3); dashAt(cw1 - k * 3.3); }
       // 보도 가로수·가로등
       for (let t = 2; t < L; t += 8) { const px = A[0] + (B[0] - A[0]) * t / L, py = A[1] + (B[1] - A[1]) * t / L; trees.push([px + n[0] * sw * 0.45, py + n[1] * sw * 0.45, 0.85]); if (far && w < 40) trees.push([px + n[0] * (w - sw * 0.45), py + n[1] * (w - sw * 0.45), 0.85]); }
       for (let t = 6; t < L; t += 24) { const px = A[0] + (B[0] - A[0]) * t / L, py = A[1] + (B[1] - A[1]) * t / L; streetLamps.push([px + n[0] * (sw - 0.5), py + n[1] * (sw - 0.5), 9]); if (far) streetLamps.push([px + n[0] * (w - sw + 0.5), py + n[1] * (w - sw + 0.5), 9]); }
+    });
+    [['y', yelM], ['w', whM]].forEach(([k, mat]) => {
+      const L = lineBuf[k]; if (!L.length) return; const pos = new Float32Array(L.length * 18);
+      L.forEach((q, i) => { const v = [q[0], q[1], q[2], q[0], q[2], q[3]]; v.forEach((p, j) => { pos[i * 18 + j * 3] = p[0]; pos[i * 18 + j * 3 + 1] = 0.19; pos[i * 18 + j * 3 + 2] = -p[1]; }); });
+      const g3 = new THREE.BufferGeometry(); g3.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mm = new THREE.Mesh(g3, mat); mm.material.side = THREE.DoubleSide; scene.add(mm);
     });
     // 화면 위 동 윤곽(투시도에서 나무가 건물 가리는지 볼 때·초점 판에 씀)
     const hullOf = pts => { pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; pts.forEach(p => { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }); pts.slice().reverse().forEach(p => { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }); return lo.slice(0, -1).concat(up.slice(0, -1)); };
