@@ -1,0 +1,47 @@
+/* /decision 정비계획 결정(안) — 화면 미리보기와 A4 인쇄 공용 */
+:root{--ink:#1f2933;--mute:#5b6670;--line:#9aa5b1;--bg:#eef1f4;--acc:#e8590c}
+*{box-sizing:border-box}
+body{margin:0;font-family:'IBM Plex Sans KR',system-ui,sans-serif;color:var(--ink);background:var(--bg);word-break:keep-all;overflow-wrap:break-word}
+header.top{display:flex;align-items:baseline;gap:10px;padding:10px 16px;background:#fff;border-bottom:1px solid #d6dbe0}
+header.top h1{font-size:17px;margin:0 0 0 8px}
+header.top .sub{color:var(--mute);font-size:13px}
+.layout{display:grid;grid-template-columns:300px 1fr}
+.ctl{background:#fff;border-right:1px solid #d6dbe0;padding:12px 14px}
+.ctl h2{font-size:14px;margin:14px 0 6px}
+.ctl label{display:block;font-size:13px;margin:6px 0}
+.ctl input,.ctl select{display:block;width:100%;margin-top:3px;padding:6px 8px;border:1px solid #cfd6dd;border-radius:6px;font:inherit}
+.ctl button{width:100%;padding:9px;border:1px solid #cfd6dd;border-radius:8px;background:#fff;font:inherit;cursor:pointer;margin-top:8px}
+.ctl button.primary{background:var(--ink);color:#fff;border:0;font-weight:600}
+.note{color:var(--mute);font-size:12px;line-height:1.55}
+.stage{padding:18px;overflow:auto}
+.doc{background:#fff;max-width:210mm;margin:0 auto;padding:18mm 16mm;box-shadow:0 2px 12px rgba(0,0,0,.12);font-size:10pt;line-height:1.55}
+.doc h1{font-size:15pt;text-align:center;margin:0 0 4mm;line-height:1.4}
+.doc .gosi{text-align:center;color:var(--mute);margin-bottom:6mm}
+.doc .lead{margin:0 0 6mm;text-indent:1em}
+.doc h2{font-size:12.5pt;margin:9mm 0 3mm;padding-bottom:1.5mm;border-bottom:.5mm solid var(--ink)}
+.doc h3{font-size:10.5pt;margin:6mm 0 2mm}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 2mm;font-size:8.6pt;page-break-inside:auto}
+.doc th,.doc td{border:.25mm solid var(--line);padding:1.2mm 1.4mm;text-align:center;vertical-align:middle}
+.doc thead th{background:#eef1f4;font-weight:600}
+.doc tr{page-break-inside:avoid}
+.doc td[contenteditable]:focus{outline:2px solid var(--acc);background:#fff8f2}
+.doc td.need{background:#fff3bf}
+.doc td.edited{background:#e7f5ff}
+.doc td.l{text-align:left}
+.doc .tnote{font-size:8pt;color:var(--mute);margin:0 0 3mm}
+.doc .addrow{font-size:8.5pt;border:1px dashed #adb5bd;background:#fff;border-radius:4px;padding:1mm 3mm;cursor:pointer;margin:0 0 3mm}
+.doc .figs{display:grid;grid-template-columns:1fr 1fr;gap:5mm}
+.doc figure{margin:0;border:.25mm solid var(--line);padding:2mm;page-break-inside:avoid}
+.doc figure svg{width:100%;height:78mm;display:block}
+.doc figcaption{text-align:center;font-weight:600;font-size:9pt;margin-top:1mm}
+.doc .foot{margin-top:8mm;font-size:8.5pt;color:var(--mute);border-top:.25mm solid var(--line);padding-top:2mm}
+@media (max-width:820px){.layout{grid-template-columns:1fr}.ctl{border-right:0}.doc{padding:10mm 6mm}}
+@page{size:A4;margin:15mm 13mm}
+@media print{
+  body{background:#fff}
+  header.top,.ctl,#siteNav,#planSteps,.jbs-work,#jbsWorkBtn,.addrow{display:none!important}
+  .layout{display:block}.stage{padding:0}
+  .doc{box-shadow:none;max-width:none;padding:0}
+  .doc td.need,.doc td.edited{background:none}
+  .doc h2{page-break-after:avoid}.doc h3{page-break-after:avoid}
+}

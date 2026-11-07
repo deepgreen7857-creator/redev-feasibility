@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<script src="/shared/gate.js"></script>
+<script src="/shared/sitenav.js?v=5"></script>
+<meta name="robots" content="noindex, nofollow">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>jbslab 정비계획 결정(안)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="decision.css?v=1">
+</head>
+<body>
+<header class="top"><b>jbslab</b> <span class="sub">/decision</span> <h1>정비구역 지정 및 정비계획 결정(안) · 지구단위계획 결정(안)</h1></header>
+<div class="layout">
+  <aside class="ctl">
+    <section>
+      <h2>1. 구역</h2>
+      <label>구역<select id="siteSel"></select></label>
+      <p class="note" id="siteInfo"></p>
+    </section>
+    <section>
+      <h2>2. 기본 사항</h2>
+      <label>정비사업 명칭<input id="name" placeholder="예: ○○구역 주택재개발정비사업"></label>
+      <label>위치<input id="loc" placeholder="예: 인천광역시 미추홀구 용현동 100번지 일원"></label>
+      <label>고시 기관<input id="org" placeholder="예: 인천광역시"></label>
+    </section>
+    <section>
+      <h2>3. 내보내기</h2>
+      <button class="primary" id="print">인쇄 / PDF로 저장</button>
+      <button id="word">워드(.doc) 내려받기</button>
+      <button id="reset">고친 칸 모두 되돌리기</button>
+      <p class="note">노란 칸은 자동으로 못 채운 칸입니다. 표의 어느 칸이든 눌러 고칠 수 있고, 고친 내용은 이 컴퓨터에 구역별로 저장됩니다. 교육환경평가·재해영향평가 등은 Ⅲ 관련부서 협의의견 수렴으로 갈음합니다.</p>
+      <p class="note">워드 파일은 한글에서도 열립니다. 인쇄 창에서 용지 A4, 여백 '기본', '배경 그래픽' 켜기.</p>
+    </section>
+  </aside>
+  <main class="stage"><article id="doc" class="doc"></article></main>
+</div>
+<script src="../shared/site-store.js?v=156"></script>
+<script src="../shared/feas.js?v=157"></script>
+<script src="../shared/decision.js?v=1"></script>
+<script src="decision.js?v=1"></script>
+<script src="../shared/workfile.js?v=8"></script>
+</body>
+</html>
