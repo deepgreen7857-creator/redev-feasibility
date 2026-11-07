@@ -450,3 +450,4 @@
 - 관리자 Firestore 문서(state/onbid, state/court)는 관리자 탭의 IndexedDB(firebaseLocalStorageDb) 토큰으로 REST 조회 가능.
 - (정민님, 2026.11.07 저녁) 판단기록장 추천의 기일은 '진입 회차' 날짜로 표시한다 — picks 항목에 date(진입 회차 입찰 마감일, YYYY-MM-DD)를 넣는다(judge/index.html normDate가 x.date를 먼저 씀). 지금 회차 날짜로 두지 않는다.
 - (2026.11.07 저녁) judge/index.html calc: 땅(it.land)에 bidMax가 있으면 상한을 bidMax 그대로 씀. 땅 항목에는 acqTax(대 0.046·농지 0.034, 섞이면 비율)와 온비드 전 회차(min)를 넣을 것 — 없으면 경매식 30% 저감·1.1%로 잘못 계산됨.
+- (2026.11.07 저녁) 판단기록장 '원문 보기' 링크: 공매(O:) 물건은 data(법원 자료)에 없어 0건이 나왔음 → 사이트 물건 상세 https://www.jbslab.co.kr/auction/#/item/onbid_<관리번호>_<조건번호>로 연결. 새 공매 물건을 올릴 때 land.json/items.json에 listingId(지금 회차 행 id)를 넣을 것(judge/index.html ONBID_LID는 보조).

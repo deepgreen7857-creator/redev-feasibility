@@ -116,6 +116,7 @@ td.rc .l3{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden
 </div>
 <script>
 const RATE=0.7,MAXK=6,CASH=50000000;
+const ONBID_LID={"2026-03041-001": "onbid_2026-03041-001_6205414", "2026-14469-003": "onbid_2026-14469-003_6194458", "2026-13294-001": "onbid_2026-13294-001_6162021", "2026-13901-001": "onbid_2026-13901-001_6163130", "2026-12931-001": "onbid_2026-12931-001_6146460", "2026-02369-001": "onbid_2026-02369-001_6101631", "2026-08163-001": "onbid_2026-08163-001_6083356", "2026-03242-001": "onbid_2026-03242-001_6076173", "2026-05883-001": "onbid_2026-05883-001_6081148", "2026-10736-008": "onbid_2026-10736-008_6161986", "2026-16109-002": "onbid_2026-16109-002_6155883", "2026-11667-001": "onbid_2026-11667-001_6106165", "2026-11635-001": "onbid_2026-11635-001_6106129", "2026-12566-001": "onbid_2026-12566-001_6128505", "2026-0900-049109": "onbid_2026-0900-049109_6267355"}; // 공매 관리번호 → 사이트 물건 id(지금 회차 행)
 const CT=0.33; // 법인 주택 양도: 일반 법인세 약 10% + 주택 추가 법인세 20% + 지방소득세(그 10%)
 const afterTax=(p,land)=>(p>0&&!land)?Math.round(p*(1-CT)):p;
 const man=n=>Math.round(n/10000).toLocaleString('ko-KR')+'만';
@@ -180,7 +181,10 @@ function detail(r){
     (it&&it.myJudgment?`<dt>정민님</dt><dd>${esc(it.myJudgment)}</dd>`:'')+
     (it&&it.prediction&&it.prediction.actual?`<dt>결과</dt><dd>${esc(it.prediction.actual)}</dd>`:'')+'</dl>';
   const cn=String(x.id).replace(/^L:/,'').replace(/\(\d+\)$/,'');
-  h+=`<p style="margin-top:8px"><a href="https://www.jbslab.co.kr/data/#${encodeURIComponent(cn)}" target="_blank" rel="noopener">원문(data) 보기</a>${(!String(x.id).startsWith('L:')&&it)?` · <a href="../review/#i-${encodeURIComponent(x.id)}">입찰 판단표에서 보기</a>`:''}</p>`;
+  // 공매(O:)는 data(법원 자료)에 없음 → 사이트 물건 상세(#/item/onbid_…)로. listingId가 없으면 온비드 원문 안내 (2026.11.07)
+  const onb=/^O:/.test(cn),lid=(it&&it.listingId)||x.listingId||(ONBID_LID[cn.slice(2)]||'');
+  const src=onb?(lid?`<a href="https://www.jbslab.co.kr/auction/#/item/${encodeURIComponent(lid)}" target="_blank" rel="noopener">공매 원문(사이트 물건 상세) 보기</a>`:`<span>공매 원문: 온비드에서 관리번호 ${esc(cn.slice(2))} 검색</span>`):`<a href="https://www.jbslab.co.kr/data/#${encodeURIComponent(cn)}" target="_blank" rel="noopener">원문(data) 보기</a>`;
+  h+=`<p style="margin-top:8px">${src}${(!String(x.id).startsWith('L:')&&it)?` · <a href="../review/#i-${encodeURIComponent(x.id)}">입찰 판단표에서 보기</a>`:''}</p>`;
   return h+'</div>';
 }
 function table(rows,past){
