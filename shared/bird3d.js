@@ -322,7 +322,7 @@
     const rbb = roadF.map(f => turf.bbox(f));
     const inRoad = (x, y) => roadF.some((f, i) => x >= rbb[i][0] && x <= rbb[i][2] && y >= rbb[i][1] && y <= rbb[i][3] && inPoly(x, y, f));
     const streetLamps = [], streetRings = [], streets = [];
-    const sideM = STD(dusk ? 0x5f5a54 : 0x8f897f), curbM = STD(dusk ? 0x8a847c : 0xcfcac0), asphM = STD(dusk ? 0x1d1f22 : 0x2b2d30, { roughness: 0.85 });
+    const sideM = STD(dusk ? 0x5f5a54 : 0x6f6a62), curbM = STD(dusk ? 0x8a847c : 0xbdb8ae), asphM = STD(dusk ? 0x141517 : 0x17181a, { roughness: 0.9 });
     const yelM = new THREE.MeshBasicMaterial({ color: dusk ? 0xa8851a : 0xe3b21c }), whM = new THREE.MeshBasicMaterial({ color: dusk ? 0xb8b8b8 : 0xf4f4f4 });
     const quad = (A, B, n, o1, o2, t1, t2) => { const L = Math.hypot(B[0] - A[0], B[1] - A[1]), ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L; const P0 = [A[0] + ux * t1, A[1] + uy * t1], P1 = [A[0] + ux * t2, A[1] + uy * t2]; return [[P0[0] + n[0] * o1, P0[1] + n[1] * o1], [P1[0] + n[0] * o1, P1[1] + n[1] * o1], [P1[0] + n[0] * o2, P1[1] + n[1] * o2], [P0[0] + n[0] * o2, P0[1] + n[1] * o2]]; };
     for (let i = 0; i < S.length; i++) {
