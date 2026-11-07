@@ -624,7 +624,7 @@
     // 세대당 지상 연면적: 평면 라이브러리의 공급면적(전용+주거공용). 없으면 전용 × 환산계수
     const supOf = t => (+U[t].공급 > 0 ? +U[t].공급 : U[t].전용 * A.supplyFactor);
     const gfaOf = blds => blds.reduce((s, b) => s + b.n * b.floors * supOf(b.t), 0);
-    const finish = blds => { blds.forEach(b => { b.cap = capFloors(b); b.floors = Math.min(b.floors, b.cap); if (form === 'mix' && b.form !== 'tower' && blds.some(o => o.form === 'tower')) b.floors = Math.max(A.minFloors, Math.min(b.floors, Math.ceil(b.floors * 0.8))); }); return blds.filter(b => b.floors >= A.minFloors); };
+    const finish = blds => { blds.forEach(b => { b.cap = capFloors(b); b.floors = Math.min(b.floors, b.cap); }); return blds.filter(b => b.floors >= A.minFloors); };
 
     // 균일 층수 F를 낮은 쪽부터 올려 목표 용적률 이하 최대 찾기 → 북쪽 줄부터 한 층씩 올려 목표에 맞춤(남저북고)
     const target = opt.lot * opt.far / 100;
