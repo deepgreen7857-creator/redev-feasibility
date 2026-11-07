@@ -691,6 +691,10 @@ $('#addHist').onclick=()=>{const ks=diffKeys();if(!ks.length){alert('승인본�
 
 /* ---------- 승인본 PDF 읽기 (브라우저 안에서만) ---------- */
 const PDFV='3.11.174', CDN='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/'+PDFV+'/';
+/* 한글 글꼴 매핑이 틀어진 PDF(받침 ㄴ→ㄲ, ㄹ→ㄳ: 안전→앆젂, 인→읶, 할→핛) — 그런 글자가 몰린 쪽만 되돌림 */
+const HAN_SIG=/[앆젂읶핚갂짂읷싞렦핛숚젃홗맊윣윢띾]/g, HAN_KEEP=new Set('밖묶볶깎닦섞꺾엮낚겪솎몫넋삯');
+function fixHan(t){if((String(t).match(HAN_SIG)||[]).length<3)return t;
+  return t.replace(/[가-힣]/g,c=>{if(HAN_KEEP.has(c))return c;const k=c.charCodeAt(0),j=(k-0xAC00)%28;return j===2?String.fromCharCode(k+2):j===3?String.fromCharCode(k+5):c})}
 async function readPdf(file){
   const lib=window.pdfjsLib; if(!lib) throw new Error('PDF 읽기 모듈을 불러오지 못했습니다(인터넷 연결 확인).');
   lib.GlobalWorkerOptions.workerSrc=CDN+'pdf.worker.min.js';
@@ -703,7 +707,7 @@ async function readPdf(file){
       if(lastY!==null&&Math.abs(y-lastY)>fs*0.5){lines.push(cur);cur='';lastEnd=null}
       if(cur&&lastEnd!==null&&x-lastEnd>fs*0.25&&!cur.endsWith(' ')) cur+=' ';
       cur+=it.str; lastY=y; lastEnd=x+(it.width||0)});
-    lines.push(cur); pages.push(lines.join('\n'));
+    lines.push(cur); pages.push(fixHan(lines.join('\n')));
     if(i%10===0) $('#upStat').textContent=`읽는 중… ${i} / ${doc.numPages}쪽`;
   }
   return {pages,unit:'쪽',paged:true};
@@ -1000,6 +1004,90 @@ function fixReport(groups){
   return {html:`<h2 style="margin-top:14px">재검토(보완) 대응 점검 <span class="auto">지적 항목별</span></h2>${note}<table class="map"><thead><tr><th style="width:18%">항목</th><th style="width:34%">지적 사항</th><th>대응</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="note">지적 항목을 찾지 못했습니다.</td></tr>'}</tbody></table><p class="note">보완서의 “1) ○○ 보완” 항목마다 대응(▷ 답변·부록 참조·검토 미의뢰·해당 없음)이 있는지, 참조한 부록 번호가 실제 부록에 있는지 봅니다. 대응의 질은 판단하지 않습니다.</p>`,nb,nw};
 }
 
+/* ---------- 재검토(보완) 양식 B: 앞쪽 '보완사항 비고' 총괄표(보완 완료·향후 보완) + 공종마다 '검토의견·조치계획·반영여부' 표 + ※ 첨부 쪽 (사례 6호) ---------- */
+const SECN={건설공사의개요:'ta',현장특성분석:'tb',현장운영계획:'tc',비상시긴급조치계획:'td',가설공사:'w1',굴착공사및발파공사:'w2',굴착공사:'w2',발파공사:'w2',콘크리트공사:'w3',강구조물공사:'w4',성토및절토공사:'w5',해체공사:'w6',건축설비공사:'w7',타워크레인공사:'w8',타워크레공사:'w8'};
+const SECRE=/[가-아]\.(건설공사의개요|현장특성분석|현장운영계획|비상시긴급조치계획|가설공사|굴착공사및발파공사|굴착공사|발파공사|콘크리트공사|강구조물공사|성토및절토공사|해체공사|건축설비공사|타워크레인?공사)/g;
+const STRE=/(보완완료|변경완료|향후보완|해당없음|검토미의뢰|미반영)/;
+function isFixB(head,name){return /보완사항비고/.test(head)||/검토의견조치(계획반영여부|결과별첨)/.test(head)||/합동검토회의\(?[가-힣]{0,6}\)?보완/.test(head)}
+function keyFromName(n){n=flat(n);const m=n.match(/(가설|굴착|발파|흙막이|콘크리트|강구조|성토|절토|해체|설비|타워)/);if(m)return 'w'+({가설:1,굴착:2,발파:2,흙막이:2,콘크리트:3,강구조:4,성토:5,절토:5,해체:6,설비:7,타워:8})[m[1]];
+  const t=n.match(/(개요|현장특성|운영계획|비상시)/);return t?({개요:'ta',현장특성:'tb',운영계획:'tc',비상시:'td'})[t[1]]:''}
+// 글 덩어리(F)를 절(가.~아.)·항목(n))로 나눠 [{sec,n,title,body}] — 절이 안 보이면 앞 절을 이어 씀
+function itemsOf(F,sec0){F=F.replace(/별첨#?(\d{1,2}?)(?=\d{1,2}\)|\D|$)/g,'별첨#$1§');const out=[];let sec=sec0||'';
+  const parts=F.split(/(?=[가-아]\.(?:건설공사의개요|현장특성분석|현장운영계획|비상시긴급조치계획|가설공사|굴착공사및발파공사|굴착공사|발파공사|콘크리트공사|강구조물공사|성토및절토공사|해체공사|건축설비공사|타워크레인?공사))/);
+  parts.forEach(p=>{const m=p.match(/^[가-아]\.(건설공사의개요|현장특성분석|현장운영계획|비상시긴급조치계획|굴착공사및발파공사|성토및절토공사|강구조물공사|[가-힣]+?공사)/);if(m){const k=Object.keys(SECN).sort((a,b)=>b.length-a.length).find(x=>m[1].startsWith(x));if(k)sec=SECN[k]}
+    p.split(/(?=(?<![\d.,~\-])\d{1,2}\)[가-힣A-Za-z(])/).forEach(seg=>{const n=(seg.match(/^(\d{1,2})\)/)||[])[1];if(n&&seg.length>6)out.push({sec,n,title:seg.replace(/^\d{1,2}\)/,'').slice(0,60),body:seg})})});
+  return out}
+function readFixB(f,R,head){
+  const name=f.name, pages=R.pages.map(flat), key0=keyFromName(name)||'';
+  const joint=/합동검토회의/.test(head)?((head.match(/합동검토회의\(?([가-힣]{2,6}?)\)?보완/)||[])[1]||'합동'):'';
+  const sum=[], tables=[]; let cur=null, lastSec=key0; const last={t:key0&&key0[0]==='t'?key0:'',w:key0&&key0[0]==='w'?key0:''};
+  pages.forEach(P=>{
+    if(/보완사항비고/.test(P)&&!/검토의견조치(계획반영여부|결과별첨)/.test(P)){ // 총괄표 — ▣총괄/▣공종별 덩어리마다 그쪽 마지막 절을 이어 씀
+      P.split(/(?=▣(?:총괄|공종별))/).forEach(B=>{const kind=/^▣총괄/.test(B)?'t':/^▣공종별/.test(B)?'w':'';
+        const its=itemsOf(B.replace(/^.*?보완사항비고/,''),kind?last[kind]:lastSec);
+        its.forEach(it=>{const st=(it.body.match(new RegExp(STRE.source+'(?!.*'+STRE.source+')'))||[])[1]||'';sum.push({...it,st});if(it.sec){lastSec=it.sec;last[it.sec[0]]=it.sec}})});return}
+    if(/검토의견조치(계획반영여부|결과별첨)/.test(P)){cur={sec:lastSec,items:[],att:[],np:0,nfig:0,text:''};tables.push(cur);
+      const body=P.replace(/^.*?검토의견조치(계획반영여부|결과별첨)/,'');
+      itemsOf(body,joint?'j'+joint:lastSec).forEach(it=>{if(it.sec&&it.sec[0]!=='j')last[it.sec[0]]=it.sec;const ans=/하였습니다|하였음|첨부하|작성하|표기하|수정하|추가하|수립하/.test(it.body);
+        const st=(it.body.match(/(향후반영|일부반영|미반영|반영)조치결과/)||it.body.match(/(향후해당공종착공전보완예정)/)||[])[1]||(ans?'반영':'');
+        const refs=[...new Set([...it.body.matchAll(/별첨#(\d{1,2})§/g)].map(m=>m[1]))];
+        cur.items.push({...it,ans,st:/향후/.test(st)?'향후반영':st,refs});if(it.sec)lastSec=it.sec});
+      const a=P.match(/※첨부\.?([^※]{2,40}?)(?=※|$)/);if(a)cur.att.push(a[1]);return}
+    if(!cur)return;
+    cur.np++; const a=P.match(/※(?:첨부\.?|)([^※]{2,40}?(?:첨부함|첨부))/)||P.match(/※첨부\.?([가-힣A-Za-z().·\s]{2,40})/); if(a&&P.length<120)cur.att.push(a[1]);
+    if(P.length<60)cur.nfig++; cur.text+=P;
+  });
+  return {name,key0,joint,sum,tables,F:pages.join('')}
+}
+function fixReportB(docs,ug,all){
+  const LBL={ta:'총괄 가. 개요',tb:'총괄 나. 현장특성',tc:'총괄 다. 운영계획',td:'총괄 라. 비상시',w1:'2.1 가설',w2:'2.2 굴착·발파',w3:'2.3 콘크리트',w4:'2.4 강구조',w5:'2.5 성토·절토',w6:'2.6 해체',w7:'2.7 건축설비',w8:'2.8 타워크레인'};
+  const lab=k=>LBL[k]||(k&&k[0]==='j'?'합동검토회의('+k.slice(1)+')':k||'?');
+  const S2={};docs.forEach(d=>d.sum.forEach(s=>{const k=s.sec+'|'+s.n;if(!S2[k]||!S2[k].st)S2[k]=s}));
+  const D={};docs.forEach(d=>d.tables.forEach(t=>t.items.forEach(it=>{const k=it.sec+'|'+it.n;if(!D[k])D[k]={...it,t,doc:d}})));
+  const keys=[...new Set([...Object.keys(S2),...Object.keys(D)])].sort((a,b)=>{const o=x=>{const [s,n]=x.split('|');return (s[0]==='t'?0:s[0]==='w'?1:2)*1000+(parseInt(s.slice(1))||s.charCodeAt(1)||0)*20+(+n)};return o(a)-o(b)});
+  const secHave=new Set(Object.values(D).map(d=>d.sec));
+  let rows='',nb=0,nw=0,ni=0;const cnt={};
+  keys.forEach(k=>{const s=S2[k],d=D[k],it=d||s,op=it.body,st=(s&&s.st)||'';let lv,msg=[];
+    const later=/향후/.test(st)||(d&&d.st==='향후반영');
+    const self=/변경$/.test((it.title||'').replace(/(보완완료|변경완료|향후보완)$/,''))&&!/보완$/.test(it.title);
+    if(later){lv='info';msg.push('향후 보완(해당 공종 착공 전 제출)로 답함 — 이번 차수에서도 조건부 적정으로 남을 항목, 착공 전 보완서 승인 필요')}
+    else if(!d){if(it.sec&&it.sec[0]==='j'){lv='bad';msg.push('합동검토 보완 항목인데 조치 결과가 없음')}
+      else if(!secHave.has(it.sec)){lv='bad';msg.push(`총괄표에는 ‘${st.replace('완료',' 완료')||'?'}’인데 이 항목의 조치계획 표(보완서)가 올라오지 않음`)}
+      else{lv='warn';msg.push('총괄표에는 있는데 조치계획 표에서 같은 번호 항목을 찾지 못함 — 직접 확인')}}
+    else if(!d.ans&&!d.refs.length){lv='bad';msg.push('검토의견을 옮겨 적기만 하고 조치 내용이 보이지 않음')}
+    else{lv='ok';const t=d.t;
+      if(d.refs.length){const miss=d.refs.filter(n=>((d.doc.F.match(new RegExp('별첨#?'+n+'(?!\\d)','g'))||[]).length<2));
+        if(miss.length){lv='bad';msg.push(`별첨 #${miss.join(', #')}를 적었지만 별첨 쪽이 없음`)}else msg.push(`별첨 #${d.refs.join(', #')} 있음`+(/당초.{0,6}변경/.test(d.doc.F)?' (당초/변경 표시)':''))}
+      else if(t.np){msg.push(`첨부 ${t.np}쪽${t.att.length?' — '+[...new Set(t.att)].slice(0,3).map(x=>'“'+x+'”').join(', '):''}${t.nfig?` (그림 ${t.nfig}쪽: 내용은 직접 확인)`:''}`)}
+      else if(/도면|상세도|평면|단면|계산서|첨부|표기|계획서/.test(op)&&!/확인서/.test(op)){lv='warn';msg.push('조치했다고 답했지만 뒤에 첨부 쪽이 없음 — 별도 파일·CSI 첨부 확인')}
+      else msg.push('조치 내용 있음');
+      const T=t.text, Tall=all;
+      if(/계산서/.test(op)&&t.np&&!/계산|검토|kN|ton|O\.?K/i.test(T)){lv=lv==='ok'?'warn':lv;msg.push('계산서를 요구했는데 첨부 글자에 계산 내용이 없음(그림 쪽이면 직접 확인)')}
+      if(/계산서/.test(op)&&t.np&&/계산|kN|O\.?K/i.test(T)&&!/서명|날인|\(인\)|기술사/.test(T)){lv=lv==='ok'?'warn':lv;msg.push('안전성 계산서에 작성 기술인 서명·날인 흔적이 없음(시행규칙 제43조) — 그림 쪽이면 직접 확인')}
+      if(/시험발파/.test(op)&&(/시공시시험발파를실시|설계단계/.test(T+Tall)||!/시험발파결과|측정결과|계측결과/.test(T))){lv='warn';msg.push('시험발파 결과보고서가 아니라 설계 단계 보고서(사전 발파환경영향평가·설계보고서, “시공 시 시험발파 실시” 문구)로 답함 — 실제 시험발파 결과와 그에 따른 상세도가 없으면 착공 전 제출로 남을 수 있음')}
+      if(/협의|입증|회신|회의록/.test(op)&&t.np&&t.nfig>=t.np-1){lv=lv==='ok'?'warn':lv;msg.push(/매설물|관리주체/.test(op)?'협의 서류가 그림(스캔)뿐 — 관리주체별(가스·통신·전기·상하수도) 회신·날인·협의 일자를 직접 확인':'협의 서류가 그림(스캔)뿐 — 협의 통보 기관·일자·조건을 직접 확인')}
+      if(/확인서/.test(op)&&!/확인서/.test(T)&&!/검토[·ㆍ]?확인서[^※]{0,30}(첨부|붙임)/.test(Tall.replace(op,''))){lv=lv==='ok'?'warn':lv;msg.push('확인서 쪽이 이 파일들에는 없음 — CSI 감리/발주청 확인 탭에 첨부했는지 확인(보완 차수부터 필수)')}
+    }
+    if(self){lv=lv==='bad'?'bad':'warn';msg.push('검토의견에 없던 시공자 스스로의 변경 — 변경 전·후와 다른 공종·협의 내용(지하안전 등)에 미치는 영향 확인')}
+    if(lv==='bad')nb++;if(lv==='warn')nw++;if(lv==='info')ni++;cnt[lv]=(cnt[lv]||0)+1;
+    rows+=`<tr><td>${xe(lab(it.sec))} ${xe(it.n)})</td><td>${xe((it.title||'').replace(STRE,'').slice(0,50))}${st?` <span class="note">[총괄표: ${xe(st)}]</span>`:''}</td><td><span class="lv-${lv==='warn'?'info':lv}">${({ok:'대응',bad:'주의',warn:'확인',info:'향후'})[lv]}</span> ${xe(msg.join(' · '))}</td></tr>`});
+  // 교차 점검: 지하안전 협의 내용
+  const C=[], A=all+ug.map(u=>u.F).join('');
+  const sw=t=>{const m=[...t.matchAll(/차수공법[:은는으로]*((?:[A-Z]\.){2,3}[A-Z]?|[A-Z]{2,4}(?=그라우팅|공법|GROUTING))/g)].map(m=>m[1].replace(/\./g,''));return [...new Set(m)]};
+  const ugF=ug.map(u=>u.F).join(''), ugW=sw(ugF), planW=sw(docs.filter(d=>d.key0==='w2'||d.tables.some(t=>t.sec==='w2')).map(d=>d.F).join(''));
+  const xyp=/협의내용/.test(A);
+  if(ugW.length&&planW.length&&!planW.some(x=>ugW.includes(x))) {nb++;C.push(['bad',`차수공법이 지하안전영향평가서 기준(${ugW.join('·')})과 다름(이번 보완 ${planW.join('·')}) — 협의내용은 차수그라우팅을 바꿀 때 승인기관과 협의하도록 정함. 협의내용 조정 요청·승인기관 협의 자료, 바뀐 공법의 차수 성능(투수계수) 검토를 첨부했는지 확인`])}
+  const yUg=(ugF.slice(0,600).match(/(20\d\d)\.\s?(\d{1,2})\./)||[]), y0=(String(S.period||'')+' '+(S.start||'')).match(/(20\d\d)/), yPlan=(A.match(/공사기간(20\d\d)(?:년|-|\.)(\d{1,2})/)||[]);
+  const ys=yUg[1]?+yUg[1]+(+yUg[2]-1)/12:0, yp=yPlan[1]?+yPlan[1]+(+yPlan[2]-1)/12:(y0?+y0[1]:0);
+  if(ys&&yp&&yp-ys>=0.5&&/6개월이상착공이지연/.test(A)){nw++;C.push(['warn',`지하안전영향평가서는 ${yUg[1]}. ${yUg[2]}. 작성인데 착공은 ${yPlan[1]||y0[1]}년 — 협의내용(“협의 결과 통보일로부터 6개월 이상 착공이 지연될 경우 주변상황 확인, 공법 재검토 결과를 승인기관에 제출”)을 이행한 자료가 있는지 확인`])}
+  if(ug.length) C.push(['info',`지하안전영향평가서 ${ug.length}개 파일을 굴착 공종 첨부로 봤습니다${xyp?' — 협의내용(조건부 협의) 쪽 있음':' — 협의내용(통보서) 쪽은 글자로 찾지 못함'}`]);
+  const LV={bad:'주의',warn:'확인',info:'참고',ok:'적합'};
+  return {nb,nw,ni,html:`<h2 style="margin-top:14px">재검토(보완) 대응 점검 <span class="auto">총괄표·조치계획 표 대조</span></h2>
+  <p class="note">대응 ${cnt.ok||0} · 확인 ${cnt.warn||0} · 주의 ${cnt.bad||0} · 향후 보완 ${cnt.info||0}</p>
+  <table class="map"><thead><tr><th style="width:16%">항목</th><th style="width:30%">검토의견</th><th>대응</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="note">항목을 찾지 못했습니다.</td></tr>'}</tbody></table>
+  ${C.length?`<h2 style="margin-top:14px">교차 점검</h2><ul class="diag">${C.map(([l,t])=>`<li><span class="lv-${l==='warn'?'info':l}">${LV[l]}</span> ${xe(t)}</li>`).join('')}</ul>`:''}
+  <p class="note">‘보완사항 비고’ 총괄표의 상태(보완 완료·향후 보완)와 공종별 ‘검토의견·조치계획·반영여부’ 표, 그 뒤 ※ 첨부 쪽을 맞춰 봅니다. 그림·스캔 쪽 내용과 대응의 질은 판단하지 않습니다.</p>`};
+}
 /* ---------- 변경 제출 판독: 무엇이 바뀌었고, 같이 바뀌어야 할 항목이 빠졌는지 ---------- */
 function chgReport(docs,allKeys){
   // docs: [{key,label,F,pages}]  allKeys: 이번에 올라온 항목 key 묶음
@@ -1039,10 +1127,12 @@ async function onFiles(files){
   if(files.length===1){const R=await readAny(files[0]).catch(e=>null);if(R&&classify(files[0].name,R.pages).kind==='whole'){return onFile(files[0])}}
   $('#upStat').textContent=`${files.length}개 파일 읽는 중…`; $('#upDiag').innerHTML=''; $('#upEx').innerHTML='';
   const FX={}; const LBL={ta:'총괄 가. 개요',tb:'총괄 나. 현장특성',tc:'총괄 다. 운영계획',td:'총괄 라. 비상시',w1:'2.1 가설',w2:'2.2 굴착·발파',w3:'2.3 콘크리트',w4:'2.4 강구조',w5:'2.5 성토·절토',w6:'2.6 해체',w7:'2.7 건축설비',w8:'2.8 타워크레인'};
-  const fixFiles=new Set(), CHG=[];
+  const fixFiles=new Set(), CHG=[]; const FB=[], UG=[];
   for(const f of files){try{const R=await readAny(f);const head=flat(R.pages.slice(0,2).join(' ')).slice(0,400);
     const isFix=/안전관리계획서보완사항/.test(head), isBu=/부록#\d/.test(head.slice(0,300)), isChg=/안전관리계획서\(변경\)|안전관리계획서변경\/|변경사항/.test(head), noBu=/부록편목차※첨부없음/.test(head);
     if(noBu){fixFiles.add(f);continue}
+    if(!isFixB(head,f.name)&&(/지하안전영향평가|지하안전평가/.test(flat(f.name))||/^.{0,60}지하안전(영향)?평가서/.test(head))){UG.push({name:f.name,F:flat(R.pages.join(' '))});fixFiles.add(f);continue}
+    if(isFixB(head,f.name)){FB.push(readFixB(f,R,head));fixFiles.add(f);continue}
     if(isChg){let k=(head.match(/총괄안전관리계획[–\-]?([가나다라])\./)||head.match(/([가나다라])\.(?:건설공사의개요|현장특성분석|현장운영계획|비상시긴급조치계획)/)||[])[1];k=k?'t'+({가:'a',나:'b',다:'c',라:'d'})[k]:(fixKey(head)||'x');
       const F=flat(R.pages.join(' '));if(!CHG.some(d=>d.F===F))CHG.push({key:k,label:LBL[k]||k,F});fixFiles.add(f);continue}
     let k=fixKey(head);
@@ -1054,6 +1144,8 @@ async function onFiles(files){
   }catch(e){}}
   Object.keys(FX).forEach(k=>{if(!FX[k].isFix)delete FX[k]});
   let fixHtml='';
+  if(FB.length){const r=fixReportB(FB,UG,FB.map(d=>d.F).join(''));fixHtml+=r.html;files=files.filter(f=>!fixFiles.has(f));
+    if(!files.length&&!CHG.length&&!Object.keys(FX).length){$('#upStat').textContent=`재검토(보완) 제출 판독 — 주의 ${r.nb}건 · 확인 ${r.nw}건 · 향후 보완 ${r.ni}건`;$('#upDiag').innerHTML=fixHtml;return}}
   if(CHG.length){const r=chgReport(CHG,new Set(CHG.map(d=>d.key)));fixHtml+=r.html;files=files.filter(f=>!fixFiles.has(f));
     if(!files.filter(f=>!fixFiles.has(f)).length&&!Object.keys(FX).some(k=>FX[k].isFix)){$('#upStat').textContent=`변경 제출 판독 — 주의 ${r.nb}건 · 확인 ${r.nw}건`;$('#upDiag').innerHTML=fixHtml;return}}
   if(Object.keys(FX).length){const r=fixReport(FX);fixHtml+=r.html;files=files.filter(f=>!fixFiles.has(f));
