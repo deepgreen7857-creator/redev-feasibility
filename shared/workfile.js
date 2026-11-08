@@ -4,6 +4,7 @@
 //  · 이 컴퓨터에 이름 붙여 저장(IndexedDB, 용량 제한 거의 없음) / 파일(.jbs.json)로 내려받기
 //  · 불러오기 전·새 작업 시작 전에는 지금 상태를 '자동 백업'으로 먼저 저장(최근 3개)
 //  · 다시 받을 수 있는 자료(브이월드 조회 캐시·주변 건물)는 넣지 않음
+//  · 다른 컴퓨터와 이어서 하기(2026-11-08): 화면을 열 때 홈페이지의 최근 버전이 다른 컴퓨터 것이면 위쪽 띠로 알리고 한 번 눌러 이어받음(checkNewer)
 //  · 온라인 저장(2026-11-04): 관리자 로그인(gate.js와 같은 Firebase 프로젝트)으로 Firestore 'jbsWork'(관리자만 읽고 씀)에 이름 붙여 저장 → 어느 컴퓨터에서나 불러오기
 //    큰 작업은 700KB씩 나눠 'jbsWork/{id}/chunks'에. 파일·온라인 모두 토지조서가 들어 있을 수 있으니 외부로 보내지 말 것
 (function (g) {
@@ -36,7 +37,8 @@
     // 주소만 넣은 사업성 작업은 위치(괄호 안 단지 이름 우선)로 이름 붙임
     const loc = p && p.meta && p.meta.location ? String(p.meta.location) : '', apt = (loc.match(/\(([^)]*)\)/) || [])[1];
     const locName = apt ? apt.split(',').pop().trim() : loc.replace(/^인천광역시\s*|^서울특별시\s*/, '').replace(/\s*일대$/, '');
-    return (z && z.title) || (p && p.meta && p.meta.name !== '새 정비사업' && p.meta.name) || locName || (site && site.name !== '새 정비사업' && site.name) || '이름 없는 작업';
+    const pj = j('jbs.project.v1');   // 공통 사업명(shared/project.js)이 원본 — 먼저
+    return (pj && pj.name) || (z && z.title) || (p && p.meta && p.meta.name !== '새 정비사업' && p.meta.name) || locName || (site && site.name !== '새 정비사업' && site.name) || '이름 없는 작업';
   }
   function summary(snap) {
     const k = snap.keys || {}, j = x => { try { return JSON.parse(k[x] || 'null'); } catch (e) { return null; } };
@@ -133,6 +135,7 @@
   const LAST = 'jbsw:lastCloudHash';   // 작업 키(jbs-·jbs.)가 아니라 작업에 안 들어감
   let verTimer = null, verBusy = false, lastSeen = '';
   async function autoVersion(reason) {
+    if (holdUpload) return;   // 다른 컴퓨터 최신 작업을 물어보는 중 — 이 컴퓨터 옛 작업을 맨 위에 올려 덮지 않게
     if (verBusy) { setTimeout(() => autoVersion(reason), 3000); return; }
     const snap = snapshot(); if (summary(snap) === '빈 작업') return;
     // 예시 불러오기로 연 예시 사업만 있는 상태는 버전으로 쌓지 않음(언제든 다시 불러올 수 있고, 실제 작업 목록을 헷갈리게 함)
@@ -178,7 +181,62 @@
       if (h !== lastSeen) { lastSeen = h; clearTimeout(verTimer); verTimer = setTimeout(() => autoVersion('변경 후 1분'), 60000); if (h !== localStorage.getItem(LAST)) setBtn('저장 대기'); }
     }, 2000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autoVersion('창 숨김'); });
-    setTimeout(() => { flushPending().then(() => autoVersion('열 때')).catch(() => { /* 다음에 */ }); }, 8000); // 못 올린 버전이 있으면 열 때 올림
+    // 열 때: 먼저 다른 컴퓨터에서 더 최근에 올린 작업이 있는지 보고, 없을 때만 못 올린 버전을 올림
+    setTimeout(() => { checkNewer('열 때').then(shown => { if (!shown) return flushPending().then(() => autoVersion('열 때')); }).catch(() => { /* 다음에 */ }); }, 2500);
+    // 다른 컴퓨터에서 일하다 이 창으로 돌아오면 다시 확인(1분에 한 번까지)
+    let lastCheck = Date.now();
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastCheck > 60000) { lastCheck = Date.now(); checkNewer('돌아옴').catch(() => { /* 무시 */ }); } });
+  }
+
+  /* ---------- 다른 컴퓨터와 이어서 하기(2026-11-08, 사용자 요구 '노트북·미니PC 어디서 열어도 이어지게') ----------
+     작업은 바뀔 때마다 홈페이지에 자동 버전으로 올라감(위 autoVersion). 여기서는 반대로, 화면을 열 때 홈페이지의 가장 최근 버전이
+     이 컴퓨터가 마지막으로 올린 것과 다르면(= 다른 컴퓨터가 그 뒤에 올림) 위쪽 띠로 알리고 한 번 눌러 이어받게 한다.
+     · 이 컴퓨터에 아직 안 올린 변경이 있으면 그 사실도 띠에 적고, 이어받기 전에 자동 백업(이 컴퓨터+홈페이지)
+     · [이 컴퓨터 것 계속]을 누르면 그 버전은 다시 묻지 않음(jbsw:skipHash), 이 컴퓨터 작업이 새 버전으로 올라감
+     · 띠가 떠 있는 동안은 자동 올리기를 멈춤 */
+  const SKIP = 'jbsw:skipHash';
+  let holdUpload = false, bar = null;
+  async function checkNewer(reason) {
+    let L; try { L = await cloudList(); } catch (e) { return false; }   // 로그인 안 함·인터넷 없음 → 조용히 넘어감
+    // 순서는 홈페이지 기록 시각(at, 밀리초)으로 — savedAt은 분 단위라 같은 분에 두 컴퓨터가 올리면 앞뒤를 못 가림
+    const t = x => (x.at && typeof x.at.toMillis === 'function') ? x.at.toMillis() : (x.at && x.at.seconds) ? x.at.seconds * 1000 : (typeof x.at === 'number' ? x.at : Date.parse(String(x.savedAt).replace(' ', 'T')) || 0);
+    const latest = L.filter(x => x && x.hash && (x.kind === 'version' || x.kind === 'manual')).sort((a, b) => t(b) - t(a))[0];
+    if (!latest) return false;
+    const cur = snapshot(), curH = hashOf(cur), last = localStorage.getItem(LAST);
+    if (latest.hash === curH) { localStorage.setItem(LAST, curH); return false; }   // 이미 같음
+    if (latest.hash === last || localStorage.getItem(SKIP) === latest.hash) return false;   // 이 컴퓨터가 올린 게 최신이거나, 이미 '계속 쓰기'를 고름
+    showBar(latest, summary(cur) !== '빈 작업' && curH !== last, reason);
+    return true;
+  }
+  function showBar(latest, dirty, reason) {
+    holdUpload = true;
+    if (!document.body) return;
+    if (!bar) {
+      const st = document.createElement('style');
+      st.textContent = `#jbsSyncBar{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:9500;width:min(760px,calc(100vw - 24px));background:#fff8e6;color:#3b2f12;border:1px solid #e0b64a;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.15);padding:10px 14px;font:13.5px/1.5 'IBM Plex Sans KR','Malgun Gothic',sans-serif}
+#jbsSyncBar b{font-weight:700}#jbsSyncBar .r{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}#jbsSyncBar button{font:inherit;padding:6px 12px;border-radius:7px;border:1px solid #9a8a5a;background:#fff;color:#3b2f12;cursor:pointer}#jbsSyncBar button.p{background:#1d2a33;color:#fff;border-color:#1d2a33}#jbsSyncBar .w{color:#b3261e}
+@media print{#jbsSyncBar{display:none}}`;
+      document.head.appendChild(st);
+      bar = document.createElement('div'); bar.id = 'jbsSyncBar'; bar.setAttribute('role', 'alert'); document.body.appendChild(bar);
+    }
+    bar.innerHTML = `<div><b>다른 컴퓨터에서 더 최근에 저장한 작업이 있습니다.</b> '${esc(latest.name)}' · ${esc(latest.savedAt)}<br><span>${esc(latest.summary || '')}</span></div>`
+      + (dirty ? `<div class="w">이 컴퓨터에도 아직 홈페이지에 안 올라간 변경이 있습니다. 이어받으면 이 컴퓨터 것은 자동 백업한 뒤 바꿉니다.</div>` : '')
+      + `<div class="r"><button class="p" data-s="take">그 작업으로 이어서 하기</button><button data-s="keep">이 컴퓨터 것 계속 쓰기</button></div>`;
+    bar.hidden = false;
+    bar.onclick = async e => {
+      const w = e.target && e.target.dataset && e.target.dataset.s; if (!w) return;
+      if (w === 'take') {
+        bar.querySelectorAll('button').forEach(b => { b.disabled = true; }); e.target.textContent = '받는 중…';
+        try {
+          const snap = await cloudGet(latest.id);
+          if (dirty) await backup('불러오기 전 자동 백업');
+          apply(snap); localStorage.setItem(LAST, hashOf(snap)); location.reload();
+        } catch (er) { bar.querySelector('.r').insertAdjacentHTML('beforebegin', `<div class="w">받지 못했습니다: ${esc(er.message)}</div>`); bar.querySelectorAll('button').forEach(b => { b.disabled = false; }); e.target.textContent = '그 작업으로 이어서 하기'; }
+      } else {
+        localStorage.setItem(SKIP, latest.hash); bar.hidden = true; holdUpload = false;
+        flushPending().then(() => autoVersion('이 컴퓨터 것 계속')).catch(() => { /* 다음에 */ });
+      }
+    };
   }
 
   // 지우기 전 자동 백업: 이 컴퓨터 + 온라인(실패해도 이 컴퓨터 백업은 남음)
@@ -285,7 +343,7 @@
   // 저장 공간이 꽉 차서 저장 실패했다는 알림(site-store 등이 보냄)
   g.addEventListener && g.addEventListener('jbs-storage-full', () => { full = true; if (btn) { btn.classList.add('full'); btn.textContent = '저장 공간 꽉 참 — 작업 보관'; } });
 
-  g.JbsWork = { snapshot, summary, autoVersion, flushPending, guessName, hashOf, cloudSave, cloudList, cloudGet, backup, apply, clearWork, listSlots, saveSlot, delSlot, download, used, isWorkKey, open: () => { ui(); open(); } };
+  g.JbsWork = { checkNewer, snapshot, summary, autoVersion, flushPending, guessName, hashOf, cloudSave, cloudList, cloudGet, backup, apply, clearWork, listSlots, saveSlot, delSlot, download, used, isWorkKey, open: () => { ui(); open(); } };
   const start = () => { ui(); watch(); };
   if (typeof document !== 'undefined') { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start(); }
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -14,9 +14,9 @@
 
 ## 구역계 만들기 공통 코드 (js/zonekit.js)
 - 브이월드(VWorld)·jsonp·필지 합치기(safeUnion)·splitJibun과 구역계 계산(ZoneKit: 지번 목록 → 필지, 그린 범위 → 필지 맞추기, 위치 지번+면적 추정, 도로 잇기·갇힌 필지, 필지 넣고 빼기, 지적 경계 맞음 확인, 대조표)은 `js/zonekit.js`에 있음
-- 본 화면(`js/map.js`)과 정비계획 검토(`urban/urban.js`)가 같이 씀 → **구역계 그리는 방법을 고칠 때는 zonekit.js에서 고칠 것**(화면 코드에만 넣으면 한쪽에만 반영됨)
+- 본 화면(`js/map.js`)과 정비계획 검토(`urban/js/`)가 같이 씀 → **구역계 그리는 방법을 고칠 때는 zonekit.js에서 고칠 것**(화면 코드에만 넣으면 한쪽에만 반영됨)
 - 새 구역계 기능을 본 화면에 붙이면 `/urban`의 '지번 목록·필지 경계로 구역계 만들기' 패널에도 같은 버튼을 붙일 것
-- zonekit.js를 고치면 `index.html`과 `urban/index.html`의 `?v=` 번호를 둘 다 올릴 것
+- zonekit.js를 고쳐도 `?v=` 번호는 손으로 올리지 말고 `node tools/bump-versions.js`(아래 '수정 후 확인 순서')
 - 지번 파일 읽기(ZoneKit.readJibunFile·parseJibunRows): 제목 띄어쓰기 무시, '소재지번' 병합 제목(동·지번 두 칸), 본번·부번·산 열, 병합 소재지 칸 이어 쓰기, 지번 꼴만 채택. 동 이름만 붙은 지번은 시·구까지 있는 기준 동 주소로 찾음(ZoneKit.query·fullBase)
 - CAD 구역도(ZoneKit.readDxf): ASCII DXF의 닫힌 폴리선, 레이어 이름 '구역·경계·정비' 우선(없으면 가장 큰 도형). 좌표계는 한국 측량 좌표 후보(5186·5185·5187·5188·5174·2097·5181·5179·경위도)를 proj4로 바꿔 지도 가운데에 가장 가까운 것. 두 화면 '구역계 파일 불러오기'에서 씀
 - 참고 도면 겹쳐 보기(js/overlay.js RefOverlay): 두 화면 공용. 기본 host는 본 화면 MapView, /urban은 RefOverlay.host를 LM·zkRef* 칸으로 바꿈
@@ -24,7 +24,29 @@
 ## /urban (정비구역 지정·정비계획 검토)
 - 목적: ① 정비구역을 새로 지정하려 할 때 구역계·요건·계획을 잡아 보기 ② 제출된 정비구역(토지조서·구역계)의 적정성 검토. 검토 기능은 '자동으로 고쳐 주기'보다 '문제를 찾아 보여 주기'가 먼저(예: 제출 조서 폐합 검토는 갇힌 필지·도로를 자동으로 채우지 않음)
 - 구역계·조서 검토 기능은 사업성 검토(본 화면)에도 똑같이 붙일 것
-- `urban/index.html` + `urban/urban.js` + `urban/rules/incheon.json`(인천 조례 기준값, 원문 대조본)
+- `urban/index.html` + `urban/js/01~12`(화면 코드, 아래 '/urban 파일 지도') + `urban/rules/incheon.json`(인천 조례 기준값, 원문 대조본)
+
+### /urban 파일 지도 — 고칠 곳을 여기서 찾고 그 파일만 열 것(2026-11-08, 예전 urban.js 33만 자 한 파일을 기능별로 나눔)
+- 사용자 요구(2026-11-08): '40만 자를 다 읽느라, 일부만 읽고 고쳐서 다른 데가 깨지느라 토큰을 너무 날렸다' → **고칠 기능의 파일만 읽는다.** 통째로 다 읽지 말 것
+- 모든 파일이 한 전역(S·Z·D·P·LM 등)을 함께 쓰는 보통 스크립트. 불러오는 순서는 urban/index.html의 01→12, 바꾸지 말 것
+| 고칠 것 | 파일 | 주요 이름 |
+|---|---|---|
+| 조례 기준값·공통 도우미·도로접면·브이월드/건축물대장 조회 | `01-base.js` | RULES applyJson VW LG accessFromRoad toast won |
+| 안(A~E) 구역계 저장·되돌리기·공부 조회 진행·사업성 구역 가져오기·새 구역 초기화·예시 구역 자료 | `02-zones.js` | Z(ZONE_KEY) CACHE fetchZone setZoneGeom importProject resetForNewSite buildMap buildSample obsoleteRule |
+| 요건 판정(면적·노후·접도·과소필지·호수밀도), 계획 가정(용도지역·용적률·세대수)·개략 사업성 계산 | `03-analysis.js` | analyze judge plan planCore biz P_DEFAULT farCalcOf |
+| 정비기반시설 제안(도로·공원·녹지·주차 면적·위치) | `04-infra.js` | INFRA ROADCLS |
+| 기반시설 배치 방식 화면(감싸기·이어 붙이기·스케치) | `05-fitui.js` | FITUI (계산은 `urban/placefit.js`) |
+| 단지 출입구(주·부·주차장) 위치 가정·추천, 건축선·출입 계획(건축한계선·전면공지·차량출입 불허구간·공공보행통로·공개공지) | `06-gate.js` | GATE BLINE (설명 칸은 10-panel-plan.js blineSection·bindBline) |
+| 화면 상태·예시/지도 전환·출처 줄(구역명 칸)·실제 지도 그리기 | `07-state-map.js` | S setSource renderSourceBar LM initLeaflet drawLeaflet |
+| 개략 배치 지도(배치 엔진 작업 스레드)·지도 그리기·꼭짓점 편집·GeoJSON·예시 지적도 SVG | `08-arch.js` | ARCHLAY startMapDraw toggleEdit parcelFill drawSvg |
+| 오른쪽 설명 칸 ①: 단계 이동·구역 현황·요건판정·계획·작성 안내·도면 | `09-panel.js` | render stepNav syncTitle renderZone renderReq renderPlan drawingSection |
+| 오른쪽 설명 칸 ②: 기반시설·혼합·넘겨주기·개략 배치·출입구·자동 진행·사업성·적용 기준 | `10-panel-plan.js` | infraSection bindInfra renderArch AUTO gateSection renderBiz renderRules |
+| 구역계 만들기 도구(지번·조서·필지 맞추기·참고 도면)·구역계 자르기 | `11-zonetool.js` | ZK CUT |
+| 버튼·단축키 연결, 기준 파일(incheon.json·criteria) 읽기, 화면 크기 조절, 도구 설명 줄, 시작 | `12-events.js` | syncMode endDraw CRIT ARCHC legalPark |
+- 이름이 어느 파일에 있는지 모르면 `grep -n "function 이름\|const 이름" urban/js/*.js` — 파일을 통째로 읽지 말 것
+- 새 함수·변수를 만들기 전에 같은 이름이 있는지 먼저 grep(쪼갤 때 같은 이름 함수 parcelFill이 두 곳에 있어 앞의 것이 한 번도 쓰이지 않던 것을 발견함)
+- 다른 파일 이름을 '불러오는 순간'(최상위 호출·바로 실행 함수) 쓰면 그 파일보다 뒤 파일에 둘 것 → `node tools/check-urban-order.js`가 잡음
+- 파일이 6만 자를 넘게 커지면 기능 단위로 다시 나눌 것(번호 사이에 끼우고 index.html·이 표·check-urban-order 통과)
 - 지도에서 안(A~E)별 구역계 → 연속지적·GIS건물·토지특성·건축물대장 자동 조회 → 요건판정·정비계획·개략 배치·사업성
 - 정비기반시설은 도정법 제2조제4호·영 제3조 범위만(도로·공원·녹지·공용주차장·공공공지·광장 등). 학교·공공청사·종교용지는 '정비기반시설 아님'으로 따로 셈(무상귀속 면적에서 제외)
 - 확보 목표 = 무상양도 균형(용도폐지되는 '설치된' 국공유 기반시설 중 사용 중 면적, 건물 점유 제외 — 도정법 제97조③). 미집행 결정선은 설치된 시설이 아니므로 확보 목표·상쇄 어디에도 넣지 않고 '추후 할 일'(todoSection)에만 남김
@@ -37,19 +59,23 @@
   - 개략 사업성 공통 계산(2026-11-01): `shared/feas.js`(JbsFeas) 하나를 첫 화면(★빠른 사업성·사업성 가정값 창)과 /urban 4·5탭이 같이 씀 — 세대수(units: 용적률 연면적×주거비율÷평균 공급면적, 임대 49㎡형)와 돈 계산(money). 가정값(분양가·공사비·평형/임대 비율·기반시설 평균/보수 비율 등)은 localStorage 'jbs-feas-assume-v1' 한 곳에 저장해 두 화면이 같은 값을 씀. 두 화면에 따로 가정값·식을 다시 만들지 말 것. 같은 조건 비교 시험: `_비공개/지시문/test-same.js`
   - 화면·출력 2단 원칙(2026-11-01, 사용자 결정): 옵션의 의미·산식·근거·가정값 설명은 '검토자(관리자)' 화면과 검토자용 검토서에만 둔다. 일반 사용자 화면·사용자용 검토서에는 결과와 주요 숫자만, 안내는 '인허가 및 심의 과정에서 변동될 수 있습니다' 한 줄. 컨설팅 때 검토자가 설명하는 구조이므로 사용자 화면에 해설을 늘리지 말 것. 예정 옵션: 동 형태(판상·ㄱ자·Y자·혼합), 평면 타입(4베이·3베이·타워), 최고 층수, 동 간격, 대지경계 완충(없음·소도로·녹지·공공 — 닥터빌드 AiCON 방식, 경계선별 세부 지정은 /arch 기존 기능), 조경·녹지율, 주차(세대당 대수·대당 면적 → 지하층·공사비)
   - 평형 구성(2026-11-01): 4탭 평형 칸은 `shared/criteria/arch.json` '평면' 숫자 키(39~114)로 만들고 '평형구성_예시'를 버튼으로. 비율은 공통 가정값 mixNN(JbsFeas.mixOf — 0인 평형은 빠짐), 예전 59·84·114 저장값 그대로 읽힘. 첫 화면은 59·114 손잡이 + 84가 나머지, /urban에서 고른 다른 평형도 함께 셈
-  - 4탭 결과는 JbsSite.applyUrbanPlan으로 검토서 도구에 넘김(?urban=키&make=1). byType {전용㎡: 세대}(임대는 49㎡형에 더함). 주차 가정은 법정 하한(criteria/traffic.json parking_housing, 60㎡ 이하 0.7대) — 숫자를 urban.js에 넣지 말 것
+  - 4탭 결과는 JbsSite.applyUrbanPlan으로 검토서 도구에 넘김(?urban=키&make=1). byType {전용㎡: 세대}(임대는 49㎡형에 더함). 주차 가정은 법정 하한(criteria/traffic.json parking_housing, 60㎡ 이하 0.7대) — 숫자를 urban/js에 넣지 말 것
   - 등급 표 ROADCLS = 도시·군계획시설규칙 제9조제2호(원문 대조). 확보 목표·상한용적률 도달 부족분은 fillGuide/shortGuide로 공원·녹지 → 공공공지 → 구역 안 도로(✂) 순 '안내'만(자동 적용은 공원 면적 버튼만, sz.park). 경계 도로를 넓혀 면적 채우는 기능(widenShort·fillSuggest·widenByChar)은 없앰 — 다시 넣지 말 것. 무상양도 금액 기준이 충족이면 면적 부족은 참고로만 보임
   - 부분 확폭(병목): 구역에 닿은 길이 < 30m 또는 도로 필지 길이(≈면적÷폭)의 50% 미만이면 partial → 진입도로가 아니면 자동 추천 '현황 유지', 직접 넓히면 추천 근거에 병목 경고, 지도엔 빗금+점선(검토용)
   - 진입도로 자동 후보는 구역에 10m 이상 닿은 도로만
-- 요건판정 탭 '관련 평가 대상(개략)'은 shared/criteria(traffic·environment) 값을 읽음 — 숫자를 urban.js에 넣지 말 것
+- 요건판정 탭 '관련 평가 대상(개략)'은 shared/criteria(traffic·environment) 값을 읽음 — 숫자를 urban/js에 넣지 말 것
 - 2030 기본계획 변경 고시(인천광역시고시 제2026-96호, 2026. 4. 27.) 원문 반영: 용적률 체계·동의율·확장 120% 'verified'. 적용 용적률 '산식(공공시설 제공)' = 허용 + 1.5×(새 공공시설 − 기정 도시계획시설)/획지×기준(학교·공공청사 부지 1.0), 상한 이내(farCalcOf) — 차감은 '용도폐지되는 설치된 기존 공공시설'만(존치·미집행 결정선은 빼지 않음, 사용자 실무 판단. 원문 '기정 도시계획시설 차감'은 인천시 산정 사례로 확인 필요). 구역 안 기존 공원은 기존 면적 이상(parkExist). 용도지역 상향 입지요건(zone_upgrade_location) 경계 도로 계획 폭으로 1차 확인
-- 기반시설 배치 방식(2026-11-01): `urban/placefit.js`(PlaceFit, 순수 계산·turf 6.5) + urban.js `FITUI`(화면). z.infra.fit[park|school] = { mode: auto·wrap(감싸기)·clean(곧게, ㄱ자)·sketch(지도에 손으로 긋기 또는 꼭짓점 찍어 그리기 FITUI.drawPoly — 반듯한 모양, 크기는 가운데 기준 같은 비율 확대·축소(transformScale)로 맞춰 변·각 유지. 끝이 벌어진 선 한 줄(손 그리기·올린 손그림 — readSheet strokeLine)은 '나누는 선'(cutBy): 구역을 갈라 작은 쪽을 시설로, 면적은 선을 평행 이동해 맞춤)·upload(스케치 용지 PNG 내려받기 → 색 펜 손그림 올리기), anchor(rel 종교용지·park 공원·edge 구역 경계 — 2026-11-06 한 필지 재건축처럼 기준 시설이 없으면 edge: 그 방향을 향한 가장 긴 경계(12° 안으로 이어진 변은 하나로 묶음)를 따라 같은 폭 띠를 안쪽으로, 폭을 이분 탐색해 면적을 맞춤 — PlaceFit.edge. 예전처럼 구역 끝에서 수평선을 밀면 기울어진 구역에서 세모 조각이 생겼음), dir, sketch, keepSize, sheet }. auto가 아니면 INFRA.block(정사각형) 대신 그 방식으로 놓고 결과 문장(fitMsg)을 보여 줌, 공원 띠 묶기(pairBand)는 건너뜀. 시설을 끌어 옮기면 mode는 auto로. 놓은 자리에서 15m 넘게 밀려나면 '옮겼습니다' 대신 사실대로 알림. 올린 손그림 파일은 모양만 읽고 저장·전송하지 않음. 시험: `NODE_PATH=<turf 6.5 설치 폴더>/node_modules node urban/test-placefit.js`
+- 기반시설 배치 방식(2026-11-01): `urban/placefit.js`(PlaceFit, 순수 계산·turf 6.5) + urban/js/05-fitui.js `FITUI`(화면). z.infra.fit[park|school] = { mode: auto·wrap(감싸기)·clean(곧게, ㄱ자)·sketch(지도에 손으로 긋기 또는 꼭짓점 찍어 그리기 FITUI.drawPoly — 반듯한 모양, 크기는 가운데 기준 같은 비율 확대·축소(transformScale)로 맞춰 변·각 유지. 끝이 벌어진 선 한 줄(손 그리기·올린 손그림 — readSheet strokeLine)은 '나누는 선'(cutBy): 구역을 갈라 작은 쪽을 시설로, 면적은 선을 평행 이동해 맞춤)·upload(스케치 용지 PNG 내려받기 → 색 펜 손그림 올리기), anchor(rel 종교용지·park 공원·edge 구역 경계 — 2026-11-06 한 필지 재건축처럼 기준 시설이 없으면 edge: 그 방향을 향한 가장 긴 경계(12° 안으로 이어진 변은 하나로 묶음)를 따라 같은 폭 띠를 안쪽으로, 폭을 이분 탐색해 면적을 맞춤 — PlaceFit.edge. 예전처럼 구역 끝에서 수평선을 밀면 기울어진 구역에서 세모 조각이 생겼음), dir, sketch, keepSize, sheet }. auto가 아니면 INFRA.block(정사각형) 대신 그 방식으로 놓고 결과 문장(fitMsg)을 보여 줌, 공원 띠 묶기(pairBand)는 건너뜀. 시설을 끌어 옮기면 mode는 auto로. 놓은 자리에서 15m 넘게 밀려나면 '옮겼습니다' 대신 사실대로 알림. 올린 손그림 파일은 모양만 읽고 저장·전송하지 않음. 시험: `NODE_PATH=<turf 6.5 설치 폴더>/node_modules node urban/test-placefit.js`
 - 정비기반시설도 올리기(2026-11-02, 사용자 결정): 구역지정·심의·사업시행인가가 끝난 구역처럼 정비기반시설 계획도가 있으면 3탭 '기반시설도 올리기'(P.infraMode='drawing')로 CAD(DXF, 측량 좌표 닫힌 폴리선 — ZoneKit.readDxfAll)·GeoJSON을 올려 그대로 계산. z.infra.plan={name, at, crs, feats:[{layer, geom}], kinds:{레이어: 종류}}, 레이어 이름으로 종류 자동 추정(ZoneKit.infraKind, 화면에서 고침). CAD에서 내보낸 PDF(폴리선이 살아 있는 PDF)는 '참고 도면 겹쳐 보기'(RefOverlay)로 올려 두 점으로 맞춘 뒤 [겹쳐 맞춘 PDF에서 가져오기] — RefOverlay.pdfVectors가 pdf.js 연산 목록에서 닫힌 도형을 읽고(PDF 레이어(OCG) 이름, 없으면 '색 #rrggbb'로 묶음) vectorsLL이 맞춘 변환으로 경위도로 바꿈. 스캔 PDF·그림은 안 됨. INFRA.compute가 자동 배치 대신 도면 도형을 씀(구역 안만, 겹치면 도로→공원→녹지→그 밖→학교→종교→공공청사 순). 화면에 '자동 제안 ↔ 정비기반시설도' 비교표, [실제 사례로 저장] → JbsCases(사업성 화면 '실제 사례와 비교'와 같은 저장소). 목적: 실제 인가 구역과 자동값 차이 확인(반드시 거칠 검증 관문)
 - A~E는 한 사업의 여러 안(2026-11-04, 사용자 결정): ?from=main으로 넘길 때 지금 구역과 조금도 겹치지 않는 안은 다른 사업으로 보고 자동 백업(JbsWork.backup) 후 비움(묻지 않음), 남은 같은 사업 안은 A부터 당겨 씀. 구역명이 비면 사업성 화면 사업명으로
-- 4탭 개략 배치 지도(2026-11-04, 사용자 결정): urban.js ARCHLAY가 /arch와 같은 엔진(shared/arch-geom.js)을 Web Worker(urban/archlay-worker.js)로 돌려 실제 평면 모양 판상 동을 그림 — 대지 = 구역계, 건축 불가 = 3탭 기반시설(공원·도로·학교 등, 경계 이격), 변 성격은 /arch 자동 지정과 같은 규칙, 방향은 0°·긴 변 방향 중 빠른 추정으로 고름. 세대수 숫자는 여전히 개략식(배치 결과는 참고 줄로만). 실패하면 예전 네모(TOWERS) 그림. drawInfraLite가 기반시설·획지 경계를 함께 그림. arch-geom.js 판 번호를 올리면 urban/index.html과 archlay-worker.js의 ?v=도 맞출 것
-- 추천안 자동 진행(2026-11-04, 사용자 요구 '구역계만 정하면 출입구 추천안이 그냥 뜨고 그 추천에 따라 기반시설 → 교통성 검토로 이어져야, 아무것도 없으면 어렵다'): urban.js AUTO. ① 필지를 불러온 구역은 탭과 관계없이 주변 도로 자동 불러오기(AUTO.roads, 구역계마다 한 번) ② 출입구가 없으면 GATE.suggest/suggestFor 1순위로 주→부→주차장 출입구 자동 배치(g.auto, 지도 '추천 ○○'), 주출입구 = 진입도로 → 3탭 제안값이 그 기준으로 계산. z.infra.gateAuto = 구역계 bbox 키 — 같은 구역계에선 지워도 다시 안 넣음, 사용자가 하나라도 직접 놓거나 끌어 옮기면(auto 해제) 자동으로 안 바꿈, 구역계가 바뀌고 추천 출입구뿐이면 다시 추천 ③ 각 탭(사업성 탭 제외) h2 아래 '추천안 흐름' 카드: 출입구·정비기반시설·교통성 1차(traffic/traffic-calc.js TrafficCalc — /traffic과 같은 계산·기준표 CRIT.raw.traffic + 문장틀 CRIT.tplTraffic)·사업성 결과만, [바꾸기]·[검토서로]·[추천안 다시 받기]
+- 4탭 개략 배치 지도(2026-11-04, 사용자 결정): urban/js/08-arch.js ARCHLAY가 /arch와 같은 엔진(shared/arch-geom.js)을 Web Worker(urban/archlay-worker.js)로 돌려 실제 평면 모양 판상 동을 그림 — 대지 = 구역계, 건축 불가 = 3탭 기반시설(공원·도로·학교 등, 경계 이격), 변 성격은 /arch 자동 지정과 같은 규칙, 방향은 0°·긴 변 방향 중 빠른 추정으로 고름. 세대수 숫자는 여전히 개략식(배치 결과는 참고 줄로만). 실패하면 예전 네모(TOWERS) 그림. drawInfraLite가 기반시설·획지 경계를 함께 그림. arch-geom.js 판 번호를 올리면 urban/index.html과 archlay-worker.js의 ?v=도 맞출 것
+- 추천안 자동 진행(2026-11-04, 사용자 요구 '구역계만 정하면 출입구 추천안이 그냥 뜨고 그 추천에 따라 기반시설 → 교통성 검토로 이어져야, 아무것도 없으면 어렵다'): urban/js AUTO. ① 필지를 불러온 구역은 탭과 관계없이 주변 도로 자동 불러오기(AUTO.roads, 구역계마다 한 번) ② 출입구가 없으면 GATE.suggest/suggestFor 1순위로 주→부→주차장 출입구 자동 배치(g.auto, 지도 '추천 ○○'), 주출입구 = 진입도로 → 3탭 제안값이 그 기준으로 계산. z.infra.gateAuto = 구역계 bbox 키 — 같은 구역계에선 지워도 다시 안 넣음, 사용자가 하나라도 직접 놓거나 끌어 옮기면(auto 해제) 자동으로 안 바꿈, 구역계가 바뀌고 추천 출입구뿐이면 다시 추천 ③ 각 탭(사업성 탭 제외) h2 아래 '추천안 흐름' 카드: 출입구·정비기반시설·교통성 1차(traffic/traffic-calc.js TrafficCalc — /traffic과 같은 계산·기준표 CRIT.raw.traffic + 문장틀 CRIT.tplTraffic)·사업성 결과만, [바꾸기]·[검토서로]·[추천안 다시 받기]
   - 대로급 도로는 출입구 후보에서 뒤로(GATE.isBig = 추정 폭 25m 이상 또는 결정 등급 광로·대로 — 도로 필지가 조각나 폭이 작게 추정되는 경우가 있어 결정 등급도 봄, 2026-11-05 용현유원 A안에서 광로2류가 9.9m로 추정돼 주출입구로 뽑힌 일). 자동 배치 전에 INFRA.fetchEdgeDec를 한 번 먼저 돌림
   - 부출입구는 다른 도로 우선(보행용이라 간선도로 허용) → 대로급 뒤로. 주차장 출입구 1순위가 대로급이고 주출입구는 대로급이 아니면 자동으로 놓지 않고 z.infra.parkShared(주출입구와 같이 씀)
+- 건축선·출입 계획(2026-11-08, 사용자 요구 '건축한계선을 정하는 때 같이 정할 것을 출입구보다 먼저'): /urban 4탭 맨 위 blineSection(출입구 위) — 경계 도로(pnu)마다 건축한계선 m(기본 = arch.json 가정 roadSetback_m)·전면공지(보도형/조경형, 기본 폭 12m 이상 보도형)·차량출입(교차로 부근만 불허/전 구간 불허/허용 — 기본: 대로급은 다른 도로가 있으면 전 구간, 그 밖은 교차로 20m 안). 공공보행통로(서로 다른 도로를 잇는 200m 이상 직선이 구역 안을 지나면 가운데 관통안을 자동 추천, 폭 6m, 지도에서 두 점·지우기), 공개공지(공동주택은 의무 아님 — 건축법 시행령 제27조의2①, 직접 찍을 때만). 저장 z.infra.bl. 근거: 도정법 시행령 제8조제3항제6·7호. 거리·구간 수치는 지구단위계획 결정 전 가정값
+  - 연결: GATE.suggest·suggestFor(park)는 불허구간 밖만 / 직접 놓은 차량 출입구가 불허구간이면 검사표 '안 맞음' / 바꾸면 추천 출입구만 있을 때 다시 추천(gateAuto 지움) / 개략 배치(08-arch input) 도로변 이격 = 변별 건축한계선(간선도로변은 소음 이격과 큰 쪽), 공공보행통로·공개공지 = keep(건축 불가) / 출입구 자리 깊이도 그 변 건축한계선부터
+  - /arch 넘기기: site-store가 BLINE.exportOf(zone) → site.urbanBl(경위도 변·불허 t 구간·통로·공지). arch.js loadBl → blE(변별 sb·front·noCar)·blKeep. 도로변 이격·배치 keep·출입구(불허구간이면 부출입구로)·지도·배치도(arch-draw: 전면공지 채움, 건축한계선 붉은 파선, 소음 이격 회색, 불허구간 굵은 검은 선+눈금, 통로·공지)·검토서 줄
+  - 시험: `node tools/ui-test/bline-ui.js`(계산·설명 칸·지도 그림), `node tools/ui-test/arch-bline-ui.js`(/arch 반영·배치도)
 - 출입구 자리 = 건축 불가(2026-11-08, 사용자 요구 '정비계획·지구단위계획은 건축한계선을 두고, 출입구·차량출입구도 공간을 차지하니 그 자리에 아파트가 못 들어서야'): `shared/gate-zones.js`(GateZones) 하나를 /arch·/urban이 같이 씀. 출입구마다 경계 → 건축한계선(도로변 이격) → 안쪽 깊이까지 직사각형: 주출입구 = 문주·진입광장 15×20m, 주차장 출입구 = 지하 경사로 폭 7m × (지하 1층 높이 3.6m ÷ 17% + 완화 6m ≈ 27m, 주차장법 시행규칙 제6조제1항제5호·제11조① 준용), 부출입구 6×6m(값은 /arch 세부 조건에서 바꿈, 가정값). 배치 엔진에는 기반시설 exclude(경계 띄움 있음)와 따로 `site.keep`(경계 띄움 없음, GateZones.keepPoly로 1m 격자 오차 여유)으로 넘김 — arch-geom·simple-plan·site-plan·arch-check 네 곳이 읽음, arch-check는 '출입구·경사로 침범'(id gate). /arch 출입구는 종류(kind main·park·sub)를 가짐: 찍을 때 주→주차장→부 순, 찍힌 자리를 다시 누르면 종류가 바뀌다 지움. 배치도: 도로변 이격선을 '건축한계선 ○m' 붉은 파선으로, 문주(기둥 둘+지붕)·진입광장·경사로(오르내림 화살표)를 그림. 조감도(bird3d D.gates): 문주 유효 높이 5.5m(소방차 5m 이상). 시험: `node arch/test-gate.js`
 - 지도의 도시계획시설 결정선(주황 점선)은 기본 숨김, 범례의 '결정선(참고) 보기'(P.showFac)로 켬
 - 배치 탭 단지 출입구(GATE): z.infra.gates. 주출입구를 찍으면 15m 안 경계 도로(GATE.roadAt)를 z.infra.entryPnu로 — 진입도로 확폭·교통성 검토 진입도로가 주출입구 기준(2026-11-04 사용자 요구 '주출입구 계획이 있어야 출입구 확폭'). /arch는 site.urbanGates로 차량 출입구 초기값. 출입구 점은 끌어 옮김(GATE.move — 경계에 다시 붙이고 주출입구면 진입도로 다시 정함). 주출입구 추천(GATE.suggest, 2026-11-04 사용자 요구 '찍기 전에 추천'): 경계를 4m마다 훑어 3m 안에 닿은 도로별로 묶고, 병목 아님 → 제25조① 확폭 면적(닿은 길이×모자라는 폭) 적음 → 현황 넓음 순, 자리는 교차로·구간 끝에서 가장 먼 곳, 공원·녹지·종교·학교 등 획지 아닌 땅(GATE.facOf, 3m 버퍼)의 경계는 뺌 — 그런 땅에 놓인 출입구는 검사표에 '안 맞음'. 순서 추천(GATE.nextKind → suggestFor, 2026-11-04 사용자 요구): 주출입구가 적정(획지 경계·도로 닿음)하면 부출입구(제25조③ 두 번째 진입도로 → 주출입구와 다른 도로 → 주출입구에서 먼 자리), 그다음 주차장 출입구(6m 이상 → 교차로 30m 이상 → 주출입구와 다른 도로, 주출입구 30m·부출입구 20m 이상). 경계 훑기는 GATE.samples 한 곳(캐시). 일방통행·4m 미만·10m 미만 닿은 도로 제외. 지도에 점선 '추천 주출입구'(누르면 놓음), 확인 상자에 [추천 자리에 놓기]·2·3순위. 주출입구를 놓으면 gateEntryHtml이 진입도로 기준 폭·확폭 m·㎡·병목·다른 도로에 두면(개략)을 바로 보여 줌 부설주차장은 주차장법 시행규칙 제11조① 준용 조항만 '법정', 제5조제5호(횡단보도 5m 등)는 노외 기준이라 '참고'
@@ -65,11 +91,19 @@
 - **새 화면에서 사업명을 따로 저장하지 말 것.** 화면에 이름이 필요하면 JbsProject.name()을 읽고, 이름 칸을 만들면 JbsProject.setName을 부를 것. 새 페이지 <head>에 gate.js 다음 `<script src="/shared/project.js?v=…">`
 - 시험: `node tools/ui-test/project-ui.js`(23항목 — 처음 맞추기·화면 간 이어짐·열린 창 바로 바뀜·처음으로). 사업명·화면 연결을 건드렸으면 push 전에 반드시 통과
 
-## 수정 후 확인 순서
-1. `node --check js/<수정한 파일>.js`
-2. `index.html`의 `?v=` 번호 올리기 (모든 스크립트·CSS 같은 번호)
-3. 1~8탭을 차례로 열어 콘솔 오류가 없는지 확인 + `node tools/ui-test/project-ui.js`(화면 연결 시험, 실패 0이어야 함)
-4. 그다음 push
+## 수정 후 확인 순서(push 전에 전부, 2026-11-08 정리)
+1. `node --check <수정한 파일>.js`
+2. `node tools/bump-versions.js` — `?v=` 번호를 파일 내용 지문으로 모든 페이지·작업 스레드에 자동으로 맞춤. **손으로 번호를 올리지 말 것**(예전엔 손으로 올려 같은 파일이 페이지마다 다른 번호로 불렸음). `--check`는 검사만
+3. /urban을 고쳤으면 `node tools/check-urban-order.js`(파일 순서·이름 겹침)
+4. 화면 연결 시험: `node tools/ui-test/project-ui.js`(사업명 이어짐 23항목) · `node tools/ui-test/sync-ui.js`(두 컴퓨터 이어서 하기 17항목) — 실패 0
+5. /urban을 '옮기기·정리'만 했으면(기능 변경 없음) 고치기 전·후 동작 기록이 같아야 함: `node tools/ui-test/urban-ui.js . /tmp/전.json` → 고침 → `node tools/ui-test/urban-ui.js . /tmp/후.json` → `node tools/ui-test/urban-ui.js --비교 /tmp/전.json /tmp/후.json`(다름 0). 기능을 바꿨으면 다른 항목이 바꾼 곳뿐인지 확인
+6. 고친 화면의 기존 시험(tools/ui-test/*-ui.js) + 1~8탭 콘솔 오류 확인
+7. push 직전 `git pull --rebase` — 다른 대화가 같은 파일을 고쳤으면 합친 뒤 2~4를 다시
+
+## 다른 컴퓨터와 이어서 하기(shared/workfile.js checkNewer, 2026-11-08)
+- 작업은 바뀔 때마다 홈페이지(Firestore jbsWork)에 자동 버전으로 올라감(예전부터). 화면을 열 때(2.5초 뒤)·창으로 돌아올 때 홈페이지 최근 버전(기록 시각 at 기준)이 이 컴퓨터가 마지막으로 올린 것(jbsw:lastCloudHash)과 다르면 위쪽 띠 '다른 컴퓨터에서 더 최근에 저장한 작업' → [이어서 하기](안 올린 변경이 있으면 자동 백업 뒤) / [이 컴퓨터 것 계속](jbsw:skipHash, 다시 안 물음)
+- 띠가 떠 있는 동안은 자동 올리기를 멈춤(옛 작업이 맨 위에 올라가 다른 컴퓨터 것을 덮지 않게)
+- 작업 이름(guessName)은 공통 사업명 jbs.project.v1을 먼저 씀
 
 ## 주의
 - 사이트 전체 관리자 잠금(2026-11-02, 사용자 결정 — 아직 공개 전): 모든 페이지 <head> 맨 앞에 `<script src="/shared/gate.js"></script>` + robots noindex. 새 페이지를 만들면 반드시 넣을 것(/data는 자체 잠금). 관리자 = deepgreen7857@gmail.com, 로그인은 /data·/auction과 공유(jbslab-auction). 화면 잠금일 뿐 저장소가 공개라 코드·json은 GitHub·직접 주소로 보임 — 개인정보는 여전히 커밋 금지. 공개 시점에 gate.js 태그를 빼면 됨
@@ -125,7 +159,7 @@
 - 정비구역 지정 절차 서류(2026-11-08, 인계 남은 일 2): `shared/proc.js`(JbsProc — schedule·docs, 순수 계산, `node proc/test-proc.js`) + `/proc`(proc/index.html·proc.js·proc.css, 길잡이 9단계, /decision [지정 절차 서류] 버튼). 일정표(서면 통보 → 공람 공고·공람 30일 이상 → 설명회 → 구의회 60일 → 관계기관 30일 → 의견 검토 → 지정 신청(세 기한 중 가장 늦은 날) → 도시계획위원회 → 고시 → 국토부 보고) + 문서 7가지(주민 서면 통보문·공람 공고문·구의회 의견청취 의뢰·관계기관 협의 요청·주민의견 처리 결과표·정비구역 지정 신청·도시계획위원회 상정 안건 개요). 근거 2026-11-08 원문 대조: 도정법 제8조⑤·제15조①~④·제16조①~③, 영 제13조①~④, 규칙 제4조, 국토계획법 제30조①③, 인천 정비조례(설명회·공람 추가 절차 없음). 기간: 공람은 시작일 산입(민법 제157조 단서), 의회·협의 기한은 초일 불산입, 말일이 토·일·입력 공휴일이면 다음 날(제161조). '가정' 소요일(의견 검토 14일·신청 → 위원회 30일·위원회 → 고시 30일·통보 7일 전·설명회 공람 7일째)은 JbsProc.ASSUME. 정비계획 개요·토지이용·용적률·높이 표는 JbsDecision.build를 그대로 씀. 입력·고친 문서는 localStorage 'jbs-proc-v1'[siteId]{m, edits{문서id: HTML}} — 고친 문서는 다시 계산 안 함([자동으로 되돌리기]). 의회 '이름'은 m.council, 의회 '통지일'은 m.councilDate(화면 칸 council_d)
 - 고시용 지형도면(2026-11-08, 인계 남은 일 1): `shared/topo.js`(JbsTopo — 순수 계산, turf 6.5, `NODE_PATH=tools/ui-test/node_modules node topo/test-topo.js`) + `/topo`(topo/index.html·topo.js·topo.css, 길잡이 10단계, /decision [고시용 지형도면 만들기]). 근거 2026-11-08 원문 대조: 토지이용규제 기본법 제8조·영 제7조, 「지역·지구등의 지형도면 작성에 관한 지침」(국토교통부고시 제2026-360호, 2026. 7. 8.) 제6조②(직각좌표 — 인천 중부원점 EPSG:5186)·제8조②2호(경계가 지적선 기준이면 연속지적도에 명시)·제9조③(전산파일 SHAPE)·제10조(축척 1/500~1/1,500, 토지이음 PDF, 2매 이상 총괄도 1/5,000~1/50,000, 용지 A1, 표시는 개별 법령 도식 — 범례 색은 관례라 '확인 필요'). JbsTopo.tm = 경위도 → 중부원점 TM(Snyder 식, proj4와 0.5cm 안). model(site, 연속지적, {sb, dz}) = 구역·토지이용(/arch exclude + 나머지 획지)·연속지적·경계가 가로지르는 필지(cross)·건축한계선(획지 변 중 도로(구역 안 도로 + 구역 밖 지목 '도' 필지)를 향한 변만 sb m 안으로, 이어진 변은 교점) → sheets(A1 가로, 지도 칸 635×564㎜, 한 장에 들어가는 가장 큰 축척, 안 되면 1/1,200 도엽 + 총괄도, 구역이 안 지나는 도엽은 뺌) → svg(도엽 한 장: 지적·지번·칠·경계(정비구역 빨강·지구단위계획구역 파랑)·건축한계선·좌표 눈금(측량 X=북·Y=동)·표제란·범례·축척 막대·방위·작성 기준) / dxf(R12, 한글 \\U+ 표기, 레이어별) / shapes + zip(정비구역·토지이용계획·건축한계선 .shp·.shx·.dbf(UTF-8 + .cpg)·.prj). 연속지적은 화면에서 브이월드 LP_PA_CBND_BUBUN(구역 + 여유 m)로 받고 창 안에서만 기억(홈페이지에서는 자동). 입력은 localStorage 'jbs-topo-v1'[siteId]. 화면 시험 tools/ui-test/topo-ui.js(가짜 연속지적 주입)
 - 소유자별(종전자산 구간별) 분담금(2026-11-08, 인계 남은 일 3): `shared/owner-share.js`(JbsOwnerShare — fromProject(사업성 화면 state): 조합원 표 prior가 있으면 그것, 없으면 토지 조서를 소유자 이름으로 묶어 Calc.prior와 같은 식(공시지가 × 면적 × 배율, 재건축은 공동주택가격 × 배율), 국공유지 제외, 결과에 이름 없음 / bands: 1억 미만·1~2·2~3·3~5·5~10·10억 이상 구간별 인원·평균 종전자산·권리가액(× 추정비례율)·평형별 분담금, 명부 합계를 비례율 계산 종전자산(site.quick.prior)에 맞춰 같은 비율로 고침 / sameZone). /decision이 'jbsc.project.v1' 구역이 공통 구역과 같을 때만 결정조서 Ⅰ-5 '라. 종전자산 구간별 추정분담금' 표를 붙임(법 제9조①2의2는 '유형별'이라 개인별 표는 만들지 않음). 시험은 test-decision.js
-- 면적 환산 주의(2026-11-08 발견): 여러 화면(arch-geom.js·urban.js·placefit.js·review.js·auto-site.js)이 경위도 → m를 위도 1° = 110,540m(적도 값)·경도 1° = 111,320 × cos로 어림 → 인천(북위 37.5°)에서 남북 길이 약 0.37% 짧고 면적 약 0.5% 작음(시험 구역 34,180㎡ → 34,000㎡). decision.js projector만 타원체 식(위도 1° ≈ 110,950m)으로 고쳐 /topo(TM)와 0.002% 안으로 맞춤. 나머지는 기준값 시험(test-mix 등)이 바뀌므로 아직 그대로 — 고칠 때 시험 기준도 같이 갱신
+- 면적 환산 주의(2026-11-08 발견): 여러 화면(arch-geom.js·urban/js·placefit.js·review.js·auto-site.js)이 경위도 → m를 위도 1° = 110,540m(적도 값)·경도 1° = 111,320 × cos로 어림 → 인천(북위 37.5°)에서 남북 길이 약 0.37% 짧고 면적 약 0.5% 작음(시험 구역 34,180㎡ → 34,000㎡). decision.js projector만 타원체 식(위도 1° ≈ 110,950m)으로 고쳐 /topo(TM)와 0.002% 안으로 맞춤. 나머지는 기준값 시험(test-mix 등)이 바뀌므로 아직 그대로 — 고칠 때 시험 기준도 같이 갱신
 - /landscape 높이·경관계획: 정비구역 지정 단계 수준(높이·스카이라인·통경축·조망). /arch 확정안으로 입면·통경축 개방률·조망점 3D 그림 자동. 경관심의 수준 확장은 이 도구에서
 
 ## /safety 안전관리계획서 판독 (2026-11-07)

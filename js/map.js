@@ -872,9 +872,9 @@ const MapView = {
     }
     if (!list.length) { out.innerHTML = '<li class="muted">검색 결과가 없습니다. "○○구 ○○동 123-4"처럼 지번 주소나 도로명 주소로 다시 검색해 보세요.</li>'; return; }
 
-    // 첫 번째 결과로 바로 이동하고, 위치·용도지역을 개요에 자동 기록
+    // 첫 번째 결과로 바로 이동만 — 위치·용도지역은 대표 지번(1단계)이나 구역을 만들 때 기록(2026-11-08: 지도만 옮겨도 예전엔 개요 위치가 바뀌었음)
     this.goTo(list[0]);
-    Auto.location(list[0]);
+    if (!S.area.geojson && !S.meta.parcel) { S.area.center = [list[0].lat, list[0].lon]; App.persist(); }
     out.innerHTML = '';
     // 번지까지 쳤는데 정확한 위치를 찾지 못한 경우 알림
     const askedNumber = /\d+(-\d+)?\s*(번지)?\s*$/.test(q);

@@ -10,6 +10,25 @@
   const TYPE_HEX = { 39: 0xf6e7e1, 49: 0xf3ead2, 59: 0xf3e6c8, 74: 0xe2ead0, 84: 0xd9eadc, 101: 0xd6e3e8, 114: 0xdde5f1 };
   const GZ = window.GateZones;   // 출입구 자리(shared/gate-zones.js)
   let C = null, TC = null, site = null, pr = null, pts = null, tags = [], entries = [], exclude = [], exKinds = [], exFrom = '', lowEdges = [];
+  // /urban 건축선·출입 계획(site.urbanBl, 2026-11-08): blE[i] = 변 i의 { sb 건축한계선, front 전면공지, noCar [[t0,t1]] 차량출입 불허 } 또는 null, blKeep = 공공보행통로·공개공지(건축 불가)
+  let blE = [], blKeep = [];
+  function loadBl() {
+    blE = []; blKeep = []; const U = site && site.urbanBl; if (!U || !pts) return;
+    const E = G.edges(pts), P2 = ll => pr.to([ll[1], ll[0]]);
+    const segs = (U.edges || []).map(q => Object.assign({}, q, { A: P2(q.a), B: P2(q.b) }));
+    blE = E.map(e => {
+      const m = [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2];
+      const q = segs.find(sg => G.segDist(m, sg.A, sg.B) < 3); if (!q) return null;
+      // 넘겨받은 변 기준 불허 구간 → 이 변의 t(두 변이 거의 같음, 투영)
+      const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1], L2 = dx * dx + dy * dy || 1, tOf = p => Math.max(0, Math.min(1, ((p[0] - e.a[0]) * dx + (p[1] - e.a[1]) * dy) / L2));
+      const at = (t) => [q.A[0] + (q.B[0] - q.A[0]) * t, q.A[1] + (q.B[1] - q.A[1]) * t];
+      return { sb: +q.sb || 0, front: q.front, road: q.road, w: q.w, noCar: (q.noCar || []).map(([t0, t1]) => [tOf(at(t0)), tOf(at(t1))].sort((x, y) => x - y)).filter(r => r[1] - r[0] > 1e-3) };
+    });
+    blKeep = (U.walks || []).map(w => ({ kind: 'walk', poly: w.poly.map(P2), w: w.w })).concat((U.open || []).map(o => ({ kind: 'open', poly: o.poly.map(P2), area: o.area })));
+  }
+  const noCarAt = (i, t) => !!(blE[i] && blE[i].noCar.some(([a, b]) => t >= a - 1e-6 && t <= b + 1e-6));
+  // 불허 구간이면 같은 변에서 가장 가까운 허용 자리(없으면 그대로)
+  const allowedT = (i, t) => { if (!noCarAt(i, t)) return t; for (let d = 0.01; d < 1; d += 0.01) { if (t + d <= 0.98 && !noCarAt(i, t + d)) return t + d; if (t - d >= 0.02 && !noCarAt(i, t - d)) return t - d; } return t; };
   let alts = [], cur = 0, map, lyrSite, lyrEdges, lyrEx, lyrBld, mode = 'edge', v3 = null, sunRes = null, ctx = [];
 
   const msg = (t, bad) => { const m = $('#msg'); m.textContent = t; m.style.display = t ? 'block' : 'none'; m.style.background = bad ? 'var(--bad-soft)' : 'var(--accent-soft)'; };
@@ -113,12 +132,14 @@
   function cleanEntries() {
     entries = entries.filter(en => ['road', 'arterial'].includes(tags[en.edge])).slice(0, 4);
     entries.forEach((en, k) => { if (!GZ.NAME[en.kind]) en.kind = k === 0 ? 'main' : 'sub'; });   // 예전 저장값(종류 없음): 첫째 주출입구, 나머지 부출입구
+    entries.forEach(en => { if (en.kind !== 'sub' && noCarAt(en.edge, en.t)) en.kind = 'sub'; });   // 차량출입 불허구간(/urban 건축선·출입 계획)에는 보행 부출입구만
     let hasMain = false; entries.forEach(en => { if (en.kind === 'main') { if (hasMain) en.kind = 'sub'; hasMain = true; } });   // 주출입구는 하나만
     const tot = {}, cnt = {}; entries.forEach(en => { tot[en.kind] = (tot[en.kind] || 0) + 1; });
     entries.forEach(en => { cnt[en.kind] = (cnt[en.kind] || 0) + 1; en.label = GZ.NAME[en.kind] + (tot[en.kind] > 1 ? cnt[en.kind] : ''); });
   }
   const gateParams = () => { const p = P(); return { mainW: p.gMainW, mainD: p.gMainD, rampW: p.gRampW, rampH: p.gRampH, subW: p.gSubW }; };
-  const edgeSetbacks = () => { const p = P(); return tags.map(t => t === 'road' ? +p.roadSb : t === 'arterial' ? +p.artSb : +p.bndSb); };
+  const bsb = (i, d) => (blE[i] ? blE[i].sb : d);   // 도로변 건축한계선: /urban 건축선 계획 값이 있으면 그 값
+  const edgeSetbacks = () => { const p = P(); return tags.map((t, i) => t === 'road' ? bsb(i, +p.roadSb) : t === 'arterial' ? Math.max(bsb(i, 0), +p.artSb) : +p.bndSb); };
   // 출입구가 차지하는 땅(건축 불가) — 건축한계선(경계 이격) 안쪽까지 이어짐
   const gateZones = sb => (pts && tags && tags.length === pts.length ? GZ.build(G.edges(pts), entries, sb || edgeSetbacks(), gateParams()) : []);
   const GCOL = { main: '#c92a2a', park: '#1971c2', sub: '#e67700' };
@@ -149,7 +170,8 @@
           if (!['road', 'arterial'].includes(tags[i])) { msg(`이 변은 '${t.name}'입니다. 출입구는 도로 쪽 변(파랑·보라)에만 찍을 수 있습니다. 도로인데 색이 다르면 [경계 성격 바꾸기]로 먼저 바꾸세요.`, true); return; }
           if (entries.length >= 4) { msg('출입구는 4곳까지 찍을 수 있습니다. 기존 표시를 눌러(종류가 바뀌다 마지막에 지워짐) 지운 뒤 찍으세요.', true); return; }
           const has = k => entries.some(en => en.kind === k);
-          entries.push({ edge: i, t: t2, kind: !has('main') ? 'main' : !has('park') ? 'park' : 'sub' });
+          entries.push({ edge: i, t: t2, kind: noCarAt(i, t2) ? 'sub' : !has('main') ? 'main' : !has('park') ? 'park' : 'sub' });
+          if (noCarAt(i, t2)) setTimeout(() => msg('차량출입 불허구간(/urban 건축선·출입 계획, 굵은 검은 선)이라 보행 부출입구로 찍었습니다. 주출입구·주차장 출입구는 허용 구간에 찍으세요.', true), 0);
         }
         cleanEntries();
         msg(entries.length ? `출입구 ${entries.length}곳: ${entries.map(en => en.label).join(', ')} — 찍힌 자리를 다시 누르면 주출입구 → 주차장 출입구 → 부출입구 → 지움 순으로 바뀝니다. 각 출입구 자리(문주·진입광장, 지하 경사로)에는 동을 놓지 않습니다.` : '출입구를 모두 지웠습니다.');
@@ -159,6 +181,9 @@
     // 구역계: 적색 쇄선을 맨 위에
     L.polygon(pts.map(LL), { color: '#c8322b', weight: 2.5, dashArray: '12 4 2 4', fill: false, interactive: false }).addTo(lyrEdges);
     // 출입구 자리(건축 불가): 주출입구 = 문주·진입광장, 주차장 출입구 = 지하 경사로, 부출입구 = 보행 출입
+    // /urban 건축선·출입 계획: 차량출입 불허구간(굵은 검은 선), 공공보행통로(하늘색)·공개공지(분홍) — 건축 불가
+    E.forEach((e, i) => (blE[i] ? blE[i].noCar : []).forEach(([t0, t1]) => L.polyline([[e.a[0] + (e.b[0] - e.a[0]) * t0, e.a[1] + (e.b[1] - e.a[1]) * t0], [e.a[0] + (e.b[0] - e.a[0]) * t1, e.a[1] + (e.b[1] - e.a[1]) * t1]].map(LL), { color: '#212529', weight: 6, opacity: .85, interactive: false }).addTo(lyrEdges)));
+    blKeep.forEach(k => L.polygon(k.poly.map(LL), { color: k.kind === 'walk' ? '#1c7ed6' : '#d6336c', weight: 1.5, dashArray: '4 3', fillColor: k.kind === 'walk' ? '#74c0fc' : '#faa2c1', fillOpacity: .35, interactive: false }).addTo(lyrEdges));
     gateZones().forEach(z => {
       const c = GCOL[z.kind];
       L.polygon(z.poly.map(LL), { color: c, weight: 1.5, dashArray: '5 3', fillColor: c, fillOpacity: .16, interactive: false }).addTo(lyrEdges);
@@ -203,6 +228,7 @@
       (entryOK.length ? [...new Set(entryOK)] : [null]).forEach(nm => { if (ne.length >= 2) return; const x = pickEdge(nm); if (x && !ne.some(q => q.edge === x.i)) ne.push({ edge: x.i, t: 0.5, kind: ne.length ? 'park' : 'main' }); });
       // 진입 도로가 하나뿐이면 같은 변에 주출입구와 주차장 출입구를 떨어뜨려 둠(변이 60m 이상일 때 — 보행·차량 동선 분리)
       if (ne.length === 1 && E[ne[0].edge].len >= 60) { ne[0].t = 0.35; ne.push({ edge: ne[0].edge, t: 0.75, kind: 'park' }); }
+      ne.forEach(q => { if (q.kind !== 'sub') q.t = allowedT(q.edge, q.t); });   // 차량출입 불허구간 피함
       if (ne.length) { entries = ne; done.push(`출입구 ${ne.length}곳(${ne.map(q => GZ.NAME[q.kind]).join('·')}, ${entryOK.length ? '교통성 검토의 진입 가능 도로' : '가장 긴 도로 변'})`); }
     }
     const lsDone = applyLandscape(E, edgeRoad); if (lsDone.length) done.push(...lsDone);
@@ -361,6 +387,7 @@
     const a = site.arch || {};
     tags = (a.tags && a.tags.length === pts.length) ? a.tags.slice() : null;
     entries = a.entries || []; exclude = (a.exclude || []).map(ex => ex.map(pr.to)); exKinds = (a.exKinds || []).slice(); exFrom = a.exFrom || ''; lowEdges = (a.lowEdges || []).filter(i => i < pts.length);
+    loadBl();
     // /urban 4탭에서 찍은 단지 출입구(z.infra.gates)가 있고 여기서 아직 출입구를 안 정했으면 그대로 가져옴 — 주차장 출입구 우선, 없으면 주·부출입구
     if (!entries.length && Array.isArray(site.urbanGates) && site.urbanGates.length) {
       const gs = site.urbanGates.filter(g => g.kind === 'main').concat(site.urbanGates.filter(g => g.kind === 'park'), site.urbanGates.filter(g => g.kind === 'sub'));
@@ -444,7 +471,7 @@
   /* ---------- 배치 계산 ---------- */
   function buildInput() {
     const p = P(), A = Object.assign({}, C.가정, { floorHeight_m: +p.fh || C.가정.floorHeight_m, sideGap_m: +p.sideGap, supplyFactor: +p.sf, minFloors: +p.minFloors, maxFloors: +p.maxFloors, corner: Object.assign({}, C.가정.corner || {}, { mode: p.corner || 'min10' }) });
-    const sb = tags.map(t => t === 'road' ? +p.roadSb : t === 'arterial' ? +p.artSb : +p.bndSb);
+    const sb = tags.map((t, i) => t === 'road' ? bsb(i, +p.roadSb) : t === 'arterial' ? Math.max(bsb(i, 0), +p.artSb) : +p.bndSb);
     const siteA = num(p.siteArea) || G.area(pts);
     const exA = exclude.reduce((s, ex) => { try { const g = turf.intersect(turf.polygon([ex.concat([ex[0]]).map(pr.back)]), site.geojson.geometry ? site.geojson : turf.feature(site.geojson)); return s + (g ? turf.area(g) : 0); } catch (e) { return s + Math.abs(G.area(ex)); } }, 0);
     const lot = exclude.length ? siteA - exA : siteA * (1 - (+p.infra || 0) / 100);
@@ -452,7 +479,7 @@
     const zz = String(((site && site.profile) || {}).zoning || '') + ' ' + String(((site && site.v) || {}).zoning || '');
     const noSun = /준주거|상업|공업/.test(zz) && !/전용주거|일반주거|제[123]종/.test(zz);
     return {
-      site: { pts, tags: noSun ? tags.map(t => (t === 'north' ? 'boundary' : t)) : tags, setbacks: sb, exclude: exclude.concat(axisStrips(p)), keep: gateZones(sb).map(z => GZ.keepPoly(z)), noSun },
+      site: { pts, tags: noSun ? tags.map(t => (t === 'north' ? 'boundary' : t)) : tags, setbacks: sb, exclude: exclude.concat(axisStrips(p)), keep: gateZones(sb).map(z => GZ.keepPoly(z)).concat(blKeep.map(k => k.poly)), noSun },
       opt: { units: C.평면, lib: C.평면_라이브러리, winRatio: winRatio(), edgeW: edgeWidths(), assume: A, mix: Object.fromEntries(TYPES().map(t => [t, +p['m' + t] || 0]).filter(([, x]) => x > 0)), form: p.form === 'rec' ? recForm().form : p.form === 'compare' ? 'slab' : (p.form || 'slab'), spacing: +p.spacing, sun: crit('sunlight_north').이격, lot, far: +p.far, lowriseCap: +p.lowCap || 0, lowriseDist: +p.lowDist || 0, lowEdges: lowEdges.slice(), parkWidth: +p.parkW || 0, southBase: p.sunBase === 'south', exSetback: +p.bndSb || 0 },
       lot, exA, p,
     };
@@ -540,7 +567,7 @@
   let SW = null; const SWCB = {};
   function simpleWorker() {
     if (SW) return SW;
-    SW = new Worker('simple-worker.js?v=19');
+    SW = new Worker('simple-worker.js?v=a4cb93ec');
     SW.onmessage = e => { const f = SWCB[e.data.id]; delete SWCB[e.data.id]; if (f) f(e.data); };
     SW.onerror = ev => { Object.values(SWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(SWCB).forEach(k => delete SWCB[k]); SW = null; };
     return SW;
@@ -609,7 +636,7 @@
   let PW = null; const PWCB = {};
   async function runDeep(I) {
     msg('심화 배치 계산 중… 골격·구획·방향·높이·동 형태를 바꿔 가며 반복 탐색합니다(기본형 후보 포함, 탐색 90초 + 기본형 계산 — 보통 2~3분). 이 창을 닫지 마세요.');
-    if (!PW) { PW = new Worker('plan-worker.js?v=20'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
+    if (!PW) { PW = new Worker('plan-worker.js?v=93363d1b'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
     const id = Date.now() + Math.random();
     const res = await new Promise(ok => { PWCB[id] = ok; PW.postMessage({ id, site: I.site, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }) }); });
     if (!res.r || !res.r.variants.length) throw new Error(res.err || '심화 배치 안을 만들지 못했습니다');
@@ -717,7 +744,7 @@
   async function runRefine() {
     const A = alts[cur], btn = $('#refineBtn'); if (!A || !btn) return;
     const { I, opt } = riskOpt(), id = Date.now();
-    if (!RW) { RW = new Worker('refine-worker.js?v=4'); RW.onmessage = e => { const d = e.data; if (d.prog) { const f = RWPROG[d.id]; if (f) f(d.prog); return; } const f = RWCB[d.id]; delete RWCB[d.id]; delete RWPROG[d.id]; if (f) f(d); }; RW.onerror = ev => { Object.values(RWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); RWCB = {}; RWPROG = {}; RW = null; }; }
+    if (!RW) { RW = new Worker('refine-worker.js?v=87d5bfeb'); RW.onmessage = e => { const d = e.data; if (d.prog) { const f = RWPROG[d.id]; if (f) f(d.prog); return; } const f = RWCB[d.id]; delete RWCB[d.id]; delete RWPROG[d.id]; if (f) f(d); }; RW.onerror = ev => { Object.values(RWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); RWCB = {}; RWPROG = {}; RW = null; }; }
     btn.disabled = true; btn.textContent = '다듬는 중…';
     const blds = JSON.parse(JSON.stringify(A.buildings.map(b => { const o = {}; ['id', 'poly', 'parts', 'cores', 'units', 'divs', 'walls', 'center', 'angle', 'floors', 'form', 'n', 't', 'mixT', 'inner', 'vname', 'dname', 'notes', 'wingUnits', 'partWing', 'unitWing', 'wingFloors', 'partFl', 'unitFl'].forEach(k => { if (b[k] !== undefined && typeof b[k] !== 'function') o[k] = b[k]; }); return o; })));
     const res = await new Promise(ok => { RWCB[id] = ok; RWPROG[id] = s => { btn.textContent = `다듬는 중… 순 ${fmt(s.net)}세대 · ${s.n}개동 · ${Math.round(s.ms / 1000)}초`; }; RW.postMessage({ id, site: I.site, blds, opt: Object.assign({}, opt, { lat: pr ? pr.lat0 : 37.46 }), budget: 90000 }); });
@@ -764,7 +791,7 @@
     const on = $('#dimShow'); if (!on || !on.checked || !window.JbsCheck || !alts[cur]) return null;
     try { const I = buildInput(); return JbsCheck.dims(I.site, alts[cur].buildings, Object.assign({}, I.opt, { crit: C.items, dimAll: !!($('#dimAll') || {}).checked })); } catch (e) { console.warn('치수선', e); return null; }
   }
-  const planOpts = extra => Object.assign({ site: pts, tags, setbacks: buildInput().site.setbacks, exclude, exKinds, entries, gates: gateZones(), roadSb: +P().roadSb, artSb: +P().artSb, alt: alts[cur], title: site.name || '', coreW: C.가정.coreW_m, dims: planDims() }, extra || {});
+  const planOpts = extra => Object.assign({ site: pts, tags, setbacks: buildInput().site.setbacks, exclude, exKinds, entries, gates: gateZones(), roadSb: +P().roadSb, artSb: +P().artSb, bl: { edges: blE, keep: blKeep }, alt: alts[cur], title: site.name || '', coreW: C.가정.coreW_m, dims: planDims() }, extra || {});
   document.addEventListener('change', e => { if (e.target && (e.target.id === 'dimShow' || e.target.id === 'dimAll') && alts.length) renderPlan(); });
   function renderPlan() { $('#planSvg').innerHTML = D.sitePlan(planOpts()); renderRisk(); }
   function riskOpt() { const I = buildInput(), legalSp = +((crit('spacing_ratio') || {}).값) || I.opt.spacing; return { I, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46, spacing: Math.max(legalSp, I.opt.spacing) }) }; }
@@ -1043,6 +1070,7 @@
       <tr><th>도로·공원 사이</th><td>경계에 닿은 도로(실제 폭)·공원(폭 ${I.p.parkW}m)의 중심선을 인접 대지경계선으로 봄(공동주택) — 채광창·일조 모두<br><span class="note">${esc(crit('sun_open_space').근거)} — ${esc(crit('sun_open_space').상태)}</span></td></tr>
       ${(() => { const r = crit('window_relief'); return r ? `<tr><th>정비사업 완화</th><td>${Object.entries(r.값).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join('<br>')}<br><span class="note">${esc(r.근거)} — ${esc(r.상태)}</span></td></tr>` : ''; })()}
       <tr><th>건축한계선·경계 이격</th><td>도로변 건축한계선 ${I.p.roadSb}m · 간선도로변 ${I.p.artSb}m · 대지경계 이격 ${I.p.bndSb}m · 동 측면 ${I.p.sideGap}m <span class="note">(검토 가정값 — 정비계획·지구단위계획 결정도의 건축한계선이 있으면 그 값으로)</span></td></tr>
+      ${blE.some(Boolean) || blKeep.length ? `<tr><th>건축선·출입 계획(/urban)</th><td>${blE.map((b, i) => b ? `${esc(b.road || '도로')} 변: 건축한계선 ${fmt(b.sb, 1)}m · 전면공지 ${b.front === 'walk' ? '보도형' : '조경형'}${b.noCar.length ? ` · 차량출입 불허 ${fmt(b.noCar.reduce((m, [x, y]) => m + (y - x), 0) * G.edges(pts)[i].len, 0)}m` : ''}` : '').filter(Boolean).join('<br>')}${blKeep.length ? `<br>${blKeep.map(k => k.kind === 'walk' ? `공공보행통로 폭 ${fmt(k.w, 1)}m` : `공개공지 약 ${fmt(k.area, 0)}㎡`).join(' · ')}(동 배치 안 함)` : ''}<br><span class="note">정비계획 건축선에 관한 계획(도정법 시행령 제8조제3항제7호) — 거리·구간은 지구단위계획 결정 전 가정값</span></td></tr>` : ''}
       ${(() => { const zs = gateZones(); return zs.length ? `<tr><th>출입구 자리(건축 불가)</th><td>${zs.map(z => `${esc(z.name)} 폭 ${fmt(z.w, 1)}m × 건축한계선 안쪽 ${fmt(z.d, 1)}m${z.kind === 'park' ? `(지하 1층 바닥까지 ${gateParams().rampH}m ÷ 17% + 완화구간)` : z.kind === 'main' ? '(문주·진입광장)' : ''}`).join('<br>')}<br><span class="note">${esc(GZ.BASIS.park)}. 문주 유효 높이 5m 이상(소방차 통행, 건축법 시행령 제41조·소방청 가이드라인 참고)</span></td></tr>` : ''; })()}
       <tr><th>동 모서리 근접</th><td>${({ off: '안 봄', min10: '모든 동 사이 최소 10m', rec: '최소 10m + 채광창 벽 직각선 좌우 45° 안에서 보이면 높은 동 높이 × 0.5', all: '모서리끼리 모두 높은 동 높이 × 0.5(최소 10m)' })[I.p.corner || 'min10']} <span class="note">(실무 기준·가정값 — 법정 아님. 시행령 제86조③2호는 직각 방향으로 마주 보는 부분만 적용, 서울 건축조례 최소 이격 10m·0.5배 차용)</span></td></tr>
       <tr><th>층수 배분</th><td>북쪽 줄을 높게, 남쪽 줄을 낮게(남저북고). 저층 주거 인접 변 ${I.p.lowDist}m 안은 ${I.p.lowCap}층 이하</td></tr></table>`;

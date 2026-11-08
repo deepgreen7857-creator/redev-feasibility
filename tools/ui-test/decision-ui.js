@@ -12,6 +12,7 @@ const MAP = [[/leaflet\/1\.9\.4\/leaflet(\.min)?\.js/, 'leaflet/dist/leaflet.js'
   await pg.route('**/*', async r => {
     const u = r.request().url();
     if (/\/shared\/gate\.js/.test(u)) return r.fulfill({ contentType: 'application/javascript', body: '' });
+    if (/gstatic\.com\/firebasejs\//.test(u)) return r.fulfill({ contentType: 'application/javascript', headers: { 'Access-Control-Allow-Origin': '*' }, body: /firebase-auth/.test(u) ? 'export const getAuth=()=>({currentUser:null});export const onAuthStateChanged=(a,cb)=>{cb(null);return()=>{};};' : /firebase-app/.test(u) ? 'export const getApps=()=>[];export const getApp=()=>({});export const initializeApp=()=>({});' : 'export const getFirestore=()=>({});' });   // 홈페이지 저장(Firebase)은 '로그인 안 함'으로 흉내
     for (const [re, to] of MAP) { const m = u.match(re); if (m) { const f = NM + '/' + to.replace('$1', m[1] || ''); return r.fulfill({ contentType: f.endsWith('.css') ? 'text/css' : 'application/javascript', body: fs.readFileSync(f) }); } }
     if (/^http:\/\/localhost:8765\//.test(u)) return r.continue();
     return r.fulfill({ status: 204, body: '' });

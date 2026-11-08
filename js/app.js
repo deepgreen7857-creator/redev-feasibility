@@ -107,6 +107,11 @@ const Tabs = {
       </div>`;
     },
     refresh() {
+      // 2026-11-08: 대표 지번·구역 없이 '자동'으로 남은 위치·용도지역은 예전 값이라 비움(직접 쓴 값은 둠)
+      if (!S.meta.parcel && !S.area.geojson) {
+        if (S.meta.location && !S.meta.locationManual) S.meta.location = '';
+        if (S.meta.zoning && !S.meta.zoningManual) { S.meta.zoning = ''; S.meta.zoningList = []; }
+      }
       this.repInfo();
       // 용도지역 목록에 없는 값(자동으로 받은 세부 용도지역 등)도 고를 수 있게
       const sel = $('#zoningSelect');
@@ -155,12 +160,50 @@ const Tabs = {
       if (!/[시도]\s/.test(base)) { const pre = (String(S.meta.location || '').match(/^(\S+[시도]\s+\S+[구군시])/) || [])[1]; if (pre) base = pre + ' ' + base; }
       return { base, jibun: m[2].replace(/\s+/g, '') };
     },
+    // 2026-11-08 사용자 요구 '처음부터 구역계 지정이 매끄럽지 않아': 구역이 없으면 방법 세 가지만 먼저 보이고 나머지는 접어 둠
+    chooser(pp, label, make) {
+      const box = $('#addrParcelBox'); box.hidden = false;
+      const opt = (id, t, d, dis) => `<button type="button" class="zk-opt" id="${id}"${dis ? ' disabled style="opacity:.55"' : ''}><b>${t}</b><small>${d}</small></button>`;
+      box.innerHTML = `<div class="zk-choose"><h3>어떻게 구역을 정할까요?</h3>
+        ${pp ? `<p class="note" style="margin:0 0 2px">대표 지번: <b>${label}</b> <span class="note">(지도에 빨간 선)</span></p>` : `<p class="note warn" style="margin:0 0 2px">대표 지번이 없습니다 — ①·③은 <a href="#" id="zkGoOv">1단계에서 대표 지번</a>을 먼저 정하세요.</p>`}
+        ${opt('zkOne', '① 한 단지·한 필지', '재건축 아파트처럼 대표 지번 필지 하나가 구역', !pp)}
+        ${opt('zkList', '② 지번 목록(엑셀·파일)이 있음', '토지조서·고시문 지번을 붙여넣거나 파일로')}
+        ${opt('zkPick', '③ 지도에서 필지를 눌러 넣고 빼기', '대표 지번에서 시작해 누를 때마다 넣기·빼기', !pp)}
+        <p class="note" style="margin:8px 0 0">대략 그리기·면적으로 추정 등은 아래 '고급'에 있습니다.</p></div>`;
+      const on = (id, fn) => { const b = $('#' + id); if (b) b.onclick = e => { e.preventDefault(); fn(); }; };
+      on('zkGoOv', () => App.go('overview'));
+      if (make) { on('zkOne', () => make(false)); on('zkPick', () => make(true)); }
+      on('zkList', () => { const d = $('#zkJibun'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } const t = $('#jibunList'); if (t) setTimeout(() => t.focus(), 300); });
+    },
+    // 지도 아래 막대: 구역 면적·필지 수·[구역 지정 완료 → 빠른 사업성] — 오른쪽 상자 안을 스크롤하지 않아도 보이게
+    zoneBar() {
+      const bar = $('#zoneBar'); if (!bar) return;
+      if (!S.area.geojson) { bar.className = 'zone-bar'; bar.innerHTML = '<span>구역이 아직 없습니다 — 오른쪽 <b>어떻게 구역을 정할까요?</b>에서 방법을 고르세요.</span>'; return; }
+      const nL = S.lands.length, sig = this.zoneSig(), done = S.area.confirmedSig && S.area.confirmedSig === sig, holes = this.zoneHoles();
+      const area = Calc.siteArea(S);
+      const stat = `<span class="zb-stat">구역 면적 <b>${fmt(area)}㎡</b> (${fmt(area / 3.305785)}평) · 필지 <b>${fmt(nL)}</b>개${holes ? ` · <span class="warn">빈칸 ${holes}곳</span>` : ''}</span>`;
+      let act;
+      if (MapView.picking) act = `<span class="note">지도에서 더하거나 뺄 필지를 누르세요</span><button class="btn small on" id="zbPickEnd">필지 넣고 빼기 끝내기</button>`;
+      else if (done) act = `<span class="good">✓ 구역 지정 완료</span><button class="btn small" id="zbReopen">필지 다시 고치기</button><button class="btn small primary" id="zbNext">다음: 빠른 사업성 →</button>`;
+      else act = `<button class="btn small" id="zbAdd">필지 더 넣기·빼기</button><button class="btn small primary" id="zbDone">구역 지정 완료 → 빠른 사업성</button>`;
+      bar.className = 'zone-bar' + (done ? ' done' : '');
+      bar.innerHTML = stat + `<span class="zb-act">${act}</span>`;
+      const on = (id, fn) => { const b = $('#' + id); if (b) b.onclick = fn; };
+      on('zbPickEnd', () => { MapView.setPicking(false); this.refresh(); });
+      on('zbAdd', () => { const pz = $('#pickZone'); if (pz) pz.checked = true; MapView.setPicking(true); this.refresh(); });
+      on('zbReopen', () => { S.area.confirmedSig = ''; App.persist(); const pz = $('#pickZone'); if (pz) pz.checked = true; MapView.setPicking(true); this.refresh(); });
+      on('zbNext', () => App.go('quick'));
+      on('zbDone', () => {
+        if (holes && !confirm(`구역 안에 빈칸이 ${holes}곳 있습니다. 그대로 구역 지정을 마칠까요?`)) return;
+        S.area.confirmedSig = sig; S.area.confirmedAt = new Date().toLocaleString('sv-SE').slice(0, 16); App.persist(); App.go('quick');
+      });
+    },
     addrParcel() {
       const box = $('#addrParcelBox'); if (!box) return;
       const pp = this.parcelParts();
       if (pp && $('#jibunBase') && !$('#jibunBase').value) $('#jibunBase').value = pp.base;
       this.repMark(pp);
-      if (!pp) { box.hidden = true; return; }
+      if (!pp) { if (!S.area.geojson) this.chooser(null, '', null); else box.hidden = true; return; }
       const label = `${esc(pp.base)} ${esc(pp.jibun)}`;
       const BOX = 'border:1px solid #c8322b;border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#fff7f3';
       // 대표 지번(1단계에서 정함)으로 구역 만들기: 이 필지 하나로 / 이 필지에서 시작해 지도에서 필지 더하기
@@ -172,18 +215,7 @@ const Tabs = {
         if (thenAdd && S.area.geojson) MapView.setPicking(true);
         this.refresh();
       };
-      if (!S.area.geojson) {
-        box.hidden = false;
-        box.innerHTML = `<div style="${BOX}">
-          <h3 style="margin:0 0 4px">필지를 직접 지정하여 만들기</h3>
-          <p style="margin:0 0 6px">대표 지번: <b>${label}</b> <span class="note">(지도에 빨간 선)</span></p>
-          <button class="btn small primary" id="btnAddrParcel">이 필지로 구역 만들기</button>
-          <button class="btn small" id="btnAddrAdd">필지 추가하기</button>
-          <p class="note" style="margin:6px 0 0">재건축 단지처럼 이 필지 하나가 구역이면 [이 필지로 구역 만들기]. 여러 필지면 [필지 추가하기]를 누른 뒤 지도에서 더할 필지를 누르세요(누를 때마다 넣기·빼기). 아래 방법 1~3으로 그리거나 지번 목록으로 만들어도 됩니다.</p></div>`;
-        $('#btnAddrParcel').onclick = () => make(false);
-        $('#btnAddrAdd').onclick = () => make(true);
-        return;
-      }
+      if (!S.area.geojson) { this.chooser(pp, label, make); return; }
       // 구역은 있는데 대표 지번이 그 안에 없으면(다른 곳의 예전 구역) 어떻게 할지 물음
       let outside = false;
       const pt = S.meta.addrPt;
@@ -299,7 +331,7 @@ const Tabs = {
       this.refresh();
     },
     refresh() {
-      this.addrParcel();
+      this.addrParcel(); this.zoneBar();
       $('#drawnArea').textContent = S.area.drawnArea ? `${fmt(S.area.drawnArea)}㎡` : '(없음)';
       $('#ledgerArea').textContent = S.lands.length ? `${fmt(Calc.landTotal(S), 1)}㎡` : '(조서 없음)';
       this.areaDiff();
@@ -341,9 +373,12 @@ const Tabs = {
     summary() {
       bindInputs($('.area-summary'));
       const mode = S.plan.infraMode;
-      $('#infraRatioBox').hidden = mode === 'area';
-      $('#infraAreaBox').hidden = mode !== 'area';
       const site = Calc.siteArea(S), inf = Calc.infra(S), net = Calc.netSite(S), gfa = Calc.gfa(S);
+      // 2026-11-08: 비율 칸은 계산에 실제로 쓰일 때만(비율 방식, 또는 조서·/urban 값이 없어 비율로 대신할 때) — 예전엔 안 쓰이는데도 20이 보였음
+      const useRatio = mode === 'ratio' || !!inf.fallback;
+      $('#infraRatioBox').hidden = !useRatio;
+      const rl = $('#infraRatioBox').firstChild; if (rl && rl.nodeType === 3) rl.textContent = mode === 'ratio' ? '기반시설 비율 (%)' : '조서·계획값이 없을 때 쓸 비율 (%)';
+      $('#infraAreaBox').hidden = mode !== 'area';
       const modeName = S.area.mode === 'ledger'
         ? (Calc.landTotal(S) > 0 ? '토지대장 면적 합계(편입면적 기준)' : '토지조서가 없어 지도에서 그린 면적')
         : { drawn: '연속지적 도형 면적(참고)', manual: '직접 입력' }[S.area.mode] || '';

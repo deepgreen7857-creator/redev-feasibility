@@ -11,6 +11,7 @@ const srv = http.createServer((q, s) => { let p = decodeURIComponent(q.url.split
   await pg.route('**/*', async r => {
     const u = r.request().url();
     if (/\/shared\/gate\.js/.test(u)) return r.fulfill({ contentType: 'application/javascript', body: '' });
+    if (/gstatic\.com\/firebasejs\//.test(u)) return r.fulfill({ contentType: 'application/javascript', headers: { 'Access-Control-Allow-Origin': '*' }, body: /firebase-auth/.test(u) ? 'export const getAuth=()=>({currentUser:null});export const onAuthStateChanged=(a,cb)=>{cb(null);return()=>{};};' : /firebase-app/.test(u) ? 'export const getApps=()=>[];export const getApp=()=>({});export const initializeApp=()=>({});' : 'export const getFirestore=()=>({});' });   // 홈페이지 저장(Firebase)은 '로그인 안 함'으로 흉내
     if (/Turf\.js\/6\.5\.0\/turf\.min\.js/.test(u)) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(NM + '/@turf/turf/turf.min.js') });
     if (/^http:\/\/localhost:8765\//.test(u)) return r.continue();
     return r.fulfill({ status: 204, body: '' });

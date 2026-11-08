@@ -58,12 +58,28 @@
       const k = Math.min(d, e.len * 0.25) / e.len, dx = b[0] - a[0], dy = b[1] - a[1];
       // 도로·간선도로 변의 이격선 = 건축한계선(정비계획·지구단위계획 표기처럼 붉은 파선 + 치수)
       const lim = ['road', 'arterial'].includes((o.tags || [])[i]);
-      s += `<line x1="${X(a[0] + dx * k)}" y1="${Y(a[1] + dy * k)}" x2="${X(b[0] - dx * k)}" y2="${Y(b[1] - dy * k)}" stroke="${lim ? '#c2255c' : '#9aa39d'}" stroke-width="${(lim ? 1.1 : 0.7) * u}" stroke-dasharray="${lim ? `${6 * u} ${2.5 * u}` : `${3 * u} ${2 * u}`}"/>`;
-      if (lim && e.len >= 40) {
-        const t0 = 0.25, mx = a[0] + dx * t0, my = a[1] + dy * t0;
-        let ang = Math.atan2(-(dy), dx) * 180 / Math.PI; if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
-        s += `<text x="${X(mx + n[0] * 2.2 * u)}" y="${Y(my + n[1] * 2.2 * u)}" transform="rotate(${ang.toFixed(1)} ${X(mx + n[0] * 2.2 * u)} ${Y(my + n[1] * 2.2 * u)})" font-size="${5 * u}" text-anchor="middle" fill="#c2255c" font-weight="600">건축한계선 ${fmt(d, 1)}m</text>`;
-      }
+      // /urban 건축선·출입 계획 값이 있으면 그 거리에 건축한계선, 배치 이격(소음 등)이 더 크면 회색 파선을 따로(2026-11-08)
+      const be = o.bl && o.bl.edges ? o.bl.edges[i] : null, dl = lim && be ? be.sb : d;
+      const ln = (dd, col, w, dash, label) => {
+        const a2 = [e.a[0] + n[0] * dd, e.a[1] + n[1] * dd], b2 = [e.b[0] + n[0] * dd, e.b[1] + n[1] * dd], kk = Math.min(dd, e.len * 0.25) / e.len, ddx = b2[0] - a2[0], ddy = b2[1] - a2[1];
+        let r = `<line x1="${X(a2[0] + ddx * kk)}" y1="${Y(a2[1] + ddy * kk)}" x2="${X(b2[0] - ddx * kk)}" y2="${Y(b2[1] - ddy * kk)}" stroke="${col}" stroke-width="${w * u}" stroke-dasharray="${dash}"/>`;
+        if (label && e.len >= 40) {
+          const t0 = label.t, mx = a2[0] + ddx * t0, my = a2[1] + ddy * t0;
+          let ang = Math.atan2(-(ddy), ddx) * 180 / Math.PI; if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
+          r += `<text x="${X(mx + n[0] * 2.2 * u)}" y="${Y(my + n[1] * 2.2 * u)}" transform="rotate(${ang.toFixed(1)} ${X(mx + n[0] * 2.2 * u)} ${Y(my + n[1] * 2.2 * u)})" font-size="${5 * u}" text-anchor="middle" fill="${col}" font-weight="600">${label.txt}</text>`;
+        }
+        return r;
+      };
+      if (lim && be && dl > 0) s += poly([e.a, e.b, [e.b[0] + n[0] * dl, e.b[1] + n[1] * dl], [e.a[0] + n[0] * dl, e.a[1] + n[1] * dl]], `fill="${be.front === 'walk' ? '#e9d8bf' : '#d3ebd3'}" stroke="none"`);   // 전면공지(보도형·조경형)
+      if (lim && dl > 0) s += ln(dl, '#c2255c', 1.1, `${6 * u} ${2.5 * u}`, { t: 0.25, txt: `건축한계선 ${fmt(dl, 1)}m` });
+      if (!lim) s += ln(d, '#9aa39d', 0.7, `${3 * u} ${2 * u}`, null);
+      else if (d > dl + 0.5) s += ln(d, '#868e96', 0.7, `${3 * u} ${2 * u}`, { t: 0.7, txt: `소음 이격 ${fmt(d, 1)}m` });
+    });
+    // 공공보행통로·공개공지(건축 불가)
+    ((o.bl && o.bl.keep) || []).forEach(k => {
+      s += poly(k.poly, k.kind === 'walk' ? `fill="#d0ebff" stroke="#1c7ed6" stroke-width="${0.6 * u}" stroke-dasharray="${2 * u} ${1.5 * u}"` : `fill="#ffdeeb" stroke="#d6336c" stroke-width="${0.6 * u}"`);
+      const c = k.poly.reduce((m, p) => [m[0] + p[0] / k.poly.length, m[1] + p[1] / k.poly.length], [0, 0]);
+      s += `<text x="${X(c[0])}" y="${Y(c[1])}" font-size="${5.5 * u}" text-anchor="middle" fill="${k.kind === 'walk' ? '#1864ab' : '#a61e4d'}" font-weight="700">${k.kind === 'walk' ? `공공보행통로(폭 ${fmt(k.w, 1)}m)` : '공개공지'}</text>`;
     });
     // 출입구 자리(건축 불가) — 주출입구: 문주(기둥 둘 + 지붕 점선)·진입광장 / 주차장 출입구: 지하 경사로(오르내림 화살표) / 부출입구: 보행 출입
     const GC = { main: '#c92a2a', park: '#1971c2', sub: '#e67700' };
@@ -99,6 +115,12 @@
       const t = TAG[o.tags[i]] || TAG.boundary, off = 2.2 * u;
       s += `<line x1="${X(e.a[0] + e.out[0] * off)}" y1="${Y(e.a[1] + e.out[1] * off)}" x2="${X(e.b[0] + e.out[0] * off)}" y2="${Y(e.b[1] + e.out[1] * off)}" stroke="${t.color}" stroke-width="${2.4 * u}" stroke-linecap="round" opacity=".85"/>`;
     });
+    // 차량출입 불허구간(/urban 건축선·출입 계획) — 변 성격 띠 바깥에 굵은 검은 선 + 짧은 눈금(지구단위계획 표기 흉내)
+    E.forEach((e, i) => { const be = o.bl && o.bl.edges ? o.bl.edges[i] : null; (be ? be.noCar : []).forEach(([t0, t1]) => {
+      const off = 5 * u, at = t => [e.a[0] + (e.b[0] - e.a[0]) * t + e.out[0] * off, e.a[1] + (e.b[1] - e.a[1]) * t + e.out[1] * off], p0 = at(t0), p1 = at(t1);
+      s += `<line x1="${X(p0[0])}" y1="${Y(p0[1])}" x2="${X(p1[0])}" y2="${Y(p1[1])}" stroke="#212529" stroke-width="${2.6 * u}"/>`;
+      const step = Math.max(0.02, 6 * u / (e.len || 1)); for (let t = t0; t <= t1 + 1e-9; t += step) { const q = at(t), r = [q[0] + e.out[0] * 2.5 * u, q[1] + e.out[1] * 2.5 * u]; s += `<line x1="${X(q[0])}" y1="${Y(q[1])}" x2="${X(r[0])}" y2="${Y(r[1])}" stroke="#212529" stroke-width="${0.8 * u}"/>`; }
+    }); });
     // 구역계(적색 일점쇄선)
     s += poly(pts, `fill="none" stroke="#c8322b" stroke-width="${1.6 * u}" stroke-dasharray="${9 * u} ${3 * u} ${2 * u} ${3 * u}"`);
     // 주동
@@ -153,6 +175,9 @@
     {
       let gx = sx, gy = ly - 11 * u; const it = (sw, nm) => { s += sw(gx, gy) + `<text x="${gx + 15 * u}" y="${gy + 2.3 * u}" font-size="${6.5 * u}">${nm}</text>`; gx += 20 * u + nm.length * 6.6 * u; };
       if ((o.tags || []).some(t => t === 'road' || t === 'arterial')) it((x, y) => `<line x1="${x}" y1="${y}" x2="${x + 12 * u}" y2="${y}" stroke="#c2255c" stroke-width="${1.1 * u}" stroke-dasharray="${4 * u} ${2 * u}"/>`, '건축한계선');
+      if (((o.bl && o.bl.edges) || []).some(b => b && b.noCar.length)) it((x, y) => `<line x1="${x}" y1="${y}" x2="${x + 12 * u}" y2="${y}" stroke="#212529" stroke-width="${2.4 * u}"/>`, '차량출입 불허구간');
+      if (((o.bl && o.bl.keep) || []).some(k => k.kind === 'walk')) it((x, y) => `<rect x="${x}" y="${y - 3 * u}" width="${12 * u}" height="${6 * u}" fill="#d0ebff" stroke="#1c7ed6" stroke-width="${0.6 * u}"/>`, '공공보행통로');
+      if (((o.bl && o.bl.keep) || []).some(k => k.kind === 'open')) it((x, y) => `<rect x="${x}" y="${y - 3 * u}" width="${12 * u}" height="${6 * u}" fill="#ffdeeb" stroke="#d6336c" stroke-width="${0.6 * u}"/>`, '공개공지');
       [...new Set((o.gates || []).map(z => z.kind))].forEach(k => it((x, y) => `<rect x="${x}" y="${y - 3 * u}" width="${12 * u}" height="${6 * u}" fill="${{ main: '#f4e7d8', park: '#dfe7ef', sub: '#fbecd9' }[k]}" stroke="${GC[k]}" stroke-width="${0.6 * u}"/>`, { main: '주출입구(문주·진입광장, 건축 불가)', park: '지하주차장 경사로(건축 불가)', sub: '부출입구' }[k]));
     }
     if (o.sunGrid) s += `<rect x="${lx + 50 * u}" y="${ly - 3 * u}" width="${6 * u}" height="${6 * u}" fill="#d9483b" opacity=".5"/><text x="${lx + 59 * u}" y="${ly + 2.3 * u}" font-size="${6.5 * u}">동지 일조 수인한도 ${o.context && o.context.length ? '새로 ' : ''}미달(판례 기준 참고)${o.context && o.context.length ? ' · 붉은 테 건물: 영향 받는 주변 주택' : ''}</text>`;

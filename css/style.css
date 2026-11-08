@@ -508,3 +508,18 @@ tr.qk-cur td:first-child { outline: 2px solid var(--ink); outline-offset: -2px; 
 .ov-check li.ok b { color: #1e7a46; }
 .ov-check li.todo b { color: #c25a12; }
 .ov-check.warn { border: 2px solid #c8322b; background: #fff7f3; }
+
+/* 2026-11-08 구역 만들기 정리: 방법 고르기·지도 아래 막대 */
+.zk-more { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin: 8px 0; background: #fbfcfd; }
+.zk-more > summary { cursor: pointer; font-weight: 600; font-size: 13.5px; }
+.zk-choose { border: 1px solid #c8322b; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; background: #fff7f3; }
+.zk-choose h3 { margin: 0 0 6px; font-size: 15px; }
+.zk-choose .zk-opt { display: block; width: 100%; text-align: left; margin: 6px 0 0; padding: 8px 10px; border: 1px solid #d8c4bc; border-radius: 6px; background: #fff; cursor: pointer; font: inherit; }
+.zk-choose .zk-opt:hover { border-color: #c8322b; }
+.zk-choose .zk-opt b { display: block; font-size: 14px; }
+.zk-choose .zk-opt small { color: #6b5a52; }
+.zone-bar { position: sticky; bottom: 58px; z-index: 500; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 10px 0 0; padding: 10px 14px; border: 1px solid #c9d3dc; border-radius: 8px; background: #fff; box-shadow: 0 -2px 10px rgba(0,0,0,.06); font-size: 14px; }
+.zone-bar .zb-stat b { font-size: 16px; }
+.zone-bar .zb-act { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.zone-bar.done { border-color: #8ccf9d; background: #f3fbf5; }
+.zone-bar .warn { color: #c92a2a; }
