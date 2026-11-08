@@ -620,8 +620,9 @@
       // 연면적이 가장 큰 후보의 97% 이상인 것 중 평형 비율이 가장 잘 맞는 것(같으면 연면적 큰 것)
       //  목표 연면적을 넘는 부분은 나중에 동을 빼서 맞추므로 비교에서는 목표까지만 셈
       const gv = c => Math.min(gfaOf(c), target > 0 ? target : Infinity), top = Math.max(...cands.map(gv));
+      // 혼합형은 탑상이 섞인 안이 있으면 연면적 7% 손해까지 받아들임(판상이 늘 연면적에 유리해 3%로는 탑상이 거의 안 뽑혔음)
       const towerShare = c => c.length ? c.filter(b => b.form === 'tower').length / c.length : 0, mixed = c => form === 'mix' && towerShare(c) >= 0.2 && towerShare(c) <= 0.7 ? 0 : 1;
-      const best = cands.filter(c => gv(c) >= top * 0.97).sort((a, b) => mixed(a) - mixed(b) || mixErr(a) - mixErr(b) || gfaOf(b) - gfaOf(a))[0];
+      const best = cands.filter(c => gv(c) >= top * (form === 'mix' && cands.some(c2 => !mixed(c2) && gv(c2) >= top * 0.93) ? 0.93 : 0.97)).sort((a, b) => mixed(a) - mixed(b) || mixErr(a) - mixErr(b) || gfaOf(b) - gfaOf(a))[0];
       if (typeof process !== 'undefined' && process.env && process.env.LOGW) console.error('F', F, cands.map(c => c.__k + ':' + Math.round(gv(c)) + '/' + mixErr(c).toFixed(2)).join(' '), '->', best.__k);
       return best;
     }
