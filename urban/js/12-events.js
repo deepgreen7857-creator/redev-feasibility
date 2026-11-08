@@ -5,7 +5,7 @@
 'use strict';
 /* ===== 이벤트 ===== */
 function syncMode() { document.querySelectorAll('[data-mode]').forEach(x => x.setAttribute('aria-pressed', x.dataset.mode === S.mode)); }
-// 사이트 길잡이(shared/sitenav.js) 2단 '정비계획 순서'에 지금 탭 표시(4탭 = 1 주출입구 설정, 3탭 = 2 정비기반시설 지정)
+// 사이트 길잡이(shared/sitenav.js) 2단 '정비계획 순서'에 지금 탭 표시(4탭 = 1 건축선·출입구 설정, 3탭 = 2 정비기반시설 지정)
 const navMark = () => { try { if (window.JbsNav) JbsNav.mark(S.tab); } catch (e) { /* 무시 */ } };
 setTimeout(navMark, 50);
 document.querySelectorAll('nav.steps button').forEach(b => b.addEventListener('click', () => setTimeout(navMark, 0)));
@@ -136,11 +136,11 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
   render();
   // 사업성 검토 '1차 재검토' → ?from=main: 사업성 검토 구역계·조서를 빈 안(없으면 새 안)으로 가져와 정비계획(기반시설) 탭을 엶
   const qs = new URLSearchParams(location.search);
-  // ?tab=plan|arch|… 로 그 탭을 바로 열고, ?focus=gate면 단지 출입구 칸으로 내려감(사업성 화면 순서 버튼에서 씀)
+  // ?tab=plan|arch|… 로 그 탭을 바로 열고, ?focus=gate면 단지 출입구 칸, ?focus=bline이면 건축선·출입 계획 칸으로 내려감(사업성 화면 순서 버튼에서 씀)
   if (qs.get('tab') && qs.get('from') !== 'main') {
     const tb = qs.get('tab'), fc = qs.get('focus');
     history.replaceState(null, '', location.pathname + location.hash);
-    setTimeout(() => { const b = document.querySelector(`nav.steps button[data-tab="${tb}"]`); if (b) b.click(); if (fc === 'gate') setTimeout(() => { const g = document.getElementById('gateBox'); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 400); }, 300);
+    setTimeout(() => { const b = document.querySelector(`nav.steps button[data-tab="${tb}"]`); if (b) b.click(); if (fc === 'gate' || fc === 'bline') setTimeout(() => { const g = document.getElementById(fc === 'bline' ? 'blBox' : 'gateBox') || document.getElementById('gateBox'); if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 400); }, 300);
   }
   if (qs.get('from') === 'main') {
     history.replaceState(null, '', location.pathname + location.hash);
