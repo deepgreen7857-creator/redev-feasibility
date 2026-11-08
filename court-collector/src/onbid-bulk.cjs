@@ -254,17 +254,20 @@ async function main() {
 
     // 6) 입찰결과목록: 최근 4일 개찰된 것 전부(채점 자료)
     const from = kst(new Date(Date.now() - 4 * 86400e3)).toISOString().slice(0, 10).replace(/-/g, '');
-    const parts = [...onbid.CAPITAL_SIDO.map((sido) => ({ sido, prptDivCd: onbid.PROPERTY_CODES })), { sido: null, prptDivCd: onbid.BANKRUPT_CODE }];
+    // 2026-11-09 점검: 수도권 밖 땅·섬(11.06부터 목록 수집)도 결과를 받는다 — 전에는 수도권·파산만 받아 수도권 밖 끝난 물건 결과가 7% 뿐이었음
+    const NATION = onbid.PROPERTY_CODES.split(',').filter((c) => c !== onbid.BANKRUPT_CODE).join(',');
+    const parts = [...onbid.CAPITAL_SIDO.map((sido) => ({ sido, prptDivCd: onbid.PROPERTY_CODES })), { sido: null, prptDivCd: onbid.BANKRUPT_CODE },
+      { sido: null, prptDivCd: NATION, keep: onbid.keepOutsideCapital, label: '수도권 밖 땅·섬' }];
     for (const part of parts) {
       for (let pageNo = 1; pageNo <= 50; pageNo++) {
         try {
           const page = await onbid.fetchResultPage({ ...part, from, to: TODAY, pageNo, serviceKey: KEY, fetcher: apiFetch });
-          const rows = page.rows.filter((r) => r.cltrMngNo).map(onbid.mapResultRow).filter((r) => !part.sido || !r.sido || r.sido === part.sido);
+          const rows = page.rows.filter((r) => r.cltrMngNo).map(onbid.mapResultRow).filter((r) => !part.sido || !r.sido || r.sido === part.sido).filter((r) => !part.keep || part.keep(r));
           appendJsonl('입찰결과목록.jsonl', rows);
           if (rows.length) await post({ action: 'onbidResultRows', rows });
           stats.resultRows += rows.length;
           if (!page.rows.length || pageNo * 100 >= (page.total || 0)) break;
-        } catch (e) { err(`결과목록 ${part.sido || '파산'}: ${e.message}`); break; }
+        } catch (e) { err(`결과목록 ${part.label || part.sido || '파산'}: ${e.message}`); break; }
       }
     }
     log(`입찰결과목록 ${stats.resultRows}행`);
