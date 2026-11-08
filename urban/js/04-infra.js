@@ -869,6 +869,7 @@ const INFRA = {
     const z = Z.zones[S.region]; if (!z) return;
     z.infra = z.infra || {};
     if (kind.startsWith('gate:')) { GATE.put(z, kind.slice(5), latlng); return; }
+    if (kind.startsWith('bl:')) { BLINE.place(z, kind.slice(3), latlng); return; }   // 건축선·출입 계획(공공보행통로·공개공지)
     z.infra[{ park: 'parkC', school: 'schoolC', religion: 'relC' }[kind]] = [latlng.lat, latlng.lng];
     // 시설을 옮기면 그 시설에 붙였던 획지는 풀어 줌(자리가 바뀌어 다른 땅이 붙지 않게)
     if (z.infra.addTo) z.infra.addTo = z.infra.addTo.filter(m => m.kind !== { park: 'park', school: 'school', religion: 'rel' }[kind]);

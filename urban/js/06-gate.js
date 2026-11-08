@@ -54,7 +54,7 @@ const GATE = {
   samples(z, inf) {
     const e = inf && inf.entry;
     if (!z || !z.roads || !z.geojson || !e) return null;
-    const key = [z.roads.at, e.W, inf.relArea || 0, inf.parkArea || 0, JSON.stringify(((z.infra || {}).fit) || {}), JSON.stringify(z.geojson.geometry || z.geojson).length, JSON.stringify(((z.infra || {}).edgeOpt) || {})].join('|');
+    const key = [z.roads.at, JSON.stringify(BLINE.get(z)), e.W, inf.relArea || 0, inf.parkArea || 0, JSON.stringify(((z.infra || {}).fit) || {}), JSON.stringify(z.geojson.geometry || z.geojson).length, JSON.stringify(((z.infra || {}).edgeOpt) || {})].join('|');
     if (this._smp && this._smp.k === key && this._smp.z === z) return this._smp.v;
     const ix = this.ixOf(z), eo = ((z.infra || {}).edgeOpt) || {}, by = new Map();
     this.lines(z.geojson).forEach(l => {
@@ -73,7 +73,7 @@ const GATE = {
   suggest(z, inf) {
     const by = this.samples(z, inf); if (!by) return [];
     const e = inf.entry, eo = ((z.infra || {}).edgeOpt) || {};
-    return [...by.values()].filter(o => o.s.length).map(o => {
+    return [...by.values()].map(o => ({ r: o.r, n: o.n, s: o.s.filter(q => !BLINE.noCar(z, o.r, q.dIx)) })).filter(o => o.s.length).map(o => {   // 차량출입 불허구간 밖에서만(BLINE)
       const b = o.s.reduce((m, q) => { const sc = Math.min(q.dIx, q.end); return !m || sc > m.sc ? { ...q, sc } : m; }, null);
       const q = e.per[o.r.pnu] || {}, front = q.front || o.n * 4, lack = Math.max(0, e.W - o.r.w);
       return { kind: 'main', pnu: o.r.pnu, jibun: o.r.jibun, w: o.r.w, dec: o.r.dec || '', pt: b.pt, dIx: b.dIx, front, lack, area: front * lack, partial: !!q.partial, oneway: !!(eo[o.r.pnu] || {}).oneway };
@@ -106,6 +106,7 @@ const GATE = {
       const same = !!(mr && mr.pnu === o.r.pnu);
       let b = null;
       o.s.forEach(q => {
+        if (kind === 'park' && BLINE.noCar(z, o.r, q.dIx)) return;   // 주차장 출입구는 차량출입 불허구간 밖에서만(부출입구는 보행이라 허용)
         const dm = dist(q.pt, main.pt), ds = subs.length ? Math.min(...subs.map(g => dist(q.pt, g.pt))) : 999;
         let sc;
         if (kind === 'sub') sc = Math.min(Math.min(dm, 150), q.end * 2, q.dIx * 2);
@@ -188,6 +189,8 @@ const GATE = {
         if (g.dIx != null) add('주출입구 ↔ 교차로', g.dIx < 5 ? 'ng' : g.dIx < 30 ? 'warn' : 'ok', `가장 가까운 경계 도로 교차(개략) ${fmt(g.dIx, 1)}m`, '도로교통법 제32조(모퉁이 5m 주정차 금지) 참고 · 교차로와 가까우면 교통 검토에서 이격 요구가 흔함', false);
       }
     });
+    // 차량출입 불허구간(건축선·출입 계획) 안의 차량 출입구
+    gates.filter(g => g.kind !== 'sub' && BLINE.noCarAt(z, g.pt)).forEach(g => add(this.KIND[g.kind] + ' ↔ 차량출입 불허구간', 'ng', '건축선·출입 계획의 차량출입 불허구간(지도의 굵은 검은 선) 안입니다. 허용 구간으로 옮기거나 그 도로의 차량출입 설정을 바꾸세요.', '정비계획 건축선·출입 계획(도정법 시행령 제8조제3항제7호, 지구단위계획 차량출입 불허구간)', false));
     // 부출입구
     if (ent && ent.mode === 3) {
       const ok2 = sub.some(g => g.r && ent.e2 && g.r.pnu === ent.e2.pnu) || main.some(g => g.r && ent.e2 && g.r.pnu === ent.e2.pnu);
@@ -218,13 +221,15 @@ const GATE = {
   draw(layer, a, pl) {
     const z = Z.zones[a.key]; if (!z) return;
     const col = { main: '#c92a2a', sub: '#e67700', park: '#1971c2' };
+    try { BLINE.draw(layer, z); } catch (e) { /* 그림만 빠짐 */ }
     // 출입구가 차지하는 땅(건축 불가 — 주출입구 문주·진입광장, 주차장 경사로, 부출입구). /arch·개략 배치와 같은 계산(shared/gate-zones.js, 2026-11-08)
     try {
       const G = window.ArchGeom, gg = z.geojson && (z.geojson.geometry || z.geojson), r0 = gg && (gg.type === 'Polygon' ? gg.coordinates[0] : gg.type === 'MultiPolygon' ? gg.coordinates[0][0] : null);
       if (G && window.GateZones && r0 && this.list(z).length) {
         const ring = G.openRing(r0), pr = G.projector(ring), pts = G.ccw(ring.map(pr.to)), E = G.edges(pts), sbR = (ARCHC && ARCHC.가정 && ARCHC.가정.roadSetback_m) || 3;
         this.list(z).forEach(g => { if (!g.pt) return; const q = pr.to([g.pt[1], g.pt[0]]), ne = GateZones.nearestEdge(E, q); if (!ne || ne.d > 30) return;
-          const zz = GateZones.zone(g.kind, q, E[ne.edge], sbR, {});
+          const bp = BLINE.proj(z), sbE = bp && bp.E.length === E.length && bp.edges[ne.edge].r ? bp.edges[ne.edge].sb : sbR;   // 그 변의 건축한계선
+          const zz = GateZones.zone(g.kind, q, E[ne.edge], sbE, {});
           L.polygon(zz.poly.map(p => pr.back(p).slice().reverse()), { color: col[g.kind], weight: 1.5, dashArray: '5 3', fillColor: col[g.kind], fillOpacity: 0.15, interactive: false }).addTo(layer); });
       }
     } catch (e) { /* 그림만 빠짐 */ }
@@ -257,3 +262,123 @@ const GATE = {
   },
 };
 
+/* ===== 건축선·출입 계획 BLINE (2026-11-08 사용자 요구) =====
+ "정비계획·지구단위계획은 건축한계선을 둔다 — 건축한계선을 정하는 때 같이 정할 것(차량출입 불허구간·전면공지·공공보행통로·공개공지)을 출입구보다 먼저"
+ 근거
+  - 도정법 시행령 제8조제3항제6호(정비기반시설 설치계획)·제7호(건축물의 건축선에 관한 계획) — 정비계획에 담을 사항
+  - 건축법 시행령 제27조의2① — 공개공지 의무는 문화집회·종교·판매·운수(여객)·업무·숙박 바닥면적 5천㎡ 이상(공동주택은 대상 아님 → 기본 없음, 상가 복합 등에서 직접 둠). 면적은 대지 10% 이하 범위에서 조례
+  - 건축한계선 거리·교차로 차량출입 불허 거리·공공보행통로 폭은 지구단위계획 결정 사항이라 법정 수치가 없음 → 가정값(바꿀 수 있음, '가정' 표시)
+ 저장: z.infra.bl = { sb:{pnu:m}, front:{pnu:'walk'|'green'}, car:{pnu:'ix'|'all'|'free'}, ixD, walkW, walks:[{a,b,w}]|undefined(자동), walkOff, open:[{pt,area}] }
+ 출입구 추천(GATE.suggest·suggestFor)은 주출입구·주차장 출입구를 차량출입 불허구간 밖에서만 고름(부출입구는 보행이라 허용) */
+const BLINE = {
+  DEF: { ixD: 20, walkW: 6, walkMin: 200 },
+  FRONT: { walk: '보도형(보도와 일체 포장·담장 없음)', green: '조경형(녹지·완충)' },
+  CAR: { ix: '교차로 부근만 불허', all: '전 구간 불허', free: '허용' },
+  st(z) { z.infra = z.infra || {}; return z.infra.bl || (z.infra.bl = {}); },
+  get(z) { return (z && z.infra && z.infra.bl) || {}; },
+  roads(z) { const m = new Map(); ((z && z.roads && z.roads.edge) || []).forEach(r => { if (r.pnu && !m.has(r.pnu)) m.set(r.pnu, r); }); return [...m.values()]; },
+  sbDef() { return (typeof ARCHC !== 'undefined' && ARCHC && ARCHC.가정 && num(ARCHC.가정.roadSetback_m)) || 3; },
+  sbOf(z, r) { const v = this.get(z).sb; return v && v[r.pnu] !== undefined && v[r.pnu] !== '' ? num(v[r.pnu]) : this.sbDef(); },
+  frontOf(z, r) { const v = (this.get(z).front || {})[r.pnu]; return v || (num(r.w) >= 12 ? 'walk' : 'green'); },
+  // 대로급(25m 이상·광로·대로 결정)은 다른 도로가 있으면 전 구간 불허(간선도로에 단지 차량 출입을 바로 내지 않음 — 가정)
+  carOf(z, r) { const v = (this.get(z).car || {})[r.pnu]; if (v) return v; return GATE.isBig(r) && this.roads(z).some(x => !GATE.isBig(x)) ? 'all' : 'ix'; },
+  ixD(z) { const v = this.get(z).ixD; return v !== undefined && v !== '' ? num(v) : this.DEF.ixD; },
+  walkW(z) { const v = this.get(z).walkW; return num(v) > 0 ? num(v) : this.DEF.walkW; },
+  // 경계 지점(도로 r에 닿음, 가장 가까운 교차로까지 dIx m)이 차량출입 불허인가
+  noCar(z, r, dIx) { if (!r) return false; const c = this.carOf(z, r); return c === 'all' || (c === 'ix' && dIx < this.ixD(z)); },
+  noCarAt(z, pt) { const r = GATE.roadAt(z, pt, 4); if (!r) return false; const ix = GATE.ixOf(z); const d = ix.length ? Math.min(...ix.map(x => turf.distance(turf.point([pt[1], pt[0]]), turf.point([x.pt[1], x.pt[0]]), { units: 'meters' }))) : 999; return this.noCar(z, r, d); },
+  // 미터 평면: 구역 테두리 변마다 닿은 도로·건축한계선·전면공지·불허 구간(t 범위) — 지도 그림·개략 배치·/arch 넘기기가 같이 씀
+  proj(z) {
+    const G = window.ArchGeom; if (!G || !z || !z.geojson) return null;
+    const gg = z.geojson.geometry || z.geojson, r0 = gg.type === 'Polygon' ? gg.coordinates[0] : gg.type === 'MultiPolygon' ? gg.coordinates.slice().sort((x, y) => turf.area(turf.polygon(y)) - turf.area(turf.polygon(x)))[0][0] : null;
+    if (!r0) return null;
+    const key = [JSON.stringify(r0).length, r0[0] && r0[0].join(','), (z.roads && z.roads.at) || '', JSON.stringify(this.get(z)), this.sbDef()].join('|');
+    if (this._p && this._p.k === key && this._p.z === z) return this._p.v;
+    const ring = G.openRing(r0), pr = G.projector(ring), pts = G.ccw(ring.map(pr.to)), E = G.edges(pts);
+    const ix = GATE.ixOf(z).map(x => pr.to([x.pt[1], x.pt[0]])), ll = p => { const q = pr.back(p); return [q[1], q[0]]; };
+    const edges = E.map(e => {
+      const m = [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2], r = GATE.roadAt(z, ll(m), 4);
+      if (!r) return { r: null, sb: 0, front: null, noCar: [] };
+      // 1m마다 불허 여부 → 연속 구간 [t0,t1]
+      const n = Math.max(2, Math.ceil(e.len)), runs = []; let st = null;
+      for (let k = 0; k <= n; k++) { const t = k / n, p = [e.a[0] + (e.b[0] - e.a[0]) * t, e.a[1] + (e.b[1] - e.a[1]) * t], d = ix.length ? Math.min(...ix.map(q => Math.hypot(q[0] - p[0], q[1] - p[1]))) : 999, nc = this.noCar(z, r, d);
+        if (nc && st === null) st = t; if (!nc && st !== null) { runs.push([st, t]); st = null; } }
+      if (st !== null) runs.push([st, 1]);
+      return { r, sb: this.sbOf(z, r), front: this.frontOf(z, r), noCar: runs.filter(q => (q[1] - q[0]) * e.len >= 1) };
+    });
+    const walks = this.walks(z).map(w => { const a = pr.to([w.a[1], w.a[0]]), b = pr.to([w.b[1], w.b[0]]); return Object.assign({}, w, { pa: a, pb: b, poly: this.band(a, b, num(w.w) || this.walkW(z)) }); });
+    const open = (this.get(z).open || []).map(o => { const q = pr.to([o.pt[1], o.pt[0]]), ne = window.GateZones ? GateZones.nearestEdge(E, q) : null; if (!ne) return null; const e = E[ne.edge], s = Math.sqrt(Math.max(10, num(o.area))), sb = edges[ne.edge].sb || 0;
+      const z0 = GateZones.zone('sub', q, e, sb, { subW: s, subD: s }); return Object.assign({}, o, { poly: [z0.q(-s / 2, sb), z0.q(s / 2, sb), z0.q(s / 2, sb + s), z0.q(-s / 2, sb + s)] }); }).filter(Boolean);
+    const v = { pr, pts, E, edges, walks, open, ll };
+    this._p = { k: key, z, v }; return v;
+  },
+  band(a, b, w) { const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, n = [-(b[1] - a[1]) / L * w / 2, (b[0] - a[0]) / L * w / 2]; return [[a[0] + n[0], a[1] + n[1]], [b[0] + n[0], b[1] + n[1]], [b[0] - n[0], b[1] - n[1]], [a[0] - n[0], a[1] - n[1]]]; },
+  // 공공보행통로: 사용자가 정한 것 → 없으면 자동 추천(서로 다른 도로 두 곳을 잇는 직선이 구역 안을 지나고 200m 이상일 때 — 큰 가구를 가로지르는 보행로, 가정)
+  //  고르는 순서: 통로 가운데가 구역 중심에 가까운 것(대각선으로 모서리를 잇지 않게) → 짧은 것
+  walks(z) { const s = this.get(z); if (Array.isArray(s.walks)) return s.walks; if (s.walkOff) return []; const w = this.walkSug(z); return w ? [w] : []; },
+  walkSug(z) {
+    const k = [(z.roads && z.roads.at) || '', JSON.stringify(z.geojson.geometry || z.geojson).length, this.walkW(z)].join('|');
+    if (this._w && this._w.k === k && this._w.z === z) return this._w.v;
+    let best = null;
+    try {
+      const pts = []; GATE.lines(z.geojson).forEach(l => { const len = turf.length(l, { units: 'meters' }); for (let d = 5; d < len; d += 10) { const c = turf.along(l, d, { units: 'meters' }).geometry.coordinates, pt = [c[1], c[0]], r = GATE.roadAt(z, pt, 3); if (r) pts.push({ pt, r }); } });
+      const poly = z.geojson.type === 'Feature' ? z.geojson : { type: 'Feature', properties: {}, geometry: z.geojson }, cen = turf.centroid(poly).geometry.coordinates;
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+        if (pts[i].r.pnu === pts[j].r.pnu) continue;
+        const d = turf.distance(turf.point([pts[i].pt[1], pts[i].pt[0]]), turf.point([pts[j].pt[1], pts[j].pt[0]]), { units: 'meters' });
+        if (d < this.DEF.walkMin) continue;
+        const cm = turf.distance(turf.point(cen), turf.point([(pts[i].pt[1] + pts[j].pt[1]) / 2, (pts[i].pt[0] + pts[j].pt[0]) / 2]), { units: 'meters' }), sc = cm * 3 + d;
+        if (best && sc >= best.sc) continue;
+        let inside = true; for (let f = 0.1; f < 0.95; f += 0.1) { const lat = pts[i].pt[0] + (pts[j].pt[0] - pts[i].pt[0]) * f, lng = pts[i].pt[1] + (pts[j].pt[1] - pts[i].pt[1]) * f; if (!turf.booleanPointInPolygon(turf.point([lng, lat]), poly)) { inside = false; break; } }
+        if (inside) best = { d, sc, a: pts[i].pt, b: pts[j].pt };
+      }
+    } catch (er) { best = null; }
+    const v = best ? { a: best.a, b: best.b, w: this.walkW(z), auto: true } : null;
+    this._w = { k, z, v }; return v;
+  },
+  // 지도 찍기: 공공보행통로는 두 점(경계에 붙음), 공개공지는 한 점
+  place(z, kind, latlng) {
+    const s = this.st(z), pt = GATE.snap(z, latlng);
+    if (kind === 'walk') {
+      if (!S.blFirst) { S.blFirst = pt; toast('공공보행통로의 다른 쪽 끝(구역 경계)을 누르세요', 4000); render(); return; }
+      s.walks = (Array.isArray(s.walks) ? s.walks : []).concat([{ a: S.blFirst, b: pt, w: this.walkW(z) }]); delete s.walkOff; S.blFirst = null;
+      toast('공공보행통로를 놓았습니다 — 이 자리에는 동을 놓지 않습니다', 3000);
+    } else if (kind === 'open') {
+      const a = analyze(S.region); s.open = (s.open || []).concat([{ pt, area: Math.round((a ? a.area : 10000) * 0.05) }]);
+      toast('공개공지를 놓았습니다(면적은 오른쪽 칸에서 바꿈)', 3000);
+    }
+    S.placing = null; $id('lmap').classList.remove('picking'); this.changed();
+  },
+  // 바꾸면: 추천 출입구만 있으면 새 불허 구간 기준으로 다시 추천(AUTO.ensure), 직접 놓은 출입구는 그대로 두고 검사표에서 알림
+  changed() { const z = Z.zones[S.region]; if (z && z.infra && !GATE.list(z).some(g => !g.auto)) delete z.infra.gateAuto; this._p = null; this._w = null; saveZ(); INFRA.memo = {}; GATE._smp = null; render(); },
+  // 지도 그림(정비계획 건축선·출입 계획도 표기): 건축한계선 붉은 파선, 전면공지(보도형 연갈색·조경형 연두), 차량출입 불허(굵은 검은 선), 공공보행통로(하늘색 띠), 공개공지(분홍)
+  draw(layer, z) {
+    const P0 = this.proj(z); if (!P0) return;
+    const LL = p => P0.ll(p);
+    P0.E.forEach((e, i) => {
+      const q = P0.edges[i]; if (!q.r) return;
+      const n = [-e.out[0], -e.out[1]], s = q.sb, A = [e.a[0] + n[0] * s, e.a[1] + n[1] * s], B = [e.b[0] + n[0] * s, e.b[1] + n[1] * s];
+      if (s > 0) {
+        L.polygon([e.a, e.b, B, A].map(LL), { stroke: false, fillColor: q.front === 'walk' ? '#d9b98c' : '#8fc98f', fillOpacity: 0.35, interactive: false }).addTo(layer);
+        L.polyline([A, B].map(LL), { color: '#c2255c', weight: 2, dashArray: '8 4' }).bindTooltip(`건축한계선 ${s}m — ${esc(q.r.jibun)} 도로(약 ${q.r.w}m) · 전면공지 ${this.FRONT[q.front]}`, { sticky: true }).addTo(layer);
+      }
+      q.noCar.forEach(([t0, t1]) => { const a = [e.a[0] + (e.b[0] - e.a[0]) * t0, e.a[1] + (e.b[1] - e.a[1]) * t0], b = [e.a[0] + (e.b[0] - e.a[0]) * t1, e.a[1] + (e.b[1] - e.a[1]) * t1];
+        L.polyline([a, b].map(LL), { color: '#212529', weight: 6, opacity: 0.85 }).bindTooltip(`차량출입 불허구간(${this.CAR[this.carOf(z, q.r)]}) — 주출입구·주차장 출입구를 두지 않음`, { sticky: true }).addTo(layer); });
+    });
+    P0.walks.forEach(w => L.polygon(w.poly.map(LL), { color: '#1c7ed6', weight: 1.5, dashArray: '4 3', fillColor: '#74c0fc', fillOpacity: 0.35 }).bindTooltip(`${w.auto ? '추천 ' : ''}공공보행통로 폭 ${num(w.w) || this.walkW(z)}m — 동 배치 안 함`, { sticky: true }).addTo(layer));
+    P0.open.forEach(o => L.polygon(o.poly.map(LL), { color: '#d6336c', weight: 1.5, fillColor: '#faa2c1', fillOpacity: 0.35 }).bindTooltip(`공개공지 약 ${fmt(o.area)}㎡ — 동 배치 안 함`, { sticky: true }).addTo(layer));
+    if (S.blFirst) L.circleMarker(S.blFirst, { radius: 7, color: '#1c7ed6', fillColor: '#fff', fillOpacity: 1, weight: 3 }).bindTooltip('공공보행통로 첫 점', { permanent: true }).addTo(layer);
+  },
+  // 개략 배치·/arch에 넘길 미터 평면 자료: 변별 건축한계선, 건축 불가(공공보행통로·공개공지)
+  keepPolys(z) { const P0 = this.proj(z); return P0 ? P0.walks.map(w => w.poly).concat(P0.open.map(o => o.poly)) : []; },
+  // /arch 넘기기(경위도): 변마다 양 끝·건축한계선·전면공지·불허 구간, 공공보행통로·공개공지 도형
+  exportOf(z) {
+    const P0 = this.proj(z); if (!P0) return null;
+    return {
+      at: new Date().toISOString(),
+      edges: P0.E.map((e, i) => { const q = P0.edges[i]; return q.r ? { a: P0.ll(e.a), b: P0.ll(e.b), sb: q.sb, front: q.front, noCar: q.noCar, road: q.r.jibun, w: q.r.w } : null; }).filter(Boolean),
+      walks: P0.walks.map(w => ({ poly: w.poly.map(P0.ll), w: num(w.w) || this.walkW(z), auto: !!w.auto })),
+      open: P0.open.map(o => ({ poly: o.poly.map(P0.ll), area: o.area })),
+    };
+  },
+};

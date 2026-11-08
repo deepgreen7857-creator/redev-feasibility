@@ -10,7 +10,7 @@
  - 계산은 화면을 그린 뒤 따로(setTimeout) 하고 결과를 기억(같은 조건이면 다시 계산 안 함) */
 const ARCHLAY = {
   memo: {}, busy: '',
-  key(a, pl) { const z = Z.zones[a.key] || {}; return [a.key, JSON.stringify(((z.infra || {}).gates || []).map(g => [g.kind, g.pt && g.pt.map(v => +(+v).toFixed(5))])), Math.round(pl.site), Math.round(pl.farUse), JSON.stringify(JbsFeas.mixOf(JbsFeas.get())), JSON.stringify((z.infra || {}).fit || {}), JSON.stringify(((pl.infra || {}).lots || []).map(l => Math.round(l.area || 0))), Math.round((pl.infra || {}).relArea || 0), P.infraMode, z.roads && z.roads.at].join('|'); },
+  key(a, pl) { const z = Z.zones[a.key] || {}; return [a.key, JSON.stringify(BLINE.get(z)), JSON.stringify(((z.infra || {}).gates || []).map(g => [g.kind, g.pt && g.pt.map(v => +(+v).toFixed(5))])), Math.round(pl.site), Math.round(pl.farUse), JSON.stringify(JbsFeas.mixOf(JbsFeas.get())), JSON.stringify((z.infra || {}).fit || {}), JSON.stringify(((pl.infra || {}).lots || []).map(l => Math.round(l.area || 0))), Math.round((pl.infra || {}).relArea || 0), P.infraMode, z.roads && z.roads.at].join('|'); },
   input(a, pl) {
     const C = ARCHC, G = window.ArchGeom, z = Z.zones[a.key];
     if (!C || !G || !C.평면 || !C.가정 || !z || !z.geojson) return null;
@@ -25,7 +25,9 @@ const ARCHLAY = {
       if (hit) return hit.w >= 20 ? 'arterial' : 'road';
       return e.out[1] > 0.6 && !/준주거|상업|공업/.test(String(a.zone || P.zone || '')) ? 'north' : 'boundary';   // 정북 일조는 전용·일반주거지역만(건축법 제61조①)
     });
-    const A0 = C.가정, sb = tags.map(t => t === 'road' ? A0.roadSetback_m : t === 'arterial' ? A0.arterialSetback_m : A0.boundarySetback_m);
+    // 도로변은 건축선·출입 계획(BLINE)의 변별 건축한계선. 간선도로변은 소음 이격과 큰 쪽(2026-11-08)
+    const A0 = C.가정, bp = BLINE.proj(z), bsb = i => (bp && bp.E.length === tags.length && bp.edges[i].r ? bp.edges[i].sb : A0.roadSetback_m);
+    const sb = tags.map((t, i) => t === 'road' ? bsb(i) : t === 'arterial' ? Math.max(bsb(i), A0.arterialSetback_m) : A0.boundarySetback_m);
     const inf = pl.infra || {}, exclude = [];
     [inf.parkGeom, inf.roadGeom, inf.schoolGeom, inf.relGeom, inf.pubB && inf.pubB.geom, inf.other && inf.other.geom, inf.green && inf.green.geom].forEach(gm => ringsOf(gm).forEach(rg => { const q = G.openRing(rg).map(pr.to); if (q.length >= 3) exclude.push(q); }));
     (inf.lots || []).filter(l => l.small && l.geom).forEach(l => ringsOf(l.geom).forEach(rg => exclude.push(G.openRing(rg).map(pr.to))));
@@ -34,7 +36,8 @@ const ARCHLAY = {
     const mix = {}; Object.entries(JbsFeas.mixOf(JbsFeas.get())).forEach(([t, v]) => { if (num(v) > 0 && C.평면[t]) mix[t] = num(v); });
     if (!Object.keys(mix).length) return null;
     // 단지 출입구 자리(주출입구 문주·진입광장, 주차장 경사로, 부출입구)는 건축 불가 — /arch와 같은 계산(shared/gate-zones.js, 2026-11-08)
-    const E0 = G.edges(pts), keep = !window.GateZones ? [] : ((z.infra && z.infra.gates) || []).filter(g => g.pt).map(g => { const q = pr.to([g.pt[1], g.pt[0]]), ne = GateZones.nearestEdge(E0, q); return ne && ne.d < 30 ? GateZones.keepPoly(GateZones.zone(g.kind, q, E0[ne.edge], sb[ne.edge], {})) : null; }).filter(Boolean);
+    const E0 = G.edges(pts), keep = !window.GateZones ? [] : ((z.infra && z.infra.gates) || []).filter(g => g.pt).map(g => { const q = pr.to([g.pt[1], g.pt[0]]), ne = GateZones.nearestEdge(E0, q); return ne && ne.d < 30 ? GateZones.keepPoly(GateZones.zone(g.kind, q, E0[ne.edge], sb[ne.edge], {})) : null; }).filter(Boolean)
+      .concat(bp && bp.E.length === tags.length ? BLINE.keepPolys(z) : []);   // 공공보행통로·공개공지(건축선·출입 계획)도 건축 불가
     return { pr, pts, site: { pts, tags, setbacks: sb, exclude, keep }, opt: { units: C.평면, lib: C.평면_라이브러리, assume: Object.assign({}, A0), mix, form: 'slab', spacing: 0.8, sun, lot: pl.site, far: pl.farUse, winRatio: win ? (/준주거|근린상업/.test(zoning) ? (win.값.근린상업_준주거_배수 || 4) : (win.값.배수 || 2)) : 0, edgeW: [], exSetback: A0.boundarySetback_m || 0 } };
   },
   cands(I) {

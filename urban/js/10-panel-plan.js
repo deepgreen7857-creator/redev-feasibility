@@ -193,7 +193,7 @@ function renderArch(a) {
   const pl = plan(a);
   // 출입구가 이 탭의 첫 할 일(정비계획 순서 1) — 맨 위에. 그 아래 개략 규모·평형·배치
   side.innerHTML = `<h2>${regName()} 출입구·개략 배치</h2>
-  ${D.map ? gateSection(a, pl) : ''}
+  ${D.map ? blineSection(a) + gateSection(a, pl) : ''}
   <h3 style="margin-top:18px">개략 건축계획</h3>
   <p style="margin:0 0 8px"><a class="btn" style="display:inline-block;text-decoration:none" data-tool="arch" href="${toolHref('arch')}">자세한 배치·일조·3D와 교통성 검토서로 → (/arch)</a></p>
   <p class="hint">여기 개략 배치는 규모 확인용입니다. 배치 확정과 교통성·환경성·경관 검토서는 /arch에서 이 안(${esc(S.region)}안)을 불러와 이어 합니다.</p>
@@ -230,6 +230,7 @@ function renderArch(a) {
   bindNum(['bcr', 'coreUnits', 'parkCount']);
   side.querySelectorAll('[data-mixpreset]').forEach(b => b.onclick = () => { const pr = ((ARCHC || {})['평형구성_예시'] || {})[b.dataset.mixpreset] || {}, patch = {}; unitTypes().forEach(t => { patch['mix' + t] = num(pr[t]); }); JbsFeas.set(patch); render(); });
   side.querySelectorAll('[data-handoff]').forEach(b => b.onclick = () => handoff(a, b.dataset.handoff));
+  bindBline(a);
   side.querySelectorAll('[data-feas]').forEach(e => e.addEventListener('change', () => { const v = parseFloat(e.value); JbsFeas.set({ [e.dataset.feas]: isNaN(v) ? 0 : v }); render(); }));
   side.querySelectorAll('[data-gatedel]').forEach(b => b.onclick = () => { const z = Z.zones[S.region]; if (!z || !z.infra || !z.infra.gates) return; const g = z.infra.gates.splice(+b.dataset.gatedel, 1)[0]; if (g && g.kind === 'main') delete z.infra.entryPnu; GATE.last = null; saveZ(); INFRA.memo = {}; render(); toast(`${g ? GATE.KIND[g.kind] : '출입구'}를 지웠습니다${g && g.kind === 'main' ? ' — 진입도로는 다시 자동(확폭 적은 쪽)으로' : ''}`, 3000); });
   side.querySelectorAll('[data-gatemove]').forEach(b => b.onclick = () => {
@@ -461,6 +462,48 @@ function gateSection(a, pl) {
   <div class="tscroll"><table class="gi-tbl"><thead><tr><th>항목</th><th>판정</th><th>내용</th><th>근거</th></tr></thead><tbody>
   ${ck.rows.map(r => `<tr><td>${r.item}</td><td><span class="pill ${cls[r.st]}">${lab[r.st]}</span></td><td class="wrap">${r.text}</td><td class="wrap u">${r.law ? '<b>법정</b> ' : '참고 '}${r.basis}</td></tr>`).join('')}
   </tbody></table></div>`;
+}
+// ===== 건축선·출입 계획(출입구보다 먼저 — 정비계획 건축선에 관한 계획, 도정법 시행령 제8조제3항제7호) — 계산·그림은 06-gate.js BLINE =====
+function blineSection(a) {
+  const z = Z.zones[a.key] || {}, rs = BLINE.roads(z), s = BLINE.get(z);
+  const head = '<h3 id="blBox">건축선·출입 계획 <span class="u" style="font-weight:400">(정비계획 결정 사항 — 출입구보다 먼저)</span></h3>';
+  if (!rs.length) return head + '<p class="hint">구역 경계에 닿은 도로를 불러오면 도로마다 건축한계선·전면공지·차량출입 구간을 정할 수 있습니다.</p>';
+  const P0 = BLINE.proj(z), sel = (attr, pnu, cur, opts) => `<select data-${attr}="${esc(pnu)}">${Object.entries(opts).map(([k, v]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${v}</option>`).join('')}</select>`;
+  let aFront = 0, lNo = 0; if (P0) P0.E.forEach((e, i) => { const q = P0.edges[i]; if (!q.r) return; aFront += e.len * q.sb; q.noCar.forEach(([t0, t1]) => { lNo += (t1 - t0) * e.len; }); });
+  const walks = P0 ? P0.walks : [], open = P0 ? P0.open : [], aWalk = walks.reduce((m, w) => m + Math.hypot(w.pb[0] - w.pa[0], w.pb[1] - w.pa[1]) * (num(w.w) || BLINE.walkW(z)), 0), aOpen = open.reduce((m, o) => m + num(o.area), 0);
+  return `${head}
+  <p class="hint">도로마다 <b>건축한계선</b>(이 선 안쪽으로만 건물), 그 사이 <b>전면공지</b> 성격, <b>차량출입 불허구간</b>을 정합니다. 아래 출입구 추천은 불허구간을 피해서 나오고, 공공보행통로·공개공지 자리에는 동을 놓지 않습니다. 숫자는 지구단위계획 결정 전 <b>가정값</b>입니다.</p>
+  <div class="tscroll"><table class="gi-tbl"><thead><tr><th>경계 도로</th><th>건축한계선</th><th>전면공지</th><th>차량출입</th></tr></thead><tbody>
+  ${rs.map(r => `<tr><td>${esc(r.jibun)} 도로<br><span class="u">현황 약 ${r.w}m${GATE.isBig(r) ? ' · 대로급' : ''}</span></td>
+    <td><input type="number" step="0.5" min="0" style="width:64px" data-blsb="${esc(r.pnu)}" value="${BLINE.sbOf(z, r)}"> m</td>
+    <td>${sel('blfront', r.pnu, BLINE.frontOf(z, r), { walk: '보도형', green: '조경형' })}</td>
+    <td>${sel('blcar', r.pnu, BLINE.carOf(z, r), BLINE.CAR)}</td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="form">${'<div class="field"><label for="blIxD">교차로 부근 불허 거리</label><input id="blIxD" type="number" step="1" value="' + BLINE.ixD(z) + '"><span class="u">m · 교차로(경계 도로가 만나는 곳)에서 이 거리 안은 차량 출입 안 함(가정, 도로교통법 제32조 모퉁이 5m보다 넉넉히)</span></div>'}</div>
+  <p class="note">전면공지 약 ${fmt(aFront)}㎡ · 차량출입 불허 경계 약 ${fmt(lNo)}m${aWalk ? ` · 공공보행통로 약 ${fmt(aWalk)}㎡` : ''}${aOpen ? ` · 공개공지 약 ${fmt(aOpen)}㎡` : ''} — 건축한계선 기본값 ${BLINE.sbDef()}m(기준표 가정값). 간선도로변은 배치에서 소음 이격과 큰 쪽을 씀.</p>
+  <h4 style="margin:10px 0 4px">공공보행통로</h4>
+  ${walks.length ? walks.map((w, i) => `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:2px 0"><span style="flex:1;min-width:200px">${w.auto ? '추천 ' : '✔ '}공공보행통로 ${i + 1} — 길이 약 ${fmt(Math.hypot(w.pb[0] - w.pa[0], w.pb[1] - w.pa[1]))}m · 폭 ${num(w.w) || BLINE.walkW(z)}m</span><button type="button" class="btn ghost sm" data-blwalkdel="${i}">지우기</button></div>`).join('') : `<p class="hint" style="margin:2px 0">${s.walkOff ? '두지 않음으로 정함.' : `없음 — 서로 다른 도로를 잇는 ${BLINE.DEF.walkMin}m 이상 직선이 구역 안을 지날 때만 자동 추천(큰 가구 관통 보행로, 가정).`}</p>`}
+  <div class="form"><div class="field"><label for="blWalkW">통로 폭</label><input id="blWalkW" type="number" step="0.5" value="${BLINE.walkW(z)}"><span class="u">m(가정)</span></div></div>
+  <div class="zk-btns"><button type="button" class="btn ghost sm" id="blWalkPut">${S.placing === 'bl:walk' ? (S.blFirst ? '다른 쪽 끝을 누르세요…' : '첫 끝(구역 경계)을 누르세요…') : '지도에서 두 점 찍기'}</button>${Array.isArray(s.walks) || s.walkOff ? '<button type="button" class="btn ghost sm" id="blWalkAuto">추천으로 되돌리기</button>' : ''}${walks.length ? '' : ''}</div>
+  <h4 style="margin:10px 0 4px">공개공지</h4>
+  <p class="hint" style="margin:2px 0">공동주택은 의무 대상이 아닙니다(건축법 시행령 제27조의2① — 판매·업무·숙박 등 바닥면적 5천㎡ 이상). 상가를 크게 넣거나 지구단위계획에서 정할 때만 둡니다. 면적은 대지 10% 이하 범위에서 조례.</p>
+  ${open.map((o, i) => `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:2px 0"><span style="flex:1">✔ 공개공지 ${i + 1}</span><input type="number" step="10" style="width:90px" data-blopen="${i}" value="${num(o.area)}"> ㎡ <button type="button" class="btn ghost sm" data-blopendel="${i}">지우기</button></div>`).join('')}
+  <div class="zk-btns"><button type="button" class="btn ghost sm" id="blOpenPut">${S.placing === 'bl:open' ? '구역 경계를 누르세요…' : '공개공지 찍기'}</button></div>`;
+}
+function bindBline(a) {
+  const z = Z.zones[a.key]; if (!z) return;
+  const st = () => BLINE.st(z), map = k => (st()[k] = st()[k] || {});
+  side.querySelectorAll('[data-blsb]').forEach(e => e.onchange = () => { const v = parseFloat(e.value); if (isNaN(v) || v < 0) delete map('sb')[e.dataset.blsb]; else map('sb')[e.dataset.blsb] = v; BLINE.changed(); });
+  side.querySelectorAll('[data-blfront]').forEach(e => e.onchange = () => { map('front')[e.dataset.blfront] = e.value; BLINE.changed(); });
+  side.querySelectorAll('[data-blcar]').forEach(e => e.onchange = () => { map('car')[e.dataset.blcar] = e.value; BLINE.changed(); });
+  const ix = $id('blIxD'); if (ix) ix.onchange = () => { const v = parseFloat(ix.value); if (isNaN(v) || v < 0) delete st().ixD; else st().ixD = v; BLINE.changed(); };
+  const ww = $id('blWalkW'); if (ww) ww.onchange = () => { const v = parseFloat(ww.value); if (v > 0) { st().walkW = v; if (Array.isArray(st().walks)) st().walks.forEach(w => { w.w = v; }); } BLINE.changed(); };
+  side.querySelectorAll('[data-blwalkdel]').forEach(b => b.onclick = () => { const s = st(), cur = BLINE.walks(z).map(w => ({ a: w.a, b: w.b, w: w.w })); cur.splice(+b.dataset.blwalkdel, 1); s.walks = cur; if (!cur.length) { delete s.walks; s.walkOff = true; } BLINE.changed(); });
+  const wa = $id('blWalkAuto'); if (wa) wa.onclick = () => { delete st().walks; delete st().walkOff; BLINE.changed(); };
+  const wp = $id('blWalkPut'); if (wp) wp.onclick = () => { S.placing = 'bl:walk'; S.blFirst = null; $id('lmap').classList.add('picking'); toast('지도에서 공공보행통로 첫 끝(구역 경계)을 누르세요', 4000); render(); };
+  const op = $id('blOpenPut'); if (op) op.onclick = () => { S.placing = 'bl:open'; $id('lmap').classList.add('picking'); toast('지도에서 공개공지를 둘 구역 경계를 누르세요', 4000); render(); };
+  side.querySelectorAll('[data-blopen]').forEach(e => e.onchange = () => { const o = (st().open || [])[+e.dataset.blopen]; if (o) { o.area = Math.max(10, num(e.value)); BLINE.changed(); } });
+  side.querySelectorAll('[data-blopendel]').forEach(b => b.onclick = () => { (st().open || []).splice(+b.dataset.blopendel, 1); BLINE.changed(); });
 }
 function renderBiz(a) {
   const pl = plan(a), b = biz(a, pl), rp = b.ratio * 100;

@@ -56,6 +56,8 @@
       try { const inf = JSON.parse(localStorage.getItem('jbs-urban-infra-v1') || '{}')[key]; if (inf) site.urbanInfra = inf; } catch (e) { /* 무시 */ }
       // /urban 4탭 단지 출입구(주·부·주차장) → /arch 차량 출입구 초기값
       site.urbanGates = ((it.zone.infra || {}).gates || []).map(g => ({ kind: g.kind, pt: g.pt }));
+      // /urban 건축선·출입 계획(변별 건축한계선·전면공지·차량출입 불허구간·공공보행통로·공개공지, 경위도) → /arch 배치·배치도 (2026-11-08)
+      try { if (typeof BLINE !== 'undefined') site.urbanBl = BLINE.exportOf(it.zone); } catch (e) { /* 무시 */ }
       site.plan = site.plan || {};
       if (P.zone) site.profile.zoning = P.zone;   // 계획 용도지역(/urban 4탭)을 늘 따름(2026-11-06 — 예전에 넘긴 3종이 남아 준주거 구역이 3종으로 나오던 것)
       // 사업 유형: 사업성 화면에서 넘어온 구역이면 그 화면의 사업 유형(재건축·재개발·가로주택)을 따름
