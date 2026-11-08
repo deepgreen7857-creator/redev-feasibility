@@ -34,23 +34,26 @@
       for (let b = 0; b < NB; b++) { x.fillStyle = '#3d4650'; x.fillRect(b * BW + 10, 10, BW - 20, c.height - 20); y.fillStyle = rnd() < 0.7 ? '#ffd9a0' : '#000'; y.fillRect(b * BW + 10, 10, BW - 20, c.height - 20); }
       return [c, e];
     }
-    // front / crown
-    x.fillStyle = kind === 'crown' ? '#f6f4ef' : '#efece6'; x.fillRect(0, 0, c.width, c.height);
+    // front / crown — 아파트 정면: 굵은 흰 슬래브 띠(층마다) + 세대 사이 흰 벽기둥 + 안쪽으로 들어간 발코니 유리
+    x.fillStyle = kind === 'crown' ? '#f7f5f0' : '#f1eee8'; x.fillRect(0, 0, c.width, c.height);
     for (let f = 0; f < NF; f++) for (let b = 0; b < NB; b++) {
-      const X = b * BW, Y = f * BH;
-      // 유리(하늘 반사)
-      const gr = x.createLinearGradient(0, Y + 6, 0, Y + 44); gr.addColorStop(0, '#8fa7bd'); gr.addColorStop(1, '#3c4c5c');
-      x.fillStyle = gr; x.fillRect(X + 4, Y + 6, BW - 8, 38);
-      x.fillStyle = 'rgba(255,255,255,.18)'; x.fillRect(X + 6, Y + 8, (BW - 8) * 0.35, 14);
-      x.fillStyle = '#dcd8d0'; x.fillRect(X + BW / 2 - 1, Y + 6, 2, 38); // 창틀
-      // 발코니 난간 유리 + 슬래브 띠
-      x.fillStyle = 'rgba(205,220,228,.45)'; x.fillRect(X + 2, Y + 30, BW - 4, 14);
-      x.fillStyle = '#d6d1c7'; x.fillRect(X, Y + 46, BW, 10);
-      // 켜진 창(따뜻한 불빛), 일부는 커튼 친 듯 약하게
+      const X = b * BW, Y = f * BH, pierL = b % 2 === 0 ? 9 : 2, pierR = b % 2 === 1 ? 9 : 2; // 두 칸마다 한 세대 → 세대 사이에 넓은 흰 벽
+      const gx = X + pierL, gw = BW - pierL - pierR, gy = Y + 4, gh = BH - 4 - 13;
+      // 발코니 안쪽 그늘 + 유리(차분한 회청색)
+      const gr = x.createLinearGradient(0, gy, 0, gy + gh); gr.addColorStop(0, '#2f3b46'); gr.addColorStop(0.45, '#5d7080'); gr.addColorStop(1, '#7f909c');
+      x.fillStyle = gr; x.fillRect(gx, gy, gw, gh);
+      x.fillStyle = 'rgba(255,255,255,.10)'; x.fillRect(gx + 2, gy + 10, gw * 0.4, gh * 0.35); // 하늘 비침
+      x.fillStyle = 'rgba(230,228,222,.9)'; for (let m = 1; m < 3; m++) x.fillRect(gx + gw * m / 3 - 0.75, gy + 5, 1.5, gh - 5); // 창살
+      x.fillStyle = 'rgba(0,0,0,.28)'; x.fillRect(gx, gy, gw, 5); // 위 슬래브 그림자
+      // 발코니 난간(밝은 유리 + 위 손스침)
+      x.fillStyle = 'rgba(214,226,232,.55)'; x.fillRect(gx, gy + gh - 15, gw, 15);
+      x.fillStyle = '#e8e6e0'; x.fillRect(gx, gy + gh - 16, gw, 2);
+      // 켜진 창
       const r = rnd();
-      if (r < lit) { y.fillStyle = r < lit * 0.35 ? '#ffe2b0' : '#f2a95a'; y.fillRect(X + 4, Y + 6, BW - 8, 38); y.fillStyle = 'rgba(0,0,0,.35)'; y.fillRect(X + 4, Y + 30, BW - 8, 14); }
+      if (r < lit) { y.fillStyle = r < lit * 0.35 ? '#ffe2b0' : '#f2a95a'; y.fillRect(gx, gy + 5, gw, gh - 20); }
     }
-    for (let b = 0; b <= NB; b++) { x.fillStyle = 'rgba(0,0,0,.08)'; x.fillRect(b * BW - 1, 0, 2, c.height); } // 세대 경계 세로줄
+    // 층마다 굵은 흰 슬래브 띠(아래쪽 그림자 선으로 두께감)
+    for (let f = 0; f < NF; f++) { const Y = f * BH + BH - 13; x.fillStyle = kind === 'crown' ? '#fbfaf7' : '#f6f4ef'; x.fillRect(0, Y, c.width, 13); x.fillStyle = 'rgba(0,0,0,.10)'; x.fillRect(0, Y + 11, c.width, 2); }
     if (kind === 'crown') { y.fillStyle = '#fff3d6'; y.fillRect(0, 0, c.width, 5); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, 5); }
     return [c, e];
   }
@@ -243,6 +246,26 @@
     if (ring3) flat(ring3, lawn, 0.3 + LIFT);
     // 공원
     (D.parks || []).forEach(pk => flat(pk, lawn, 0.11));
+    // 단지 출입구(2026-11-08): 주출입구 = 진입광장 포장 + 문주(기둥 둘·지붕, 유효 높이 5.5m — 소방차 5m 이상), 주차장 출입구 = 지하 경사로(어두운 포장·옹벽), 부출입구 = 보행 포장
+    (D.gates || []).forEach(z => {
+      const P = (a, t) => [z.c[0] + z.u[0] * a + z.n[0] * t, z.c[1] + z.u[1] * a + z.n[1] * t], h = z.w / 2, rotY = Math.atan2(z.u[1], z.u[0]);
+      const box = (a, t, w, d, y0, hh, mat) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), mat); const p0 = P(a, t); m.position.set(p0[0], y0 + hh / 2, -p0[1]); m.rotation.y = rotY; m.castShadow = true; m.receiveShadow = true; scene.add(m); return m; };
+      const rect = (a0, a1, t0, t1) => [P(a0, t0), P(a1, t0), P(a1, t1), P(a0, t1)];
+      if (z.kind === 'main') {
+        flat(rect(-h, h, 0, z.D), STD(dusk ? 0x7a6f62 : 0xd9cdb8), 0.36 + LIFT);
+        flat(rect(-3, 3, 0, z.D), STD(dusk ? 0x5a524a : 0xb9ab95), 0.38 + LIFT);
+        const stone = STD(dusk ? 0x8e8576 : 0xcfc6b5, { roughness: 0.7 }), roof = STD(dusk ? 0x3b3836 : 0x55504b, { roughness: 0.6 });
+        [-1, 1].forEach(sg => box(sg * (h - 1), z.sb + 0.6, 1.2, 1.2, LIFT, 6.3, stone));
+        box(0, z.sb + 0.6, z.w, 3, LIFT + 5.5, 0.8, roof);
+      } else if (z.kind === 'park') {
+        flat(rect(-h, h, z.sb, z.D), STD(dusk ? 0x2a2b2e : 0x5d6063), 0.37 + LIFT);
+        const wall = STD(dusk ? 0x777068 : 0xbdb6aa);
+        [-1, 1].forEach(sg => box(sg * (h - 0.15), (z.sb + z.D) / 2, 0.3, z.D - z.sb, LIFT, 1.1, wall));
+        box(0, z.D - 0.4, z.w, 0.8, LIFT, 1.1, wall);
+      } else {
+        flat(rect(-h, h, 0, z.D), STD(dusk ? 0x7a6f62 : 0xd9cdb8), 0.36 + LIFT);
+      }
+    });
     // 구역 경계선(검토 모드만)
     if (opt.mode === 'review') scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(S.map(p => V(p, 0.4))), new THREE.LineBasicMaterial({ color: 0xc8322b })));
 

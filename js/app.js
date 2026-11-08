@@ -18,6 +18,8 @@ function bindInputs(root = document) {
       if (inp.type === 'radio' && !inp.checked) return;
       const val = inp.type === 'checkbox' ? inp.checked : isNum ? num(inp.value) * scale : inp.value;
       setPath(S, p, val);
+      // 2026-11-08: 같은 값에 묶인 다른 칸(예: 맨 위 사업명 ↔ 1단계 구역명)도 바로 맞춤 — 예전엔 한쪽만 바뀌어 이름이 달라 보였음
+      if (inp.type !== 'radio' && inp.type !== 'checkbox') $$('[data-bind]').forEach(o => { if (o !== inp && o.dataset.bind === p && o.type !== 'radio' && o.type !== 'checkbox') o.value = inp.value; });
       App.update(!!inp.dataset.rerender);
     });
   });
@@ -824,6 +826,7 @@ const App = {
     if (MapView.marker) { MapView.marker.remove(); MapView.marker = null; }
     ['#jibunList', '#jibunBase', '#anchorTarget', '#ovSearchInput', '#searchInput'].forEach(s => { const e = $(s); if (e) e.value = ''; });
     ['#jibunMsg', '#jibunReport', '#pickMsg', '#surveySyncMsg', '#refMsg', '#exportMsg', '#ovSearchMsg', '#searchResults'].forEach(s => { const e = $(s); if (e) e.innerHTML = ''; });
+    if (window.JbsProject) window.JbsProject.clear();   // 처음으로 = 사업명도 비움(shared/project.js)
     this.replaceState(defaultState());
     this.go('overview');
   },

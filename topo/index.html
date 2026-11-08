@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<script src="/shared/gate.js"></script>
+<script src="/shared/project.js?v=1"></script>
+<script src="/shared/sitenav.js?v=6"></script>
+<meta name="robots" content="noindex, nofollow">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>jbslab 고시용 지형도면</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="../decision/decision.css?v=1">
+<link rel="stylesheet" href="topo.css?v=1">
+</head>
+<body>
+<header class="top"><b>jbslab</b> <span class="sub">/topo</span> <h1>고시용 지형도면(초안)</h1></header>
+<div class="layout">
+  <aside class="ctl">
+    <section>
+      <h2>1. 구역</h2>
+      <label>구역<select id="siteSel"></select></label>
+      <p class="note" id="siteInfo"></p>
+    </section>
+    <section>
+      <h2>2. 연속지적</h2>
+      <button class="primary" id="fetch">구역 주변 연속지적 불러오기</button>
+      <p class="note" id="pcInfo">지적을 불러오지 않으면 구역·토지이용만 그립니다.</p>
+    </section>
+    <section>
+      <h2>3. 도면 사항</h2>
+      <label>도면 이름<input id="title" placeholder="예: ○○구역 정비구역 지정 지형도면"></label>
+      <label>위치<input id="place" placeholder="예: 인천광역시 미추홀구 용현동 100번지 일원"></label>
+      <label>고시 기관<input id="org" placeholder="인천광역시"></label>
+      <label>고시 번호<input id="gosi" placeholder="예: 2027-○○"></label>
+      <label>작성<input id="maker" placeholder="예: 미추홀구 도시정비과"></label>
+      <label>작성 일자<input id="date"></label>
+    </section>
+    <section>
+      <h2>4. 그리기</h2>
+      <label>축척<select id="scale"><option value="">자동(1/500~1/1,500 중 가장 큰 축척)</option><option>500</option><option>600</option><option>1000</option><option>1200</option><option>1500</option></select></label>
+      <label>건축한계선 후퇴(m, 도로에서)<input id="sb" type="number" step="0.5" min="0"></label>
+      <label>구역 밖 여유(m)<input id="mg" type="number" step="5" min="0" value="25"></label>
+      <label class="chk"><input type="checkbox" id="dz" checked> 지구단위계획구역 경계(정비구역과 같은 선)</label>
+    </section>
+    <section>
+      <h2>5. 내보내기</h2>
+      <button class="primary" id="print">인쇄 / PDF로 저장(A1 가로)</button>
+      <button id="dxf">CAD(DXF) 내려받기</button>
+      <button id="shp">SHAPE(zip) 내려받기</button>
+      <button id="svg">그림(SVG) 내려받기 — 도엽마다</button>
+      <p class="note">인쇄 창에서 용지 크기는 자동(A1 841×594㎜)으로 잡힙니다. 프린터에 A1이 없으면 'PDF로 저장' 뒤 출력소에 맡깁니다. 좌표는 GRS80 중부원점(EPSG:5186)입니다.</p>
+    </section>
+    <div id="warn"></div>
+  </aside>
+  <main class="stage"><div id="sheets"></div></main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<script src="../js/config.js?v=68"></script>
+<script src="../js/zonekit.js?v=96"></script>
+<script src="../shared/site-store.js?v=156"></script>
+<script src="../shared/topo.js?v=1"></script>
+<script src="topo.js?v=1"></script>
+<script src="../shared/workfile.js?v=8"></script>
+<script src="../shared/sticky-top.js?v=2"></script>
+</body>
+</html>

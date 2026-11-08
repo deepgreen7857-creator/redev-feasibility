@@ -1,0 +1,16 @@
+/* /topo 고시용 지형도면 — decision.css를 함께 씀 */
+.ctl .chk{display:flex;gap:6px;align-items:center}.ctl .chk input{width:auto;display:inline;margin:0}
+#warn .w{font-size:12px;line-height:1.55;border-radius:6px;padding:7px 9px;margin-top:10px;background:#fff4e6;border:1px solid #ffd8a8}
+#warn .w.ok{background:#ebfbee;border-color:#b2f2bb}
+#warn ul{margin:4px 0 0;padding-left:18px}
+.sheet{background:#fff;margin:0 auto 18px;box-shadow:0 2px 12px rgba(0,0,0,.14);max-width:1400px}
+.sheet svg{display:block;width:100%;height:auto}
+.sheet .cap{font-size:12px;color:#5b6670;padding:4px 8px;border-top:1px solid #e9ecef}
+@page{size:841mm 594mm;margin:0}
+@media print{
+  body{background:#fff}
+  header.top,.ctl,#siteNav,#planSteps,.sheet .cap,#jbsWorkBtn,#jbsWork{display:none!important}
+  .layout{display:block}.stage{padding:0;overflow:visible}
+  .sheet{box-shadow:none;margin:0;max-width:none;width:841mm;height:594mm;page-break-after:always;break-after:page}
+  .sheet svg{width:841mm;height:594mm}
+}

@@ -31,6 +31,17 @@ assert.ok(/교육지원청/.test(txt(T('edu'))));
 assert.ok(/12층 이하/.test(txt(T('dheight'))) && /3m 후퇴/.test(txt(T('dline'))) && /통경축/.test(txt(T('detc'))));
 assert.ok(/지구단위계획구역/.test(txt(T('dz'))));
 const cons = T('consult'); assert.ok(cons.rows.length >= 12 && /교육환경평가 갈음/.test(txt(cons)) && /재해영향평가 갈음/.test(txt(cons)));
+// 2026-11-08 종전자산 구간별 분담금(토지 조서 소유자 묶음 — 이름은 결과에 없음)
+const OS = require('../shared/owner-share.js');
+const st = { meta: { type: 'redevelopment' }, prior: { multiplier: 1.4 }, lands: [] };
+for (let i = 0; i < 300; i++) st.lands.push({ owner: '소유자' + (i % 240), ownerType: '사유지', area: 60 + (i % 7) * 30, price: 2500000 });
+st.lands.push({ owner: '인천광역시', ownerType: '국공유지', area: 900, price: 2500000 });
+const own = OS.fromProject(st); assert.strictEqual(own.list.length, 240); assert.ok(!/소유자\d/.test(JSON.stringify(own)));
+const R4 = D.build(site, { feas: FE, assume: FE.get(), ownerShare: OS, owners: own });
+const s4 = R4.parts[0].tables.find(t => t.id === 'share4'); console.log('구간별', s4.rows.map(r => r.slice(0, 5).join(' ')).join(' / '));
+assert.ok(s4 && s4.rows.length >= 2 && s4.rows.reduce((a, r) => a + +String(r[1]).replace(/,/g, ''), 0) === 240 && !/소유자\d/.test(JSON.stringify(s4)));
+const tIdx = R4.parts[0].tables.map(t => t.id); assert.ok(tIdx.indexOf('share4') === tIdx.indexOf('share3') + 1);
+assert.ok(OS.sameZone(site.geojson, site.geojson));
 // 재건축이면 임대주택 부서가 빠지고 세입자 대책이 임차인으로
 const R2 = D.build(Object.assign({}, site, { plan: { type: 'recon' }, name: '유원아파트' }), { feas: FE, assume: FE.get() });
 const T2 = id => R2.parts.flatMap(p => p.tables).find(t => t.id === id);

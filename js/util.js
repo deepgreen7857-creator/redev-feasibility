@@ -253,3 +253,15 @@ function zoneKey(gj) {
   }
   return h1.toString(36) + h2.toString(36);
 }
+
+// 2026-11-08: 지도 위에서 마우스 휠을 굴리면 페이지가 안 내려가고 지도가 축소되던 문제 — 지도를 한 번 누른 뒤에만 휠 확대·축소, 지도 밖으로 나가면 다시 끔(Ctrl+휠은 늘 됨)
+function wheelOnClick(map) {
+  if (!map || !map.scrollWheelZoom) return map;
+  map.scrollWheelZoom.disable();
+  const el = map.getContainer();
+  el.addEventListener('mousedown', () => map.scrollWheelZoom.enable());   // 지도 'click'은 그리기·필지 고르기 중엔 안 올 수 있어 DOM에서
+  el.addEventListener('mouseleave', () => map.scrollWheelZoom.disable());
+  el.addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); map.setZoom(map.getZoom() + (e.deltaY < 0 ? 1 : -1)); } }, { passive: false });
+  if (!el.title) el.title = '지도를 한 번 누르면 마우스 휠로 확대·축소됩니다(Ctrl+휠은 바로)';
+  return map;
+}

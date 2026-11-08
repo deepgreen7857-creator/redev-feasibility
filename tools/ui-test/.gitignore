@@ -2,3 +2,6 @@
 *.pdf
 node_modules/
 package-lock.json
+*.dxf
+*.zip
+*.doc

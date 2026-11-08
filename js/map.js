@@ -134,7 +134,7 @@ const MapView = {
       return;
     }
     const a = S.area;
-    this.map = L.map('map', { maxZoom: 21 }).setView(a.center, a.zoom);
+    this.map = wheelOnClick(L.map('map', { maxZoom: 21 }).setView(a.center, a.zoom));
 
     const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 21, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap contributors',

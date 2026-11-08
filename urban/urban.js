@@ -197,7 +197,7 @@ const ZONE_KEY = 'jbs-urban-zones-v1', CACHE_KEY = 'jbs-urban-cache-v1', UI_KEY 
 const ZONE_IDS = ['A', 'B', 'C', 'D', 'E'];
 const Z = (() => { const z = lsGet(ZONE_KEY); return { title: z.title || '', center: z.center || [37.4553, 126.6577], zoom: z.zoom || 16, count: z.count || 3, zones: z.zones || {} }; })();
 const CACHE = (() => { const c = lsGet(CACHE_KEY); return { parcels: c.parcels || {}, blds: c.blds || {} }; })();
-const saveZ = () => lsSet(ZONE_KEY, Z);
+const saveZ = () => { const r = lsSet(ZONE_KEY, Z); if (window.JbsProject) window.JbsProject.offer(Z.title, 'urban'); return r; };   // 사업명 원본(shared/project.js)에 알림
 function saveCache() { if (!lsSet(CACHE_KEY, CACHE)) console.warn('/urban 공부 캐시가 커서 브라우저에 저장하지 못했습니다(이번 창에서는 그대로 씀)'); }
 function zoneOf(id) { const z = Z.zones[id] || (Z.zones[id] = {}); z.inArea = z.inArea || {}; return z; }
 const ptIn = (pt, gj) => { try { return turf.booleanPointInPolygon(turf.point([pt[1], pt[0]]), gj); } catch (e) { return false; } };
@@ -2148,6 +2148,16 @@ const GATE = {
   draw(layer, a, pl) {
     const z = Z.zones[a.key]; if (!z) return;
     const col = { main: '#c92a2a', sub: '#e67700', park: '#1971c2' };
+    // 출입구가 차지하는 땅(건축 불가 — 주출입구 문주·진입광장, 주차장 경사로, 부출입구). /arch·개략 배치와 같은 계산(shared/gate-zones.js, 2026-11-08)
+    try {
+      const G = window.ArchGeom, gg = z.geojson && (z.geojson.geometry || z.geojson), r0 = gg && (gg.type === 'Polygon' ? gg.coordinates[0] : gg.type === 'MultiPolygon' ? gg.coordinates[0][0] : null);
+      if (G && window.GateZones && r0 && this.list(z).length) {
+        const ring = G.openRing(r0), pr = G.projector(ring), pts = G.ccw(ring.map(pr.to)), E = G.edges(pts), sbR = (ARCHC && ARCHC.가정 && ARCHC.가정.roadSetback_m) || 3;
+        this.list(z).forEach(g => { if (!g.pt) return; const q = pr.to([g.pt[1], g.pt[0]]), ne = GateZones.nearestEdge(E, q); if (!ne || ne.d > 30) return;
+          const zz = GateZones.zone(g.kind, q, E[ne.edge], sbR, {});
+          L.polygon(zz.poly.map(p => pr.back(p).slice().reverse()), { color: col[g.kind], weight: 1.5, dashArray: '5 3', fillColor: col[g.kind], fillOpacity: 0.15, interactive: false }).addTo(layer); });
+      }
+    } catch (e) { /* 그림만 빠짐 */ }
     // 주출입구가 아직 없으면 추천 자리를 점선 원으로 — 누르면 그 자리에 주출입구를 놓음
     const nk = pl && pl.infra && pl.infra.entry ? this.nextKind(z, pl.infra) : null, sg = nk ? this.suggestFor(z, pl.infra, nk)[0] : null;
     if (sg) {
@@ -2306,6 +2316,9 @@ function initLeaflet() {
     dl.edit.handlers.edit.tooltip = { text: '흰 네모(꼭짓점)를 끌어 고치세요', subtext: "다 고쳤으면 '꼭짓점 고치기 끝내기'를 누르세요" };
   } catch (e) { /* 무시 */ }
   LM = L.map('lmap', { maxZoom: 21 }).setView(Z.center, Z.zoom);
+  // 2026-11-08: 지도를 한 번 누른 뒤에만 휠 확대·축소(페이지를 내리다 지도가 축소되던 것), Ctrl+휠은 바로
+  LM.scrollWheelZoom.disable(); LM.getContainer().addEventListener('mousedown', () => LM.scrollWheelZoom.enable()); LM.getContainer().addEventListener('mouseleave', () => LM.scrollWheelZoom.disable());
+  LM.getContainer().addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); LM.setZoom(LM.getZoom() + (e.deltaY < 0 ? 1 : -1)); } }, { passive: false });
   const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
   if (VW.ok) {
     const k = VW.key, attr = '&copy; <a href="https://www.vworld.kr">VWorld</a>';
@@ -2418,7 +2431,7 @@ function drawLeaflet() {
  - 계산은 화면을 그린 뒤 따로(setTimeout) 하고 결과를 기억(같은 조건이면 다시 계산 안 함) */
 const ARCHLAY = {
   memo: {}, busy: '',
-  key(a, pl) { const z = Z.zones[a.key] || {}; return [a.key, Math.round(pl.site), Math.round(pl.farUse), JSON.stringify(JbsFeas.mixOf(JbsFeas.get())), JSON.stringify((z.infra || {}).fit || {}), JSON.stringify(((pl.infra || {}).lots || []).map(l => Math.round(l.area || 0))), Math.round((pl.infra || {}).relArea || 0), P.infraMode, z.roads && z.roads.at].join('|'); },
+  key(a, pl) { const z = Z.zones[a.key] || {}; return [a.key, JSON.stringify(((z.infra || {}).gates || []).map(g => [g.kind, g.pt && g.pt.map(v => +(+v).toFixed(5))])), Math.round(pl.site), Math.round(pl.farUse), JSON.stringify(JbsFeas.mixOf(JbsFeas.get())), JSON.stringify((z.infra || {}).fit || {}), JSON.stringify(((pl.infra || {}).lots || []).map(l => Math.round(l.area || 0))), Math.round((pl.infra || {}).relArea || 0), P.infraMode, z.roads && z.roads.at].join('|'); },
   input(a, pl) {
     const C = ARCHC, G = window.ArchGeom, z = Z.zones[a.key];
     if (!C || !G || !C.평면 || !C.가정 || !z || !z.geojson) return null;
@@ -2441,7 +2454,9 @@ const ARCHLAY = {
     const win = (C.items || []).find(i => i.id === 'window_setback'), sun = ((C.items || []).find(i => i.id === 'sunlight_north') || {}).이격;
     const mix = {}; Object.entries(JbsFeas.mixOf(JbsFeas.get())).forEach(([t, v]) => { if (num(v) > 0 && C.평면[t]) mix[t] = num(v); });
     if (!Object.keys(mix).length) return null;
-    return { pr, pts, site: { pts, tags, setbacks: sb, exclude }, opt: { units: C.평면, lib: C.평면_라이브러리, assume: Object.assign({}, A0), mix, form: 'slab', spacing: 0.8, sun, lot: pl.site, far: pl.farUse, winRatio: win ? (/준주거|근린상업/.test(zoning) ? (win.값.근린상업_준주거_배수 || 4) : (win.값.배수 || 2)) : 0, edgeW: [], exSetback: A0.boundarySetback_m || 0 } };
+    // 단지 출입구 자리(주출입구 문주·진입광장, 주차장 경사로, 부출입구)는 건축 불가 — /arch와 같은 계산(shared/gate-zones.js, 2026-11-08)
+    const E0 = G.edges(pts), keep = !window.GateZones ? [] : ((z.infra && z.infra.gates) || []).filter(g => g.pt).map(g => { const q = pr.to([g.pt[1], g.pt[0]]), ne = GateZones.nearestEdge(E0, q); return ne && ne.d < 30 ? GateZones.keepPoly(GateZones.zone(g.kind, q, E0[ne.edge], sb[ne.edge], {})) : null; }).filter(Boolean);
+    return { pr, pts, site: { pts, tags, setbacks: sb, exclude, keep }, opt: { units: C.평면, lib: C.평면_라이브러리, assume: Object.assign({}, A0), mix, form: 'slab', spacing: 0.8, sun, lot: pl.site, far: pl.farUse, winRatio: win ? (/준주거|근린상업/.test(zoning) ? (win.값.근린상업_준주거_배수 || 4) : (win.값.배수 || 2)) : 0, edgeW: [], exSetback: A0.boundarySetback_m || 0 } };
   },
   cands(I) {
     const G = window.ArchGeom, cand = new Set([0]);
@@ -2453,7 +2468,7 @@ const ARCHLAY = {
   solve(I, done) {
     const c = this.cands(I);
     try {
-      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=17'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
+      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=18'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
       const id = (this.seq = (this.seq || 0) + 1); this.cb[id] = done;
       this.wk.postMessage({ id, site: I.site, opt: I.opt, cand: c.cand, F: c.F });
       // 90초가 넘으면 일꾼을 멈추고 예전 네모 그림으로(화면에 '계산 중'이 계속 남지 않게)

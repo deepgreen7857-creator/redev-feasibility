@@ -174,7 +174,7 @@
     const rules = [], add = r => rules.push(Object.assign({ 갈래: '규칙' }, r));
     const winI = itemOf(opt, 'window_setback'), sunI = itemOf(opt, 'sunlight_north');
     // ① 대지 안·경계 이격(가정 이격 포함) — 경계에서 띄울 거리 중 법정 부분은 아래 높이 상한에서 따로 봄
-    const test = G.buildableTest(site.pts, site.setbacks || []), ex = site.exclude || [];
+    const test = G.buildableTest(site.pts, site.setbacks || []), ex = site.exclude || [], keep = site.keep || [];
     blds.forEach(b => {
       // 조각(parts)이 있으면 조각 꼭짓점·변 중점으로(Y·T·ㄱ자처럼 오목한 동은 바깥 둘레선이 빈 땅을 지나감)
       const rings = b.parts && b.parts.length ? b.parts : [b.poly];
@@ -184,6 +184,8 @@
       const outN = pts.filter(p => !test(p[0], p[1])).length, inEx = pts.filter(p => ex.some(e => G.inside(p[0], p[1], e))).length;
       if (outN) add({ id: 'boundary', 항목: '대지 경계·이격', 동: [b.id], 판정: '위반', 값: `꼭짓점·변 중점 ${outN}곳이 대지 밖 또는 경계 이격 안`, 근거: '대지 경계(입력한 변별 이격 포함)' });
       if (inEx) add({ id: 'infra', 항목: '기반시설 침범', 동: [b.id], 판정: '위반', 값: `${inEx}곳이 공원·도로 등 건축 불가 영역 안`, 근거: '정비기반시설 계획(건축 불가 영역)' });
+      const inKeep = pts.filter(p => keep.some(e => G.inside(p[0], p[1], e))).length;
+      if (inKeep) add({ id: 'gate', 항목: '출입구·경사로 침범', 동: [b.id], 판정: '위반', 값: `${inKeep}곳이 주출입구(문주·진입광장)·주차장 경사로·부출입구 자리 안`, 근거: '단지 출입구 계획(건축 불가 영역) — 경사로는 주차장법 시행규칙 제6조제1항제5호(제11조제1항 준용)' });
     });
     // ② 동끼리 겹침, ③ 동 사이 거리(시행령 제86조③2호) — pairCheck
     for (let i = 0; i < blds.length; i++) for (let j = i + 1; j < blds.length; j++) { const r = pairCheck(blds[i], blds[j], opt); if (r) add(r); }
