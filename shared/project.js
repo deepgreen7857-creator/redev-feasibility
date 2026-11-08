@@ -109,7 +109,7 @@
     if (!isReal(name)) return;
     // 사업성 화면(js/state.js의 S·saveState)
     try { if (typeof S !== 'undefined' && S && S.meta && typeof saveState === 'function' && clean(S.meta.name) !== name && !/\(예시\)\s*$/.test(S.meta.name || '')) { S.meta.name = name; saveState(); } } catch (e) { /* 이 화면 아님 */ }
-    // 정비계획(urban.js의 Z·saveZ·syncTitle)
+    // 정비계획(urban/js/의 Z·saveZ·syncTitle)
     try { if (typeof Z !== 'undefined' && Z && 'title' in Z && typeof saveZ === 'function' && clean(Z.title) !== name) { Z.title = name; saveZ(); if (typeof syncTitle === 'function') syncTitle(); } } catch (e) { /* 이 화면 아님 */ }
     // 입력칸(사업성 머리·구역명, 정비계획 구역명, 검토서 도구 구역 이름) — 다음 저장 때 화면 코드가 이 값을 읽음
     document.querySelectorAll('[data-bind="meta.name"], #zoneTitle, #form [data-k="name"]').forEach(el => { if (document.activeElement !== el && el.value !== name) el.value = name; });
