@@ -1,5 +1,31 @@
 [
  {
+  "time": "2026-11-09 01:10",
+  "onbid": {
+   "status": "정상 — 13:10 일괄 수집(11.08) 오류 0으로 끝난 상태 유지, 다음 회차 01:10 시작 직전. state/onbid listedDay·lastDay 20261108",
+   "calls": "21:10 점검 이후 수집기 호출 없음(정상: 01:10·13:10만 돎). 이번 점검 직접 호출 1회(브라우저, 인천 목록 1건)",
+   "items": "lastBulk: 목록 45,964행 저장, 원문 필요 0, errorCount 0. 직접 조회 인천 totalCount 2,223 = 이전 점검·DB 반영분과 같음(모자람 없음)",
+   "error": "없음. 직접 조회 01:08 resultCode 00 NORMAL_CODE — 키 정상, 한도 초과 없음"
+  },
+  "rtms": {
+   "status": "정상",
+   "note": "11.08 03:10 수집 끝(03:21, 중단 자료 없음). 다음 수집 11.09 03:10"
+  },
+  "court": {
+   "status": "정상 — 도는 중(state/court lastRun 01:07, lastDay 20261109, 이번 회차 목록 60·명세서 14·전송 40, 오류 없음, stoppedBy 없음)",
+   "lastCollected": "2026-11-09 01:07"
+  },
+  "conflicts": [],
+  "schedule": {
+   "status": "이상 없음 — 판단기록장 매일 5건 11.08 05:17 성공(picks.json 맨 앞 2026-11-08, 로컬=사이트 13건), 정비경매 04:21 성공, 다음 실행 04:21·05:17. autopush 21:18 푸시 성공, review·judge JSON 모두 파싱 정상·충돌 표시 없음"
+  },
+  "fixed": [],
+  "todo": [
+   "서버 함수 배포·auction-server 커밋은 사용자 몫(cd C:\\notedata\\auction-server && firebase deploy --only functions) — 이전과 같음, 급하지 않음",
+   "다음 점검(05:05)에서 01:10 공매 일괄 수집(state/onbid lastBulk.day 20261109·errorCount) 결과 확인"
+  ]
+ },
+ {
   "time": "2026-11-08 21:10",
   "onbid": {
    "status": "정상 — 13:10 일괄 수집 13:34 끝(오류 0) 이후 다음 회차는 11.09 01:10. state/onbid listedDay·lastFullDay·lastDay 20261108",
