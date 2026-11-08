@@ -14,7 +14,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<link rel="stylesheet" href="css/style.css?v=c86792b3">
+<link rel="stylesheet" href="css/style.css?v=fa2433a8">
 <link rel="stylesheet" href="css/zonekit.css?v=a4633e58">
 </head>
 <body>
@@ -189,9 +189,9 @@
 <!-- 2. 구역계 -->
 <section class="panel" id="tab-area" hidden>
   <h2>구역계 설정</h2>
-  <p class="lead">지도 왼쪽 위의 <b>다각형</b>(또는 사각형) 도구로 사업 구역을 그리면 면적이 자동으로 계산됩니다. 다시 그리면 이전 구역계를 대체합니다.</p>
+  <p class="lead">오른쪽 <b>어떻게 구역을 정할까요?</b>에서 방법을 고르세요. 구역이 생기면 지도 아래 막대에서 <b>구역 지정 완료</b>를 누르면 됩니다.</p>
   <form class="search" id="searchForm">
-    <input id="searchInput" placeholder="지번·도로명 주소로 지도 이동 (예: 성북구 장위동 233-42)">
+    <input id="searchInput" placeholder="지도만 옮기기 — 지번·도로명 주소 (대표 지번은 1단계에서 정함)">
     <button class="btn" type="submit">검색</button>
   </form>
   <ul class="search-results" id="searchResults"></ul>
@@ -219,17 +219,8 @@
         <div class="side-pane" data-spane="zone">
       <div class="jibun-box">
         <div id="addrParcelBox" hidden></div>
-        <h3>필지 경계로 구역 만들기</h3>
-        <p class="note"><b>방법 1. 대략 그리기</b> – 지도 왼쪽 다각형 도구로 도로를 따라 구역을 대충 그린 뒤 누르세요. 필지 면적의 기준 % 이상이 들어간 필지로 구역계를 다시 그립니다.</p>
-        <div class="snap-row">
-          <select id="snapThreshold" aria-label="포함 기준">
-            <option value="0.5">50% 이상 들어가면 포함</option>
-            <option value="0.3">30% 이상 (넓게)</option>
-            <option value="0.7">70% 이상 (좁게)</option>
-          </select>
-          <button class="btn small primary" id="btnSnapZone">그린 구역을 필지에 맞추기</button>
-        </div>
-        <p class="note"><b>방법 2. 지번 목록</b> – 엑셀의 지번 열을 붙여넣거나 파일(엑셀·CSV)을 불러오면 그 필지들로 구역계를 그립니다.</p>
+        <details class="zk-more" id="zkJibun"><summary>지번 목록·파일로 만들기</summary>
+        <p class="note">엑셀의 지번 열을 붙여넣거나 파일(엑셀·CSV)을 불러오면 그 필지들로 구역계를 그립니다.</p>
         <label class="stack">기준 동 주소<input id="jibunBase" placeholder="예: 인천광역시 남동구 간석동"></label>
         <textarea id="jibunList" rows="5" placeholder="한 줄에 하나씩&#10;387&#10;388-1&#10;산12-3"></textarea>
         <label class="radio"><input type="checkbox" id="optFillHoles" checked> 구역 안에 갇힌 필지(도로 등) 자동 포함</label>
@@ -238,7 +229,18 @@
         <button class="btn small primary" id="btnJibunZone">지번으로 구역 만들기</button>
         <button class="btn small" id="btnCloseZone" title="제출된 토지조서의 지번만 그대로 합쳐, 한 덩어리로 닫히는지(폐합)·안에 빠진 필지·틈을 확인합니다">제출 조서 폐합 검토</button>
         <button class="btn small" id="btnJibunFile">파일 불러오기</button>
-        <p class="note" style="margin-top:10px"><b>방법 3. 고시문 위치 지번 + 면적으로 추정</b> – 구역도가 없을 때, 위 칸에 고시문의 위치 지번(○○번지 일원, 획지 위치 등)을 넣고 목표 면적을 넣으세요.</p>
+        </details>
+        <details class="zk-more" id="zkAdv"><summary>고급: 대략 그리기 · 면적으로 추정 · 경계 도로 정리 · 대지 자르기</summary>
+        <p class="note"><b>대략 그리기</b> – 지도 왼쪽 다각형 도구로 도로를 따라 구역을 대충 그린 뒤 누르세요. 필지 면적의 기준 % 이상이 들어간 필지로 구역계를 다시 그립니다.</p>
+        <div class="snap-row">
+          <select id="snapThreshold" aria-label="포함 기준">
+            <option value="0.5">50% 이상 들어가면 포함</option>
+            <option value="0.3">30% 이상 (넓게)</option>
+            <option value="0.7">70% 이상 (좁게)</option>
+          </select>
+          <button class="btn small primary" id="btnSnapZone">그린 구역을 필지에 맞추기</button>
+        </div>
+        <p class="note" style="margin-top:10px"><b>고시문 위치 지번 + 면적으로 추정</b> – 구역도가 없을 때, 위 칸에 고시문의 위치 지번(○○번지 일원, 획지 위치 등)을 넣고 목표 면적을 넣으세요.</p>
         <div class="snap-row">
           <input id="anchorTarget" inputmode="decimal" placeholder="목표 면적 ㎡ (예: 160201.8)" style="width:200px">
           <button class="btn small" id="btnAnchorZone">위치 지번 + 면적으로 추정</button>
@@ -246,6 +248,7 @@
         <p class="note" style="margin-top:10px"><b>마무리. 경계 도로·작은 필지 정리</b> – 구역 경계에 걸친 도로를 하나씩 확대해 보며 <b>중심선까지 / 도로 전체 / 빼기 / 지금 구역선대로</b> 중에 고릅니다. 작은 필지는 최대로 확대해 보여줍니다.</p>
         <button class="btn small primary" id="btnRoadCut">경계 도로·작은 필지 정리</button>
         <button class="btn small" id="btnLotCut" title="대지는 필지 경계대로가 원칙입니다. 꼭 잘라야 할 때만 쓰세요">대지 자르기 (선 긋기)</button>
+        </details>
         <p class="note" id="jibunMsg" aria-live="polite"></p>
         <div id="jibunReport" class="jibun-report"></div>
       </div>
@@ -305,6 +308,7 @@
       </div>
     </aside>
   </div>
+  <div class="zone-bar" id="zoneBar" aria-live="polite"></div>
 
   <div class="card area-summary">
     <h3>면적 요약 <small>구역 → 정비기반시설 공제 → 건축 대지 → 연면적</small></h3>
@@ -575,7 +579,7 @@
 <script src="js/state.js?v=4b4d25ed"></script>
 <script src="js/calc.js?v=1f3cd3ad"></script>
 <script src="js/zonekit.js?v=8a871430"></script>
-<script src="js/map.js?v=626bc925"></script>
+<script src="js/map.js?v=c75acc75"></script>
 <script src="js/ledger.js?v=a3344f16"></script>
 <script src="js/pdfsave.js?v=34bd7d21"></script>
 <script src="js/overlay.js?v=f016601a"></script>
@@ -585,7 +589,7 @@
 <script src="shared/feas.js?v=d3414db1"></script>
 <script src="shared/cases.js?v=61cc5e50"></script>
 <script src="js/assume.js?v=0c7f45c9"></script>
-<script src="js/app.js?v=bb56740a"></script>
+<script src="js/app.js?v=2aeb04d1"></script>
 <script src="js/quick.js?v=ce09fb1e"></script>
 <script src="js/forms.js?v=1596a53e"></script>
 <script src="js/hwpx.js?v=dc68f75b"></script>
