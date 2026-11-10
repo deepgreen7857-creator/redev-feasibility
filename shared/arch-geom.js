@@ -560,6 +560,25 @@
       //  작은 평형이 좋은 자리를 먼저 가져갔음(숭의 A구역 74·114형 0세대). 한도: 0차 목표+6%p, 1차 +15%p,
       //  2차는 +15%p를 먼저 지키되 그 자리에 들어갈 다른 평형이 없으면 한도 없이(용적률 유지)
       const MIX_TOL = [0.06, 0.15, 0.15], over = (m, fl, ps) => { if (legacy) { const t0 = colsTot + m.n; return ps === 0 && t0 > 12 && (cols[m.t] + m.n) / t0 > want[m.t] + 0.06; } const add = m.n * fl, tot = colsTot + add; return tot > 12 * F && (cols[m.t] + add) / tot > want[m.t] + MIX_TOL[ps]; };
+      // 혼합형 '탑상 자리 먼저'(2026-11-10): 단지 가운데 쪽에 탑상동을 2~4개 먼저 박아 두고(기준 층수 F를 낼 수 있는 자리만), 남은 땅을 판상 먼저로 채움
+      //  — 동을 놓는 순서만 바꾸면 판상이 땅을 더 잘 채워 탑상이 늘 밀려났음(학익장미 A안 소동형·최대 배치가 판상만)
+      if (mode === 'towers') {
+        const towerMods = types.flatMap(t => (MODS[t] || []).filter(m => m.form === 'tower'));
+        const K = Math.max(2, Math.min(4, Math.round((opt.lot || 0) / 12000)));
+        // 단지 가운데에서 가까운 자리부터(북쪽 경계는 정북 일조 사선으로 높이가 막혀 높은 탑상이 못 섬 — 실무도 가운데를 높게)
+        const mx = (xmin + xmax) / 2, my = (GY0 + ymax) / 2, spots = [];
+        for (let y = GY0; y <= ymax; y += Math.max(st, 2)) for (let x = GX0; x <= xmax; x += Math.max(st, 2)) spots.push([x, y, Math.hypot(x + 10 - mx, (y + 10 - my) * 1.2)]);
+        spots.sort((a, b) => a[2] - b[2]);
+        for (const [x, y] of spots) {
+          if (blds.length >= K) break;
+          for (const m of towerMods) {
+            if (!fits(m, x, y) || capAt(m, x, y) < F || blocker(m, x, y, blds, F) !== null) continue;
+            blds.push({ row: 0, t: m.t, n: m.n, form: m.form, mod: m, floors: F, L: m.L, D: m.D, rx: x, ry: y });
+            cols[m.t] += m.n * F; colsTot += m.n * F; order = ordOf(); break;
+          }
+        }
+        altOn = false; // 나머지는 판상 먼저(탑상은 판상이 안 들어가는 자투리에만)
+      }
       const flip = (m, x, y) => { if (!(m.form === 'L' && x + m.L / 2 < (xmin + xmax) / 2)) return m; const mm = tagV(lForm(m.U || U, A.coreW_m, m.t, m.a, m.b, true), { id: m.v, rep: m.vrep, 단지: null }, m.U || U); return fits(mm, x, y) ? mm : m; };
       for (let pass = single ? 2 : types.length > 1 ? 0 : 1; pass < 3; pass++) {
         if (pass === 2 && F <= A.minFloors && !single) break;
@@ -596,6 +615,7 @@
           }
         }
       }
+      if (mode === 'towers') altOn = true;
       rebalance(blds);
       // 줄 번호: 남쪽부터 y가 비슷한 것끼리(동 깊이 안쪽 차이)
       blds.sort((a, b) => a.ry - b.ry); let r = 0, y0 = blds.length ? blds[0].ry : 0;
@@ -614,15 +634,17 @@
       add('pack', finish(pack(F)));
       // 혼합형: 판상·탑상 번갈아 놓기(alt)와 예전 순서(판상 먼저) 둘 다 만들어 보고, 연면적이 크게 줄지 않으면 탑상이 섞인 쪽을 고름
       //  (모든 방식에서 둘 다 돌려 봐도 결과가 같고 시간만 두 배라 한 줄·채우기만 — 2026-11-08 학익장미·유원 시험)
+      if (form === 'mix') add('towerFirst', finish(pack(F, 'towers')));
       if (form === 'mix') { altOn = false; try { if (!opt.quick) add('row0', finish(place(() => F))); add('pack0', finish(pack(F))); } finally { altOn = true; } }
       if (multi && !opt.quick) { add('single', finish(pack(F, 'single'))); add('legacy', finish(pack(F, 'legacy'))); }
       if (hasVar) { add('packV', packV()); if (multi && !opt.quick) { add('singleV', packV('single')); add('legacyV', packV('legacy')); } }
       // 연면적이 가장 큰 후보의 97% 이상인 것 중 평형 비율이 가장 잘 맞는 것(같으면 연면적 큰 것)
       //  목표 연면적을 넘는 부분은 나중에 동을 빼서 맞추므로 비교에서는 목표까지만 셈
       const gv = c => Math.min(gfaOf(c), target > 0 ? target : Infinity), top = Math.max(...cands.map(gv));
-      // 혼합형은 탑상이 섞인 안이 있으면 연면적 7% 손해까지 받아들임(판상이 늘 연면적에 유리해 3%로는 탑상이 거의 안 뽑혔음)
+      // 혼합형은 탑상이 섞인 안이 있으면 연면적 7% 손해까지, '탑상 자리 먼저' 안은 10% 손해까지 받아들임(판상이 늘 연면적에 유리해 3%로는 탑상이 거의 안 뽑혔음)
+      const tf = c => form === 'mix' && c.__k === 'towerFirst' ? 0 : 1; // 혼합형: 같은 조건이면 '탑상 자리 먼저' 안(탑상동이 북쪽·안쪽에)
       const towerShare = c => c.length ? c.filter(b => b.form === 'tower').length / c.length : 0, mixed = c => form === 'mix' && towerShare(c) >= 0.2 && towerShare(c) <= 0.7 ? 0 : 1;
-      const best = cands.filter(c => gv(c) >= top * (form === 'mix' && cands.some(c2 => !mixed(c2) && gv(c2) >= top * 0.93) ? 0.93 : 0.97)).sort((a, b) => mixed(a) - mixed(b) || mixErr(a) - mixErr(b) || gfaOf(b) - gfaOf(a))[0];
+      const best = cands.filter(c => gv(c) >= top * (form === 'mix' && c.__k === 'towerFirst' ? 0.9 : form === 'mix' && cands.some(c2 => !mixed(c2) && gv(c2) >= top * 0.93) ? 0.93 : 0.97)).sort((a, b) => mixed(a) - mixed(b) || tf(a) - tf(b) || mixErr(a) - mixErr(b) || gfaOf(b) - gfaOf(a))[0];
       if (typeof process !== 'undefined' && process.env && process.env.LOGW) console.error('F', F, cands.map(c => c.__k + ':' + Math.round(gv(c)) + '/' + mixErr(c).toFixed(2)).join(' '), '->', best.__k);
       return best;
     }
