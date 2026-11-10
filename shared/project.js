@@ -166,5 +166,75 @@
   }
   if (typeof document !== 'undefined') { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount(); }
 
+  // ---------- 구역 원본(2026-11-10, 사용자 결정 '구역 저장소 하나로') ----------
+  // 사업명처럼 '지금 사업의 구역계'도 원본 하나(jbs.project.v1 .zone {g: geometry, h, at, from})를 둔다.
+  //  - 어느 화면이든 구역을 '바꾸면' offerZone → 원본이 됨(사업성 saveState, /urban setZoneGeom·importProject, 공통 구역 JbsSite.save 지금 구역)
+  //    창마다 마지막으로 본 구역(seen)과 같으면 알리지 않음 → 열려 있던 옛 창이 다른 저장 때 옛 구역을 다시 원본으로 올리지 않음
+  //  - 화면을 열 때 자기 구역이 원본과 다르면 원본으로 맞춤: 사업성 = 지도 구역 바꾸고 필지·조서 다시 불러옴, /urban = 원본과 같은 안이 있으면 그 안을 고르고 없으면 지금 안을 바꿈,
+  //    공통 구역(교통·환경·경관·건축·판넬·결정조서·절차·지형도면) = 여기 <head>에서 지금 구역 도형을 바꿈(예전 도형은 zonePrev). 바꿨으면 위쪽 띠 + [되돌리기]
+  //  - 비교는 꼭짓점 집합(약 1m 반올림) — 순서·방향·소수점 차이로 서로 다르다고 보지 않게
+  const geomOf = gj => { if (!gj) return null; if (gj.type === 'Feature') return gj.geometry || null; if (gj.type === 'FeatureCollection') return gj.features && gj.features[0] ? gj.features[0].geometry : null; return gj.coordinates ? gj : null; };
+  function zh(gj) {
+    const gm = geomOf(gj); if (!gm || !gm.coordinates) return '';
+    const set = new Set(), walk = a => { if (typeof a[0] === 'number') set.add(Math.round(a[0] * 1e5) + ',' + Math.round(a[1] * 1e5)); else a.forEach(walk); };
+    walk(gm.coordinates);
+    const str = [...set].sort().join(';'); let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36) + '.' + set.size;
+  }
+  const seen = {};
+  JbsProject.zoneHash = zh;
+  JbsProject.zone = () => { const z = read().zone; return z && z.g ? z : null; };
+  JbsProject.seenZone = (from, gj) => { seen[from] = zh(gj); };
+  JbsProject.offerZone = function (gj, from) {
+    const h = zh(gj); if (!h || seen[from] === h) return false;
+    seen[from] = h;
+    const p = read(); if (p.zone && p.zone.h === h) return false;
+    p.zone = { g: geomOf(gj), h, at: now(), from: from || 'save' }; jset(KEY, p); return true;
+  };
+  // 이 화면 구역(gj)이 원본과 다르면 원본을 돌려줌(같으면 null)
+  JbsProject.adoptFor = function (from, gj) {
+    const z = JbsProject.zone(); if (!z) return null;
+    const h = zh(gj); if (h === z.h) { seen[from] = h; return null; }
+    return z;
+  };
+  const FROM = { main: '사업성 검토', urban: '정비계획 검토', site: '검토 도구', undo: '되돌리기' };
+  JbsProject.fromName = f => FROM[f] || f || '';
+  // 위쪽 띠: '다른 화면에서 바꾼 구역을 가져왔습니다' + [되돌리기]
+  JbsProject.noteAdopted = function (msg, undo) {
+    if (typeof document === 'undefined') return;
+    const show = () => {
+      let b = document.getElementById('jbsZoneNote');
+      if (!b) { b = document.createElement('div'); b.id = 'jbsZoneNote'; b.style.cssText = 'position:sticky;top:0;z-index:1200;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 14px;background:#e7f5ff;border-bottom:1px solid #a5d8ff;font-size:13.5px;color:#1c3d5a'; const nav = document.getElementById('siteNav'); if (nav && nav.parentNode) nav.parentNode.insertBefore(b, nav.nextSibling); else document.body.prepend(b); }
+      b.innerHTML = `<span>${msg}</span>` + (undo ? '<button type="button" id="jbsZoneUndo" style="border:1px solid #74c0fc;background:#fff;border-radius:5px;padding:2px 9px;cursor:pointer">되돌리기</button>' : '') + '<button type="button" id="jbsZoneX" style="margin-left:auto;border:0;background:none;cursor:pointer;font-size:15px" title="닫기">×</button>';
+      const u = document.getElementById('jbsZoneUndo'); if (u) u.onclick = () => { b.remove(); undo(); };
+      document.getElementById('jbsZoneX').onclick = () => b.remove();
+    };
+    if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+  };
+  // 공통 구역 쪽(<head>에서, 화면 코드보다 먼저): 원본과 같은 구역이 있으면 그것을 지금 구역으로, 없으면 지금 구역 도형을 원본으로 바꿈
+  (function siteMirror() {
+    try {
+      const z = JbsProject.zone(), s = jget(SITES), cur = localStorage.getItem(CUR);
+      const site = s && s.sites && cur ? s.sites[cur] : null;
+      if (site) seen.site = zh(site.geojson);
+      const P = (typeof location !== 'undefined' ? location.pathname : '').replace(/index\.html$/, '');
+      if (!z || !s || !s.sites || P === '/' || /^\/urban\//.test(P)) return;   // 사업성·정비계획은 그 화면 코드가 맞춤
+      if (site && zh(site.geojson) === z.h) return;
+      const same = Object.values(s.sites).find(x => x && zh(x.geojson) === z.h);
+      if (same) { localStorage.setItem(CUR, same.id); seen.site = z.h; return; }
+      if (!site) return;
+      site.zonePrev = site.geojson; site.geojson = { type: 'Feature', properties: {}, geometry: z.g };
+      site.zoneFrom = { from: z.from, at: z.at }; site.updated = now();
+      jset(SITES, s); seen.site = z.h;
+      JbsProject.noteAdopted(`${JbsProject.fromName(z.from)} 화면에서 ${z.at}에 바꾼 구역계로 이 화면 구역을 맞췄습니다.${site.arch && site.arch.chosen ? ' 건축계획 확정안은 예전 구역 기준이니 다시 확정하세요.' : ''}`, () => {
+        const s2 = jget(SITES), st = s2 && s2.sites && s2.sites[site.id]; if (!st || !st.zonePrev) return;
+        st.geojson = st.zonePrev; delete st.zonePrev; jset(SITES, s2);
+        seen.site = ''; JbsProject.offerZone(st.geojson, 'undo'); location.reload();
+      });
+    } catch (e) { console.warn('구역 맞추기 실패', e); }
+  })();
+  // 사업성 화면(<head>): 저장된 구역을 이 창이 본 구역으로(이 창의 다른 저장이 옛 구역을 원본으로 올리지 않게)
+  try { const m = jget(MAIN); if (m && m.area) seen.main = zh(m.area.geojson); } catch (e) { /* 무시 */ }
+
   g.JbsProject = JbsProject;
 })(typeof window !== 'undefined' ? window : globalThis);

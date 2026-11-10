@@ -201,6 +201,7 @@ async function importProject(id) {
   if (ir > 0) P.infraRatio = ir;
   saveP(); syncTitle();
   saveZ(); saveCache();
+  if (window.JbsProject && JbsProject.offerZone) JbsProject.offerZone(z.geojson, 'urban');   // 구역 원본에 알림(2026-11-10)
   S.region = id; D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); fitZone(id); render();
   if (!lands.length) { fetchZone(id); return; }
   statusMsg(`${id}안: 사업성 검토 구역계와 조서(필지 ${lands.length}개)를 가져왔습니다.`);
@@ -270,6 +271,7 @@ async function setZoneGeom(id, gj, delay = 0, label = '구역계 변경') {
   z.geojson = { type: 'Feature', properties: {}, geometry: geom };
   z.inArea = {}; z.fetchedAt = ''; z.from = 'map'; delete z.roads;
   saveZ();
+  if (window.JbsProject && JbsProject.offerZone) JbsProject.offerZone(z.geojson, 'urban');   // 구역 원본에 알림(2026-11-10)
   D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); render();
   clearTimeout(fetchTimer);
   if (delay) { jobSet(id, 0); fetchTimer = setTimeout(() => fetchZone(id), delay); } else fetchZone(id);
@@ -409,3 +411,19 @@ function buildSample() {
   };
 }
 
+
+// 구역 원본 맞추기(2026-11-10, shared/project.js): 열 때 원본이 A~E 중 하나와 같으면 그 안을 고르고, 없으면 지금 안을 원본으로 바꿈(되돌리기 띠)
+async function adoptProjectZone() {
+  if (!window.JbsProject || !JbsProject.zone) return;
+  const mz = JbsProject.zone(); if (!mz) return;
+  const hit = ZONE_IDS.find(k => Z.zones[k] && Z.zones[k].geojson && JbsProject.zoneHash(Z.zones[k].geojson) === mz.h);
+  if (hit) { JbsProject.seenZone('urban', mz.g); if (S.region !== hit) { S.region = hit; syncRegionChips(); renderSourceBar(); fitZone(hit); render(); } return; }
+  if (S.source !== 'map') setSource('map');
+  const id = S.region && ZONE_IDS.includes(S.region) ? S.region : ZONE_IDS[0];
+  const prev = Z.zones[id] && Z.zones[id].geojson ? JSON.parse(JSON.stringify(Z.zones[id].geojson)) : null;
+  JbsProject.seenZone('urban', mz.g);
+  // 원본이 사업성 화면 구역이면 그 조서까지 가져옴(필지를 다시 받지 않음), 아니면 구역계만 바꾸고 공부를 새로 조회
+  const pj = loadProject(), fromMain = pj && pj.area && pj.area.geojson && JbsProject.zoneHash(pj.area.geojson) === mz.h;
+  if (fromMain) await importProject(id); else await setZoneGeom(id, { type: 'Feature', properties: {}, geometry: mz.g }, 0, '다른 화면 구역 가져오기');
+  JbsProject.noteAdopted(`${JbsProject.fromName(mz.from)} 화면에서 ${mz.at}에 바꾼 구역계로 ${id}안을 맞췄습니다.`, prev ? () => setZoneGeom(id, prev, 0, '되돌리기') : null);
+}

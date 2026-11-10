@@ -72,6 +72,7 @@
 - 추천안 자동 진행(2026-11-04, 사용자 요구 '구역계만 정하면 출입구 추천안이 그냥 뜨고 그 추천에 따라 기반시설 → 교통성 검토로 이어져야, 아무것도 없으면 어렵다'): urban/js AUTO. ① 필지를 불러온 구역은 탭과 관계없이 주변 도로 자동 불러오기(AUTO.roads, 구역계마다 한 번) ② 출입구가 없으면 GATE.suggest/suggestFor 1순위로 주→부→주차장 출입구 자동 배치(g.auto, 지도 '추천 ○○'), 주출입구 = 진입도로 → 3탭 제안값이 그 기준으로 계산. z.infra.gateAuto = 구역계 bbox 키 — 같은 구역계에선 지워도 다시 안 넣음, 사용자가 하나라도 직접 놓거나 끌어 옮기면(auto 해제) 자동으로 안 바꿈, 구역계가 바뀌고 추천 출입구뿐이면 다시 추천 ③ 각 탭(사업성 탭 제외) h2 아래 '추천안 흐름' 카드: 출입구·정비기반시설·교통성 1차(traffic/traffic-calc.js TrafficCalc — /traffic과 같은 계산·기준표 CRIT.raw.traffic + 문장틀 CRIT.tplTraffic)·사업성 결과만, [바꾸기]·[검토서로]·[추천안 다시 받기]
   - 대로급 도로는 출입구 후보에서 뒤로(GATE.isBig = 추정 폭 25m 이상 또는 결정 등급 광로·대로 — 도로 필지가 조각나 폭이 작게 추정되는 경우가 있어 결정 등급도 봄, 2026-11-05 용현유원 A안에서 광로2류가 9.9m로 추정돼 주출입구로 뽑힌 일). 자동 배치 전에 INFRA.fetchEdgeDec를 한 번 먼저 돌림
   - 부출입구는 다른 도로 우선(보행용이라 간선도로 허용) → 대로급 뒤로. 주차장 출입구 1순위가 대로급이고 주출입구는 대로급이 아니면 자동으로 놓지 않고 z.infra.parkShared(주출입구와 같이 씀)
+- 단지 안 비상차로·소방차 전용구역(2026-11-10): `GateZones.spine(pts, zones, w)` = 주출입구 진입광장 끝에서 구역 중심 쪽으로 곧게 폭 7m(주택건설기준 등에 관한 규정 제26조, 10m 미만이면 없음) → /arch·/urban 개략 배치 keep(건축 불가, r.keep은 +2m 여유), 지도·배치도(회색 차로)·조감도. `GateZones.firePads(pts, blds, block)` = 배치 뒤 동마다 6×15m 패드를 외벽 6~15m에서 찾음(소방기본법 시행령 제7조의12·13, 크기·거리 가정값) — 100세대 이상일 때 배치도 노란 빗금·'소방차 자리 없음'·검토서 줄. 배치 엔진 규칙(위반)에는 넣지 않음(주의 안내). 실제 단지는 곧은 차로보다 동 사이를 도는 순환 비상차로가 많음 — 다음 개선 거리
 - 건축선·출입 계획(2026-11-08, 사용자 요구 '건축한계선을 정하는 때 같이 정할 것을 출입구보다 먼저'): /urban 4탭 맨 위 blineSection(출입구 위) — 경계 도로(pnu)마다 건축한계선 m(기본 = arch.json 가정 roadSetback_m)·전면공지(보도형/조경형, 기본 폭 12m 이상 보도형)·차량출입(교차로 부근만 불허/전 구간 불허/허용 — 기본: 대로급은 다른 도로가 있으면 전 구간, 그 밖은 교차로 20m 안). 공공보행통로(서로 다른 도로를 잇는 200m 이상 직선이 구역 안을 지나면 가운데 관통안을 자동 추천, 폭 6m, 지도에서 두 점·지우기), 공개공지(공동주택은 의무 아님 — 건축법 시행령 제27조의2①, 직접 찍을 때만). 저장 z.infra.bl. 근거: 도정법 시행령 제8조제3항제6·7호. 거리·구간 수치는 지구단위계획 결정 전 가정값
   - 연결: GATE.suggest·suggestFor(park)는 불허구간 밖만 / 직접 놓은 차량 출입구가 불허구간이면 검사표 '안 맞음' / 바꾸면 추천 출입구만 있을 때 다시 추천(gateAuto 지움) / 개략 배치(08-arch input) 도로변 이격 = 변별 건축한계선(간선도로변은 소음 이격과 큰 쪽), 공공보행통로·공개공지 = keep(건축 불가) / 출입구 자리 깊이도 그 변 건축한계선부터
   - /arch 넘기기: site-store가 BLINE.exportOf(zone) → site.urbanBl(경위도 변·불허 t 구간·통로·공지). arch.js loadBl → blE(변별 sb·front·noCar)·blKeep. 도로변 이격·배치 keep·출입구(불허구간이면 부출입구로)·지도·배치도(arch-draw: 전면공지 채움, 건축한계선 붉은 파선, 소음 이격 회색, 불허구간 굵은 검은 선+눈금, 통로·공지)·검토서 줄
@@ -91,11 +92,18 @@
 - **새 화면에서 사업명을 따로 저장하지 말 것.** 화면에 이름이 필요하면 JbsProject.name()을 읽고, 이름 칸을 만들면 JbsProject.setName을 부를 것. 새 페이지 <head>에 gate.js 다음 `<script src="/shared/project.js?v=…">`
 - 시험: `node tools/ui-test/project-ui.js`(23항목 — 처음 맞추기·화면 간 이어짐·열린 창 바로 바뀜·처음으로). 사업명·화면 연결을 건드렸으면 push 전에 반드시 통과
 
+## 구역도 한 곳(shared/project.js '구역 원본') — 2026-11-10 사용자 결정 '구역 저장소 하나로'
+- 원본: localStorage 'jbs.project.v1'.zone {g: geometry, h: 꼭짓점 집합 지문(약 1m 반올림 — 순서·방향 무관), at, from main·urban·site·undo}. 사업성 S.area.geojson·/urban Z.zones[안].geojson·공통 구역 sites[지금].geojson은 사본
+- 알리기(구역을 '바꾼' 화면만): 사업성 saveState(예시 제외)·/urban setZoneGeom·importProject·JbsSite.save(지금 구역일 때) → JbsProject.offerZone(gj, 화면). 창마다 마지막으로 본 구역(seen)과 같으면 알리지 않음 → 열려 있던 옛 창이 다른 저장 때 옛 구역을 원본으로 되올리지 않음
+- 맞추기(화면을 열 때): 사업성 boot 끝 adoptProjectZone(js/app.js — 2단계로 가서 지도 구역 바꾸고 필지·조서 다시 불러옴) / /urban adoptProjectZone(urban/js/02-zones.js, 12-events 시작 때 — 원본과 같은 안이 있으면 그 안만 고르고, 없으면 지금 안을 바꿈. 원본이 사업성 구역이면 importProject로 조서까지) / 공통 구역 화면(교통·환경·경관·건축·판넬·결정조서·절차·지형도면)은 project.js <head>에서 siteMirror(같은 도형 구역이 있으면 그 구역을 지금 구역으로, 없으면 지금 구역 도형을 바꾸고 예전 도형은 site.zonePrev). 바꿨으면 위쪽 파란 띠 #jbsZoneNote + [되돌리기](되돌린 도형이 다시 원본)
+- [새 사업]·처음으로는 jbs.project.v1을 새로 써서 구역 원본도 비워짐
+- 새 화면이 구역을 바꾸는 기능을 만들면 JbsProject.offerZone을 부를 것. 시험: `node tools/ui-test/zone-ui.js`(18항목). 구역·화면 연결을 건드렸으면 push 전에 project-ui·sync-ui와 함께 통과
+
 ## 수정 후 확인 순서(push 전에 전부, 2026-11-08 정리)
 1. `node --check <수정한 파일>.js`
 2. `node tools/bump-versions.js` — `?v=` 번호를 파일 내용 지문으로 모든 페이지·작업 스레드에 자동으로 맞춤. **손으로 번호를 올리지 말 것**(예전엔 손으로 올려 같은 파일이 페이지마다 다른 번호로 불렸음). `--check`는 검사만
 3. /urban을 고쳤으면 `node tools/check-urban-order.js`(파일 순서·이름 겹침)
-4. 화면 연결 시험: `node tools/ui-test/project-ui.js`(사업명 이어짐 23항목) · `node tools/ui-test/sync-ui.js`(두 컴퓨터 이어서 하기 17항목) — 실패 0
+4. 화면 연결 시험: `node tools/ui-test/project-ui.js`(사업명 이어짐 23항목) · `node tools/ui-test/sync-ui.js`(두 컴퓨터 이어서 하기 17항목) · `node tools/ui-test/zone-ui.js`(구역 이어짐 18항목) — 실패 0
 5. /urban을 '옮기기·정리'만 했으면(기능 변경 없음) 고치기 전·후 동작 기록이 같아야 함: `node tools/ui-test/urban-ui.js . /tmp/전.json` → 고침 → `node tools/ui-test/urban-ui.js . /tmp/후.json` → `node tools/ui-test/urban-ui.js --비교 /tmp/전.json /tmp/후.json`(다름 0). 기능을 바꿨으면 다른 항목이 바꾼 곳뿐인지 확인
 6. 고친 화면의 기존 시험(tools/ui-test/*-ui.js) + 1~8탭 콘솔 오류 확인
 7. push 직전 `git pull --rebase` — 다른 대화가 같은 파일을 고쳤으면 합친 뒤 2~4를 다시

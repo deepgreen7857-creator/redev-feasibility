@@ -38,6 +38,8 @@ const ARCHLAY = {
     // 단지 출입구 자리(주출입구 문주·진입광장, 주차장 경사로, 부출입구)는 건축 불가 — /arch와 같은 계산(shared/gate-zones.js, 2026-11-08)
     const E0 = G.edges(pts), keep = !window.GateZones ? [] : ((z.infra && z.infra.gates) || []).filter(g => g.pt).map(g => { const q = pr.to([g.pt[1], g.pt[0]]), ne = GateZones.nearestEdge(E0, q); return ne && ne.d < 30 ? GateZones.keepPoly(GateZones.zone(g.kind, q, E0[ne.edge], sb[ne.edge], {})) : null; }).filter(Boolean)
       .concat(bp && bp.E.length === tags.length ? BLINE.keepPolys(z) : []);   // 공공보행통로·공개공지(건축선·출입 계획)도 건축 불가
+    // 단지 안 비상차로(주출입구 진입광장 끝 → 안쪽, 폭 7m — 주택건설기준 등에 관한 규정 제26조, 2026-11-10)
+    if (window.GateZones) { const zs = ((z.infra && z.infra.gates) || []).filter(g => g.pt && g.kind === 'main').map(g => { const q = pr.to([g.pt[1], g.pt[0]]), ne = GateZones.nearestEdge(E0, q); return ne && ne.d < 30 ? GateZones.zone('main', q, E0[ne.edge], sb[ne.edge], {}) : null; }).filter(Boolean), r = window.GateZones && GateZones.spine ? GateZones.spine(pts, zs) : null; if (r) keep.push(r.keep); }
     return { pr, pts, site: { pts, tags, setbacks: sb, exclude, keep }, opt: { units: C.평면, lib: C.평면_라이브러리, assume: Object.assign({}, A0), mix, form: 'slab', spacing: 0.8, sun, lot: pl.site, far: pl.farUse, winRatio: win ? (/준주거|근린상업/.test(zoning) ? (win.값.근린상업_준주거_배수 || 4) : (win.값.배수 || 2)) : 0, edgeW: [], exSetback: A0.boundarySetback_m || 0 } };
   },
   cands(I) {
@@ -50,7 +52,7 @@ const ARCHLAY = {
   solve(I, done) {
     const c = this.cands(I);
     try {
-      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=f750771c'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
+      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=1fbe2c11'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
       const id = (this.seq = (this.seq || 0) + 1); this.cb[id] = done;
       this.wk.postMessage({ id, site: I.site, opt: I.opt, cand: c.cand, F: c.F });
       // 90초가 넘으면 일꾼을 멈추고 예전 네모 그림으로(화면에 '계산 중'이 계속 남지 않게)

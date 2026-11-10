@@ -1454,6 +1454,24 @@ function boot() {
   $('#btnSurveyPrint').onclick = printSurvey;
 
   App.show((location.hash || '#overview').slice(1));
+  setTimeout(adoptProjectZone, 400);
+}
+
+// 구역 원본 맞추기(2026-11-10, shared/project.js): 다른 화면(/urban·검토 도구)에서 구역계를 바꿨으면 열 때 그 구역으로 바꾸고 필지·조서를 다시 불러옴
+async function adoptProjectZone() {
+  if (!window.JbsProject || !JbsProject.adoptFor || /예시/.test(S.meta.memo || '')) return;
+  const mz = JbsProject.adoptFor('main', S.area.geojson); if (!mz) return;
+  const prev = S.area.geojson ? JSON.parse(JSON.stringify(S.area.geojson)) : null;
+  JbsProject.seenZone('main', mz.g);
+  App.go('area');
+  await new Promise(r => setTimeout(r, 300));   // 지도가 그려진 뒤
+  if (!MapView.setZoneGeo({ type: 'Feature', properties: {}, geometry: mz.g }, '다른 화면 구역', '다른 화면 구역', true)) return;
+  // 띠는 바로(필지·조서 다시 불러오기는 브이월드라 몇 초 걸림)
+  JbsProject.noteAdopted(`${JbsProject.fromName(mz.from)} 화면에서 ${mz.at}에 바꾼 구역계로 이 화면 구역을 맞췄습니다. 필지·조서를 다시 불러옵니다.`, prev ? async () => {
+    if (MapView.setZoneGeo(prev, '예전 구역', '예전 구역', true)) { await MapView.importArea({ silent: true }); App.update(true); }
+  } : null);
+  await MapView.importArea({ silent: true });
+  App.update(true);
 }
 
 document.addEventListener('DOMContentLoaded', boot);
