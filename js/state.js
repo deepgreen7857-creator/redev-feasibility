@@ -211,7 +211,7 @@ let __otherTabChanged = false;
 function saveState() {
   if (__otherTabChanged) return;
   const body = JSON.stringify(S);
-  try { localStorage.setItem(STORAGE_KEY, body); if (typeof window !== 'undefined' && window.JbsProject) window.JbsProject.offer(S.meta && S.meta.name, 'main'); }
+  try { localStorage.setItem(STORAGE_KEY, body); if (typeof window !== 'undefined' && window.JbsProject) { window.JbsProject.offer(S.meta && S.meta.name, 'main'); if (S.area && S.area.geojson && window.JbsProject.offerZone && !/예시/.test(S.meta.memo || '')) window.JbsProject.offerZone(S.area.geojson, 'main'); } }
   catch (e) {
     // 저장 공간이 차면 다시 받을 수 있는 캐시(정비계획 조회 캐시)를 비우고 한 번 더 — 예전엔 조용히 실패해 구역이 저장되지 않았음
     try { localStorage.removeItem('jbs-urban-cache-v1'); localStorage.setItem(STORAGE_KEY, body); }

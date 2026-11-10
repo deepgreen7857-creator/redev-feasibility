@@ -134,6 +134,7 @@ fetch('rules/incheon.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : n
   const first = D.map && D.keys.find(k => D.regions[k].geojson);
   if (first) { S.region = first; syncRegionChips(); renderSourceBar(); fitZone(first); }
   render();
+  if (new URLSearchParams(location.search).get('from') !== 'main') { try { await adoptProjectZone(); } catch (e) { console.warn('구역 원본 맞추기 실패', e); } }
   // 사업성 검토 '1차 재검토' → ?from=main: 사업성 검토 구역계·조서를 빈 안(없으면 새 안)으로 가져와 정비계획(기반시설) 탭을 엶
   const qs = new URLSearchParams(location.search);
   // ?tab=plan|arch|… 로 그 탭을 바로 열고, ?focus=gate면 단지 출입구 칸, ?focus=bline이면 건축선·출입 계획 칸으로 내려감(사업성 화면 순서 버튼에서 씀)

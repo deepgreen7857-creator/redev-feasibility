@@ -21,6 +21,8 @@
       const keep = Object.assign({}, site); delete keep.context; // 주변 건물(브이월드, 다시 받을 수 있음)은 저장하지 않음
       s.sites[site.id] = keep;
       write(s);
+      // 지금 구역(jbs.sites.current)의 도형이 바뀌었으면 구역 원본(shared/project.js)에 알림(2026-11-10)
+      try { if (g.JbsProject && g.JbsProject.offerZone && site.geojson && localStorage.getItem('jbs.sites.current') === site.id) g.JbsProject.offerZone(site.geojson, 'site'); } catch (e) { /* 무시 */ }
       return site;
     },
     remove(id) { const s = read(); delete s.sites[id]; write(s); },

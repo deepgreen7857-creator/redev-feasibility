@@ -92,11 +92,18 @@
 - **새 화면에서 사업명을 따로 저장하지 말 것.** 화면에 이름이 필요하면 JbsProject.name()을 읽고, 이름 칸을 만들면 JbsProject.setName을 부를 것. 새 페이지 <head>에 gate.js 다음 `<script src="/shared/project.js?v=…">`
 - 시험: `node tools/ui-test/project-ui.js`(23항목 — 처음 맞추기·화면 간 이어짐·열린 창 바로 바뀜·처음으로). 사업명·화면 연결을 건드렸으면 push 전에 반드시 통과
 
+## 구역도 한 곳(shared/project.js '구역 원본') — 2026-11-10 사용자 결정 '구역 저장소 하나로'
+- 원본: localStorage 'jbs.project.v1'.zone {g: geometry, h: 꼭짓점 집합 지문(약 1m 반올림 — 순서·방향 무관), at, from main·urban·site·undo}. 사업성 S.area.geojson·/urban Z.zones[안].geojson·공통 구역 sites[지금].geojson은 사본
+- 알리기(구역을 '바꾼' 화면만): 사업성 saveState(예시 제외)·/urban setZoneGeom·importProject·JbsSite.save(지금 구역일 때) → JbsProject.offerZone(gj, 화면). 창마다 마지막으로 본 구역(seen)과 같으면 알리지 않음 → 열려 있던 옛 창이 다른 저장 때 옛 구역을 원본으로 되올리지 않음
+- 맞추기(화면을 열 때): 사업성 boot 끝 adoptProjectZone(js/app.js — 2단계로 가서 지도 구역 바꾸고 필지·조서 다시 불러옴) / /urban adoptProjectZone(urban/js/02-zones.js, 12-events 시작 때 — 원본과 같은 안이 있으면 그 안만 고르고, 없으면 지금 안을 바꿈. 원본이 사업성 구역이면 importProject로 조서까지) / 공통 구역 화면(교통·환경·경관·건축·판넬·결정조서·절차·지형도면)은 project.js <head>에서 siteMirror(같은 도형 구역이 있으면 그 구역을 지금 구역으로, 없으면 지금 구역 도형을 바꾸고 예전 도형은 site.zonePrev). 바꿨으면 위쪽 파란 띠 #jbsZoneNote + [되돌리기](되돌린 도형이 다시 원본)
+- [새 사업]·처음으로는 jbs.project.v1을 새로 써서 구역 원본도 비워짐
+- 새 화면이 구역을 바꾸는 기능을 만들면 JbsProject.offerZone을 부를 것. 시험: `node tools/ui-test/zone-ui.js`(18항목). 구역·화면 연결을 건드렸으면 push 전에 project-ui·sync-ui와 함께 통과
+
 ## 수정 후 확인 순서(push 전에 전부, 2026-11-08 정리)
 1. `node --check <수정한 파일>.js`
 2. `node tools/bump-versions.js` — `?v=` 번호를 파일 내용 지문으로 모든 페이지·작업 스레드에 자동으로 맞춤. **손으로 번호를 올리지 말 것**(예전엔 손으로 올려 같은 파일이 페이지마다 다른 번호로 불렸음). `--check`는 검사만
 3. /urban을 고쳤으면 `node tools/check-urban-order.js`(파일 순서·이름 겹침)
-4. 화면 연결 시험: `node tools/ui-test/project-ui.js`(사업명 이어짐 23항목) · `node tools/ui-test/sync-ui.js`(두 컴퓨터 이어서 하기 17항목) — 실패 0
+4. 화면 연결 시험: `node tools/ui-test/project-ui.js`(사업명 이어짐 23항목) · `node tools/ui-test/sync-ui.js`(두 컴퓨터 이어서 하기 17항목) · `node tools/ui-test/zone-ui.js`(구역 이어짐 18항목) — 실패 0
 5. /urban을 '옮기기·정리'만 했으면(기능 변경 없음) 고치기 전·후 동작 기록이 같아야 함: `node tools/ui-test/urban-ui.js . /tmp/전.json` → 고침 → `node tools/ui-test/urban-ui.js . /tmp/후.json` → `node tools/ui-test/urban-ui.js --비교 /tmp/전.json /tmp/후.json`(다름 0). 기능을 바꿨으면 다른 항목이 바꾼 곳뿐인지 확인
 6. 고친 화면의 기존 시험(tools/ui-test/*-ui.js) + 1~8탭 콘솔 오류 확인
 7. push 직전 `git pull --rebase` — 다른 대화가 같은 파일을 고쳤으면 합친 뒤 2~4를 다시
