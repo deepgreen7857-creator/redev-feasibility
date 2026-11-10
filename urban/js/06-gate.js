@@ -230,7 +230,8 @@ const GATE = {
         this.list(z).forEach(g => { if (!g.pt) return; const q = pr.to([g.pt[1], g.pt[0]]), ne = GateZones.nearestEdge(E, q); if (!ne || ne.d > 30) return;
           const bp = BLINE.proj(z), sbE = bp && bp.E.length === E.length && bp.edges[ne.edge].r ? bp.edges[ne.edge].sb : sbR;   // 그 변의 건축한계선
           const zz = GateZones.zone(g.kind, q, E[ne.edge], sbE, {});
-          L.polygon(zz.poly.map(p => pr.back(p).slice().reverse()), { color: col[g.kind], weight: 1.5, dashArray: '5 3', fillColor: col[g.kind], fillOpacity: 0.15, interactive: false }).addTo(layer); });
+          L.polygon(zz.poly.map(p => pr.back(p).slice().reverse()), { color: col[g.kind], weight: 1.5, dashArray: '5 3', fillColor: col[g.kind], fillOpacity: 0.15, interactive: false }).addTo(layer);
+          if (g.kind === 'main' && GateZones.spine) { const r = GateZones.spine(pts, [zz]); if (r) L.polygon(r.poly.map(p => pr.back(p).slice().reverse()), { color: '#495057', weight: 1.5, fillColor: '#adb5bd', fillOpacity: 0.45 }).bindTooltip(`단지 안 비상차로 폭 ${r.w}m · 길이 약 ${fmt(r.len)}m — 동 배치 안 함(주택건설기준 등에 관한 규정 제26조)`, { sticky: true }).addTo(layer); } });
       }
     } catch (e) { /* 그림만 빠짐 */ }
     // 주출입구가 아직 없으면 추천 자리를 점선 원으로 — 누르면 그 자리에 주출입구를 놓음
