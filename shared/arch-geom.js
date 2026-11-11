@@ -572,9 +572,11 @@
         for (const [x, y] of spots) {
           if (blds.length >= K) break;
           for (const m of towerMods) {
-            if (!fits(m, x, y) || capAt(m, x, y) < F || blocker(m, x, y, blds, F) !== null) continue;
-            blds.push({ row: 0, t: m.t, n: m.n, form: m.form, mod: m, floors: F, L: m.L, D: m.D, rx: x, ry: y });
-            cols[m.t] += m.n * F; colsTot += m.n * F; order = ordOf(); break;
+            // 높은 기준 층수(F)에선 가운데라도 F층이 안 나오는 일이 많아(학익장미 28~35층 안이 판상만), F의 70%까지는 받아 줌 — 층수는 뒤의 '탑상동 올리기'가 다시 올림
+            if (!fits(m, x, y)) continue; const fl = Math.min(F, capAt(m, x, y));
+            if (fl < Math.max(A.minFloors, Math.ceil(F * 0.7)) || blocker(m, x, y, blds, fl) !== null) continue;
+            blds.push({ row: 0, t: m.t, n: m.n, form: m.form, mod: m, floors: fl, L: m.L, D: m.D, rx: x, ry: y });
+            cols[m.t] += m.n * fl; colsTot += m.n * fl; order = ordOf(); break;
           }
         }
         altOn = false; // 나머지는 판상 먼저(탑상은 판상이 안 들어가는 자투리에만)
