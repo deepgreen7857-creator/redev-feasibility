@@ -572,9 +572,11 @@
         for (const [x, y] of spots) {
           if (blds.length >= K) break;
           for (const m of towerMods) {
-            if (!fits(m, x, y) || capAt(m, x, y) < F || blocker(m, x, y, blds, F) !== null) continue;
-            blds.push({ row: 0, t: m.t, n: m.n, form: m.form, mod: m, floors: F, L: m.L, D: m.D, rx: x, ry: y });
-            cols[m.t] += m.n * F; colsTot += m.n * F; order = ordOf(); break;
+            // 높은 기준 층수(F)에선 가운데라도 F층이 안 나오는 일이 많아(학익장미 28~35층 안이 판상만), F의 70%까지는 받아 줌 — 층수는 뒤의 '탑상동 올리기'가 다시 올림
+            if (!fits(m, x, y)) continue; const fl = Math.min(F, capAt(m, x, y));
+            if (fl < Math.max(A.minFloors, Math.ceil(F * 0.7)) || blocker(m, x, y, blds, fl) !== null) continue;
+            blds.push({ row: 0, t: m.t, n: m.n, form: m.form, mod: m, floors: fl, L: m.L, D: m.D, rx: x, ry: y });
+            cols[m.t] += m.n * fl; colsTot += m.n * fl; order = ordOf(); break;
           }
         }
         altOn = false; // 나머지는 판상 먼저(탑상은 판상이 안 들어가는 자투리에만)
@@ -644,7 +646,7 @@
       // 혼합형은 탑상이 섞인 안이 있으면 연면적 7% 손해까지, '탑상 자리 먼저' 안은 10% 손해까지 받아들임(판상이 늘 연면적에 유리해 3%로는 탑상이 거의 안 뽑혔음)
       const tf = c => form === 'mix' && c.__k === 'towerFirst' ? 0 : 1; // 혼합형: 같은 조건이면 '탑상 자리 먼저' 안(탑상동이 북쪽·안쪽에)
       const towerShare = c => c.length ? c.filter(b => b.form === 'tower').length / c.length : 0, mixed = c => form === 'mix' && towerShare(c) >= 0.2 && towerShare(c) <= 0.7 ? 0 : 1;
-      const best = cands.filter(c => gv(c) >= top * (form === 'mix' && c.__k === 'towerFirst' ? 0.9 : form === 'mix' && cands.some(c2 => !mixed(c2) && gv(c2) >= top * 0.93) ? 0.93 : 0.97)).sort((a, b) => mixed(a) - mixed(b) || tf(a) - tf(b) || mixErr(a) - mixErr(b) || gfaOf(b) - gfaOf(a))[0];
+      const best = (opt.forceTF && form === 'mix' && cands.find(c => c.__k === 'towerFirst' && c.length)) || cands.filter(c => gv(c) >= top * (form === 'mix' && c.__k === 'towerFirst' ? 0.9 : form === 'mix' && cands.some(c2 => !mixed(c2) && gv(c2) >= top * 0.93) ? 0.93 : 0.97)).sort((a, b) => mixed(a) - mixed(b) || tf(a) - tf(b) || mixErr(a) - mixErr(b) || gfaOf(b) - gfaOf(a))[0];
       if (typeof process !== 'undefined' && process.env && process.env.LOGW) console.error('F', F, cands.map(c => c.__k + ':' + Math.round(gv(c)) + '/' + mixErr(c).toFixed(2)).join(' '), '->', best.__k);
       return best;
     }
@@ -775,6 +777,19 @@
 
   // 대안: 저층 다동형 / 중층형 / 고층 소동형. 목표 연면적의 97% 이상 채우는 기준 층수 중에서 고름
   function alternatives(site, opt) {
+    const out0 = alternatives0(site, opt);
+    // 혼합형: 판상이 땅을 잘 채워 세대수 위주 안은 판상 위주가 되기 쉬움 → 단지 가운데에 탑상동을 먼저 세운 안을 따로 하나 더(세대수는 줄 수 있음, 2026-11-11 학익장미)
+    if ((opt.form || 'slab') === 'mix' && !opt.fixedF) {
+      const A = opt.assume, span = A.maxFloors - A.minFloors, stepF = span > 24 ? 3 : span > 12 ? 2 : 1; let tf = null;
+      for (let F = A.minFloors; F <= A.maxFloors; F += stepF) { try { const r = layout(site, Object.assign({}, opt, { fixedF: F, forceTF: true })); if (r.units && r.buildings.some(b => b.form === 'tower') && (!tf || r.gfa > tf.gfa)) tf = r; } catch (e) { /* 건너뜀 */ } }
+      if (tf) {
+        const top = Math.max(...out0.map(o => o.gfa || 0)) || tf.gfa, loss = Math.round((1 - tf.gfa / top) * 100);
+        out0.push(Object.assign(tf, { label: `탑상 중심(가운데 탑상동${loss > 0 ? `, 연면적 ${loss}% 적음` : ''})` }));
+      }
+    }
+    return out0;
+  }
+  function alternatives0(site, opt) {
     const A = opt.assume, cands = [];
     // 기준 층수: 범위가 넓으면 2층 간격(계산 시간 절반, 결과 차이 작음)
     const span = A.maxFloors - A.minFloors, stepF = span > 24 ? 3 : span > 12 ? 2 : 1, all = [];

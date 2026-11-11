@@ -81,11 +81,10 @@
       const c = k.poly.reduce((m, p) => [m[0] + p[0] / k.poly.length, m[1] + p[1] / k.poly.length], [0, 0]);
       s += `<text x="${X(c[0])}" y="${Y(c[1])}" font-size="${5.5 * u}" text-anchor="middle" fill="${k.kind === 'walk' ? '#1864ab' : '#a61e4d'}" font-weight="700">${k.kind === 'walk' ? `공공보행통로(폭 ${fmt(k.w, 1)}m)` : '공개공지'}</text>`;
     });
-    // 단지 안 비상차로(2026-11-10) — 회색 차로 + 가운데 점선, 보도 1.5m 한쪽
-    if (o.spine) { const r = o.spine; s += poly(r.poly, `fill="#dee2e6" stroke="#868e96" stroke-width="${0.5 * u}"`);
-      s += `<line x1="${X(r.a[0])}" y1="${Y(r.a[1])}" x2="${X(r.b[0])}" y2="${Y(r.b[1])}" stroke="#fff" stroke-width="${0.6 * u}" stroke-dasharray="${3 * u} ${2 * u}"/>`;
-      const m = [(r.a[0] + r.b[0]) / 2, (r.a[1] + r.b[1]) / 2]; let ang = Math.atan2(-(r.b[1] - r.a[1]), r.b[0] - r.a[0]) * 180 / Math.PI; if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
-      s += `<text x="${X(m[0])}" y="${Y(m[1])}" transform="rotate(${ang.toFixed(1)} ${X(m[0])} ${Y(m[1])})" font-size="${4.5 * u}" text-anchor="middle" dy="${-1.5 * u}" fill="#495057" font-weight="600">비상차로 ${fmt(r.w, 1)}m</text>`; }
+    // 단지 안 비상차로(순환형, 2026-11-11) — 회색 포장 + 가운데 흰 점선
+    if (o.road && o.road.polys && o.road.polys.length) { const r = o.road;
+      r.polys.forEach(q => { s += poly(q, `fill="#dee2e6" stroke="none"`); });
+      s += `<polyline points="${r.path.map(p => X(p[0]) + ',' + Y(p[1])).join(' ')}" fill="none" stroke="#fff" stroke-width="${0.5 * u}" stroke-dasharray="${3 * u} ${2 * u}"/>`; }
     // 소방자동차 전용구역 — 노란 빗금 사각형(자리 없는 동은 동 위에 붉은 '소방' 표시)
     (o.fire || []).forEach(f => {
       if (f.ok) { s += poly(f.pad, `fill="url(#fireHatch)" stroke="#e8a400" stroke-width="${0.6 * u}"`); return; }
@@ -188,7 +187,7 @@
       let gx = sx, gy = ly - 11 * u; const it = (sw, nm) => { s += sw(gx, gy) + `<text x="${gx + 15 * u}" y="${gy + 2.3 * u}" font-size="${6.5 * u}">${nm}</text>`; gx += 20 * u + nm.length * 6.6 * u; };
       if ((o.tags || []).some(t => t === 'road' || t === 'arterial')) it((x, y) => `<line x1="${x}" y1="${y}" x2="${x + 12 * u}" y2="${y}" stroke="#c2255c" stroke-width="${1.1 * u}" stroke-dasharray="${4 * u} ${2 * u}"/>`, '건축한계선');
       if (((o.bl && o.bl.edges) || []).some(b => b && b.noCar.length)) it((x, y) => `<line x1="${x}" y1="${y}" x2="${x + 12 * u}" y2="${y}" stroke="#212529" stroke-width="${2.4 * u}"/>`, '차량출입 불허구간');
-      if (o.spine) it((x, y) => `<rect x="${x}" y="${y - 3 * u}" width="${12 * u}" height="${6 * u}" fill="#dee2e6" stroke="#868e96" stroke-width="${0.5 * u}"/>`, '단지 안 비상차로');
+      if (o.road && o.road.len) it((x, y) => `<rect x="${x}" y="${y - 3 * u}" width="${12 * u}" height="${6 * u}" fill="#dee2e6" stroke="#868e96" stroke-width="${0.5 * u}"/>`, '단지 안 비상차로');
       if ((o.fire || []).some(f => f.ok)) it((x, y) => `<rect x="${x}" y="${y - 3 * u}" width="${12 * u}" height="${6 * u}" fill="url(#fireHatch)" stroke="#e8a400" stroke-width="${0.6 * u}"/>`, '소방차 전용구역');
       if (((o.bl && o.bl.keep) || []).some(k => k.kind === 'walk')) it((x, y) => `<rect x="${x}" y="${y - 3 * u}" width="${12 * u}" height="${6 * u}" fill="#d0ebff" stroke="#1c7ed6" stroke-width="${0.6 * u}"/>`, '공공보행통로');
       if (((o.bl && o.bl.keep) || []).some(k => k.kind === 'open')) it((x, y) => `<rect x="${x}" y="${y - 3 * u}" width="${12 * u}" height="${6 * u}" fill="#ffdeeb" stroke="#d6336c" stroke-width="${0.6 * u}"/>`, '공개공지');

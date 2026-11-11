@@ -38,9 +38,9 @@ const ARCHLAY = {
     // 단지 출입구 자리(주출입구 문주·진입광장, 주차장 경사로, 부출입구)는 건축 불가 — /arch와 같은 계산(shared/gate-zones.js, 2026-11-08)
     const E0 = G.edges(pts), keep = !window.GateZones ? [] : ((z.infra && z.infra.gates) || []).filter(g => g.pt).map(g => { const q = pr.to([g.pt[1], g.pt[0]]), ne = GateZones.nearestEdge(E0, q); return ne && ne.d < 30 ? GateZones.keepPoly(GateZones.zone(g.kind, q, E0[ne.edge], sb[ne.edge], {})) : null; }).filter(Boolean)
       .concat(bp && bp.E.length === tags.length ? BLINE.keepPolys(z) : []);   // 공공보행통로·공개공지(건축선·출입 계획)도 건축 불가
-    // 단지 안 비상차로(주출입구 진입광장 끝 → 안쪽, 폭 7m — 주택건설기준 등에 관한 규정 제26조, 2026-11-10)
-    if (window.GateZones) { const zs = ((z.infra && z.infra.gates) || []).filter(g => g.pt && g.kind === 'main').map(g => { const q = pr.to([g.pt[1], g.pt[0]]), ne = GateZones.nearestEdge(E0, q); return ne && ne.d < 30 ? GateZones.zone('main', q, E0[ne.edge], sb[ne.edge], {}) : null; }).filter(Boolean), r = window.GateZones && GateZones.spine ? GateZones.spine(pts, zs) : null; if (r) keep.push(r.keep); }
-    return { pr, pts, site: { pts, tags, setbacks: sb, exclude, keep }, opt: { units: C.평면, lib: C.평면_라이브러리, assume: Object.assign({}, A0), mix, form: 'slab', spacing: 0.8, sun, lot: pl.site, far: pl.farUse, winRatio: win ? (/준주거|근린상업/.test(zoning) ? (win.값.근린상업_준주거_배수 || 4) : (win.값.배수 || 2)) : 0, edgeW: [], exSetback: A0.boundarySetback_m || 0 } };
+    // 출입구 자리(비상차로 잇기용) — 배치 뒤 draw()에서 동 사이로 순환 비상차로를 그림(2026-11-11)
+    const gz = !window.GateZones ? [] : ((z.infra && z.infra.gates) || []).filter(g => g.pt).map(g => { const q = pr.to([g.pt[1], g.pt[0]]), ne = GateZones.nearestEdge(E0, q); return ne && ne.d < 30 ? GateZones.zone(g.kind, q, E0[ne.edge], sb[ne.edge], {}) : null; }).filter(Boolean);
+    return { pr, pts, gz, site: { pts, tags, setbacks: sb, exclude, keep }, opt: { units: C.평면, lib: C.평면_라이브러리, assume: Object.assign({}, A0), mix, form: 'slab', spacing: 0.8, sun, lot: pl.site, far: pl.farUse, winRatio: win ? (/준주거|근린상업/.test(zoning) ? (win.값.근린상업_준주거_배수 || 4) : (win.값.배수 || 2)) : 0, edgeW: [], exSetback: A0.boundarySetback_m || 0 } };
   },
   cands(I) {
     const G = window.ArchGeom, cand = new Set([0]);
@@ -52,7 +52,7 @@ const ARCHLAY = {
   solve(I, done) {
     const c = this.cands(I);
     try {
-      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=1fbe2c11'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
+      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=2bb406fe'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
       const id = (this.seq = (this.seq || 0) + 1); this.cb[id] = done;
       this.wk.postMessage({ id, site: I.site, opt: I.opt, cand: c.cand, F: c.F });
       // 90초가 넘으면 일꾼을 멈추고 예전 네모 그림으로(화면에 '계산 중'이 계속 남지 않게)
@@ -72,7 +72,7 @@ const ARCHLAY = {
           if (S.mode === 'arch' && S.region === a.key) render();
         };
         let I = null; try { I = this.input(a, pl); } catch (e) { console.warn('개략 배치(엔진) 입력 실패', e); }
-        if (!I) setTimeout(() => fin(null), 0); else this.solve(I, r => { if (r) r.pr = I.pr; fin(r); });
+        if (!I) setTimeout(() => fin(null), 0); else this.solve(I, r => { if (r) { r.pr = I.pr; r.pts = I.pts; r.gz = I.gz; r.ex = I.site.exclude; } fin(r); });
       }
       S.archLay = { busy: true };
       return false;
@@ -85,7 +85,18 @@ const ARCHLAY = {
       (b.parts && b.parts.length ? b.parts : [b.poly]).forEach(q => L.polygon(ll(q), { color: '#1f2933', weight: 1, fillColor: col, fillOpacity: 0.85 }).bindTooltip(tip, { sticky: true }).addTo(layT));
       (b.units || []).forEach(rs => rs.forEach(q => L.polygon(ll(q), { color: '#fff', weight: 0.5, fill: false, interactive: false }).addTo(layT)));
     });
-    S.archLay = { n: r.buildings.length, units: r.units, maxF: r.maxFloors, far: r.far, bcr: r.bcr, angle: r.angle };
+    // 단지 안 비상차로(순환형)·소방차 전용구역 — 동 사이 빈 땅으로 이음(shared/gate-zones.js, 2026-11-11)
+    try {
+      if (window.GateZones && GateZones.routeRoad && r.pts && r.gz && r.gz.length) {
+        if (!r.road) { const rc = GateZones.reach(r.pts, r.buildings, r.gz, { block: r.ex || [] }); r.pads = (r.units || 0) >= 100 ? GateZones.firePads(r.pts, r.buildings, r.ex || [], { reach: rc || undefined }) : [];
+          r.road = GateZones.routeRoad(r.pts, r.buildings, r.gz, { block: r.ex || [], pads: r.pads.length ? r.pads : r.buildings.map(b => { const R = b.poly || (b.parts || [])[0]; const c = R.reduce((s, p) => [s[0] + p[0] / R.length, s[1] + p[1] / R.length], [0, 0]); return { id: b.id, ok: true, pad: [c, c, c, c] }; }) }) || { polys: [], miss: [], len: 0 }; }
+        const ll = q => q.map(p => { const c = r.pr.back(p); return [c[1], c[0]]; });
+        r.road.polys.forEach(q => L.polygon(ll(q), { stroke: false, fillColor: '#868e96', fillOpacity: 0.55, interactive: false }).addTo(layT));
+        if (r.road.path && r.road.path.length) L.polyline(ll(r.road.path), { color: '#fff', weight: 1, dashArray: '4 3', interactive: false }).bindTooltip(`단지 안 비상차로(순환형) 폭 ${r.road.w}m · 약 ${fmt(r.road.len)}m`, { sticky: true }).addTo(layT);
+        (r.pads || []).filter(f => f.ok).forEach(f => L.polygon(ll(f.pad), { color: '#e8a400', weight: 1, fillColor: '#ffd43b', fillOpacity: 0.7 }).bindTooltip(`소방자동차 전용구역 ${f.id}동(6×15m 가정)`, { sticky: true }).addTo(layT));
+      }
+    } catch (e) { /* 그림만 빠짐 */ }
+    S.archLay = { n: r.buildings.length, units: r.units, fireNo: (r.pads || []).filter(f => !f.ok).length, roadMiss: ((r.road || {}).miss || []).length, maxF: r.maxFloors, far: r.far, bcr: r.bcr, angle: r.angle };
     return true;
   },
 };
