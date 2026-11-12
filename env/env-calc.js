@@ -54,6 +54,8 @@
     const constraints = {
       소음_검토_도로: res.noise.roads.map(r => r.name || '간선도로'),
       북측_일조_높이제한: res.sun.apply ? `높이 10m 이하 ${res.sun.a}m, 초과 부분 높이의 1/2 이상 이격` : null,
+      // 북측이 주거지역이 '아니오'라고 답한 경우만 정북 일조를 빼도록(빈칸=미확인은 빼지 않음 — /arch가 빈칸을 '해당 없음'으로 읽어 정북 사선 없이 배치하던 것, 2026-11-13)
+      북측_일조_해당없음: p.northRes === '아니오',
       국가유산_검토: res.heritage.result === '보존지역 해당 가능' ? `${res.heritage.name || '국가유산'} 방향 층수 조정` : null,
       평균경사도_퍼센트: res.slope.value,
       영향평가: res.eia.result,

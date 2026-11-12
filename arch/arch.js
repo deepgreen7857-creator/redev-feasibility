@@ -216,7 +216,7 @@
   // 교통성·환경성 검토 결과 → 경계 성격·차량 출입구
   //  환경: 소음 검토 도로 → '간선도로'(소음 이격), 북측 일조 해당 없음 → 정북 지정 안 함
   //  교통: 진입 가능 도로(확폭 검토 도로 포함) 쪽 변에 주출입·부출입
-  const reviewKey = () => { const c = site.constraints || {}; return JSON.stringify([c.traffic && [c.traffic.진입_가능_도로, c.traffic.확폭_검토_도로], c.env && [c.env.소음_검토_도로, c.env.북측_일조_높이제한], c.landscape && [c.landscape.통경축_방위, c.landscape.통경축_개방률_퍼센트, c.landscape.경계부_층수_점감_대상동, c.landscape.층수_점감_검토]]); };
+  const reviewKey = () => { const c = site.constraints || {}; return JSON.stringify([c.traffic && [c.traffic.진입_가능_도로, c.traffic.확폭_검토_도로], c.env && [c.env.소음_검토_도로, c.env.북측_일조_해당없음, c.env.북측_일조_높이제한], c.landscape && [c.landscape.통경축_방위, c.landscape.통경축_개방률_퍼센트, c.landscape.경계부_층수_점감_대상동, c.landscape.층수_점감_검토]]); };
   function autoTag(opt = {}) {
     const c = site.constraints || {}, envC = c.env, trC = c.traffic;
     const noisy = new Set((envC && envC.소음_검토_도로) || []);
@@ -226,7 +226,7 @@
       return { name: r.name, w: r.w, polys: rings.map(rg => G.openRing(rg).map(pr.to)) };
     });
     const E = G.edges(pts), edgeRoad = [];
-    const noNorth = !!envC && !envC.북측_일조_높이제한;
+    const noNorth = !!envC && envC.북측_일조_해당없음 === true; // 환경성 검토에서 '북측 주거지역 아님'이라고 답한 경우만(미확인이면 정북 일조 그대로)
     tags = E.map((e, i) => {
       const m = [(e.a[0] + e.b[0]) / 2 + e.out[0] * 3, (e.a[1] + e.b[1]) / 2 + e.out[1] * 3];
       const hit = roads.find(r => r.polys.some(pl => G.inside(m[0], m[1], pl) || pl.some((q, k) => G.segDist(m, q, pl[(k + 1) % pl.length]) < 4)));
@@ -457,7 +457,7 @@
   function carry() {
     const c = site.constraints || {}, out = [];
     if (c.traffic) out.push(`교통: 진입도로 필요 폭 ${c.traffic.진입도로_필요폭_m ?? '○○'}m, 진입 가능 도로 ${esc((c.traffic.진입_가능_도로 || []).join(', ') || '○○')}${(c.traffic.확폭_검토_도로 || []).length ? ', 확폭 검토 ' + esc(c.traffic.확폭_검토_도로.map(x => x.도로).join(', ')) : ''} → 차량 출입구`);
-    if (c.env) out.push(`환경: 소음 검토 도로 ${esc((c.env.소음_검토_도로 || []).join(', ') || '없음')} → 해당 변 '간선도로', ${c.env.북측_일조_높이제한 ? '북측 인접 주거지 → 정북 변 지정' : '북측 일조 해당 없음'}`);
+    if (c.env) out.push(`환경: 소음 검토 도로 ${esc((c.env.소음_검토_도로 || []).join(', ') || '없음')} → 해당 변 '간선도로', ${c.env.북측_일조_해당없음 === true ? '북측 일조 해당 없음' : c.env.북측_일조_높이제한 ? '북측 인접 주거지 → 정북 변 지정' : '북측 인접 주거지 여부 미확인 → 정북 변 그대로(환경성 검토에서 확인)'}`);
     if (c.traffic && (c.traffic.확폭_검토_도로 || []).length) out.push(`교통: 진입도로 확폭은 획지를 줄이므로 /urban 3탭(정비기반시설)에서 도로 폭을 정한 뒤 [정비계획 기반시설 가져오기]로 받기${c.traffic.법정_주차대수 ? ` · 법정 주차 ${fmt(c.traffic.법정_주차대수)}대(개요의 계획 주차와 비교)` : ''}`);
     if (c.env && c.env.국가유산_검토) out.push(`환경: ${esc(c.env.국가유산_검토)} — 자동 반영 안 됨, 그 방향 경계 변을 '저층 주거 인접'으로 지정해 층수 상한을 거세요`);
     if (c.landscape) { const cl = c.landscape; out.push(`경관: ${cl.통경축_개방률_퍼센트 != null ? `지난 확정안 통경축 개방률 ${cl.통경축_개방률_퍼센트}%${cl.통경축_개방률_퍼센트 < 30 ? ' → 통경축 띠 비움' : ' (30% 이상, 띠 없음)'}` : '통경축 개방률 미계산(건축계획 확정 뒤 경관 검토를 다시 만들면 계산)'}${(cl.경계부_층수_점감_대상동 || []).length || cl.층수_점감_검토 ? ` · 경계부 층수 점감 → 점감 변 ${lowEdges.length}개, 경계 30m 안 ${esc($('#p_lowCap').value)}층 이하` : ''}`); }
