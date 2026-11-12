@@ -24,29 +24,31 @@
 ## /urban (정비구역 지정·정비계획 검토)
 - 목적: ① 정비구역을 새로 지정하려 할 때 구역계·요건·계획을 잡아 보기 ② 제출된 정비구역(토지조서·구역계)의 적정성 검토. 검토 기능은 '자동으로 고쳐 주기'보다 '문제를 찾아 보여 주기'가 먼저(예: 제출 조서 폐합 검토는 갇힌 필지·도로를 자동으로 채우지 않음)
 - 구역계·조서 검토 기능은 사업성 검토(본 화면)에도 똑같이 붙일 것
-- `urban/index.html` + `urban/js/01~12`(화면 코드, 아래 '/urban 파일 지도') + `urban/rules/incheon.json`(인천 조례 기준값, 원문 대조본)
+- `urban/index.html` + `urban/js/` 14개(01~12, 04b·10b)(화면 코드, 아래 '/urban 파일 지도') + `urban/rules/incheon.json`(인천 조례 기준값, 원문 대조본)
 
 ### /urban 파일 지도 — 고칠 곳을 여기서 찾고 그 파일만 열 것(2026-11-08, 예전 urban.js 33만 자 한 파일을 기능별로 나눔)
 - 사용자 요구(2026-11-08): '40만 자를 다 읽느라, 일부만 읽고 고쳐서 다른 데가 깨지느라 토큰을 너무 날렸다' → **고칠 기능의 파일만 읽는다.** 통째로 다 읽지 말 것
-- 모든 파일이 한 전역(S·Z·D·P·LM 등)을 함께 쓰는 보통 스크립트. 불러오는 순서는 urban/index.html의 01→12, 바꾸지 말 것
+- 모든 파일이 한 전역(S·Z·D·P·LM 등)을 함께 쓰는 보통 스크립트. 불러오는 순서는 urban/index.html의 01→04→04b→…→10→10b→12, 바꾸지 말 것
 | 고칠 것 | 파일 | 주요 이름 |
 |---|---|---|
 | 조례 기준값·공통 도우미·도로접면·브이월드/건축물대장 조회 | `01-base.js` | RULES applyJson VW LG accessFromRoad toast won |
 | 안(A~E) 구역계 저장·되돌리기·공부 조회 진행·사업성 구역 가져오기·새 구역 초기화·예시 구역 자료 | `02-zones.js` | Z(ZONE_KEY) CACHE fetchZone setZoneGeom importProject resetForNewSite buildMap buildSample obsoleteRule |
 | 요건 판정(면적·노후·접도·과소필지·호수밀도), 계획 가정(용도지역·용적률·세대수)·개략 사업성 계산 | `03-analysis.js` | analyze judge plan planCore biz P_DEFAULT farCalcOf |
-| 정비기반시설 제안(도로·공원·녹지·주차 면적·위치) | `04-infra.js` | INFRA ROADCLS |
+| 정비기반시설 ①: 도로 폭·도로/소유 조회·구역 나누기·크기 | `04-infra.js` | INFRA(roadW fetchRoads fetchOwn block sizeOf memo) ROADCLS |
+| 정비기반시설 ②: 면적·위치 제안 계산·지도 그리기·띠·경계선·기존 시설 판정·옮기기 | `04b-infra-calc.js` | INFRA.compute draw pairBand divider judgeExisting movable place (Object.assign으로 INFRA에 붙임) |
 | 기반시설 배치 방식 화면(감싸기·이어 붙이기·스케치) | `05-fitui.js` | FITUI (계산은 `urban/placefit.js`) |
 | 단지 출입구(주·부·주차장) 위치 가정·추천, 건축선·출입 계획(건축한계선·전면공지·차량출입 불허구간·공공보행통로·공개공지) | `06-gate.js` | GATE BLINE (설명 칸은 10-panel-plan.js blineSection·bindBline) |
 | 화면 상태·예시/지도 전환·출처 줄(구역명 칸)·실제 지도 그리기 | `07-state-map.js` | S setSource renderSourceBar LM initLeaflet drawLeaflet |
 | 개략 배치 지도(배치 엔진 작업 스레드)·지도 그리기·꼭짓점 편집·GeoJSON·예시 지적도 SVG | `08-arch.js` | ARCHLAY startMapDraw toggleEdit parcelFill drawSvg |
 | 오른쪽 설명 칸 ①: 단계 이동·구역 현황·요건판정·계획·작성 안내·도면 | `09-panel.js` | render stepNav syncTitle renderZone renderReq renderPlan drawingSection |
-| 오른쪽 설명 칸 ②: 기반시설·혼합·넘겨주기·개략 배치·출입구·자동 진행·사업성·적용 기준 | `10-panel-plan.js` | infraSection bindInfra renderArch AUTO gateSection renderBiz renderRules |
+| 오른쪽 설명 칸 ②: 기반시설·혼합·넘겨주기 | `10-panel-plan.js` | infraSection bindInfra mixSection handoff handoffSection |
+| 오른쪽 설명 칸 ③: 개략 배치·출입구 추천·자동 진행·건축선·사업성·적용 기준 | `10b-panel-arch.js` | renderArch gateSugHtml gateEntryHtml AUTO gateSection blineSection renderBiz renderRules |
 | 구역계 만들기 도구(지번·조서·필지 맞추기·참고 도면)·구역계 자르기 | `11-zonetool.js` | ZK CUT |
 | 버튼·단축키 연결, 기준 파일(incheon.json·criteria) 읽기, 화면 크기 조절, 도구 설명 줄, 시작 | `12-events.js` | syncMode endDraw CRIT ARCHC legalPark |
-- 이름이 어느 파일에 있는지 모르면 `grep -n "function 이름\|const 이름" urban/js/*.js` — 파일을 통째로 읽지 말 것
+- 이름이 어느 파일에 있는지 모르면 `grep -n "function 이름\|const 이름" urban/js/*.js`(묶음 안 기능은 `grep -n "^  이름(" urban/js/*.js`) — 파일을 통째로 읽지 말 것
 - 새 함수·변수를 만들기 전에 같은 이름이 있는지 먼저 grep(쪼갤 때 같은 이름 함수 parcelFill이 두 곳에 있어 앞의 것이 한 번도 쓰이지 않던 것을 발견함)
 - 다른 파일 이름을 '불러오는 순간'(최상위 호출·바로 실행 함수) 쓰면 그 파일보다 뒤 파일에 둘 것 → `node tools/check-urban-order.js`가 잡음
-- 파일이 6만 자를 넘게 커지면 기능 단위로 다시 나눌 것(번호 사이에 끼우고 index.html·이 표·check-urban-order 통과)
+- 파일이 6만 자를 넘게 커지면 기능 단위로 다시 나눌 것(번호 뒤에 b를 붙여 끼우고 index.html·이 표·check-urban-order 통과). 한 묶음(INFRA 같은 const 객체)이 크면 뒷부분 기능을 다음 파일에서 `Object.assign(묶음, { … })`으로 붙임 — 04b가 그 예. 2026-11-13 04(6만 8천 자)·10(6만 3천 자)을 이렇게 나눔
 - 지도에서 안(A~E)별 구역계 → 연속지적·GIS건물·토지특성·건축물대장 자동 조회 → 요건판정·정비계획·개략 배치·사업성
 - 정비기반시설은 도정법 제2조제4호·영 제3조 범위만(도로·공원·녹지·공용주차장·공공공지·광장 등). 학교·공공청사·종교용지는 '정비기반시설 아님'으로 따로 셈(무상귀속 면적에서 제외)
 - 확보 목표 = 무상양도 균형(용도폐지되는 '설치된' 국공유 기반시설 중 사용 중 면적, 건물 점유 제외 — 도정법 제97조③). 미집행 결정선은 설치된 시설이 아니므로 확보 목표·상쇄 어디에도 넣지 않고 '추후 할 일'(todoSection)에만 남김

@@ -16,7 +16,7 @@ const fail = m => { bad++; console.log('✘', m); };
 if (JSON.stringify(files) !== JSON.stringify(fsFiles)) fail(`index.html이 불러오는 파일 ${files.join(',')} ≠ 폴더의 파일 ${fsFiles.join(',')} (순서·빠짐 확인)`);
 
 const P = files.map(f => ({ f, ast: acorn.parse(fs.readFileSync(path.join(DIR, f), 'utf8'), { ecmaVersion: 'latest', sourceType: 'script' }) }));
-const owner = new Map(), fnBody = new Map(), objInit = new Map();
+const owner = new Map(), fnBody = new Map(), objInit = new Map(), memberOwner = new Map(), extraProps = [];
 const declNames = id => id.type === 'Identifier' ? [id.name] : id.type === 'ObjectPattern' ? id.properties.flatMap(p => declNames(p.value || p.argument)) : id.type === 'ArrayPattern' ? id.elements.filter(Boolean).flatMap(declNames) : id.type === 'AssignmentPattern' ? declNames(id.left) : id.type === 'RestElement' ? declNames(id.argument) : [];
 P.forEach((p, i) => {
   for (const n of p.ast.body) {
@@ -24,7 +24,15 @@ P.forEach((p, i) => {
     if (n.type === 'FunctionDeclaration' || n.type === 'ClassDeclaration') { names = [n.id.name]; if (n.type === 'FunctionDeclaration') fnBody.set(n.id.name, n); }
     if (n.type === 'VariableDeclaration') for (const d of n.declarations) {
       const ns = declNames(d.id); names.push(...ns);
-      if (d.init && ns.length === 1) { if (/Function|Arrow/.test(d.init.type)) fnBody.set(ns[0], d.init); if (d.init.type === 'ObjectExpression') objInit.set(ns[0], d.init); }
+      if (d.init && ns.length === 1) { if (/Function|Arrow/.test(d.init.type)) fnBody.set(ns[0], d.init); if (d.init.type === 'ObjectExpression') { objInit.set(ns[0], d.init); d.init.properties.forEach(pr => { const k = pr.key && (pr.key.name || pr.key.value); if (k) memberOwner.set(ns[0] + '.' + k, i); }); } }
+    }
+    // Object.assign(이름, { 기능… }) — 앞 파일의 묶음에 뒤 파일에서 기능을 덧붙인 것(04b-infra-calc.js 등)
+    if (n.type === 'ExpressionStatement' && n.expression.type === 'CallExpression') {
+      const c = n.expression, cal = c.callee;
+      if (cal.type === 'MemberExpression' && cal.object.name === 'Object' && cal.property.name === 'assign' && c.arguments[0] && c.arguments[0].type === 'Identifier' && c.arguments[1] && c.arguments[1].type === 'ObjectExpression') {
+        const obj = c.arguments[0].name;
+        for (const pr of c.arguments[1].properties) { const k = pr.key && (pr.key.name || pr.key.value); if (!k) continue; const mk = obj + '.' + k; if (memberOwner.has(mk)) fail(`'${mk}'을(를) 두 곳에서 만듦`); memberOwner.set(mk, i); extraProps.push([obj, pr]); }
+      }
     }
     for (const nm of names) { if (owner.has(nm)) fail(`'${nm}'을(를) ${files[owner.get(nm)]}와 ${p.f} 두 곳에서 만듦`); else owner.set(nm, i); }
   }
@@ -60,9 +68,10 @@ function follow(name, out, seen) {
   const f = fnBody.get(name); scanParams(f, out, seen); scan(f.body, out, seen);
 }
 function followMember(obj, prop, out, seen) {
-  const o = objInit.get(obj); if (!o) return;
   const key = obj + '.' + prop; if (seen.has(key)) return; seen.add(key);
-  const pr = o.properties.find(p => p.key && (p.key.name === prop || p.key.value === prop));
+  if (memberOwner.has(key)) out.add('\u0000' + key);   // 기능이 어느 파일에 있는지 따로 확인
+  const o = objInit.get(obj);
+  const pr = (o ? o.properties : []).concat(extraProps.filter(([n]) => n === obj).map(([, p]) => p)).find(p => p.key && (p.key.name === prop || p.key.value === prop));
   if (pr && isFn(pr.value)) { scanParams(pr.value, out, seen); scan(pr.value.body, out, seen); }
 }
 
@@ -73,6 +82,7 @@ P.forEach((p, i) => {
     if (n.type === 'ClassDeclaration') { if (n.superClass) scan(n.superClass, used, seen); continue; }
     scan(n, used, seen);
   }
+  [...used].filter(nm => nm[0] === '\u0000' && memberOwner.get(nm.slice(1)) > i).forEach(nm => fail(`${p.f}: 불러오는 순간 '${nm.slice(1)}'을(를) 부름 — 그런데 그 기능은 뒤 파일 ${files[memberOwner.get(nm.slice(1))]}에서 붙음`));
   const later = [...used].filter(nm => owner.has(nm) && owner.get(nm) > i);
   later.forEach(nm => fail(`${p.f}: 불러오는 순간 '${nm}'을(를) 씀 — 그런데 '${nm}'은(는) 뒤 파일 ${files[owner.get(nm)]}에 있음`));
 });
