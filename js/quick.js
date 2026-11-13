@@ -78,10 +78,16 @@ const Quick = {
   },
 
   // 최소 비율: 무상양도 균형(구역 안 기존 국공유 도로 등 면적)과 법정 공원(세대당 2㎡) 중 큰 값. 토지조서가 없으면 15%(가정)
+  // 의무가 아닌 공원(2026-11-13, 작업기준서 오류기록 4번 — 학익장미는 5만㎡ 미만이라 공원 0㎡로 나왔지만 실제 정비계획에는 소공원 7.94%):
+  //  q.park 'add'면 구역 대비 q.parkPct%를 '최소'에 더함. 5만㎡ 이상(법정)일 때는 법정 기준이 우선이라 쓰지 않음.
+  //  '평균'·'보수적' 비율은 공원을 포함한 실무 경험치라 더하지 않음
+  parkAdd(q, site) { const on = q && q.park === 'add' && !(site >= 50000); const pct = on ? Math.min(30, Math.max(0, num(q.parkPct || 5))) : 0; return { on, pct, area: site * pct / 100 }; },
   minInfra(q) {
     const site = Calc.siteArea(S); if (!(site > 0)) return { v: this.INFRA.minFallback, basis: '구역 면적 없음' };
-    const old = this.existingInfra(S);
-    if (!S.lands.length) return { v: this.INFRA.minFallback, basis: '토지조서가 없어 15%로 둠(가정) — 토지조서를 채우면 구역에 맞게 다시 계산' };
+    const old = this.existingInfra(S), pk = this.parkAdd(q, site);
+    const pkTxt = pk.on ? ` + 공원 ${fmt(pk.pct, 1)}%(${fmt(pk.area)}㎡, 법정 의무 없으나 넣기로 함)` : '';
+    if (!S.lands.length) return { v: Math.ceil((this.INFRA.minFallback + pk.pct) * 2) / 2, park: pk, basis: '토지조서가 없어 15%로 둠(가정) — 토지조서를 채우면 구역에 맞게 다시 계산' + pkTxt };
+    if (pk.on) { const v = Math.ceil((old / site * 100 + pk.pct) * 2) / 2; return { v, park: pk, basis: `기존 국공유 도로 등 ${fmt(old)}㎡(${fmt(old / site * 100, 1)}%)${pkTxt}. 진입도로 확폭은 /urban 정비기반시설에서 더함` }; }
     // 법정 공원은 정비계획 5만㎡ 이상일 때만(도시공원법 시행규칙 별표 2) — 그 미만이면 기존 국공유 시설 면적만(2026-11-07 학익장미 39,217㎡: 공원 1,766㎡를 넣어 최소가 과다했음)
     const parkOn = site >= 50000;
     let v = Math.max(old / site * 100, parkOn ? 5 : 0), units = 0;
@@ -736,7 +742,10 @@ Tabs.quick = {
       ${(() => {
         const mi = Quick.minInfra(q0), lv = [['min', '최소', mi.v, mi.basis], ['avg', '평균', Quick.INFRA.avg, '실무 경험치(가정값)'], ['cons', '보수적', Quick.INFRA.cons, '도로·공원을 더 내놓는 경우(가정값)']];
         const cur = q0.infraLevel || 'avg';
-        return `<div class="qk-levels"><div class="qk-lv-h">정비기반시설(도로·공원 등) 비율별 사업성 <small>표준 시나리오</small></div>${lv.map(([k, nm, v, b]) => {
+        const big = site >= 50000, pk = Quick.parkAdd(q0, site);
+        const parkUi = `<div class="qk-park" style="grid-column:1/-1;font-size:13px;margin:2px 0 4px">공원: ${big ? `구역 ${fmt(site)}㎡ ≥ 5만㎡ — 법정 공원(세대당 2㎡ 또는 부지 5%)을 '최소'에 넣었습니다`
+          : `<label><input type="radio" name="qkPark" value="legal" ${pk.on ? '' : 'checked'}> 법정 의무만(5만㎡ 미만이라 0㎡)</label> <label style="margin-left:10px"><input type="radio" name="qkPark" value="add" ${pk.on ? 'checked' : ''}> 의무 없어도 공원 넣기</label> <input id="qkParkPct" type="number" min="0" max="30" step="0.5" value="${fmt(num(q0.parkPct || 5), 1)}" style="width:62px" aria-label="공원 비율(구역 대비 %)" ${pk.on ? '' : 'disabled'}>% ${pk.on ? `= ${fmt(pk.area)}㎡ → '최소'에 더함` : ''}`}</div>`;
+        return `<div class="qk-levels"><div class="qk-lv-h">정비기반시설(도로·공원 등) 비율별 사업성 <small>표준 시나리오</small></div>${parkUi}${lv.map(([k, nm, v, b]) => {
           const rr = Quick.ratio({ ...q, infraPct: v });
           return `<button type="button" class="qk-lv ${ratioClass(rr)}${cur === k ? ' on' : ''}" data-lv="${k}"><span>${nm} ${fmt(v, 1)}%</span><b>${fmtPct(rr)}</b><em>${esc(b)}</em></button>`;
         }).join('')}</div>`;
@@ -766,7 +775,7 @@ Tabs.quick = {
         }).join('')}</div>`;
       })()}
       <div class="as-grid">
-        <div><span>구역 면적</span><b>${fmt(site)}㎡</b><em>기반시설 ${fmt(q.infraPct)}% → 획지 ${fmt(f.lot)}㎡</em></div>
+        <div><span>구역 면적</span><b>${fmt(site)}㎡</b><em>기반시설 ${fmt(q.infraPct)}%${(q0.infraLevel || 'avg') === 'min' && Quick.parkAdd(q0, site).on ? `(공원 ${fmt(Quick.parkAdd(q0, site).area)}㎡ 포함)` : ''} → 획지 ${fmt(f.lot)}㎡</em></div>
         <div><span>적용 용적률</span><b>${fmt(f.v, 1)}%</b><em>${esc(q.zone.replace(/_/g, ' '))}</em></div>
         <div><span>총 세대수</span><b>${fmt(p.total)}세대</b><em>59㎡ ${fmt(p.u59)} · 84㎡ ${fmt(p.u84)}${p.u114 ? ` · 114㎡ ${fmt(p.u114)}` : ''} · 임대 ${fmt(p.rentU)}</em></div>
         <div><span>조합원 / 일반분양</span><b>${fmt(p.memTotal)} / ${fmt(p.total - p.rentU - p.memTotal)}세대</b></div>
@@ -779,6 +788,9 @@ Tabs.quick = {
       ${warn.map(w => `<p class="warn-box">${w}</p>`).join('')}`;
 
     out.querySelectorAll('[data-lv]').forEach(b => { b.onclick = () => { S.quick.infraLevel = b.dataset.lv; App.update(true); }; });
+    // 공원(의무 아님) 넣기 — 넣기로 바꾸면 그 비율이 바로 보이게 '최소' 단계로
+    out.querySelectorAll('input[name="qkPark"]').forEach(b => { b.onchange = () => { S.quick.park = b.value; if (b.value === 'add') { if (!(num(S.quick.parkPct) > 0)) S.quick.parkPct = 5; S.quick.infraLevel = 'min'; } App.update(true); }; });
+    { const pp = $('#qkParkPct'); if (pp) pp.onchange = () => { S.quick.parkPct = Math.min(30, Math.max(0, num(pp.value))); App.update(true); }; }
     out.querySelectorAll('[data-con]').forEach(b => { b.onclick = () => { S.quick.conLevel = b.dataset.con; App.update(true); }; });
     out.querySelectorAll('[data-mix]').forEach(b => { b.onclick = () => { const [a, b2, c] = b.dataset.mix.split(',').map(Number); JbsFeas.set({ mix39: 0, mix49: 0, mix74: 0, mix101: 0, mix59: a, mix84: b2, mix114: c }); App.update(true); }; });
     out.querySelectorAll('[data-mem]').forEach(b => { b.onclick = () => { JbsFeas.set({ memberRatio: num(b.dataset.mem) }); App.update(true); }; });

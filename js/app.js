@@ -1465,9 +1465,10 @@ async function adoptProjectZone() {
   JbsProject.seenZone('main', mz.g);
   App.go('area');
   await new Promise(r => setTimeout(r, 300));   // 지도가 그려진 뒤
+  MapView._placeReset = false;
   if (!MapView.setZoneGeo({ type: 'Feature', properties: {}, geometry: mz.g }, '다른 화면 구역', '다른 화면 구역', true)) return;
-  // 띠는 바로(필지·조서 다시 불러오기는 브이월드라 몇 초 걸림)
-  JbsProject.noteAdopted(`${JbsProject.fromName(mz.from)} 화면에서 ${mz.at}에 바꾼 구역계로 이 화면 구역을 맞췄습니다. 필지·조서를 다시 불러옵니다.`, prev ? async () => {
+  // 띠는 바로(필지·조서 다시 불러오기는 브이월드라 몇 초 걸림). 위치가 바뀌어 설정을 초기화했으면 그 띠(되돌리기 = 예전 사업 통째로)를 그대로 둠
+  if (!MapView._placeReset) JbsProject.noteAdopted(`${JbsProject.fromName(mz.from)} 화면에서 ${mz.at}에 바꾼 구역계로 이 화면 구역을 맞췄습니다. 필지·조서를 다시 불러옵니다.`, prev ? async () => {
     if (MapView.setZoneGeo(prev, '예전 구역', '예전 구역', true)) { await MapView.importArea({ silent: true }); App.update(true); }
   } : null);
   await MapView.importArea({ silent: true });

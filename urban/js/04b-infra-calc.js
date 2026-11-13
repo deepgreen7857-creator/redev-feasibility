@@ -127,7 +127,7 @@ Object.assign(INFRA, {
     const legal = a.area >= 50000;
     // 구역 안 기 조성 공원·녹지(지목 공원 또는 이용상황 공원): 기본계획(고시 제2026-96호) — 제척 원칙, 포함하면 기존 면적 이상 설치
     const parkExist = a.ps.filter(p => /^공(원)?$/.test(p.jimok || '') || /공원/.test(p.landUse || '')).reduce((s2, p) => s2 + (p.base ?? p.area) * (z.inArea[p.pnu] ?? 1), 0);
-    const parkLegal = Math.max(legal ? Math.max(units * 2, a.area * 0.05) : (P.parkMode === 'always' ? a.area * 0.05 : 0), parkExist);
+    const parkLegal = Math.max(legal ? Math.max(units * 2, a.area * 0.05) : (P.parkMode === 'always' ? a.area * parkPctOf() / 100 : 0), parkExist);
     const szPark = this.sizeOf(z, 'park', parkLegal, a.area), parkNeed = szPark.A;
     const inf = z.infra || {};
     const parkC = inf.parkC || this.defaultCenter(zone);

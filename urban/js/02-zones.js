@@ -7,7 +7,8 @@
 // Z: 안(A~E)별 구역계(GeoJSON)와 편입 필지·편입비율. CACHE: 필지(pnu)별 공부, 건축물 행
 const ZONE_KEY = 'jbs-urban-zones-v1', CACHE_KEY = 'jbs-urban-cache-v1', UI_KEY = 'jbs-urban-ui';
 const ZONE_IDS = ['A', 'B', 'C', 'D', 'E'];
-const Z = (() => { const z = lsGet(ZONE_KEY); return { title: z.title || '', center: z.center || [37.4553, 126.6577], zoom: z.zoom || 16, count: z.count || 3, zones: z.zones || {} }; })();
+// lastGeo: 마지막으로 있던 구역(안을 모두 지워도 남김) — 지운 뒤 다른 곳을 그려도 다른 사업으로 알아보게(2026-11-13, 작업기준서 오류기록 1번)
+const Z = (() => { const z = lsGet(ZONE_KEY); return { title: z.title || '', center: z.center || [37.4553, 126.6577], zoom: z.zoom || 16, count: z.count || 3, zones: z.zones || {}, lastGeo: z.lastGeo || (Object.values(z.zones || {}).find(x => x && x.geojson) || {}).geojson || null }; })();
 const CACHE = (() => { const c = lsGet(CACHE_KEY); return { parcels: c.parcels || {}, blds: c.blds || {} }; })();
 const saveZ = () => { const r = lsSet(ZONE_KEY, Z); if (window.JbsProject) window.JbsProject.offer(Z.title, 'urban'); return r; };   // 사업명 원본(shared/project.js)에 알림
 function saveCache() { if (!lsSet(CACHE_KEY, CACHE)) console.warn('/urban 공부 캐시가 커서 브라우저에 저장하지 못했습니다(이번 창에서는 그대로 씀)'); }
@@ -171,7 +172,7 @@ async function importProject(id) {
   const z = zoneOf(id);
   histOf(id).undo.push({ gj: z.geojson ? JSON.parse(JSON.stringify(z.geojson)) : null, label: '사업성 검토 구역 가져오기' }); histOf(id).redo = [];
   z.geojson = g.type === 'Feature' ? { type: 'Feature', properties: {}, geometry: g.geometry } : { type: 'Feature', properties: {}, geometry: g };
-  z.inArea = {}; z.fetchedAt = '';
+  z.inArea = {}; z.fetchedAt = ''; Z.lastGeo = z.geojson;
   const lands = (p.lands || []).filter(l => l.pnu && l.geom && !l.sample);
   if (lands.length) {
     lands.forEach(l => {
@@ -199,6 +200,8 @@ async function importProject(id) {
   if (q.farStep) { P.farMode = q.farStep === 'custom' ? 'custom' : q.farStep; if (q.farStep === 'custom' && q.farCustom) P.farCustom = num(q.farCustom); }
   const ir = { avg: 25, cons: 30, custom: num(q.infraPct) }[q.infraLevel];
   if (ir > 0) P.infraRatio = ir;
+  // 사업성 화면에서 '의무 없어도 공원 넣기'를 골랐으면 같은 비율로(2026-11-13 작업기준서 오류기록 4번)
+  if (q.park === 'add') { P.parkMode = 'always'; if (num(q.parkPct) > 0) P.parkPct = num(q.parkPct); } else if (q.park === 'legal') P.parkMode = 'legal';
   saveP(); syncTitle();
   saveZ(); saveCache();
   if (window.JbsProject && JbsProject.offerZone) JbsProject.offerZone(z.geojson, 'urban');   // 구역 원본에 알림(2026-11-10)
@@ -237,6 +240,7 @@ function isNewSite(id, geom) {
   if (!window.turf || !geom) return false;
   const g = { type: 'Feature', properties: {}, geometry: geom };
   const olds = Object.keys(Z.zones).map(k => Z.zones[k] && Z.zones[k].geojson).filter(Boolean);
+  if (!olds.length && Z.lastGeo) olds.push(Z.lastGeo);   // 안을 다 지웠어도 마지막 구역과 비교
   if (!olds.length) return false;
   return !olds.some(o => { try { const x = turf.intersect(o, g); return !!x && turf.area(x) > 1; } catch (e) { return true; } });
 }
@@ -266,10 +270,11 @@ async function setZoneGeom(id, gj, delay = 0, label = '구역계 변경') {
     if (h.undo.length > 50) h.undo.shift();
     h.redo = [];
   }
-  if (!gj) { delete Z.zones[id]; saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); render(); syncUndo(); return; }
+  if (!gj) { if (z.geojson) Z.lastGeo = z.geojson; delete Z.zones[id]; saveZ(); D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); render(); syncUndo(); return; }
   const geom = gj.type === 'Feature' ? gj.geometry : gj;
   z.geojson = { type: 'Feature', properties: {}, geometry: geom };
   z.inArea = {}; z.fetchedAt = ''; z.from = 'map'; delete z.roads;
+  Z.lastGeo = z.geojson;
   saveZ();
   if (window.JbsProject && JbsProject.offerZone) JbsProject.offerZone(z.geojson, 'urban');   // 구역 원본에 알림(2026-11-10)
   D = buildMap(); D.parcels.forEach(applyAccess); syncRegionChips(); renderSourceBar(); render();

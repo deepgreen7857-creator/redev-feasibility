@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const out = path.resolve(process.argv[2] || '_site');
 const SKIP_TOP = new Set(['.git', '.github', '_site', '_비공개', 'docs', 'court-collector', 'auction-server', 'auction-web', 'tools',
-  'CLAUDE.md', 'README.md', 'serve.ps1']);
+  'CLAUDE.md', 'README.md', 'serve.ps1', 'JBSLAB_작업기준서.md', '검증사례']);
 const skip = (rel, name, isDir) => {
   const top = rel.split('/')[0];
   if (SKIP_TOP.has(top)) return true;

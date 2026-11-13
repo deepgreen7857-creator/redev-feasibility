@@ -212,6 +212,15 @@
     if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
   };
   // 공통 구역 쪽(<head>에서, 화면 코드보다 먼저): 원본과 같은 구역이 있으면 그것을 지금 구역으로, 없으면 지금 구역 도형을 원본으로 바꿈
+  // 두 도형의 경위도 범위가 조금도 겹치지 않으면 다른 위치(이 파일은 turf 없이 <head>에서 돌아서 범위로만 봄)
+  function bboxOf(g) {
+    const b = [Infinity, Infinity, -Infinity, -Infinity];
+    const walk = c => { if (typeof c[0] === 'number') { b[0] = Math.min(b[0], c[0]); b[1] = Math.min(b[1], c[1]); b[2] = Math.max(b[2], c[0]); b[3] = Math.max(b[3], c[1]); } else c.forEach(walk); };
+    try { const geo = g && g.type === 'Feature' ? g.geometry : g; walk(geo.coordinates); } catch (e) { return null; }
+    return isFinite(b[0]) ? b : null;
+  }
+  function farApart(a, c) { const p = bboxOf(a), q = bboxOf(c); return !!(p && q) && (p[2] < q[0] || q[2] < p[0] || p[3] < q[1] || q[3] < p[1]); }
+  JbsProject.farApart = farApart;
   (function siteMirror() {
     try {
       const z = JbsProject.zone(), s = jget(SITES), cur = localStorage.getItem(CUR);
@@ -223,6 +232,17 @@
       const same = Object.values(s.sites).find(x => x && zh(x.geojson) === z.h);
       if (same) { localStorage.setItem(CUR, same.id); seen.site = z.h; return; }
       if (!site) return;
+      // 위치가 바뀌었으면(지금 구역과 범위가 조금도 겹치지 않으면) 예전 구역에 딸린 교통·환경·경관 조건·건축 확정안을 끌고 오지 않게 새 구역으로 시작
+      //  (2026-11-13, 작업기준서 오류기록 1번 — 예전 구역은 목록에 그대로 남음, 되돌리기는 예전 구역을 지금 구역으로)
+      if (farApart(site.geojson, z.g)) {
+        const id = 's' + Date.now().toString(36), t = now();
+        s.sites[id] = { id, name: JbsProject.name ? JbsProject.name() || '' : '', geojson: { type: 'Feature', properties: {}, geometry: z.g }, plan: {}, profile: {}, zoneFrom: { from: z.from, at: z.at }, created: t, updated: t };
+        jset(SITES, s); localStorage.setItem(CUR, id); seen.site = z.h;
+        JbsProject.noteAdopted(`${JbsProject.fromName(z.from)} 화면에서 ${z.at}에 다른 위치로 구역을 바꿔, 예전 구역(${String(site.name || site.id).replace(/[<>&]/g, '')})의 검토 조건을 가져오지 않고 새 구역으로 시작했습니다.`, () => {
+          localStorage.setItem(CUR, site.id); seen.site = ''; JbsProject.offerZone(site.geojson, 'undo'); location.reload();
+        });
+        return;
+      }
       site.zonePrev = site.geojson; site.geojson = { type: 'Feature', properties: {}, geometry: z.g };
       site.zoneFrom = { from: z.from, at: z.at }; site.updated = now();
       jset(SITES, s); seen.site = z.h;

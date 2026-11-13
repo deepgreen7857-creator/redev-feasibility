@@ -123,7 +123,8 @@ function defaultState() {
     meta: { name: '새 정비사업', type: 'redevelopment', location: '', zoning: '', memo: '', zoningList: [], zoningManual: false, locationManual: false },
     // importedKey: 조서(필지·건축물)를 마지막으로 불러온 구역의 지문(zoneKey), importedAt: 그 시각
     //  지금 구역의 지문과 다르면 3단계에 들어갈 때 다시 불러옴
-    area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'ledger', center: [37.5665, 126.978], zoom: 16, importedKey: '', importedAt: '', showParcels: false },
+    // siteGeo: 마지막으로 있던 구역(구역을 지워도 남김) — 새 구역이 이것과 겹치지 않으면 다른 사업으로 보고 설정을 처음으로(resetSiteSettings)
+    area: { geojson: null, drawnArea: 0, manualArea: 0, mode: 'ledger', center: [37.5665, 126.978], zoom: 16, importedKey: '', importedAt: '', showParcels: false, siteGeo: null },
     // mode: 'ledger' 토지대장 면적 합계(조서 편입면적, 조서가 없으면 그린 면적) | 'drawn' 연속지적 도형 면적(참고) | 'manual' 직접 입력
     // 연면적 = (구역면적 − 정비기반시설) × 용적률 × 연면적 배율
     // infraMode: 'auto' 토지조서 지목(도로·공원 등) 합계 | 'ratio' 구역면적의 infraRatio% | 'area' infraArea㎡ 직접 입력 | 'urban' /urban 정비계획 계획값(비율로 적용)
@@ -141,6 +142,18 @@ function defaultState() {
     assume: null,     // 사업성 가정값 대화창에 마지막으로 넣은 값
     quick: null,      // 빠른 사업성 화면 입력값(처음 열 때 기본값으로 채움)
   };
+}
+
+// 위치가 바뀌면(다른 사업) 구역에 딸린 설정을 모두 기본값으로(2026-11-13, 작업기준서 오류기록 1번 — 학익장미로 구역을 바꿨는데 유원아파트 때 고른 준주거가 남아 있었음)
+//  남기는 것: 사업명(공통 사업명 원본이 따로 있음), 새 구역계, 지도 위치·확대, 민감도 표 폭.
+//  사업성 공통 가정값(jbs-feas-assume-v1 — 분양가·공사비·평형 비율 등 사람마다의 기본값)은 '새 작업'과 같이 건드리지 않음
+function resetSiteSettings(s) {
+  const d = defaultState();
+  const keep = { name: s.meta.name, area: s.area, sens: s.sens };
+  Object.keys(d).forEach(k => { if (k !== 'version') s[k] = d[k]; });
+  s.meta.name = keep.name; s.sens = keep.sens;
+  s.area = Object.assign(d.area, { geojson: keep.area.geojson, drawnArea: keep.area.drawnArea, center: keep.area.center, zoom: keep.area.zoom, siteGeo: keep.area.siteGeo, showParcels: keep.area.showParcels });
+  return s;
 }
 
 // 저장된 데이터에 빠진 키가 있으면 기본값으로 채움 (버전이 바뀌어도 열리도록)
@@ -172,6 +185,7 @@ function migrate(s) {
   }
   if (s.version < 4) s.version = 4;
   if (s.area.mode === 'lands') s.area.mode = 'ledger';
+  if (!s.area.siteGeo && s.area.geojson) s.area.siteGeo = s.area.geojson;   // 위치 변경 기준(2026-11-13)
   // 예전 지도 필지: 면적이 연속지적 도형 면적이었음 → 참고값으로 옮기고 '토지대장 면적 다시 조회' 대상으로
   s.lands.forEach(l => {
     if (!l.pnu || !l.geom || l.cadArea != null || l.ledgerArea != null) return;

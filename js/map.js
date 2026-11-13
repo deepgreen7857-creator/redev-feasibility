@@ -346,6 +346,27 @@ const MapView = {
     $('#pickMsg').textContent = `${l.jibun} ${l.ledgerJimok || l.jimok} · 대장 ${fmt(num(l.ledgerArea), 1)}㎡ (연속지적 ${fmt(num(l.cadArea), 1)}㎡)`;
   },
 
+  // 위치가 바뀌었나(2026-11-13, 작업기준서 오류기록 1번): 새 구역(또는 처음 넣는 필지)이 마지막으로 있던 구역(S.area.siteGeo — 구역을 지워도 남김)과
+  //  조금도 겹치지 않으면 다른 사업으로 보고, 자동 백업 뒤 구역에 딸린 설정을 모두 기본값으로(resetSiteSettings). 되돌리기 띠로 예전 사업을 그대로 되살림
+  //  /urban(isNewSite)·공통 구역(project.js siteMirror)도 같은 규칙
+  isNewPlace(geom) {
+    const prev = S.area.siteGeo;
+    if (!prev || !geom || !window.turf) return false;
+    try { const x = turf.intersect(prev, geom.type === 'Feature' ? geom : { type: 'Feature', properties: {}, geometry: geom }); return !(x && turf.area(x) > 1); } catch (e) { return false; }
+  },
+  checkPlace(geom) {
+    if (!this.isNewPlace(geom)) return false;
+    const before = JSON.stringify(S), label = (S.meta.name && S.meta.name !== '새 정비사업') ? S.meta.name : '이전 구역';
+    if (window.JbsWork) { try { JbsWork.backup(`사업성 위치 변경 — 이전 사업(${label}) 초기화 전 자동 백업`); } catch (e) { /* 백업 실패해도 진행 */ } }
+    resetSiteSettings(S); this._placeReset = true;
+    if (window.JbsProject && JbsProject.noteAdopted) JbsProject.noteAdopted(`구역 위치가 바뀌어 이전 사업(${esc(label)})의 설정(용도지역·사업 유형·용적률·기반시설·조서·분양·사업비 등)을 기본값으로 되돌렸습니다. 이전 내용은 자동 백업했습니다.`, () => {
+      const o = JSON.parse(before); Object.keys(S).forEach(k => delete S[k]); Object.assign(S, o);
+      if (this.items) { this.items.clearLayers(); if (S.area.geojson) L.geoJSON(S.area.geojson, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l)); }
+      this.drawParcels(); App.update(true);
+    });
+    return true;
+  },
+
   save() {
     this.styleZone();
     if (!this._editing) setTimeout(() => this.fitZone(), 80); // 새 구역(지번·파일·그리기·필지 맞추기)이면 구역이 다 보이게, 꼭짓점 고치는 중엔 그대로
@@ -358,7 +379,8 @@ const MapView = {
       S.area.drawnArea = 0;
     } else {
       const gj = layers[0].toGeoJSON();
-      S.area.geojson = gj;
+      this.checkPlace(gj);
+      S.area.geojson = gj; S.area.siteGeo = gj;
       S.area.drawnArea = window.turf ? turf.area(gj) : 0;
       // 구역이 정해지면 그 안의 용도지역을 자동으로 채움
       if (VWorld.enabled && window.turf) {
@@ -498,7 +520,7 @@ const MapView = {
       const f = await VWorld.parcelAt(latlng.lat, latlng.lng);
       if (!f) { msg.textContent = '이 위치에서 필지를 찾지 못했습니다.'; return; }
       const p = f.properties || {};
-      const idx = S.lands.findIndex(l => l.pnu && l.pnu === p.pnu);
+      let idx = S.lands.findIndex(l => l.pnu && l.pnu === p.pnu);
       const no = splitJibun(p.jibun).no;
       // 작은 필지는 덜 확대된 화면에서 옆 필지를 잘못 누르기 쉬우므로, 먼저 크게 확대해 보여주고 다시 누르게 함
       const fa = turf.area(f);
@@ -527,6 +549,7 @@ const MapView = {
       });
       if (!act) { msg.textContent = `${no} 필지: 그대로 두었습니다.`; return; }
       this.remember(`${no} ${act === 'in' ? '넣기' : '빼기'}`);
+      if (act === 'in' && !S.area.geojson && this.checkPlace(f)) idx = -1;   // 구역을 지우고 다른 곳 필지부터 넣는 경우 — 조서를 넣기 전에 초기화
       if (act === 'out' && idx < 0) {
         this.toggleZoneParcel(f, false);
         msg.textContent = `${no} 필지를 구역계에서 뺐습니다.`;
@@ -584,6 +607,7 @@ const MapView = {
     const layers = this.items.getLayers();
     S.area.geojson = layers.length ? layers[0].toGeoJSON() : null;
     S.area.drawnArea = S.area.geojson ? turf.area(S.area.geojson) : 0;
+    if (S.area.geojson) S.area.siteGeo = S.area.geojson;
   },
 
   // 구역계 파일 불러오기: GeoJSON 또는 CAD(DXF, 측량 좌표 — js/zonekit.js ZoneKit.readDxf, /urban과 같은 코드)

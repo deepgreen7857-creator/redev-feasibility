@@ -61,8 +61,8 @@
   const listSlots = async () => (await tx('readonly', st => st.getAll())).sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
   const putSlot = slot => tx('readwrite', st => st.put(slot));
   const delSlot = id => tx('readwrite', st => st.delete(id));
-  async function saveSlot(name, auto) {
-    const snap = snapshot(name), id = auto ? 'auto:' + Date.now() : 'name:' + snap.name;
+  async function saveSlot(name, auto, pre) {
+    const snap = pre || snapshot(name), id = auto ? 'auto:' + Date.now() : 'name:' + snap.name;
     await putSlot(Object.assign({ id, auto: !!auto }, snap));
     if (auto) { const a = (await listSlots()).filter(x => x.auto && !x.ver); for (const x of a.slice(3)) await delSlot(x.id); }
     return snap;
@@ -266,10 +266,11 @@
   }
 
   // 지우기 전 자동 백업: 이 컴퓨터 + 온라인(실패해도 이 컴퓨터 백업은 남음)
+  //  내용은 부른 순간 한 번만 찍음(2026-11-13) — 예전엔 온라인 백업이 이 컴퓨터 백업이 끝난 뒤 다시 찍어, 기다리지 않고 바로 지우는 화면에선 지운 뒤 내용이 올라갔음
   async function backup(label) {
-    const name = guessName() + ' (' + label + ')';
-    try { await saveSlot(name, true); } catch (e) { /* 무시 */ }
-    try { await cloudSave(name, true); return true; } catch (e) { console.warn('온라인 백업 실패', e); return false; }
+    const name = guessName() + ' (' + label + ')', snap = snapshot(name);
+    try { await saveSlot(name, true, snap); } catch (e) { /* 무시 */ }
+    try { await cloudPut(snap, true); return true; } catch (e) { console.warn('온라인 백업 실패', e); return false; }
   }
 
   /* ---------- 되돌려 놓기 ---------- */

@@ -112,8 +112,10 @@ const P = {
   bcr: 18, mix59: 40, mix84: 50, mix114: 10, supplyFactor: 1.33, rentalRatio: 15, coreUnits: 4,
   landPrice: 300, bldValue: 60, memberPrice: 1800, salePrice: 2300, rentalPrice: 18000,
   constCost: 700, basementRatio: 55, etcRatio: 20, priorMode: 'jiga', priorMult: 1.4, ghostIn: false,
-  infraMode: 'proposal', parkMode: 'legal', sideRoadW: 8, schoolArea: 0, otherInfra: 0, greenInfra: 0, pubBldg: 0, parkCount: 0, valMult: 1.4, roadWork: 0, parkWork: 0, showFac: false, keepInnerRoads: false,
+  infraMode: 'proposal', parkMode: 'legal', parkPct: 5, sideRoadW: 8, schoolArea: 0, otherInfra: 0, greenInfra: 0, pubBldg: 0, parkCount: 0, valMult: 1.4, roadWork: 0, parkWork: 0, showFac: false, keepInnerRoads: false,
 };
+// 5만㎡ 미만 구역에 의무 없이 넣는 공원 비율(구역 대비 %, 2026-11-13 작업기준서 오류기록 4번 — 예전엔 5% 고정)
+function parkPctOf() { const v = num(P.parkPct); return v > 0 && v <= 30 ? v : 5; }
 const P_DEFAULT = JSON.parse(JSON.stringify(P));   // 위치가 바뀌면(다른 사업) 이 값으로 되돌림
 try { const s = localStorage.getItem('jbs-urban-plan'); if (s) Object.assign(P, JSON.parse(s)); } catch (e) { /* 무시 */ }
 // v54: 주변 도로 최소 폭 기본 6m → 8m(소로2류 하한, 양방향 통행)

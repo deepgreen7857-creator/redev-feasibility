@@ -1,6 +1,7 @@
 # jbslab.co.kr — 정비사업 사업성 검토
 
-> 새 대화 시작 시: `docs/인계-다음작업.md`를 먼저 읽고 이어서 할 것.
+> 새 대화 시작 시: **`JBSLAB_작업기준서.md`(목표·보류 목록·결정사항·검증사례·오류기록)를 먼저 읽고** 그 규칙대로 할 것. 그다음 `docs/인계-다음작업.md`.
+> 검증사례 자료는 `검증사례/`(익명본·고시 수준, 사이트 배포에서 뺌 — tools/build-site.js). 고친 뒤엔 `node tools/ui-test/case-a-ui.js`로 A구역 대조를 다시 돌리고 작업기준서 4장 표를 채울 것.
 
 저장소: https://github.com/deepgreen7857-creator/redev-feasibility (GitHub Pages, `main`에 push하면 배포)
 
@@ -115,6 +116,16 @@
 - 작업은 바뀔 때마다 홈페이지(Firestore jbsWork)에 자동 버전으로 올라감(예전부터). 화면을 열 때(2.5초 뒤)·창으로 돌아올 때 홈페이지 최근 버전(기록 시각 at 기준)이 이 컴퓨터가 마지막으로 올린 것(jbsw:lastCloudHash)과 다르면 위쪽 띠 '다른 컴퓨터에서 더 최근에 저장한 작업' → [이어서 하기](안 올린 변경이 있으면 자동 백업 뒤) / [이 컴퓨터 것 계속](jbsw:skipHash, 다시 안 물음)
 - 띠가 떠 있는 동안은 자동 올리기를 멈춤(옛 작업이 맨 위에 올라가 다른 컴퓨터 것을 덮지 않게)
 - 작업 이름(guessName)은 공통 사업명 jbs.project.v1을 먼저 씀
+
+## 위치가 바뀌면 설정 초기화(2026-11-13, 작업기준서 오류기록 1번)
+- 새 구역이 마지막으로 있던 구역과 조금도 겹치지 않으면 다른 사업 → 자동 백업 뒤 구역에 딸린 설정을 모두 기본값으로. 구역을 지운 뒤 다른 곳을 그려도 마찬가지(마지막 구역을 따로 기억)
+  - 사업성 화면: S.area.siteGeo, MapView.checkPlace(geom) → resetSiteSettings(S)(state.js — 사업명·새 구역·지도 위치만 남김), 파란 띠 [되돌리기] = 예전 사업 통째로
+  - /urban: Z.lastGeo(안을 지울 때도 남김) → isNewSite → resetForNewSite
+  - 공통 구역(검토 도구): project.js siteMirror — 원본 구역이 지금 공통 구역과 범위가 안 겹치면 새 공통 구역을 만들어 지금 구역으로(예전 교통·환경·경관 조건·건축 확정안을 끌고 오지 않음)
+  - 남기는 것: 사업성 공통 가정값 jbs-feas-assume-v1(사람마다의 기본값 — '새 작업'과 같음)
+  - JbsWork.backup은 부른 순간 내용을 한 번만 찍음(기다리지 않고 바로 지워도 됨)
+  - 시험 `node tools/ui-test/site-reset-ui.js`(33항목) — 구역·설정 연결을 건드렸으면 push 전에 통과
+- 공원(의무 아님, 오류기록 4번): 5만㎡ 미만 구역도 '의무 없어도 공원 넣기 __%'(기본 5%) — 빠른 사업성 S.quick.park 'add'·parkPct('최소' 단계에 더함, 평균·보수적은 공원 포함 경험치라 그대로), /urban P.parkMode 'always'·P.parkPct(parkPctOf). 사업성 → /urban 가져올 때 이어받음. 기본값은 법정 의무만(0㎡)
 
 ## 주의
 - 판단 자료 잠금 배포(2026-11-13, 사용자 결정 — 경매 판단 자료가 로그인 없이 직접 주소로 보이던 문제): 배포는 `.github/workflows/pages.yml`(GitHub Actions)가 함 — `tools/build-site.js`로 올릴 것만 복사(.bak·인계·규칙 메모·docs·court-collector·auction-server·auction-web·tools·CLAUDE.md 제외) → `tools/seal-data.js`가 judge/·review/ 바로 아래 .json을 비밀값 JBS_DATA_KEY로 AES-GCM 잠금 → Pages. 화면은 `shared/privdata.js`의 `JbsPriv.json(주소)`로 읽음(잠긴 것·안 잠긴 것 모두, 비밀번호는 컴퓨터마다 한 번 — localStorage 'jbsDataPass'). **judge·review 자료를 읽는 새 화면을 만들면 fetch 대신 JbsPriv.json**. 저장소 안의 파일은 그대로 평문(노트북 자동 올리기·수집기가 그대로 씀). 저장소는 비공개 전환(GitHub Pro) 전제. 사이트에 새로 올리면 안 되는 폴더·파일이 생기면 build-site.js SKIP에 넣을 것
