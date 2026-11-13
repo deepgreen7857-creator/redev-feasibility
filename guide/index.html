@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<script src="/shared/gate.js"></script>
+<script src="/shared/sitenav.js?v=1ab85f00"></script>
+<meta name="robots" content="noindex, nofollow">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jbslab 사용 설명서</title>
+<style>
+  :root { --ink: #1d2a33; --sub: #5b6b76; --line: #d9e1e6; --acc: #1f6f8b; --soft: #eef6f9; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Pretendard', 'Malgun Gothic', system-ui, sans-serif; color: var(--ink); line-height: 1.7; background: #fafcfd; }
+  main { max-width: 920px; margin: 0 auto; padding: 24px 18px 80px; }
+  h1 { font-size: 28px; margin: 8px 0 4px; }
+  h2 { font-size: 21px; margin: 40px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--ink); }
+  h3 { font-size: 17px; margin: 24px 0 6px; }
+  .sub { color: var(--sub); }
+  .toc { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 18px; }
+  .toc a { color: var(--acc); text-decoration: none; }
+  .flow { counter-reset: s; list-style: none; padding: 0; }
+  .flow > li { counter-increment: s; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px 12px 56px; margin: 10px 0; position: relative; }
+  .flow > li::before { content: counter(s); position: absolute; left: 14px; top: 12px; width: 30px; height: 30px; border-radius: 50%; background: var(--acc); color: #fff; font-weight: 700; text-align: center; line-height: 30px; }
+  .flow b.t { font-size: 16px; }
+  .go { display: inline-block; margin-top: 4px; font-size: 14px; color: var(--acc); }
+  .tip { background: var(--soft); border-left: 4px solid var(--acc); padding: 10px 14px; border-radius: 6px; margin: 12px 0; }
+  table { border-collapse: collapse; width: 100%; background: #fff; font-size: 14px; }
+  th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f7; }
+  .page { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 6px 16px 14px; margin: 14px 0; }
+  .step { border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 10px; }
+  .step ol { margin: 4px 0; padding-left: 22px; }
+  .k { display: inline-block; min-width: 64px; color: var(--sub); font-size: 13px; }
+  @media print { .toc, #siteNav, #planSteps { display: none !important; } h2 { break-before: page; } .page, .flow > li { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>jbslab 사용 설명서</h1>
+  <p class="sub">정비사업 사업성·정비계획 검토 홈페이지 — 처음 쓰는 사람도 순서대로 따라 하면 되도록 만든 안내입니다. 인쇄하거나 PDF로 저장해(Ctrl+P) 옆에 두고 보셔도 됩니다.</p>
+
+  <div class="toc">
+    <b>차례</b>
+    <ol>
+      <li><a href="#g1">일반 매뉴얼 — 처음 한 번에 끝까지(10분)</a></li>
+      <li><a href="#g2">자주 묻는 것·막힐 때</a></li>
+      <li><a href="#g3">세부 매뉴얼 — 화면별 단계</a></li>
+      <li><a href="#g4">화면 한눈에 보기</a></li>
+    </ol>
+  </div>
+
+  <h2 id="g1">1. 일반 매뉴얼 — 처음 한 번에 끝까지</h2>
+  <p>이 홈페이지는 <b>구역을 그리면 → 정비기반시설·건축 개략 → 사업성(비례율)</b>까지 자동으로 이어서 계산합니다. 아래 여섯 단계를 순서대로 하면 '(개략)사업성검토서'가 나옵니다.</p>
+  <ol class="flow">
+    <li><b class="t">구역 정하기</b><br>첫 화면(① 구역·사업성) <b>2 구역계</b> 탭에서 지도에 구역을 그리거나, 필지를 눌러 넣거나, 지번 목록·CAD(DXF)·GeoJSON 파일을 불러옵니다. 구역 안 토지·건축물은 자동으로 불러옵니다.<br>
+      <span class="go">→ <a href="/">첫 화면 열기</a></span></li>
+    <li><b class="t">빠른 사업성 보기</b><br><b>3 빠른 사업성</b> 탭에서 비례율이 바로 나옵니다. 정비기반시설은 최소·평균·보수적 중 고르고, 5만㎡ 미만 구역이라도 <b>'의무 없어도 공원 넣기'</b>로 공원을 넣어 볼 수 있습니다. 공사비·분양가·평형 비율 손잡이로 바꿔 봅니다.</li>
+    <li><b class="t">건축선·출입구 정하기</b><br><b>② 정비계획 세우기</b>(/urban) 4탭에서 건축한계선·차량출입 불허구간을 먼저 정하고, 추천 주출입구·부출입구·주차장 출입구를 확인합니다. 출입구 자리와 건축한계선 안쪽에는 동이 놓이지 않습니다.<br>
+      <span class="go">→ <a href="/urban/">정비계획 세우기 열기</a></span></li>
+    <li><b class="t">정비기반시설 정하기</b><br>같은 화면 3탭에서 도로 확폭·공원·주차장 위치와 면적을 정합니다. 감싸기·이어 붙이기·손으로 그리기·손그림 올리기 중 편한 방법을 고릅니다.</li>
+    <li><b class="t">개략 배치 확인</b><br><b>건축계획 수립</b>(/arch)에서 동 배치·일조·위험요소를 보고 마음에 드는 안을 <b>[이 안으로 확정]</b>합니다.<br>
+      <span class="go">→ <a href="/arch/">건축계획 수립 열기</a></span></li>
+    <li><b class="t">검토서 출력</b><br>빠른 사업성 맨 아래 <b>[검토서]</b>에서 <b>사용자용</b>(결과 위주, 두 장 이내) 또는 <b>검토자용</b>(산식·가정값·민감도·실제 사례와 차이까지)을 고르고, 인쇄 창에서 'PDF로 저장'을 누릅니다.</li>
+  </ol>
+  <div class="tip">교통성·환경성·경관 검토(/traffic·/env·/landscape)는 <b>2회차</b>에 합니다. 1회차는 위 여섯 단계만으로 충분합니다. 2회차 결과를 반영하면 건축계획과 사업성이 다시 계산됩니다.</div>
+
+  <h2 id="g2">2. 자주 묻는 것·막힐 때</h2>
+  <table>
+    <tr><th style="width:34%">이럴 때</th><th>이렇게</th></tr>
+    <tr><td>다른 구역을 새로 그렸더니 설정이 다 처음으로 돌아갔어요</td><td>위치가 바뀌면 예전 사업 설정(용도지역·용적률·조서 등)이 섞이지 않게 기본값으로 돌립니다. 예전 내용은 자동 백업되고, 위쪽 파란 띠의 <b>[되돌리기]</b>로 그대로 되살릴 수 있습니다.</td></tr>
+    <tr><td>면적이 고시 면적과 조금 달라요</td><td>사이트는 측량 좌표(EPSG:5186) 평면 면적으로 셉니다. 고시 CAD와 같은 방식이라 같은 경계면 같은 값이 나옵니다(검증사례 A구역 40,448㎡ 일치). 다르면 경계 꼭짓점이 다른 것입니다.</td></tr>
+    <tr><td>비례율이 실제 고시값과 많이 달라요</td><td>같은 구역이 '실제 사례'로 등록돼 있으면 빠른 사업성 맨 위에 실제 ↔ 자동 차이가 나옵니다. 차이는 대부분 <b>일반분양가</b>·<b>종전자산</b> 가정에서 생기니, 가정값 창에서 그 구역 값으로 고쳐 보세요.</td></tr>
+    <tr><td>비례율이 안 나와요(종전자산 0)</td><td>토지조서를 불러오는 중이거나 공시지가가 비어 있습니다. 빠른 사업성의 <b>평균 공시지가</b>를 넣으면 바로 나옵니다.</td></tr>
+    <tr><td>다른 컴퓨터에서 이어서 하고 싶어요</td><td>작업은 바뀔 때마다 홈페이지에 자동 저장됩니다. 다른 컴퓨터에서 열면 최신 작업으로 맞춰집니다. 오른쪽 아래 <b>[작업 저장·불러오기]</b>에서 예전 버전도 고를 수 있습니다.</td></tr>
+    <tr><td>남에게 작업 파일을 줘야 해요</td><td>[작업 저장·불러오기] → <b>[남에게 주는 용]</b>을 쓰면 소유자 이름·연락처가 지워진 파일이 만들어집니다.</td></tr>
+    <tr><td>지도·필지가 안 불러와져요</td><td>브이월드 키는 www.jbslab.co.kr 주소에서만 됩니다. 주소창이 jbslab.co.kr인지 확인하고 새로고침하세요.</td></tr>
+    <tr><td>각 화면에서 바로 도움이 필요해요</td><td>모든 화면 맨 위 줄 오른쪽 <b>[▶ 사용법]</b>을 누르면 그 화면 단계별 안내(영상이 있으면 영상까지)가 나옵니다.</td></tr>
+  </table>
+
+  <h2 id="g3">3. 세부 매뉴얼 — 화면별 단계</h2>
+  <p class="sub">각 화면의 [▶ 사용법]과 같은 내용입니다(원본 shared/manuals.json — 화면을 고치면 이 설명서도 함께 바뀝니다).</p>
+  <div id="detail">불러오는 중…</div>
+
+  <h2 id="g4">4. 화면 한눈에 보기</h2>
+  <table>
+    <tr><th>화면</th><th>주소</th><th>무엇을 하나</th></tr>
+    <tr><td>① 구역·사업성</td><td><a href="/">/</a></td><td>구역계, 토지·건축물 조서, 빠른 사업성, 사업성 세부 탭, 검토서</td></tr>
+    <tr><td>검토 모드</td><td><a href="/#review">/#review</a></td><td>제출된 명부를 공부(브이월드·건축물대장)와 대조, 토지·건축물 조서 엑셀</td></tr>
+    <tr><td>② 정비계획 세우기</td><td><a href="/urban/">/urban/</a></td><td>요건 판정, 건축선·출입구, 정비기반시설, 개략 배치·사업성</td></tr>
+    <tr><td>교통성·환경성·경관</td><td><a href="/traffic/">/traffic/</a> · <a href="/env/">/env/</a> · <a href="/landscape/">/landscape/</a></td><td>검토서 초안, 배치 조건 저장(2회차)</td></tr>
+    <tr><td>건축계획 수립</td><td><a href="/arch/">/arch/</a></td><td>배치 대안·일조·위험요소·확정, 조감도, 판넬·결정조서로 넘기기</td></tr>
+    <tr><td>판넬·팸플릿</td><td><a href="/panel/">/panel/</a></td><td>A0 판넬, 사업 단계별 팸플릿</td></tr>
+    <tr><td>결정조서(안)·지정 절차·지형도면</td><td><a href="/decision/">/decision/</a> · <a href="/proc/">/proc/</a> · <a href="/topo/">/topo/</a></td><td>정비계획·지구단위계획 결정조서, 공람·의회·협의 일정과 문서, 고시용 지형도면(DXF·SHP)</td></tr>
+    <tr><td>내 업무실</td><td>맨 위 [내 업무실 ▾]</td><td>판단기록장·입찰 판단표·정비경매 리포트·자료 보기·검토서 라이브러리·주식·안전관리 (관리자 개인 업무)</td></tr>
+  </table>
+</main>
+<script>
+(async function () {
+  const box = document.getElementById('detail');
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  try {
+    const m = await fetch('/shared/manuals.json', { cache: 'no-store' }).then(r => r.json());
+    const pages = m.pages || {};
+    const out = Object.keys(pages).map(path => {
+      let pg = pages[path];
+      if (Array.isArray(pg)) pg = { title: path, steps: [], videos: pg };
+      const steps = (pg.steps || []).map((s, i) => `<div class="step"><b>${i + 1}. ${esc(s.name)}</b>
+        ${s.why ? `<div><span class="k">왜</span>${esc(s.why)}</div>` : ''}
+        ${(s.do || []).length ? `<div><span class="k">이렇게</span></div><ol>${s.do.map(d => `<li>${esc(d)}</li>`).join('')}</ol>` : ''}
+        ${s.check ? `<div><span class="k">확인</span>${esc(s.check)}</div>` : ''}
+        ${s.stuck ? `<div><span class="k">막히면</span>${esc(s.stuck)}</div>` : ''}
+        ${s.next ? `<div><span class="k">다음</span>${esc(s.next)}</div>` : ''}</div>`).join('');
+      return `<div class="page"><h3>${esc(pg.title || path)} <small class="sub"><a href="${esc(path)}">${esc(path)}</a></small></h3>${pg.goal ? `<p>${esc(pg.goal)}</p>` : ''}${steps || '<p class="sub">이 화면은 영상 안내만 있습니다. 화면의 [▶ 사용법]을 누르세요.</p>'}</div>`;
+    }).join('');
+    box.innerHTML = out || '<p>아직 세부 안내가 없습니다.</p>';
+  } catch (e) { box.textContent = '세부 매뉴얼을 불러오지 못했습니다. 새로고침해 주세요.'; }
+})();
+</script>
+</body>
+</html>

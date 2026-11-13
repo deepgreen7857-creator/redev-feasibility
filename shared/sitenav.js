@@ -75,7 +75,8 @@ body.has-plansteps nav.tools{display:none!important}
     nav.innerHTML = `<span class="mk"><svg width="18" height="18" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="4" fill="#fff"/><path d="M6 6h6v6H6zM14 6h6v6h-6zM6 14h6v6H6z" fill="#1f2933" opacity=".85"/><path d="M14 14h6v6h-6z" fill="none" stroke="#e8590c" stroke-width="1.6"/></svg>jbslab</span>`
       + PAGES.map(pg => `${pg.grp ? `<span class="grp">${pg.grp}</span>` : ''}<a href="${pg.href}" data-k="${pg.k}" title="${pg.title}"${pg.on(P) ? ' aria-current="page"' : ''}>${pg.name}</a>`).join('')
       + `<button class="desk" type="button" title="정비사업과 따로 쓰는 본인 전용 도구"${DESK.some(d => d.on(P)) ? ' aria-current="page"' : ''}>${(DESK.find(d => d.on(P)) || { name: '내 업무실' }).name} ▾</button>`
-      + '<button class="man" type="button" title="이 화면 사용법(글·영상)">▶ 사용법</button>';
+      + '<button class="man" type="button" title="이 화면 사용법(글·영상)">▶ 사용법</button>'
+      + `<a class="man" href="/guide/" title="사이트 전체 사용 설명서(일반·세부)"${P.startsWith('/guide') ? ' aria-current="page"' : ''}>📖 설명서</a>`;   // 2026-11-14 일반·세부 매뉴얼
     nav.querySelector('.man').addEventListener('click', openManual);
     nav.querySelector('.desk').addEventListener('click', e => { e.stopPropagation(); toggleDesk(e.currentTarget); });
     // 사업성 화면 안에서 설정 ↔ 검토 모드를 바꿀 때는 새로 열지 않고 탭만 바꿈

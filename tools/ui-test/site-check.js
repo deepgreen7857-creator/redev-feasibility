@@ -14,7 +14,7 @@ const THREE_EX = /three@0\.128\.0\/examples\/js\/(.+)$/;
 const PAGES = [
   ['/', '사업성 검토'], ['/urban/', '정비계획 세우기'], ['/traffic/', '교통성 검토'], ['/env/', '환경성 검토'], ['/landscape/', '높이·경관'], ['/arch/', '개략 건축계획'],
   ['/panel/', '판넬·팸플릿'], ['/decision/', '결정조서(안)'], ['/proc/', '지정 절차 서류'], ['/topo/', '고시용 지형도면'], ['/library/', '검토서 라이브러리'], ['/safety/', '안전관리계획서'],
-  ['/judge/', '판단기록장'], ['/review/', '정비경매 리포트'], ['/stock/', '주식'], ['/data/', '자료 보기'], ['/auction/', '입찰 판단표'],
+  ['/judge/', '판단기록장'], ['/review/', '정비경매 리포트'], ['/stock/', '주식'], ['/data/', '자료 보기'], ['/auction/', '입찰 판단표'], ['/guide/', '사용 설명서'],
 ];
 const NET = /Failed to load module script|Failed to load resource|net::ERR|ERR_|status of 4\d\d|status of 5\d\d|firebase|firestore|vworld|data\.go\.kr|CORS|Access-Control|googleapis|gstatic|fetch|NetworkError|Load failed|jsonp|JSONP|timeout|시간 초과|조회 실패/i;
 (async () => {
