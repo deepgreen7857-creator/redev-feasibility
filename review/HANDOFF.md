@@ -2,6 +2,7 @@
 
 ## 목표
 - 사이트: www.jbslab.co.kr/review/ (입찰 판단표). 저장소는 C:\notedata(redev-feasibility, GitHub Pages)이고, 파일은 review/index.html과 review/items.json.
+- (2026-11-13) 홈페이지에는 judge·review의 .json이 배포 때 비밀번호로 잠겨 올라간다(GitHub Actions, tools/seal-data.js). 저장소 파일은 지금처럼 평문으로 쓰고 올리면 된다 — 쓰는 방법은 바뀌지 않음. 사이트 화면에서 자료를 읽는 코드를 새로 쓰면 fetch 대신 JbsPriv.json(shared/privdata.js).
 - Claude가 대화창에서 직접 제이옥션·대법원 원문, 시세, 공시가를 확인해 items.json에 올린다. 유료 API는 쓰지 않는다.
 - 범위: 인천 서구 석남동·가좌동. 법인 단타. 공시가 1억 이하(법인 취득세 1.1%) 빌라·저층 아파트. 토지(싼 전·답·과수원, 주차장, 대지)도 관심 대상이다.
 

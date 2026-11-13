@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
 <script src="/shared/gate.js"></script>
+<script src="/shared/privdata.js?v=2340382e"></script>
 <meta name="robots" content="noindex, nofollow">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -202,7 +203,7 @@ function table(rows,past){
   });
   return h+'</tbody></table></div>';
 }
-Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/items.json',{cache:'no-store'}).then(r=>r.json()),fetch('../review/land.json',{cache:'no-store'}).then(r=>r.json()).catch(()=>[])]).then(([days,items,land])=>{
+Promise.all([JbsPriv.json('picks.json'),JbsPriv.json('../review/items.json'),JbsPriv.json('../review/land.json').catch(()=>[])]).then(([days,items,land])=>{
   const by={};items.forEach(x=>by[x.id]=x);
   land.forEach(x=>{if(!x.market)x.market={low:x.pubTotal||0,high:x.pubTotal||0,basis:[]};x.rounds=x.rounds||[];if(x.yuchal&&!x.rounds.some(r=>r.result==='유찰')){const cur=x.rounds.find(r=>r.result!=='유찰')||{name:x.yuchal+'회 유찰',date:x.date,result:'예정'};x.rounds=Array.from({length:x.yuchal},(_,i)=>({name:i?i+'회 유찰':'최초',date:'',result:'유찰'})).concat([cur])}{const c=x.rounds.find(r=>r.result!=='유찰');if(c&&!c.min&&x.minPrice)c.min=x.minPrice}x.court=x.court||'';x.costs=x.costs||0;x.minProfit=x.minProfit||0;x.type=x.type||('토지('+(x.jimok||'')+')');x.land=true;by['L:'+x.id]=x});
   days.sort((a,b)=>a.date.localeCompare(b.date)); // 오래된 것부터 쌓아 최신 기록이 덮어쓰게
@@ -267,7 +268,7 @@ Promise.all([fetch('picks.json',{cache:'no-store'}).then(r=>r.json()),fetch('../
 }).catch(e=>{document.getElementById('list').textContent='불러오지 못했습니다: '+e});
 </script>
 <script>
-fetch('ideas.json',{cache:'no-store'}).then(r=>r.json()).then(list=>{const e=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+JbsPriv.json('ideas.json').then(list=>{const e=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 list.sort((a,b)=>b.date.localeCompare(a.date));
 document.getElementById('ideas').innerHTML=list.map((x,i)=>`<details class="idea"><summary title="${e(x.date)} · ${e(x.title)}"><span class="tag">착안</span>${e(String(x.date).slice(5).replace('-','.'))} ${e(x.title)}<span class="by">${e(x.by||'정민')} 노트</span></summary><p class="sum">${e(x.summary||'')}</p>${(x.sections||[]).map(s=>`<h4>${e(s.h)}</h4><ul>${s.items.map(i=>`<li>${e(i)}</li>`).join('')}</ul>`).join('')}</details>`).join('')}).catch(()=>{});
 // 착안 포스트잇: 바깥을 누르면 접힘

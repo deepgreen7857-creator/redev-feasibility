@@ -1,0 +1,56 @@
+# 홈페이지 배포(2026-11-13): main에 올라오면 사이트 폴더를 만들어 GitHub Pages로 내보낸다.
+# - 경매 판단 자료(judge·review .json)는 비밀값 JBS_DATA_KEY로 잠가서 올림(tools/seal-data.js)
+# - 백업(.bak)·인계 문서·규칙 메모·서버/수집기 코드·시험 도구는 올리지 않음(tools/build-site.js)
+# 켜는 법(사용자): ① Settings → Secrets and variables → Actions → New repository secret: 이름 JBS_DATA_KEY, 값 = 비밀번호(8자 이상)
+#                 ② Settings → Pages → Build and deployment → Source: 'GitHub Actions'
+# 비밀값이 없으면 아무것도 배포하지 않고 조용히 끝남(실패 메일 없음).
+name: 홈페이지 배포
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.k.outputs.ready }}
+    steps:
+      - id: k
+        env:
+          K: ${{ secrets.JBS_DATA_KEY }}
+        run: |
+          if [ -n "$K" ]; then echo "ready=yes" >> "$GITHUB_OUTPUT"; else echo "ready=no" >> "$GITHUB_OUTPUT"; echo "JBS_DATA_KEY 비밀값이 아직 없어 배포하지 않습니다."; fi
+  build:
+    needs: check
+    if: needs.check.outputs.ready == 'yes'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 사이트 폴더 만들기(올리지 않을 것 빼기)
+        run: node tools/build-site.js _site
+      - name: 판단 자료 잠그기
+        env:
+          JBS_DATA_KEY: ${{ secrets.JBS_DATA_KEY }}
+        run: node tools/seal-data.js _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
 <script src="/shared/gate.js"></script>
+<script src="/shared/privdata.js?v=2340382e"></script>
 <meta name="robots" content="noindex, nofollow">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -268,7 +269,7 @@ function cards(items){
   });
 }
 
-fetch('items.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{d.forEach(x=>{x.market=x.market||{low:0,high:0,basis:[]};x.market.basis=x.market.basis||[];['rights','timeline','flags','checks','rounds'].forEach(k=>{if(!Array.isArray(x[k]))x[k]=x[k]?[String(x[k])]:[]});x.prediction=x.prediction||{date:'',round:'',predict:'',actual:''};x.reviewed=x.reviewed||'';x.costs=x.costs||3500000;x.minProfit=x.minProfit||10000000;x.tax11=x.tax11||'';x.summary=x.summary||'';x.type=x.type||'';x.appraisal=x.appraisal||0});render(sortItems(d));const h=decodeURIComponent(location.hash.slice(1));const b=h&&document.getElementById(h);if(b){const hd=b.querySelector('.head'),bd=b.querySelector('.body');bd.hidden=false;hd.setAttribute('aria-expanded','true');b.scrollIntoView({block:'start'})}})
+JbsPriv.json('items.json').then(d=>{d.forEach(x=>{x.market=x.market||{low:0,high:0,basis:[]};x.market.basis=x.market.basis||[];['rights','timeline','flags','checks','rounds'].forEach(k=>{if(!Array.isArray(x[k]))x[k]=x[k]?[String(x[k])]:[]});x.prediction=x.prediction||{date:'',round:'',predict:'',actual:''};x.reviewed=x.reviewed||'';x.costs=x.costs||3500000;x.minProfit=x.minProfit||10000000;x.tax11=x.tax11||'';x.summary=x.summary||'';x.type=x.type||'';x.appraisal=x.appraisal||0});render(sortItems(d));const h=decodeURIComponent(location.hash.slice(1));const b=h&&document.getElementById(h);if(b){const hd=b.querySelector('.head'),bd=b.querySelector('.body');bd.hidden=false;hd.setAttribute('aria-expanded','true');b.scrollIntoView({block:'start'})}})
   .catch(()=>{document.getElementById('list').innerHTML='<p class="note">items.json을 읽지 못했습니다. 같은 폴더에 있는지 확인해 주세요.</p>'});
 </script>
 </body>
