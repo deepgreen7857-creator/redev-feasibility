@@ -4,7 +4,7 @@
 // 필지 PNU(19자리) = 시군구 5 + 법정동 5 + 대지구분 1(1 일반, 2 산) + 본번 4 + 부번 4
 const Ledger = {
   URL: 'https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo',
-  get enabled() { return typeof DATA_GO_KR_KEY === 'string' && DATA_GO_KR_KEY.trim() !== ''; },
+  get enabled() { return !!window.JbsDataGo || (typeof DATA_GO_KR_KEY === 'string' && DATA_GO_KR_KEY.trim() !== ''); },   // 서버 경유(shared/datago.js)면 키 없어도 됨
 
   // 개발계정은 초당 요청 수 제한이 있어 요청 간격을 두고, 막히면 기다렸다 다시 시도
   GAP: 300, last: 0,
@@ -33,7 +33,7 @@ const Ledger = {
     for (let page = 1; page <= 400; page++) {
       await this.throttle();
       const params = new URLSearchParams({
-        serviceKey: DATA_GO_KR_KEY.trim(), sigunguCd: p.slice(0, 5), bjdongCd: p.slice(5, 10),
+        serviceKey: (typeof DATA_GO_KR_KEY === 'string' ? DATA_GO_KR_KEY : '').trim(), sigunguCd: p.slice(0, 5), bjdongCd: p.slice(5, 10),
         platGbCd: p.charAt(10) === '2' ? '1' : '0', bun: p.slice(11, 15), ji: p.slice(15, 19),
         numOfRows: '500', pageNo: String(page), _type: 'json',
       });
@@ -60,7 +60,7 @@ const Ledger = {
   async titleOf(pnu) {
     const p = String(pnu);
     const params = new URLSearchParams({
-      serviceKey: DATA_GO_KR_KEY.trim(), sigunguCd: p.slice(0, 5), bjdongCd: p.slice(5, 10),
+      serviceKey: (typeof DATA_GO_KR_KEY === 'string' ? DATA_GO_KR_KEY : '').trim(), sigunguCd: p.slice(0, 5), bjdongCd: p.slice(5, 10),
       platGbCd: p.charAt(10) === '2' ? '1' : '0', bun: p.slice(11, 15), ji: p.slice(15, 19),
       numOfRows: '100', pageNo: '1', _type: 'json',
     });

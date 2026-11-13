@@ -478,6 +478,24 @@ exports.snapshotTick = onSchedule(
   async () => { await buildSnapshot(); },
 );
 
+// 관리자: 홈페이지 화면의 공공데이터포털 요청을 대신 부름(2026-11-13) — 인증키를 홈페이지 코드에 두지 않으려고.
+// 화면 쪽은 shared/datago.js가 apis.data.go.kr fetch를 가로채 여기로 보냄. 국토교통부(1613000) API만 허용.
+const DATAGO_ALLOW = /^\/1613000\//;
+exports.dataGo = onCall({ timeoutSeconds: 60, memory: '256MiB', secrets: [DATA_GO_KR_KEY] }, async (request) => {
+  requireAdmin(request);
+  const raw = String((request.data && request.data.url) || '');
+  let u;
+  try { u = new URL(raw); } catch { throw new HttpsError('invalid-argument', '주소가 잘못되었습니다.'); }
+  if (u.protocol !== 'https:' || u.hostname !== 'apis.data.go.kr' || !DATAGO_ALLOW.test(u.pathname)) throw new HttpsError('invalid-argument', '허용하지 않은 주소입니다.');
+  let key = DATA_GO_KR_KEY.value().trim();
+  if (/%[0-9A-Fa-f]{2}/.test(key)) { try { key = decodeURIComponent(key); } catch { /* 그대로 */ } }
+  u.searchParams.set('serviceKey', key);
+  const res = await fetch(u.toString(), { signal: AbortSignal.timeout(50000) });
+  const body = await res.text();
+  if (body.length > 9 * 1024 * 1024) throw new HttpsError('resource-exhausted', '응답이 너무 큽니다.');
+  return { status: res.status, type: res.headers.get('content-type') || 'application/json', body };
+});
+
 function requireAdmin(request) {
   const email = request.auth && request.auth.token && request.auth.token.email;
   const admins = ADMIN_EMAILS.value().split(',').map((s) => s.trim().toLowerCase());

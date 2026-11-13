@@ -162,12 +162,12 @@ const VW = {
 // 건축물대장 표제부 (공공데이터포털 건축HUB) — 공동주택 세대수 확인에 씀
 const LG = {
   URL: 'https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo',
-  get ok() { return typeof DATA_GO_KR_KEY === 'string' && DATA_GO_KR_KEY.trim() !== ''; },
+  get ok() { return !!window.JbsDataGo || (typeof DATA_GO_KR_KEY === 'string' && DATA_GO_KR_KEY.trim() !== ''); },   // 서버 경유(shared/datago.js)면 키 없어도 됨
   GAP: 300, last: 0,
   async throttle() { const w = this.last + this.GAP - Date.now(); this.last = Math.max(Date.now(), this.last + this.GAP); if (w > 0) await new Promise(r => setTimeout(r, w)); },
   async titleOf(pnu) {
     const p = String(pnu);
-    const q = new URLSearchParams({ serviceKey: DATA_GO_KR_KEY.trim(), sigunguCd: p.slice(0, 5), bjdongCd: p.slice(5, 10), platGbCd: p.charAt(10) === '2' ? '1' : '0', bun: p.slice(11, 15), ji: p.slice(15, 19), numOfRows: '100', pageNo: '1', _type: 'json' });
+    const q = new URLSearchParams({ serviceKey: (typeof DATA_GO_KR_KEY === 'string' ? DATA_GO_KR_KEY : '').trim(), sigunguCd: p.slice(0, 5), bjdongCd: p.slice(5, 10), platGbCd: p.charAt(10) === '2' ? '1' : '0', bun: p.slice(11, 15), ji: p.slice(15, 19), numOfRows: '100', pageNo: '1', _type: 'json' });
     const res = await fetch(`${this.URL}?${q}`);
     const j = await res.json().catch(() => null);
     const h = j && j.response && j.response.header;

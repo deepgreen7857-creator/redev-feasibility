@@ -123,6 +123,7 @@
 - 머리줄·단계 탭 고정(2026-11-04, 사용자 요구): `shared/sticky-top.js`가 .topbar → #kpis(창 850px 이상만) → #tabs, header.top → nav.steps/nav.tools를 차례로 sticky로 붙이고 높이 합을 --sticky-h로 남김. 새 페이지에도 workfile.js 다음에 넣을 것
 - 작업 파일 '남에게 주는 용'(2026-11-13): [작업] 창 [남에게 주는 용] = JbsWork.shareSnapshot — 모든 작업 키 JSON에서 owner·ownerName → '소유자 N', members·rows·owners·roster 목록의 name → '조합원 N', 연락처·생년월일·소유자 주소 칸 삭제(국·시·구 등 공공 소유자는 그대로). 새 화면에서 개인 정보 칸을 만들면 이름을 이 규칙(PERSONAL_DEL·NAME_LISTS)에 맞추거나 규칙에 더할 것
 - `_비공개/` 폴더(명부 등 개인정보)는 절대 커밋 금지 (`.gitignore`에 있음)
+- 공공데이터포털 요청은 서버 경유(2026-11-13): `shared/datago.js`가 apis.data.go.kr fetch를 가로채 관리자 로그인 상태로 서버 함수 `dataGo`(auction-server, 서울 리전, 비밀값 DATA_GO_KR_KEY, 국토교통부 /1613000/ 경로만)에 맡김. 함수가 배포 전이거나 실패하면 그 화면에서는 예전처럼 직접(js/config.js 키). 함수 배포·키 재발급 뒤에는 config.js의 DATA_GO_KR_KEY를 빈 문자열로 둘 것. 새 페이지가 data.go.kr을 부르면 gate.js 다음에 datago.js를 넣을 것(지금 index.html·urban/index.html)
 - 브이월드 키는 `www.jbslab.co.kr` 도메인 전용. 로컬에서 시험할 때는 콘솔에서 `VWorld.domain`을 `'www.jbslab.co.kr'`로 바꿔야 지적도·토지특성이 조회됨
 
 ## 검토서 도구 (/traffic, /env, /arch, /landscape) — 2026-11-01 추가
