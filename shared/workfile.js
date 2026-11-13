@@ -264,6 +264,38 @@
     a.href = URL.createObjectURL(blob); a.download = `${snap.name.replace(/[\\/:*?"<>|]/g, '_')}_${snap.savedAt.replace(/[: ]/g, '')}.jbs.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 3000);
   }
+  // 남에게 주는 용(2026-11-13, 사용자 결정 — 작업 파일을 그대로 보내면 토지조서·명부가 같이 나감):
+  //  소유자 이름(owner·ownerName)은 '소유자 N'으로, 조합원·명부 이름(members·rows·owners·roster…의 name)은 '조합원 N'으로 바꾸고
+  //  연락처·생년월일·주민번호·소유자 주소 같은 칸은 지움. 구역·면적·공시지가·사업성 숫자는 그대로 둠
+  const PERSONAL_DEL = /^(phone|tel|mobile|hp|birth|birthday|rrn|jumin|resident\w*|ownerAddr|ownerAddress|addrOwner|email|memo_?private)$/i;
+  const NAME_LISTS = /^(members|rows|owners|roster|rosterB|rosterA|people|holders)$/i;
+  function scrubValue(v, ctx) {
+    if (Array.isArray(v)) return v.map(x => scrubValue(x, ctx));
+    if (!v || typeof v !== 'object') return v;
+    const o = {};
+    for (const [k, x] of Object.entries(v)) {
+      if (PERSONAL_DEL.test(k)) continue;
+      if ((k === 'owner' || k === 'ownerName') && typeof x === 'string' && x && !/^(○○|국|시|구|도|군)/.test(x) && !/(국|시|구|도|군|청|공사|공단)$/.test(x)) {
+        if (!ctx.ownMap.has(x)) ctx.ownMap.set(x, '소유자 ' + (ctx.ownMap.size + 1));
+        o[k] = ctx.ownMap.get(x); continue;
+      }
+      if (NAME_LISTS.test(k) && Array.isArray(x)) {
+        o[k] = x.map(r => { const y = scrubValue(r, ctx); if (y && typeof y === 'object' && typeof y.name === 'string' && y.name) { if (!ctx.memMap.has(y.name)) ctx.memMap.set(y.name, '조합원 ' + (ctx.memMap.size + 1)); y.name = ctx.memMap.get(y.name); } return y; });
+        continue;
+      }
+      o[k] = scrubValue(x, ctx);
+    }
+    return o;
+  }
+  function shareSnapshot(name) {
+    const snap = snapshot(name), ctx = { ownMap: new Map(), memMap: new Map() };
+    for (const [k, v] of Object.entries(snap.keys)) {
+      try { snap.keys[k] = JSON.stringify(scrubValue(JSON.parse(v), ctx)); } catch (e) { /* JSON 아닌 값(글자 하나 등)은 그대로 */ }
+    }
+    snap.name = snap.name + '_공유용';
+    snap.shared = { at: now(), owners: ctx.ownMap.size, members: ctx.memMap.size, note: '소유자·조합원 이름은 번호로 바꾸고 연락처 등은 지운 파일' };
+    return snap;
+  }
   function used() { let n = 0; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); n += (k.length + (localStorage.getItem(k) || '').length) * 2; } return n; }
 
   /* ---------- 화면: 오른쪽 아래 [작업] ---------- */
@@ -293,7 +325,7 @@
       <div class="n">${esc(summary(cur))} · 브라우저 저장 공간 ${kb(u)} / 약 5MB${u > 4.2e6 ? ' <span class="warn">— 거의 찼습니다. 저장한 뒤 정리하세요</span>' : ''}</div>
       ${full ? '<div class="warn">브라우저 저장 공간이 꽉 차서 방금 내용이 저장되지 못했습니다. 아래 [파일로 내려받기]로 먼저 보관하세요.</div>' : ''}
       ${note ? `<div class="n" style="margin-top:6px;color:#0f6b3a">${esc(note)}</div>` : ''}
-      <div class="row"><button class="p" data-w="csave">홈페이지에 저장(온라인)</button><button data-w="save">이 컴퓨터에 저장</button><button data-w="file">파일로 내려받기</button><button data-w="load">파일에서 불러오기</button><button data-w="new">새 작업 시작</button></div>
+      <div class="row"><button class="p" data-w="csave">홈페이지에 저장(온라인)</button><button data-w="save">이 컴퓨터에 저장</button><button data-w="file" title="이름·명부까지 전부 — 내 보관용">파일로 내려받기(내 보관용)</button><button data-w="share" title="소유자·조합원 이름을 번호로 바꾸고 연락처 등을 지운 파일">남에게 주는 용</button><button data-w="load">파일에서 불러오기</button><button data-w="new">새 작업 시작</button></div>
       <div class="n">저장하면 이름별로 아래 목록에 남고, 불러오면 모든 화면(정비계획·검토서·개략 건축계획·사업성)이 그 상태로 돌아갑니다. <b>홈페이지에 저장</b>한 작업은 어느 컴퓨터에서나(관리자 로그인) 불러올 수 있습니다. 배치안 목록·일조 결과는 [배치안 만들기]·[일조 계산]을 다시 누르면 나옵니다.</div>
       <h3 style="margin-top:12px">홈페이지에 저장된 작업 <span class="n">(바뀔 때마다 자동 저장 · 모든 버전 보관)</span></h3><div id="jbsCloudList" class="n">불러오는 중…</div>
       <h3 style="margin-top:12px">이 컴퓨터에 저장된 작업</h3>
@@ -336,6 +368,7 @@
         await backup('새 작업 전 자동 백업'); clearWork(); location.reload();
       }
       else if (w === 'open') { const s = (await listSlots()).find(x => x.id === id); if (s) await restore(s, '저장된 작업'); }
+      else if (w === 'share') { const name = prompt('남에게 줄 파일에 붙일 작업 이름', guessName()); if (name === null) return; const sn = shareSnapshot(name.trim() || guessName()); download(sn); open(`남에게 주는 용 파일을 내려받았습니다(소유자 ${sn.shared.owners}명·조합원 ${sn.shared.members}명 이름을 번호로 바꿈). 보내기 전에 한 번 열어 확인하세요.`); }
       else if (w === 'dl') { const s = (await listSlots()).find(x => x.id === id); if (s) download(s); }
       else if (w === 'del') { const s = (await listSlots()).find(x => x.id === id); if (s && confirm(`'${s.name}'(${s.savedAt})을 이 컴퓨터에서 지울까요?`)) { await delSlot(id); open('지웠습니다.'); } }
     } catch (er) { open('처리하지 못했습니다: ' + er.message); }
@@ -343,7 +376,7 @@
   // 저장 공간이 꽉 차서 저장 실패했다는 알림(site-store 등이 보냄)
   g.addEventListener && g.addEventListener('jbs-storage-full', () => { full = true; if (btn) { btn.classList.add('full'); btn.textContent = '저장 공간 꽉 참 — 작업 보관'; } });
 
-  g.JbsWork = { checkNewer, snapshot, summary, autoVersion, flushPending, guessName, hashOf, cloudSave, cloudList, cloudGet, backup, apply, clearWork, listSlots, saveSlot, delSlot, download, used, isWorkKey, open: () => { ui(); open(); } };
+  g.JbsWork = { checkNewer, snapshot, shareSnapshot, scrubValue, summary, autoVersion, flushPending, guessName, hashOf, cloudSave, cloudList, cloudGet, backup, apply, clearWork, listSlots, saveSlot, delSlot, download, used, isWorkKey, open: () => { ui(); open(); } };
   const start = () => { ui(); watch(); };
   if (typeof document !== 'undefined') { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start(); }
 })(typeof window !== 'undefined' ? window : globalThis);
