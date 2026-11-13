@@ -107,7 +107,7 @@
     lyrSite = L.layerGroup().addTo(map); lyrEx = new L.FeatureGroup().addTo(map); lyrBld = L.layerGroup().addTo(map); lyrEdges = L.layerGroup().addTo(map);
     map.addControl(new L.Control.Draw({ edit: { featureGroup: lyrEx }, draw: { polygon: { shapeOptions: { color: '#5d7f5a' } }, rectangle: { shapeOptions: { color: '#5d7f5a' } }, polyline: false, circle: false, circlemarker: false, marker: false } }));
     map.on(L.Draw.Event.CREATED, e => {
-      const gj = e.layer.toGeoJSON();
+      const gj = e.layer.toGeoJSON(false);
       if (!site.geojson) { site.geojson = gj; site.v = site.v || {}; site.v.siteArea = String(Math.round(turf.area(gj) * 10) / 10); site.name = site.name || '이름 없는 구역'; JbsSite.save(site); load(site); msg('구역계를 그렸습니다. 이어서 경계 성격을 정하세요.'); return; }
       lyrEx.addLayer(e.layer); syncExclude(); msg('건축 불가 영역(기반시설 등)을 추가했습니다.');
     });
@@ -115,7 +115,7 @@
   }
   function syncExclude() {
     exclude = []; exKinds = [];
-    lyrEx.eachLayer(l => { const c = l.toGeoJSON().geometry.coordinates[0]; exclude.push(G.openRing(c).map(pr.to)); exKinds.push(l.options.kind || '직접 그림'); });
+    lyrEx.eachLayer(l => { const c = l.toGeoJSON(false).geometry.coordinates[0]; exclude.push(G.openRing(c).map(pr.to)); exKinds.push(l.options.kind || '직접 그림'); });
     exFrom = 'manual'; saveState(); invalidate();
   }
   // 같은 성격이면서 방향이 비슷하게(꺾임 30° 이하) 이어진 변들 — 곡선 경계를 한 덩어리로
@@ -580,7 +580,7 @@
   let SW = null; const SWCB = {};
   function simpleWorker() {
     if (SW) return SW;
-    SW = new Worker('simple-worker.js?v=ed096f0a');
+    SW = new Worker('simple-worker.js?v=567b4db4');
     SW.onmessage = e => { const f = SWCB[e.data.id]; delete SWCB[e.data.id]; if (f) f(e.data); };
     SW.onerror = ev => { Object.values(SWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(SWCB).forEach(k => delete SWCB[k]); SW = null; };
     return SW;
@@ -627,7 +627,7 @@
   function priorOf() { const m = num((site && site.v && site.v.priorEok) || 0) * 10000; return m > 0 ? { v: m, src: '직접 입력' } : (site && site.quick && site.quick.prior > 0 ? { v: site.quick.prior, src: `사업성 화면 1회차(${site.quick.at || ''})` } : null); }
   function feasOf(A, sc) {
     if (!window.JbsFeas) return null;
-    const F = JbsFeas.get(), Fs = Object.assign({}, F, { generalPrice: F.generalPrice * sc.gp, conPrice: F.conPrice * sc.cp }), pv = priorOf();
+    const F = JbsFeas.get(), Fs = Object.assign({}, F, { generalPrice: F.generalPrice * sc.gp, conPrice: F.conPrice * sc.cp, etcConPrice: F.conPrice }), pv = priorOf();
     const total = Object.values(A.byType || {}).reduce((a, b) => a + b, 0), rental = Math.round(total * F.rentRatio / 100);
     const members = num(site && site.quick && site.quick.members) || Math.round(total * 0.5);
     return JbsFeas.money({ byType: A.byType, rental, members, farArea: A.gfa, resArea: A.gfa, prior: pv ? pv.v : 0 }, Fs);
@@ -649,7 +649,7 @@
   let PW = null; const PWCB = {};
   async function runDeep(I) {
     msg('심화 배치 계산 중… 골격·구획·방향·높이·동 형태를 바꿔 가며 반복 탐색합니다(기본형 후보 포함, 탐색 90초 + 기본형 계산 — 보통 2~3분). 이 창을 닫지 마세요.');
-    if (!PW) { PW = new Worker('plan-worker.js?v=c89309f0'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
+    if (!PW) { PW = new Worker('plan-worker.js?v=46dd9285'); PW.onmessage = e => { const f = PWCB[e.data.id]; delete PWCB[e.data.id]; if (f) f(e.data); }; PW.onerror = ev => { Object.values(PWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); Object.keys(PWCB).forEach(k => delete PWCB[k]); PW = null; }; }
     const id = Date.now() + Math.random();
     const res = await new Promise(ok => { PWCB[id] = ok; PW.postMessage({ id, site: I.site, opt: Object.assign({}, I.opt, { crit: C.items, lat: pr ? pr.lat0 : 37.46 }) }); });
     if (!res.r || !res.r.variants.length) throw new Error(res.err || '심화 배치 안을 만들지 못했습니다');
@@ -757,7 +757,7 @@
   async function runRefine() {
     const A = alts[cur], btn = $('#refineBtn'); if (!A || !btn) return;
     const { I, opt } = riskOpt(), id = Date.now();
-    if (!RW) { RW = new Worker('refine-worker.js?v=2bec1d18'); RW.onmessage = e => { const d = e.data; if (d.prog) { const f = RWPROG[d.id]; if (f) f(d.prog); return; } const f = RWCB[d.id]; delete RWCB[d.id]; delete RWPROG[d.id]; if (f) f(d); }; RW.onerror = ev => { Object.values(RWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); RWCB = {}; RWPROG = {}; RW = null; }; }
+    if (!RW) { RW = new Worker('refine-worker.js?v=c8977578'); RW.onmessage = e => { const d = e.data; if (d.prog) { const f = RWPROG[d.id]; if (f) f(d.prog); return; } const f = RWCB[d.id]; delete RWCB[d.id]; delete RWPROG[d.id]; if (f) f(d); }; RW.onerror = ev => { Object.values(RWCB).forEach(f => f({ r: null, err: ev.message || '계산 오류' })); RWCB = {}; RWPROG = {}; RW = null; }; }
     btn.disabled = true; btn.textContent = '다듬는 중…';
     const blds = JSON.parse(JSON.stringify(A.buildings.map(b => { const o = {}; ['id', 'poly', 'parts', 'cores', 'units', 'divs', 'walls', 'center', 'angle', 'floors', 'form', 'n', 't', 'mixT', 'inner', 'vname', 'dname', 'notes', 'wingUnits', 'partWing', 'unitWing', 'wingFloors', 'partFl', 'unitFl'].forEach(k => { if (b[k] !== undefined && typeof b[k] !== 'function') o[k] = b[k]; }); return o; })));
     const res = await new Promise(ok => { RWCB[id] = ok; RWPROG[id] = s => { btn.textContent = `다듬는 중… 순 ${fmt(s.net)}세대 · ${s.n}개동 · ${Math.round(s.ms / 1000)}초`; }; RW.postMessage({ id, site: I.site, blds, opt: Object.assign({}, opt, { lat: pr ? pr.lat0 : 37.46 }), budget: 90000 }); });
@@ -964,7 +964,7 @@
      지금 대안의 동(세대 조각을 합친 바깥선)·층수 + 주변 건물(ctx) + 도로 필지·항공사진(브이월드, 구역마다 한 번 받아 창 안에서만 기억) */
   const BIRD = { st: { view: 'bird', look: 'day', mode: 'model', labels: false }, memo: {} };
   async function birdAerial(z, half) {
-    const lon0 = pr.lon0, lat0 = pr.lat0, kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+    const lon0 = pr.lon0, lat0 = pr.lat0, kx = (111412.84 * Math.cos(lat0 * Math.PI / 180) - 93.5 * Math.cos(3 * lat0 * Math.PI / 180)), ky = (111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180) + 1.175 * Math.cos(4 * lat0 * Math.PI / 180));
     const lon2x = lon => (lon + 180) / 360 * 2 ** z, lat2y = lat => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * 2 ** z;
     const x2lon = x => x / 2 ** z * 360 - 180, y2lat = y => Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** z))) * 180 / Math.PI;
     const xa = Math.floor(lon2x(lon0 - half / kx)), xb = Math.floor(lon2x(lon0 + half / kx)), ya = Math.floor(lat2y(lat0 + half / ky)), yb = Math.floor(lat2y(lat0 - half / ky));

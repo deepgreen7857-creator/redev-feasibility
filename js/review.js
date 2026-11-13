@@ -1144,7 +1144,7 @@ ${log ? `<section><h2 style="font-size:17px">판단 변경 이력</h2><table><tr
     onLine(layer) {
       if (!this.drawing || !this.p) return;
       this.stopDraw();
-      const line = layer.toGeoJSON(), c = line.geometry.coordinates;
+      const line = layer.toGeoJSON(false), c = line.geometry.coordinates;
       if (c.length >= 2) {   // 선 양 끝을 3m씩 늘려 경계선 위에서 끝나도 확실히 가로지르게
         const ext = (a, b) => turf.destination(turf.point(a), 0.003, turf.bearing(turf.point(b), turf.point(a)), { units: 'kilometers' }).geometry.coordinates;
         c[0] = ext(c[0], c[1]); c[c.length - 1] = ext(c[c.length - 1], c[c.length - 2]);
@@ -1604,7 +1604,7 @@ ${log ? `<section><h2 style="font-size:17px">판단 변경 이력</h2><table><tr
     const byJ = {};
     Object.values(R.cadAll).forEach(f => { const j = String(f.properties.jibun || '').replace(/[^\d-]/g, ''); if (!j) return; (byJ[j] = byJ[j] || []).push(f); });
     const c0 = turf.center(R.zone).geometry.coordinates; const lon0 = c0[0], lat0 = c0[1];
-    const kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110540;
+    const kx = (111412.84 * Math.cos(lat0 * Math.PI / 180) - 93.5 * Math.cos(3 * lat0 * Math.PI / 180)), ky = (111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180) + 1.175 * Math.cos(4 * lat0 * Math.PI / 180));
     const toM = ([lo, la]) => [(lo - lon0) * kx, (la - lat0) * ky], toLL = ([x, y]) => [lon0 + x / kx, lat0 + y / ky];
     const zb = turf.bbox(turf.buffer(R.zone, 0.3, { units: 'kilometers' }));
     let pairs = [];
@@ -2190,7 +2190,7 @@ ${log ? `<section><h2 style="font-size:17px">판단 변경 이력</h2><table><tr
     if (!all.length) return null;
     let lat0 = 0; all.slice(0, 50).forEach(f => { lat0 += turf.centroid(f).geometry.coordinates[1]; }); lat0 /= Math.min(50, all.length);
     const lon0 = turf.centroid(all[0]).geometry.coordinates[0];
-    const KX = 111320 * Math.cos(lat0 * Math.PI / 180), KY = 110540;
+    const KX = (111412.84 * Math.cos(lat0 * Math.PI / 180) - 93.5 * Math.cos(3 * lat0 * Math.PI / 180)), KY = (111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180) + 1.175 * Math.cos(4 * lat0 * Math.PI / 180));
     const P = c => [(c[0] - lon0) * KX, (c[1] - lat0) * KY];
     const rings = f => { const g = f.geometry; const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : []; return polys.map(pl => pl.map(r => r.map(P))); };
     const isRoad = f => /도$/.test(String(f.properties.jibun || '')) || f.properties.jimok === '도로';

@@ -144,7 +144,7 @@ const INFRA = {
   block(center, A, zone, minus, asp0 = 1) {
     if (!(A > 0)) return null;
     try { if (A > turf.area(zone) * 0.8) return null; } catch (er) { return null; }
-    const [lat0, lon0] = center, kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540, side = Math.sqrt(A);
+    const [lat0, lon0] = center, kx = (111412.84 * Math.cos(lat0 * Math.PI / 180) - 93.5 * Math.cos(3 * lat0 * Math.PI / 180)), ky = (111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180) + 1.175 * Math.cos(4 * lat0 * Math.PI / 180)), side = Math.sqrt(A);
     const toM = ([lon, lat]) => [(lon - lon0) * kx, (lat - lat0) * ky], toLL = ([x, y]) => [lon0 + x / kx, lat0 + y / ky];
     // 가장 가까운 선 방향(구역 경계·도로, 그리고 이미 놓인 종교용지·공원 같은 다른 시설의 변)과 나란하게, 그 선 쪽으로 붙임
     let th = 0, best = Infinity, edge = null;

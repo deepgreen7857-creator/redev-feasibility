@@ -21,7 +21,7 @@
   const F = g => (g && g.type === 'Feature') ? g : (g ? { type: 'Feature', properties: {}, geometry: g.geometry || g } : null);
   const NAME = { N: '북쪽', S: '남쪽', E: '동쪽', W: '서쪽' };
   const fmt = n => Math.round(n).toLocaleString();
-  const m2d = lat => [1 / (111320 * Math.cos(lat * Math.PI / 180)), 1 / 110540];
+  const m2d = lat => [1 / (111412.84 * Math.cos(lat * Math.PI / 180) - 93.5 * Math.cos(3 * lat * Math.PI / 180)), 1 / (111132.92 - 559.82 * Math.cos(2 * lat * Math.PI / 180) + 1.175 * Math.cos(4 * lat * Math.PI / 180))];
 
   // 기준 시설에 맞닿은(1m 이내) 조각만
   function touching(g, anchor) {
@@ -305,7 +305,7 @@
   //  (예전처럼 구역 끝에서 수평선을 밀면 기울어진 구역에서 세모 조각이 생겼음)
   function edge(o) {
     const zone = F(o.zone), dir = o.dir || 'N', ring0 = (zone.geometry.type === 'Polygon' ? zone.geometry.coordinates[0] : zone.geometry.coordinates[0][0]);
-    const lat = ring0[0][1], lon0 = ring0[0][0], kx = 111320 * Math.cos(lat * Math.PI / 180), ky = 110540, want = { N: [0, 1], S: [0, -1], E: [1, 0], W: [-1, 0] }[dir];
+    const lat = ring0[0][1], lon0 = ring0[0][0], kx = (111412.84 * Math.cos(lat * Math.PI / 180) - 93.5 * Math.cos(3 * lat * Math.PI / 180)), ky = (111132.92 - 559.82 * Math.cos(2 * lat * Math.PI / 180) + 1.175 * Math.cos(4 * lat * Math.PI / 180)), want = { N: [0, 1], S: [0, -1], E: [1, 0], W: [-1, 0] }[dir];
     const M = p => [(p[0] - lon0) * kx, (p[1] - lat) * ky], LL = q => [lon0 + q[0] / kx, lat + q[1] / ky];
     const R = ring0.slice(0, -1).map(M), n0 = R.length; let ccw = 0; for (let i = 0; i < n0; i++) { const p = R[i], q = R[(i + 1) % n0]; ccw += p[0] * q[1] - q[0] * p[1]; }
     const sg = ccw > 0 ? 1 : -1;

@@ -118,7 +118,7 @@
       mk = L.layerGroup().addTo(map);
       const take = lyr => {
         layer.clearLayers(); layer.addLayer(lyr);
-        site.geojson = lyr.toGeoJSON();
+        site.geojson = lyr.toGeoJSON(false);
         const a = Math.round(turf.area(site.geojson) * 10) / 10;
         const c2 = turf.centerOfMass(site.geojson).geometry.coordinates;
         Object.assign(v(), { siteArea: String(a), lng: c2[0], lat: c2[1] });
@@ -148,7 +148,7 @@
       if (inf) {
         const st = { park: ['공원·녹지', '#2f7d4a', '#6fbf7e'], green: ['녹지', '#2f7d4a', '#8fd19e'], road: ['도로(확폭·지정)', '#6b7280', '#b9bec4'], school: ['학교용지', '#7a5aa6', '#b9a3d6'], pub: ['공공청사 등', '#8a6d3b', '#d9c49a'], other: ['그 밖의 정비기반시설', '#5d7f5a', '#9fb59b'], rel: ['종교용지', '#8a6d3b', '#e2cfa5'] };
         Object.keys(st).forEach(k => { const g = inf[k]; if (!g) return; const [nm, c, f] = st[k];
-          try { L.geoJSON(g, { style: { color: c, weight: 1.5, fillColor: f, fillOpacity: .55 } }).eachLayer(l => { let a = 0; try { a = turf.area(l.toGeoJSON()); } catch (e) { /* 무시 */ } l.bindTooltip(`${nm} ${Math.round(a).toLocaleString()}㎡ (정비계획)`, { sticky: true }); layer.addLayer(l); }); } catch (e) { /* 무시 */ } });
+          try { L.geoJSON(g, { style: { color: c, weight: 1.5, fillColor: f, fillOpacity: .55 } }).eachLayer(l => { let a = 0; try { a = turf.area(l.toGeoJSON(false)); } catch (e) { /* 무시 */ } l.bindTooltip(`${nm} ${Math.round(a).toLocaleString()}㎡ (정비계획)`, { sticky: true }); layer.addLayer(l); }); } catch (e) { /* 무시 */ } });
       }
       try { map.fitBounds(layer.getBounds(), { padding: [20, 20] }); } catch (e) { /* 무시 */ }
     }

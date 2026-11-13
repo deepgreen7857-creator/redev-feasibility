@@ -7,7 +7,7 @@
   /* ---------- 좌표 변환 ---------- */
   function projector(ring) {
     const lat0 = ring.reduce((s, c) => s + c[1], 0) / ring.length, lon0 = ring.reduce((s, c) => s + c[0], 0) / ring.length;
-    const kx = Math.cos(lat0 * D2R) * 111320, ky = 110540;
+    const kx = (111412.84 * Math.cos(lat0 * Math.PI / 180) - 93.5 * Math.cos(3 * lat0 * Math.PI / 180)), ky = (111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180) + 1.175 * Math.cos(4 * lat0 * Math.PI / 180));   // 위도별 1° 길이(GRS80, 2026-11-13 — 예전 110,540은 적도 값이라 인천에서 면적 0.5% 작았음)
     return {
       lat0, lon0,
       to: c => [(c[0] - lon0) * kx, (c[1] - lat0) * ky],

@@ -74,7 +74,7 @@ const LotCut = {
 
   onLine(layer) {
     if (this.lineHandler) { this.lineHandler.disable(); this.lineHandler = null; }
-    let line = layer.toGeoJSON();
+    let line = layer.toGeoJSON(false);
     // 선 양 끝을 3m씩 늘려, 경계선 위에서 끝나도 확실히 가로지르게
     const c = line.geometry.coordinates;
     if (c.length >= 2) {

@@ -35,6 +35,7 @@ const ZONE = JSON.parse(fs.readFileSync(path.join(ROOT, '검증사례/A구역_�
   const out = {};
   out.area = await pg.evaluate(() => ({ drawn: S.area.drawnArea, site: Calc.siteArea(S) }));
   console.log('구역 면적(사이트 계산)', out.area);
+  near('구역 면적 = 고시 CAD 40,448㎡(EPSG:5186, ±1㎡ — 오류기록 6번)', Math.round(out.area.site), 40448, 1);
 
   const val = () => pg.evaluate(() => {
     const q0 = Quick.ensure(), site = Calc.siteArea(S), lv = q0.infraLevel || 'avg';
@@ -74,12 +75,17 @@ const ZONE = JSON.parse(fs.readFileSync(path.join(ROOT, '검증사례/A구역_�
     S.prior.mode = 'manual'; S.prior.manual = 17890000;   // 만원
     const q0 = Quick.ensure(), q = { ...q0 };
     const ev = qq => { const e = Quick.evaluate(qq); return { ratio: e.r.ratio, units: e.p.total, gen: e.p.total - e.p.rentU - e.p.memTotal, far: e.f.v, cost: e.r.cost.total, rev: e.r.rev.total, gfa: Calc.gfa(e.t), shop: (e.r.rev.byCat['상가'] || 0) / e.r.rev.total * 100, con: (e.r.cost.items.find(it => /신축 공사비/.test(it.name)) || {}).amount / e.r.cost.total * 100, generalPrice: q0.generalPrice, gfaFactor: q0.gfaFactor, etcPct: q0.etcPct }; };
-    const b = ev(q), cu = ev({ ...q, conPrice: q.conPrice * 1.05 }), cd = ev({ ...q, conPrice: q.conPrice * 0.95 });
-    const mu = ev({ ...q, memberRatio: q.memberRatio * 1.05 }), md = ev({ ...q, memberRatio: q.memberRatio * 0.95 });
-    return { base: b, conUp: cu.ratio - b.ratio, conDown: cd.ratio - b.ratio, memUp: mu.ratio - b.ratio, memDown: md.ratio - b.ratio };
+    const b = ev(q), e0 = Quick.evaluate(q), R = mm => Calc.result(e0.t, mm).ratio - b.ratio;   // 사이트 민감도 표와 같은 방식(배율)
+    // 같은 입력에서 A구역 비례율 81.91%가 나오려면 일반분양가가 얼마여야 하는지(이분법) — 일반분양가가 파라미터에 없어서
+    let lo = 500, hi = 5000; for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; JbsFeas.set({ generalPrice: mid }); const rr = Quick.evaluate({ ...Quick.ensure() }).r.ratio; if (rr > 81.91) hi = mid; else lo = mid; }
+    const gpFit = (lo + hi) / 2; JbsFeas.set({ generalPrice: b.generalPrice });
+    return { base: b, conUp: R({ construction: 1.05 }), conDown: R({ construction: 0.95 }), memUp: R({ member: 1.05 }), memDown: R({ member: 0.95 }), gpFit,
+      split: JbsFeas.etcSplit(e0.r.cost.items.filter(it => it.basis === 'pctConstruction').reduce((a, it) => a + it.amount, 0)).map(([n, v]) => [n, Math.round(v / e0.r.cost.total * 1000) / 10]) };
   });
   out.same = same; console.log(same);
   check('같은 입력 비례율 계산됨', isFinite(same.base.ratio), true);
+  near('민감도: 공사비 +5% → A구역 고시 −8%p와 ±1.5%p 안', Math.round(same.conUp * 10) / 10, -8, 1.5);
+  near('민감도: 조합원분양가 +5% → A구역 고시 +9%p와 ±2.5%p 안', Math.round(same.memUp * 10) / 10, 9, 2.5);
   await pg.evaluate(() => { JbsFeas.reset && JbsFeas.reset(); S.prior = defaultState().prior; S.quick.park = 'add'; S.quick.parkPct = 7.94; S.quick.infraLevel = 'min'; saveState(); });
   console.log('4. /urban으로 가져가기');
   await pg.evaluate(() => saveState());

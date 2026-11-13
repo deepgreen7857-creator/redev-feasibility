@@ -125,6 +125,8 @@
   - 남기는 것: 사업성 공통 가정값 jbs-feas-assume-v1(사람마다의 기본값 — '새 작업'과 같음)
   - JbsWork.backup은 부른 순간 내용을 한 번만 찍음(기다리지 않고 바로 지워도 됨)
   - 시험 `node tools/ui-test/site-reset-ui.js`(33항목) — 구역·설정 연결을 건드렸으면 push 전에 통과
+- 면적은 EPSG:5186 평면 면적(2026-11-13, 오류기록 6번): `shared/area5186.js`를 turf 바로 다음에 불러 turf.area를 바꿈(JbsArea.m2·tm, 한국 밖 좌표면 예전 구면 계산). 새 페이지에 turf를 넣으면 이 파일도 넣을 것. Leaflet toGeoJSON은 좌표를 6자리로 잘라 면적이 틀리므로 toGeoJSON(false). 경위도 → m 어림(kx·ky)은 위도별 GRS80 식(111132.92 − 559.82cos2φ …), 110,540 상수 쓰지 말 것. A구역 구역 면적 40,448.41㎡ = 고시 CAD
+- 사업비(오류기록 7번): 공사비 대비 % 항목(기타 사업비)은 '기준' 공사비로 셈 — 민감도·공사비 단계에서 공사비만 움직임(Calc.costs conBase, JbsFeas.money A.etcConPrice, Quick conMul). Calc.result m.member = 조합원분양가 배율. 검토자용 검토서에 기타 사업비 나눠 보기(JbsFeas.ETC_SPLIT — A구역 구성비)와 ±5% 민감도 줄
 - 공원(의무 아님, 오류기록 4번): 5만㎡ 미만 구역도 '의무 없어도 공원 넣기 __%'(기본 5%) — 빠른 사업성 S.quick.park 'add'·parkPct('최소' 단계에 더함, 평균·보수적은 공원 포함 경험치라 그대로), /urban P.parkMode 'always'·P.parkPct(parkPctOf). 사업성 → /urban 가져올 때 이어받음. 기본값은 법정 의무만(0㎡)
 
 ## 주의

@@ -62,7 +62,7 @@ const Calc = {
     const byCat = Object.fromEntries(SALE_CATS.map(c => [c, 0]));
     let total = 0;
     for (const r of s.sales) {
-      const amt = this.saleAmount(r, r.cat === '일반' ? (m.general ?? 1) : 1);
+      const amt = this.saleAmount(r, r.cat === '일반' ? (m.general ?? 1) : r.cat === '조합원' ? (m.member ?? 1) : 1);   // m.member: 조합원분양가 배율(민감도)
       byCat[r.cat] = (byCat[r.cat] || 0) + amt;
       total += amt;
     }
@@ -86,8 +86,11 @@ const Calc = {
       .reduce((a, it) => a + it.amount, 0);
 
     // 2차: 비율 항목
+    // 공사비 대비 % 항목(기타 사업비 등)은 '기준' 공사비로(2026-11-13, 작업기준서 오류기록 7번 — 민감도에서 공사비만 움직이게.
+    //  예전엔 공사비 ±5%에 기타 사업비 30%도 같이 움직여 A구역 실제 폭 ∓8%p보다 1.3배 넓게 나왔음)
+    const conBase = cm > 0 ? construction / cm : construction;
     for (const it of items) {
-      if (it.basis === 'pctConstruction') it.amount = construction * num(it.value) / 100;
+      if (it.basis === 'pctConstruction') it.amount = conBase * num(it.value) / 100;
       else if (it.basis === 'pctRevenue') it.amount = revenueTotal * num(it.value) / 100;
     }
     const subtotal = items.filter(it => it.basis !== 'pctSubtotal').reduce((a, it) => a + it.amount, 0);

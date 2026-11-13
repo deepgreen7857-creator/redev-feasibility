@@ -46,7 +46,7 @@
     const rental = Math.round(units * (+A.rentRatio || 0) / 100);
     const run = A2 => FE.money({ byType: F.ch.byType, supply: F.ch.supply, rental, members, prior, farArea: F.ch.gfa, resArea: F.ch.gfa, lotArea: F.lot, owners: members }, A2);
     const base = run(A);
-    const vary = [[0, 0], [10, 0], [-10, 0], [0, 10], [0, -10]].map(([dc, dp]) => { const A2 = Object.assign({}, A, { conPrice: A.conPrice * (1 + dc / 100), generalPrice: A.generalPrice * (1 + dp / 100) }); const r = run(A2); return { dc, dp, ratio: r.ratio }; });
+    const vary = [[0, 0], [10, 0], [-10, 0], [0, 10], [0, -10]].map(([dc, dp]) => { const A2 = Object.assign({}, A, { etcConPrice: A.conPrice, conPrice: A.conPrice * (1 + dc / 100), generalPrice: A.generalPrice * (1 + dp / 100) }); const r = run(A2); return { dc, dp, ratio: r.ratio }; });
     return { A, base, vary, members, prior, rental };
   }
 

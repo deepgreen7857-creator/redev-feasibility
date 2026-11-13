@@ -399,7 +399,7 @@ Object.assign(INFRA, {
   pairBand(zone, minus, items, split, edgeLL) {
     const U = safeUnion(items.map(x => x[1]));
     const c0 = turf.centroid(U).geometry.coordinates, lon0 = c0[0], lat0 = c0[1];
-    const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+    const kx = (111412.84 * Math.cos(lat0 * Math.PI / 180) - 93.5 * Math.cos(3 * lat0 * Math.PI / 180)), ky = (111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180) + 1.175 * Math.cos(4 * lat0 * Math.PI / 180));
     const toM = ([lon, lat]) => [(lon - lon0) * kx, (lat - lat0) * ky], toLL = ([x, y]) => [lon0 + x / kx, lat0 + y / ky];
     // 기준 경계선: 두 시설이 가장 길게 맞닿은 구역 경계 변(2m 간격으로 재서 시설 2.5m 안에 드는 길이). 없으면 가장 가까운 변
     let best = Infinity, ed = null, bestLen = 0, edL = null;

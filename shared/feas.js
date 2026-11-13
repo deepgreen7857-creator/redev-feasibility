@@ -127,7 +127,8 @@
       const rev = rows.reduce((s, r) => s + r.amount, 0);
       const byCat = rows.reduce((o, r) => { o[r.cat] = (o[r.cat] || 0) + r.amount; return o; }, {});
       const planGfa = num(inp.farArea) * A.gfaFactor;
-      const construction = planGfa / PY * A.conPrice, etc = construction * A.etcPct / 100, cost = construction + etc;
+      // 기타 사업비는 기준 공사비(A.etcConPrice — 시나리오로 공사비만 바꿀 때 넘김, 없으면 지금 공사비)로(2026-11-13 오류기록 7번)
+      const construction = planGfa / PY * A.conPrice, etc = planGfa / PY * (num(A.etcConPrice) || A.conPrice) * A.etcPct / 100, cost = construction + etc;
       const prior = num(inp.prior);
       const ratio = prior > 0 && rev > 0 ? (rev - cost) / prior * 100 : NaN;
       const owners = num(inp.owners) || memWant;
@@ -138,6 +139,10 @@
         planGfa, construction, etc, cost, prior, ratio, profit: rev - cost, memberPrice, right, charge, sup, A };
     },
   };
+  // 기타 사업비를 항목으로 나눠 볼 때의 구성비(총지출 대비 %, 2026-11-13) — 검증사례 A구역 1건(검증사례/검증사례_A구역_파라미터.md).
+  //  사례가 쌓이면 평균·범위로 바꿀 것. 합계로 나눠 기타 사업비 금액을 비율대로 나눔(참고 표시용, 계산 결과는 바꾸지 않음)
+  JbsFeas.ETC_SPLIT = { src: '검증사례 A구역(인천 재건축) 구성비, 1건', items: [['토지비', 4.92], ['세금과공과', 4.08], ['금융비용(이자)', 3.01], ['설계·감리', 2.78], ['외주용역', 2.59], ['예비비', 1.90], ['기타 경비', 1.32], ['분양 경비', 0.43]] };
+  JbsFeas.etcSplit = function (amount) { const it = JbsFeas.ETC_SPLIT.items, t = it.reduce((a, x) => a + x[1], 0); return it.map(([n, v]) => [n, amount * v / t]); };
   g.JbsFeas = JbsFeas;
   if (typeof module !== 'undefined' && module.exports) module.exports = JbsFeas;
 })(typeof window !== 'undefined' ? window : globalThis);

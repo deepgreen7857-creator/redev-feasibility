@@ -378,7 +378,7 @@ const MapView = {
       S.area.geojson = null;
       S.area.drawnArea = 0;
     } else {
-      const gj = layers[0].toGeoJSON();
+      const gj = layers[0].toGeoJSON(false);
       this.checkPlace(gj);
       S.area.geojson = gj; S.area.siteGeo = gj;
       S.area.drawnArea = window.turf ? turf.area(gj) : 0;
@@ -605,7 +605,7 @@ const MapView = {
     this.items.clearLayers();
     if (next) L.geoJSON(next, { style: ZONE_STYLE }).eachLayer(l => this.items.addLayer(l));
     const layers = this.items.getLayers();
-    S.area.geojson = layers.length ? layers[0].toGeoJSON() : null;
+    S.area.geojson = layers.length ? layers[0].toGeoJSON(false) : null;
     S.area.drawnArea = S.area.geojson ? turf.area(S.area.geojson) : 0;
     if (S.area.geojson) S.area.siteGeo = S.area.geojson;
   },

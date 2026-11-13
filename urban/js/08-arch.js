@@ -52,7 +52,7 @@ const ARCHLAY = {
   solve(I, done) {
     const c = this.cands(I);
     try {
-      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=2bb406fe'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
+      if (!this.wk) { this.wk = new Worker('archlay-worker.js?v=3f790e31'); this.cb = {}; this.wk.onmessage = e => { const f = this.cb[e.data.id]; delete this.cb[e.data.id]; if (f) f(e.data.r); }; this.wk.onerror = () => { Object.values(this.cb).forEach(f => f(null)); this.cb = {}; this.wk = null; }; }
       const id = (this.seq = (this.seq || 0) + 1); this.cb[id] = done;
       this.wk.postMessage({ id, site: I.site, opt: I.opt, cand: c.cand, F: c.F });
       // 90초가 넘으면 일꾼을 멈추고 예전 네모 그림으로(화면에 '계산 중'이 계속 남지 않게)
@@ -123,7 +123,7 @@ function drawTowersMap(gj, pl) {
   if (!rings.length) return;
   const ring = rings.slice().sort((a, b) => turf.area(turf.polygon([b])) - turf.area(turf.polygon([a])))[0];
   const lat0 = ring.reduce((s, c) => s + c[1], 0) / ring.length, lon0 = ring.reduce((s, c) => s + c[0], 0) / ring.length;
-  const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+  const kx = (111412.84 * Math.cos(lat0 * Math.PI / 180) - 93.5 * Math.cos(3 * lat0 * Math.PI / 180)), ky = (111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180) + 1.175 * Math.cos(4 * lat0 * Math.PI / 180));
   const pts = ring.map(c => [(c[0] - lon0) * kx, -(c[1] - lat0) * ky]);
   const back = ([x, y]) => [lat0 - y / ky, lon0 + x / kx];
   const fw = Math.sqrt(pl.towerFoot * 2.2), fh = pl.towerFoot / fw;

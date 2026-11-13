@@ -131,7 +131,7 @@ const Quick = {
       sup59: JbsFeas.supply(59) * k, sup84: JbsFeas.supply(84) * k, supRent: JbsFeas.supply(49) * k,
       rentRatio: num(q.rentRatio), mix114: num(q.mix114), members: num(q.members), generalPrice: num(q.generalPrice), memberRatio: num(q.memberRatio),
       memberPrice: num(q.generalPrice) * num(q.memberRatio) / 100, rentPrice: num(q.rentPrice), shopPrice: num(q.shopPrice),
-      conPrice: num(q.conPrice) * this.conMul(q), etcPct: num(q.etcPct), comp: 0, priorMul: num(q.priorMul) || 1.4, src: '',
+      conPrice: num(q.conPrice) * this.conMul(q), etcPct: num(q.etcPct) / (this.conMul(q) || 1), comp: 0,   // 공사비 단계를 바꿔도 기타 사업비는 기준 공사비 기준(오류기록 7번) priorMul: num(q.priorMul) || 1.4, src: '',
     };
     const p = Assume.applyTo(t, v);
     // 토지조서가 아직 없으면 평균 공시지가(만원/㎡) × (구역 − 기존 공공시설) × 보정배율로 종전자산 추정
@@ -473,6 +473,7 @@ tr.sum th, tr.sum td { background: #eef1f3; font-weight: 700; }
 <h2>4. 사업성</h2>
 <table><colgroup><col style="width:70%"><col></colgroup><tr class="h"><th>종후자산(총수입)</th><th class="n">금액</th></tr>${revRows}<tr class="sum"><th>합계</th><td class="n">${eok(r.rev.total)}</td></tr></table>
 <table><colgroup><col style="width:70%"><col></colgroup><tr class="h"><th>총사업비</th><th class="n">금액</th></tr>${costRows}<tr class="sum"><th>합계</th><td class="n">${eok(r.cost.total)}</td></tr></table>
+${(() => { const et = r.cost.items.filter(it => it.basis === 'pctConstruction').reduce((a, it) => a + it.amount, 0); return et > 0 && JbsFeas.etcSplit ? `<table><colgroup><col style="width:70%"><col></colgroup><tr class="h"><th>기타 사업비 나눠 보기 <span class="note">(참고 — ${esc(JbsFeas.ETC_SPLIT.src)})</span></th><th class="n">금액</th></tr>${JbsFeas.etcSplit(et).map(([n, v]) => `<tr><td>${esc(n)}</td><td class="n">${eok(v)}</td></tr>`).join('')}</table>` : ''; })()}
 <table><tr><th class="k">종전자산</th><td>${eok(r.prior)} ${esc(e.priorNote ? '(' + e.priorNote + ')' : '')}</td></tr>
 <tr><th class="k">검토 조건</th><td>정비기반시설 ${lvName[lvNow]} ${fmt(q.infraPct, 1)}% · 공사비 ${esc((this.CON_LV.find(x => x[0] === (q0.conLevel || 'base')) || [])[1] || '기준')} ${fmt(e.v.conPrice)}만원/평 · 조합원 분양가 일반분양가의 ${fmt(A.memberRatio)}% · 평형 비율 59·84·114㎡형 ${fmt(A.mix59)}·${fmt(A.mix84)}·${fmt(A.mix114)}%</td></tr>
 <tr><th class="k">비례율</th><td><b class="${cls(r.ratio)}">${pct(r.ratio)}</b> = (종후자산 ${eok(r.rev.total)} − 총사업비 ${eok(r.cost.total)}) ÷ 종전자산 ${eok(r.prior)}</td></tr>
@@ -504,6 +505,8 @@ ${scan.rows.map(x => `<tr${scan.best && x.i === scan.best.i ? ' style="backgroun
 ${scan.best ? `<p class="note">비례율이 가장 높은 지점: 기반시설 ${fmt(scan.best.i, 1)}% (${pct(scan.best.ratio)}). 실제 기반시설은 무상양도 균형·법정 공원·진입도로를 먼저 맞춰야 합니다.</p>` : ''}
 
 <h2>9. 공사비·분양가 민감도</h2>
+${(() => { const b = r.ratio, d = mm => Calc.result(e.t, mm).ratio - b, f = v => isFinite(v) ? (v >= 0 ? '+' : '−') + fmt(Math.abs(v), 1) + '%p' : '–';
+  return isFinite(b) ? `<p class="note">공사비 +5% → ${f(d({ construction: 1.05 }))} · −5% → ${f(d({ construction: 0.95 }))} / 조합원분양가 +5% → ${f(d({ member: 1.05 }))} · −5% → ${f(d({ member: 0.95 }))} — 기타 사업비는 기준 공사비로 고정(공사비만 움직임). 참고: 검증사례 A구역 고시 검토서는 공사비 ±5% → ∓8%p, 조합원분양가 ±5% → ±9%p</p>` : ''; })()}
 <table><tr class="h"><th>공사비 ↓ / 일반분양가 →</th>${steps.map(g => `<th class="n">${sg(g)}</th>`).join('')}</tr>
 ${sens.map((row, i) => `<tr><th class="k">${sg(steps[i])}</th>${row.map((v, j) => `<td class="n ${cls(v)}"${steps[i] === 0 && steps[j] === 0 ? ' style="outline:2px solid #1d2a33;outline-offset:-2px"' : ''}>${pct(v)}</td>`).join('')}</tr>`).join('')}</table>
 
@@ -649,7 +652,7 @@ Tabs.quick = {
     if (this._layKey === key) return;
     this._layKey = key;
     try {
-      if (!this._lw) { this._lw = new Worker('shared/layout-worker.js?v=937c9896'); this._lw.onerror = () => { this._layKey = ''; this._lw = null; }; }
+      if (!this._lw) { this._lw = new Worker('shared/layout-worker.js?v=06c7fb40'); this._lw.onerror = () => { this._layKey = ''; this._lw = null; }; }
       const id = (this._lid = (this._lid || 0) + 1);
       this._lw.onmessage = e => {
         if (e.data.id !== this._lid) return;

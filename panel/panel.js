@@ -16,7 +16,7 @@
   const ringOf = s => { const g = s && s.geojson; const geo = g && (g.geometry || g); if (!geo) return null; return geo.type === 'Polygon' ? geo.coordinates[0] : geo.type === 'MultiPolygon' ? geo.coordinates[0][0] : null; };
   function projector(ring) {
     const lat0 = ring.reduce((a, p) => a + p[1], 0) / ring.length, lon0 = ring.reduce((a, p) => a + p[0], 0) / ring.length;
-    const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+    const kx = (111412.84 * Math.cos(lat0 * Math.PI / 180) - 93.5 * Math.cos(3 * lat0 * Math.PI / 180)), ky = (111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180) + 1.175 * Math.cos(4 * lat0 * Math.PI / 180));
     return p => [(p[0] - lon0) * kx, (p[1] - lat0) * ky];
   }
   const areaXY = q => Math.abs(q.reduce((a, p, i) => { const r = q[(i + 1) % q.length]; return a + p[0] * r[1] - r[0] * p[1]; }, 0) / 2);

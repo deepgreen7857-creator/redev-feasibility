@@ -195,7 +195,7 @@ const TOWERS = {
     if (!zg || !(pl.units > 0) || !(pl.towerFoot > 0)) return pl;
     const ring = this.outer(zg).sort((p, q) => this.area(q) - this.area(p))[0]; if (!ring) return pl;
     const lat0 = ring.reduce((t, c) => t + c[1], 0) / ring.length, lon0 = ring.reduce((t, c) => t + c[0], 0) / ring.length;
-    const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+    const kx = (111412.84 * Math.cos(lat0 * Math.PI / 180) - 93.5 * Math.cos(3 * lat0 * Math.PI / 180)), ky = (111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180) + 1.175 * Math.cos(4 * lat0 * Math.PI / 180));
     const toLocal = r => r.map(c => [(c[0] - lon0) * kx, -(c[1] - lat0) * ky]);
     const back = ([x, y]) => [lat0 - y / ky, lon0 + x / kx];
     const lots = pl.infra && Array.isArray(pl.infra.lots) && pl.infra.lots.length ? pl.infra.lots.filter(l => l.geom && !l.small) : null;
