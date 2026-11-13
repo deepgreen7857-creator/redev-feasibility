@@ -278,6 +278,25 @@ const Quick = {
       revTotal: k(r.rev.total / 1e4), costTotal: k(r.cost.total / 1e4), prior: r.prior > 0 ? k(r.prior / 1e4) : "", ratio: k(r.ratio),
     };
   },
+  // 고시된 실제 사례와 지금 자동값 차이(작업기준서 1장 완료 기준 4 — '1차 사업성 비례율 자동값과 실제값의 차이가 화면과 검토자용 출력에')
+  refDiff() {
+    if (!window.JbsCases || !JbsCases.refMatch) return null;
+    if (!JbsCases.refs().length) { JbsCases.loadRefs().then(l => { if (l.length && S.area.geojson && $('#qkOut') && window.Tabs && Tabs.quick) Tabs.quick.refresh(); }); return null; }
+    const c = JbsCases.refMatch(S.area.geojson); if (!c) return null;
+    const auto = this.autoValues() || {}, items = (JbsCases.ITEMS_ || []).filter(([k]) => c.actual[k] != null);
+    const rows = items.map(([k, nm, u]) => { const a = auto[k] === '' || auto[k] == null ? NaN : num(auto[k]), b = num(c.actual[k]), d = a - b; return { k, nm, u, a, b, d, pct: b ? d / Math.abs(b) * 100 : NaN }; });
+    return { c, rows, ratio: rows.find(r => r.k === 'ratio') };
+  },
+  refHtml(rd, full) {
+    if (!rd) return '';
+    const dg = u => u === '%' || u === '억원' ? 1 : 0;
+    const f = (v, u) => isFinite(v) ? fmt(v, dg(u)) + u : '–';
+    const dd = r => isFinite(r.d) ? `${r.d >= 0 ? '+' : '−'}${fmt(Math.abs(r.d), dg(r.u))}${r.u === '%' ? '%p' : r.u}` : '–';
+    const R = rd.ratio;
+    const head = `실제 사례 <b>${esc(rd.c.name)}</b>(${esc(rd.c.stage)})와 같은 구역 — 비례율 실제 <b>${R ? f(R.b, '%') : '–'}</b> · 자동 <b>${R ? f(R.a, '%') : '–'}</b> · 차이 <b>${R ? dd(R) : '–'}</b>`;
+    if (!full) return `<p class="note" id="qkRef" style="background:#eef6ff;border:1px solid #9cc3ea;padding:6px 10px;border-radius:6px">${head}</p>`;
+    return `<p>${head}</p><table><tr class="h"><th>항목</th><th class="n">실제(고시)</th><th class="n">자동</th><th class="n">차이</th></tr>${rd.rows.map(r => `<tr><td>${esc(r.nm)}</td><td class="n">${f(r.b, r.u)}</td><td class="n">${f(r.a, r.u)}</td><td class="n">${dd(r)}</td></tr>`).join('')}</table><p class="note">${esc(rd.c.note || '')}. 자동값은 지금 가정값 기준.</p>`;
+  },
   // 지금 구역이 사례 구역과 같은지(겹침 90% 이상) — 같을 때만 '지금 자동'을 그 사례와 비교
   sameZone(c) {
     try {
@@ -454,6 +473,7 @@ tr.sum th, tr.sum td { background: #eef1f3; font-weight: 700; }
   : `표준 기준 비례율이 <b class="${cls(r.ratio)}">${pct(r.ratio)}</b>로 100%에 <b>${fmt(100 - r.ratio, 1)}%p</b> 못 미칩니다. 범위는 ${pct(Math.min(...all))} ~ ${pct(Math.max(...all))}입니다(아래 5. 참고).`}
 <br><span class="note">기준: 정비기반시설 ${lvName[lvNow]} ${fmt(q.infraPct, 1)}% · 시장 값 표준. 가정값으로 낸 개략 결과이며 감정평가·관리처분계획에 따라 달라집니다.</span></div>
 
+${(() => { const rd = this.refDiff(); return rd ? `<h2>1-1. 실제 사례(고시)와 차이</h2>${this.refHtml(rd, true)}` : ''; })()}
 <h2>2. 구역 개요</h2>
 <table><tr><th class="k">구역 면적</th><td>${fmt(site)}㎡ (${fmt(site / PY)}평)</td></tr>
 <tr><th class="k">용도지역</th><td>${esc(String(q.zone || '').replace(/_/g, ' '))}</td></tr>
@@ -737,7 +757,7 @@ Tabs.quick = {
     if (/공업/.test(String(S.meta.zoning || ''))) warn.push(/준공업/.test(String(q.zone)) ? '준공업지역 300%는 인천 첫 준공업 재건축 구역이 인센티브·공공시설 제공으로 도달한 상한용적률(사례값)입니다. 준공업의 기준·허용용적률은 확인 중이라 지금은 세 단계 모두 300%로 들어가 있습니다.' : `현황 용도지역이 ${esc(String(S.meta.zoning))}입니다. 위 용적률은 정비계획 결정 때 ${esc(String(q.zone).replace(/_/g, ' '))}으로 바꾸는 것을 전제로 한 가정입니다. 준공업 그대로 계획하면 용도지역에서 '준공업지역 공동주택'을 고르세요.`);
     if (q.farStep === 'calc' && !S.lands.length) warn.push('토지조서가 없어 기존 공공시설(도로 등) 면적을 0으로 보고 산식 용적률을 냈습니다. 실제로는 기존 도로를 빼야 해서 용적률이 더 낮을 수 있습니다.');
     const tgt = num(q.target) || 100;
-    out.innerHTML = this.layoutLine(q0, f) + `
+    out.innerHTML = Quick.refHtml(Quick.refDiff(), false) + this.layoutLine(q0, f) + `
       <div class="qk-head">
         <div class="qk-ratio ${ratioClass(r.ratio)}"><span>1차 비례율 (표준)</span><b>${fmtPct(r.ratio)}</b><em>${isFinite(r.ratio) ? (r.ratio >= tgt ? `목표 ${tgt}% 이상` : `목표 ${tgt}%까지 ${fmt(tgt - r.ratio, 1)}%p 부족`) : '계산 전'}</em></div>
         <div class="qk-scen">${scen.map(x => `<div class="${ratioClass(x.ratio)}"><span>${x.sc.key}</span><b>${fmtPct(x.ratio)}</b><em>${x.sc.note}</em></div>`).join('')}</div>

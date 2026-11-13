@@ -71,5 +71,23 @@
       });
     },
   };
+  // 고시된 실제 사례(저장소 shared/criteria/cases-ref.json, 2026-11-13 작업기준서 1장 완료 기준 4) — 사용자가 입력하지 않아도 같은 구역이면 늘 비교
+  let REF = null, refP = null;
+  JbsCases.loadRefs = function () {
+    if (REF) return Promise.resolve(REF);
+    if (!refP) refP = fetch('/shared/criteria/cases-ref.json').then(r => r.ok ? r.json() : { cases: [] }).catch(() => ({ cases: [] })).then(j => (REF = j.cases || []));
+    return refP;
+  };
+  JbsCases.refs = () => REF || [];
+  // 지금 구역과 90% 이상 겹치는 고시 사례(turf 필요)
+  JbsCases.refMatch = function (gj) {
+    if (!gj || !REF || !REF.length || !g.turf) return null;
+    const f = gj.type === 'Feature' ? gj : { type: 'Feature', properties: {}, geometry: gj };
+    for (const c of REF) {
+      try { const i = g.turf.intersect(c.geojson, f); if (!i) continue; const a = g.turf.area(i); if (a / g.turf.area(c.geojson) > 0.9 && a / g.turf.area(f) > 0.9) return c; } catch (e) { /* 무시 */ }
+    }
+    return null;
+  };
+  JbsCases.ITEMS_ = ITEMS;
   g.JbsCases = JbsCases;
 })(typeof window !== 'undefined' ? window : globalThis);
