@@ -74,32 +74,37 @@ const check = (what, got, want) => { if (got === want) { ok.push(what); console.
   await upload(A);
   check('홈페이지에 버전 올라감', [...STORE.keys()].filter(k => /^jbsWork\/[^/]+$/.test(k)).length >= 1, true);
 
-  console.log('2. 빈 B를 열면 알림 → 이어서 하기');
+  console.log('2. 빈 B를 열면 묻지 않고 바로 맞춤(2026-11-13 서버가 원본)');
   await B.goto(U('/robots.txt')); await B.evaluate(() => localStorage.clear());
-  await open(B, '/traffic/');
-  const b1 = await bar(B);
-  check('B에 다른 컴퓨터 알림', /다른 컴퓨터에서 더 최근에 저장한 작업/.test(b1), true);
-  check('B 알림에 안 올린 변경 경고 없음(빈 컴퓨터)', /안 올라간 변경/.test(b1), false);
-  await Promise.all([B.waitForNavigation({ timeout: 15000 }), B.click('#jbsSyncBar [data-s="take"]')]); await B.waitForTimeout(4500);
+  await B.goto(U('/traffic/')); await B.waitForTimeout(9000);   // 열고 2.5초 뒤 확인 → 받아서 다시 엶
+  check('B 띠(알림) 없음 — 바로 맞춤', await bar(B), '');
   check('B가 A 작업 이어받음(띠 사업명)', await band(B), '가 구역 주택재개발정비사업');
-  check('B 다시 열면 알림 없음', await bar(B), '');
+  await open(B, '/traffic/');
+  check('B 다시 열면 그대로', await band(B), '가 구역 주택재개발정비사업');
 
-  console.log('3. B에서 이름 고쳐 올림 → A 알림 → 이 컴퓨터 것 계속');
+  console.log('3. B에서 이름 고쳐 올림 → A(안 올린 변경 없음)는 바로 맞춤');
   await B.evaluate(() => JbsProject.setName('나 구역 주택재건축정비사업', 'edit'));
   await B.waitForTimeout(300); await upload(B);
+  await A.goto(U('/decision/')); await A.waitForTimeout(9000);
+  check('A 띠 없음 — 바로 맞춤', await bar(A), '');
+  check('A 사업명이 B 것으로', await band(A), '나 구역 주택재건축정비사업');
+
+  console.log('3-2. A에 안 올린 변경 + B가 새로 올림 → 띠 → 이 컴퓨터 것 계속');
+  await B.evaluate(() => JbsProject.setName('라 구역 주택재개발정비사업', 'edit')); await B.waitForTimeout(300); await upload(B);
+  await A.evaluate(() => { localStorage.setItem('jbs-memo-test', 'A만의 변경'); });
   await open(A, '/decision/');
   check('A에 알림', /다른 컴퓨터에서 더 최근/.test(await bar(A)), true);
-  check('A 알림에 B 사업명', /나 구역 주택재건축정비사업/.test(await bar(A)), true);
+  check('A 알림에 B 사업명', /라 구역 주택재개발정비사업/.test(await bar(A)), true);
   await A.click('#jbsSyncBar [data-s="keep"]'); await A.waitForTimeout(800);
   check('계속 쓰기 → 알림 닫힘', await bar(A), '');
-  check('A 사업명 그대로', await band(A), '가 구역 주택재개발정비사업');
+  check('A 사업명 그대로', await band(A), '나 구역 주택재건축정비사업');
   await open(A, '/decision/');
   check('A 다시 열어도 같은 버전은 안 물음', await bar(A), '');
 
   console.log('4. A에 안 올린 변경 + B가 더 새로 올림 → 경고 → 이어받기');
   // 3에서 A가 '계속 쓰기'를 골라 A 작업이 새 버전으로 올라갔을 수 있음 → B를 다시 맞춘 뒤 새로 고쳐 올림
   await B.evaluate(() => JbsProject.setName('다 구역 가로주택정비사업', 'edit')); await B.waitForTimeout(300); await upload(B);
-  await A.evaluate(() => { localStorage.setItem('jbs-memo-test', '안 올린 변경'); });
+  await A.evaluate(() => { localStorage.setItem('jbs-memo-test', '안 올린 변경 2'); });
   await open(A, '/decision/');
   const a2 = await bar(A);
   check('A에 알림', /다른 컴퓨터에서 더 최근/.test(a2), true);

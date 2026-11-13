@@ -105,12 +105,13 @@
 1. `node --check <수정한 파일>.js`
 2. `node tools/bump-versions.js` — `?v=` 번호를 파일 내용 지문으로 모든 페이지·작업 스레드에 자동으로 맞춤. **손으로 번호를 올리지 말 것**(예전엔 손으로 올려 같은 파일이 페이지마다 다른 번호로 불렸음). `--check`는 검사만
 3. /urban을 고쳤으면 `node tools/check-urban-order.js`(파일 순서·이름 겹침)
-4. 화면 연결 시험: `node tools/ui-test/project-ui.js`(사업명 이어짐 23항목) · `node tools/ui-test/sync-ui.js`(두 컴퓨터 이어서 하기 17항목) · `node tools/ui-test/zone-ui.js`(구역 이어짐 18항목) — 실패 0
+4. 화면 연결 시험: `node tools/ui-test/project-ui.js`(사업명 이어짐 23항목) · `node tools/ui-test/sync-ui.js`(두 컴퓨터 이어서 하기 18항목) · `node tools/ui-test/zone-ui.js`(구역 이어짐 18항목) — 실패 0
 5. /urban을 '옮기기·정리'만 했으면(기능 변경 없음) 고치기 전·후 동작 기록이 같아야 함: `node tools/ui-test/urban-ui.js . /tmp/전.json` → 고침 → `node tools/ui-test/urban-ui.js . /tmp/후.json` → `node tools/ui-test/urban-ui.js --비교 /tmp/전.json /tmp/후.json`(다름 0). 기능을 바꿨으면 다른 항목이 바꾼 곳뿐인지 확인
 6. 고친 화면의 기존 시험(tools/ui-test/*-ui.js) + 1~8탭 콘솔 오류 확인
 7. push 직전 `git pull --rebase` — 다른 대화가 같은 파일을 고쳤으면 합친 뒤 2~4를 다시
 
 ## 다른 컴퓨터와 이어서 하기(shared/workfile.js checkNewer, 2026-11-08)
+- 2026-11-13 바꿈(사용자 결정 '서버가 원본'): 이 컴퓨터에 안 올린 변경이 없으면(지금 작업 지문 = jbsw:lastCloudHash, 또는 빈 작업) 묻지 않고 홈페이지 최신 버전으로 바로 맞추고 다시 엶(sessionStorage 'jbsw:adopted' → 5초 알림). 아래 띠는 두 컴퓨터 변경이 부딪칠 때만. 시험 sync-ui 18항목
 - 작업은 바뀔 때마다 홈페이지(Firestore jbsWork)에 자동 버전으로 올라감(예전부터). 화면을 열 때(2.5초 뒤)·창으로 돌아올 때 홈페이지 최근 버전(기록 시각 at 기준)이 이 컴퓨터가 마지막으로 올린 것(jbsw:lastCloudHash)과 다르면 위쪽 띠 '다른 컴퓨터에서 더 최근에 저장한 작업' → [이어서 하기](안 올린 변경이 있으면 자동 백업 뒤) / [이 컴퓨터 것 계속](jbsw:skipHash, 다시 안 물음)
 - 띠가 떠 있는 동안은 자동 올리기를 멈춤(옛 작업이 맨 위에 올라가 다른 컴퓨터 것을 덮지 않게)
 - 작업 이름(guessName)은 공통 사업명 jbs.project.v1을 먼저 씀

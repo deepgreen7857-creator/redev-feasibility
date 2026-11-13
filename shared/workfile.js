@@ -4,7 +4,7 @@
 //  · 이 컴퓨터에 이름 붙여 저장(IndexedDB, 용량 제한 거의 없음) / 파일(.jbs.json)로 내려받기
 //  · 불러오기 전·새 작업 시작 전에는 지금 상태를 '자동 백업'으로 먼저 저장(최근 3개)
 //  · 다시 받을 수 있는 자료(브이월드 조회 캐시·주변 건물)는 넣지 않음
-//  · 다른 컴퓨터와 이어서 하기(2026-11-08): 화면을 열 때 홈페이지의 최근 버전이 다른 컴퓨터 것이면 위쪽 띠로 알리고 한 번 눌러 이어받음(checkNewer)
+//  · 다른 컴퓨터와 이어서 하기(2026-11-08, 11-13 바꿈): 화면을 열 때 홈페이지의 최근 버전이 다른 컴퓨터 것이면 — 이 컴퓨터에 안 올린 변경이 없으면 묻지 않고 바로 맞추고, 변경이 부딪칠 때만 위쪽 띠로 물음(checkNewer)
 //  · 온라인 저장(2026-11-04): 관리자 로그인(gate.js와 같은 Firebase 프로젝트)으로 Firestore 'jbsWork'(관리자만 읽고 씀)에 이름 붙여 저장 → 어느 컴퓨터에서나 불러오기
 //    큰 작업은 700KB씩 나눠 'jbsWork/{id}/chunks'에. 파일·온라인 모두 토지조서가 들어 있을 수 있으니 외부로 보내지 말 것
 (function (g) {
@@ -205,9 +205,35 @@
     const cur = snapshot(), curH = hashOf(cur), last = localStorage.getItem(LAST);
     if (latest.hash === curH) { localStorage.setItem(LAST, curH); return false; }   // 이미 같음
     if (latest.hash === last || localStorage.getItem(SKIP) === latest.hash) return false;   // 이 컴퓨터가 올린 게 최신이거나, 이미 '계속 쓰기'를 고름
-    showBar(latest, summary(cur) !== '빈 작업' && curH !== last, reason);
+    const dirty = summary(cur) !== '빈 작업' && curH !== last;
+    // 2026-11-13(사용자 결정 '서버가 원본'): 이 컴퓨터에 안 올린 변경이 없으면 묻지 않고 바로 최신 작업으로 맞춤.
+    //  두 컴퓨터 변경이 부딪칠 때(dirty)만 띠로 물음
+    if (!dirty) {
+      try {
+        holdUpload = true;
+        const snap = await cloudGet(latest.id);
+        apply(snap); localStorage.setItem(LAST, hashOf(snap));
+        try { sessionStorage.setItem('jbsw:adopted', (latest.name || '') + ' · ' + (latest.savedAt || '')); } catch (e) { /* 무시 */ }
+        location.reload();
+        return true;
+      } catch (e) { holdUpload = false; /* 못 받으면 아래처럼 물음 */ }
+    }
+    showBar(latest, dirty, reason);
     return true;
   }
+  // 바로 맞춘 뒤 다시 열렸을 때 한 줄 알림(5초)
+  function adoptedNote() {
+    let t = ''; try { t = sessionStorage.getItem('jbsw:adopted') || ''; sessionStorage.removeItem('jbsw:adopted'); } catch (e) { return; }
+    if (!t) return;
+    const show = () => {
+      const n = document.createElement('div');
+      n.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:9500;background:#e7f5ff;color:#1c3d5a;border:1px solid #74c0fc;border-radius:10px;padding:8px 14px;font:13.5px/1.5 "IBM Plex Sans KR","Malgun Gothic",sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.12)';
+      n.textContent = '다른 컴퓨터에서 저장한 최신 작업으로 맞췄습니다 — ' + t;
+      document.body.appendChild(n); setTimeout(() => n.remove(), 5000);
+    };
+    if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+  }
+  adoptedNote();
   function showBar(latest, dirty, reason) {
     holdUpload = true;
     if (!document.body) return;
