@@ -448,7 +448,8 @@
   // 두 동 사이 가장 가까운 두 점
   function nearPair(a, b) {
     let best = { d: Infinity };
-    const f = (P, Q, sw) => P.flat().forEach(p => Q.forEach(q => q.forEach((x, i) => { const y = q[(i + 1) % q.length], dx = y[0] - x[0], dy = y[1] - x[1], t = Math.max(0, Math.min(1, ((p[0] - x[0]) * dx + (p[1] - x[1]) * dy) / (dx * dx + dy * dy || 1))), c = [x[0] + dx * t, x[1] + dy * t], d = Math.hypot(p[0] - c[0], p[1] - c[1]); if (d < best.d) best = sw ? { d, p: c, q: p } : { d, p, q: c }; })));
+    // 속도(2026-11-16): 점마다 배열을 새로 만들지 않고 숫자로 계산, 더 가까울 때만 결과를 만듦 — 같은 계산·같은 결과
+    const f = (P, Q, sw) => { for (const ring of P) for (const p of ring) for (const q of Q) { const n = q.length; for (let i = 0; i < n; i++) { const x = q[i], y = q[(i + 1) % n], dx = y[0] - x[0], dy = y[1] - x[1], t = Math.max(0, Math.min(1, ((p[0] - x[0]) * dx + (p[1] - x[1]) * dy) / (dx * dx + dy * dy || 1))), cx = x[0] + dx * t, cy = x[1] + dy * t, d = Math.hypot(p[0] - cx, p[1] - cy); if (d < best.d) { const c = [cx, cy]; best = sw ? { d, p: c, q: p } : { d, p, q: c }; } } } };
     f(ringsOf(a), ringsOf(b), false); f(ringsOf(b), ringsOf(a), true); return best;
   }
 
