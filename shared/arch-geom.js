@@ -63,14 +63,20 @@
     return northDist(poly.map(f), f(a), f(b));
   }
   function northDist(poly, a, b) {
-    const pts = []; poly.forEach((p, i) => { const q = poly[(i + 1) % poly.length]; for (let k = 0; k < 6; k++) pts.push([p[0] + (q[0] - p[0]) * k / 6, p[1] + (q[1] - p[1]) * k / 6]); });
+    // 변마다 6점씩 찍어 정북 방향 거리. 예전엔 점 배열을 먼저 만들었는데(배치 시간의 약 10%) 같은 계산을 바로 돌림(속도, 2026-11-16 — 결과 같음)
+    if (Math.abs(b[0] - a[0]) < 1e-9) return null;
     let best = null;
-    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]);
-    pts.forEach(p => {
-      if (p[0] < x0 - 1e-9 || p[0] > x1 + 1e-9 || Math.abs(b[0] - a[0]) < 1e-9) return;
-      const y = a[1] + (b[1] - a[1]) * (p[0] - a[0]) / (b[0] - a[0]), dy = y - p[1];
-      if (dy >= -1e-6 && (best === null || dy < best)) best = Math.max(0, dy);
-    });
+    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), n = poly.length;
+    for (let i = 0; i < n; i++) {
+      const p = poly[i], q = poly[(i + 1) % n];
+      for (let k = 0; k < 6; k++) {
+        const px = p[0] + (q[0] - p[0]) * k / 6;
+        if (px < x0 - 1e-9 || px > x1 + 1e-9) continue;
+        const py = p[1] + (q[1] - p[1]) * k / 6;
+        const y = a[1] + (b[1] - a[1]) * (px - a[0]) / (b[0] - a[0]), dy = y - py;
+        if (dy >= -1e-6 && (best === null || dy < best)) best = Math.max(0, dy);
+      }
+    }
     return best;
   }
   /* ---------- 줄 단위 배치 ---------- */
@@ -300,7 +306,7 @@
       E.forEach((e, i) => {
         if (Math.max(e.bb[0] - x1, x0 - e.bb[2], 0) ** 2 + Math.max(e.bb[1] - y1, y0 - e.bb[3], 0) ** 2 > REACH * REACH) return;
         const tag = site.tags[i];
-        const d = Math.min(...b.poly.map(p => segDist(p, e.a, e.b)));
+        // 경계까지 거리 d는 저층 인접 상한에서만 씀 → 그때만 계산(속도, 2026-11-16)
         // 사이에 도로·공원 등이 있으면 공동주택은 그 중심선을 인접 대지경계선으로 봄(시행령 제86조⑥) → 폭의 절반을 더함
         const ew = num0((opt.edgeW || [])[i], 0), gap = (ew > 0 ? ew : tag === 'park' ? num0(opt.parkWidth, 0) : 0) / 2;
         const sunCap = dd => { const s = opt.sun; const Hmax = dd < s.높이10m이하_m ? 0 : Math.max(10, dd / s.높이10m초과_높이비); return Math.floor((Hmax - A.groundExtra_m) / A.floorHeight_m); };
@@ -314,7 +320,7 @@
           if (dn !== null) cap = Math.min(cap, sunCap(dn + gap));
         }
         // 저층 인접 상한: 변 성격 'lowrise' 또는 경관 검토가 정한 경계부 점감 변(opt.lowEdges — 정북·도로 성격은 그대로 두고 상한만 더함, 2026-11-07)
-        if ((tag === 'lowrise' || (opt.lowEdges && opt.lowEdges.includes(i))) && opt.lowriseCap && d < opt.lowriseDist) cap = Math.min(cap, opt.lowriseCap);
+        if ((tag === 'lowrise' || (opt.lowEdges && opt.lowEdges.includes(i))) && opt.lowriseCap && Math.min(...b.poly.map(p => segDist(p, e.a, e.b))) < opt.lowriseDist) cap = Math.min(cap, opt.lowriseCap);
         // 채광창 벽면 → 인접 대지경계선(건축법 시행령 제86조③1호): 높이 ≤ 거리 × 배수. 도로·공원 등이 사이에 있으면 중심선까지(같은 조 ⑥, 공동주택)
         //  판상·ㄱ형은 앞·뒤 벽면(동 깊이 방향)을 향한 변만, 탑상·Y·ㅁ형은 모든 변. 도로 폭은 변의 성격 표시와 관계없이 실제로 닿은 도로 폭
         if (opt.winRatio) {
@@ -371,7 +377,11 @@
     let wantTower = false, altOn = true;
     // 탑상 자리: 단지 북쪽 55%·동서 가장자리 15m 안쪽(남쪽·가장자리는 판상 — 남측 개방, 탑상동이 경계 높이 제한에 덜 걸림)
     const towerZone = (x, y) => x == null || y == null || (y >= ymin + 0.45 * (ymax - ymin) && x >= xmin + 15 && x <= xmax - 15);
-    const ordM = (ms, x, y) => { if (form !== 'mix' || !altOn) return ms; const tw = towerZone(x, y); /* 탑상 자리면 탑상부터, 아니면 판상부터(판상이 안 들어가는 자투리엔 탑상) */ return ms.filter(m => (m.form === 'tower') === tw).concat(ms.filter(m => (m.form === 'tower') !== tw)); };
+    // 순서는 '탑상 자리냐'에만 달려서 모듈 목록마다 두 가지 순서를 한 번만 만들어 둠(속도, 2026-11-16 — 예전엔 칸마다 새 배열 두 개)
+    const ORDC = new WeakMap();
+    const ordM = (ms, x, y) => { if (form !== 'mix' || !altOn) return ms; const tw = towerZone(x, y); /* 탑상 자리면 탑상부터, 아니면 판상부터(판상이 안 들어가는 자투리엔 탑상) */
+      let c = ORDC.get(ms); if (!c) { c = { true: ms.filter(m => m.form === 'tower').concat(ms.filter(m => m.form !== 'tower')), false: ms.filter(m => m.form !== 'tower').concat(ms.filter(m => m.form === 'tower')) }; ORDC.set(ms, c); }
+      return c[tw]; };
     const picked = m => { if (form === 'mix' && altOn) wantTower = m.form !== 'tower'; };
     const Dmax = Math.max(...types.flatMap(t => MODS_REP[t].map(m => m.D)));
 
@@ -507,10 +517,16 @@
     const capKey = ['walls2', opt.angle || 0, opt.winRatio || 0, opt.southBase ? 1 : 0, opt.parkWidth || 0, opt.lowriseCap || 0, opt.lowriseDist || 0, JSON.stringify(opt.lowEdges || []), opt.spacing, A.floorHeight_m, A.groundExtra_m, A.maxFloors, JSON.stringify(opt.edgeW || []), JSON.stringify(opt.sun || {})].join('|');
     if (!site.__capc || site.__capc.key !== capKey) { try { Object.defineProperty(site, '__capc', { value: { key: capKey, map: new Map() }, configurable: true, writable: true, enumerable: false }); } catch (e) { /* 얼린 객체면 이번 배치에서만 */ } }
     const CAPC = site.__capc && site.__capc.key === capKey ? site.__capc.map : new Map();
+    // 속도(2026-11-16): 예전엔 부를 때마다 모듈 이름·치수·자리를 긴 글자 열쇠로 만들어 찾았음(전체 시간의 약 20%).
+    //  모듈마다 열쇠 앞부분을 한 번만 만들어 두고(MKEY), 자리는 x → y 두 단계 Map으로 찾음 — 같은 열쇠·같은 값이라 결과는 그대로
+    const MKEY = new WeakMap();
     function capAt(m, x, y) {
-      const k = m.t + m.form + m.n + '|' + (m.v || '') + '|' + (m.a || 0) + (m.b || 0) + (m.mir ? 'm' : '') + '|' + m.L.toFixed(2) + 'x' + m.D.toFixed(2) + '|' + x + '|' + y;
-      let c = CAPC.get(k);
-      if (c === undefined) { const poly = hull(m.parts.flat().map(p => rot([x + p[0], y + p[1]], th))); c = capFloors({ poly, form: m.form, inner: m.inner || 0, walls: wallsTo(wallsOf(m), p => rot([x + p[0], y + p[1]], th), th) }); CAPC.set(k, c); }
+      let mk = MKEY.get(m);
+      if (mk === undefined) { mk = m.t + m.form + m.n + '|' + (m.v || '') + '|' + (m.a || 0) + (m.b || 0) + (m.mir ? 'm' : '') + '|' + m.L.toFixed(2) + 'x' + m.D.toFixed(2); MKEY.set(m, mk); }
+      let byX = CAPC.get(mk); if (byX === undefined) { byX = new Map(); CAPC.set(mk, byX); }
+      let byY = byX.get(x); if (byY === undefined) { byY = new Map(); byX.set(x, byY); }
+      let c = byY.get(y);
+      if (c === undefined) { const poly = hull(m.parts.flat().map(p => rot([x + p[0], y + p[1]], th))); c = capFloors({ poly, form: m.form, inner: m.inner || 0, walls: wallsTo(wallsOf(m), p => rot([x + p[0], y + p[1]], th), th) }); byY.set(y, c); }
       return c;
     }
     // 평형 맞추기: 다 놓은 뒤, 많아진 평형의 동을 '같은 자리에 들어가는' 모자란 평형 동으로 바꿈
