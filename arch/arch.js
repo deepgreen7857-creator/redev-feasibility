@@ -503,8 +503,8 @@
     if (!pts || pts.length < 3) return { form: 'mix', why: '' };
     const bb = pts.reduce((m, q) => [Math.min(m[0], q[0]), Math.min(m[1], q[1]), Math.max(m[2], q[0]), Math.max(m[3], q[1])], [1e9, 1e9, -1e9, -1e9]);
     const ha = G.area(pts) / 1e4, minD = Math.min(bb[2] - bb[0], bb[3] - bb[1]);
-    if (ha < 1.0 || minD < 70) return { form: 'tower', why: `미리보기 배치: 구역이 ${ha.toFixed(1)}ha${minD < 70 ? `, 짧은 변 ${Math.round(minD)}m로 좁아` : '로 작아'} 탑상형으로 그렸습니다. 이 배치는 구역 모양만으로 빠르게 그려 본 미리보기입니다. 정비계획 검토의 단계별 검토(출입구 → 정비기반시설 → 교통성 → 환경성 → 경관성 → 건축계획)를 차례로 거치고, 그 결과를 다시 배치에 반영하는 과정을 되풀이할수록 최적안에 가까워집니다` };
-    return { form: 'mix', why: `미리보기 배치: 최근 단지에서 흔한 판상+탑상 혼합으로 그렸습니다. 이 배치는 구역 모양만으로 빠르게 그려 본 미리보기입니다. 정비계획 검토의 단계별 검토(출입구 → 정비기반시설 → 교통성 → 환경성 → 경관성 → 건축계획)를 차례로 거치고, 그 결과를 다시 배치에 반영하는 과정을 되풀이할수록 최적안에 가까워집니다` };
+    if (ha < 1.0 || minD < 70) return { form: 'tower', why: `미리보기 배치: 구역이 ${ha.toFixed(1)}ha${minD < 70 ? `, 짧은 변 ${Math.round(minD)}m로 좁아` : '로 작아'} 탑상형으로 그렸습니다. 이 배치는 구역 모양만으로 빠르게 그려 본 미리보기입니다. 정비계획 검토의 단계별 검토(출입구 → 정비기반시설 → 교통성 → 환경성 → 경관성 → 건축계획)를 차례로 거치고, 그 결과를 다시 배치에 반영하는 과정을 되풀이할수록 검토 조건에 맞는 안으로 다듬어집니다` };
+    return { form: 'mix', why: `미리보기 배치: 최근 단지에서 흔한 판상+탑상 혼합으로 그렸습니다. 이 배치는 구역 모양만으로 빠르게 그려 본 미리보기입니다. 정비계획 검토의 단계별 검토(출입구 → 정비기반시설 → 교통성 → 환경성 → 경관성 → 건축계획)를 차례로 거치고, 그 결과를 다시 배치에 반영하는 과정을 되풀이할수록 검토 조건에 맞는 안으로 다듬어집니다` };
   }
   // 점검용: 콘솔에서 현재 대안 보기(window.__jbsArch.alts)
   try { window.__jbsArch = { get alts() { return alts; }, get cur() { return cur; } }; } catch (e) { /* 무시 */ }
@@ -560,7 +560,7 @@
         }
         if (!alts.length) throw new Error('어느 형태도 들어가지 않습니다');
       } else alts.forEach(x => { x.label = `${I.p.form === 'rec' ? '미리보기 · ' : ''}${G.FORM_NAME[I.opt.form] || '판상형'} · ${x.label}`; });
-      // 기본 선택: 최고 층수가 25층에 가장 가까운 안(재개발 일반 규모) — 추천형은 첫 안
+      // 기본 선택: 최고 층수가 25층에 가장 가까운 안(재개발 일반 규모) — 미리보기 배치는 첫 안
       cur = alts.reduce((bi, x, i) => Math.abs(x.maxFloors - 25) < Math.abs(alts[bi].maxFloors - 25) ? i : bi, 0);
       if (I.p.form === 'compare') { const pref = ['slab', 'mix', 'tower', 'L', 'Y', 'court'], ok = alts.map((x, i) => [x, i]).filter(([x]) => x.gfa >= x.target * 0.97).sort((a, b) => pref.indexOf(a[0].form) - pref.indexOf(b[0].form)); if (ok.length) cur = ok[0][1]; else cur = alts.reduce((bi, x, i) => x.gfa > alts[bi].gfa ? i : bi, 0); }
       if (false) cur = alts.reduce((bi, x, i) => (x.gfa > alts[bi].gfa * 1.01 || (x.gfa > alts[bi].gfa * 0.99 && x.units > alts[bi].units)) ? i : bi, 0);
