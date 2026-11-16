@@ -193,7 +193,7 @@ const RoadCut = {
 
   // 거리 계산용 평면 좌표(m). 구역 중심 기준 등장방형 근사 – 구역 크기(수백 m)에서는 오차가 무시할 만함
   proj(lat0, lon0) {
-    const kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110574;
+    const kx = (111412.84 * Math.cos(lat0 * Math.PI / 180) - 93.5 * Math.cos(3 * lat0 * Math.PI / 180)), ky = (111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180) + 1.175 * Math.cos(4 * lat0 * Math.PI / 180));   // 위도별 GRS80 1° 길이(2026-11-16, 예전 110,574는 적도 값)
     const map = (c, fn) => (typeof c[0] === 'number' ? fn(c) : c.map(x => map(x, fn)));
     return {
       to: g => ({ type: g.type, coordinates: map(g.coordinates, ([x, y]) => [(x - lon0) * kx, (y - lat0) * ky]) }),

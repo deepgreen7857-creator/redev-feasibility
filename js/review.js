@@ -728,7 +728,7 @@ const Review = (() => {
     leg((x, y) => { g.strokeStyle = '#1a1aff'; g.lineWidth = 2; g.setLineDash([6, 3, 2, 3]); g.beginPath(); g.moveTo(x, y); g.lineTo(x + 20, y); g.stroke(); g.setLineDash([]); }, '신청 도면 구역선');
     leg((x, y) => { g.strokeStyle = '#444'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 20, y); g.stroke(); }, '지적선');
     leg((x, y) => { g.fillStyle = '#fbe7c0'; g.fillRect(x, y - 6, 20, 12); g.strokeStyle = '#444'; g.strokeRect(x, y - 6, 20, 12); }, '명부 필지');
-    const ppm = sx / 110574;   // sx는 위도 1도당 픽셀 → 1m당 픽셀
+    const ppm = sx / (111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180) + 1.175 * Math.cos(4 * lat0 * Math.PI / 180));   // sx는 위도 1도당 픽셀 → 1m당 픽셀(위도별 GRS80 1° 길이)
     const m = [100, 50, 20, 10, 5, 2, 1].find(v => v * ppm <= 160) || 1, bw = m * ppm, bx = W - 20 - bw;   // 축척 막대는 160px 이하로
     g.strokeStyle = '#111'; g.lineWidth = 2; g.beginPath(); g.moveTo(bx, ly); g.lineTo(bx + bw, ly); g.moveTo(bx, ly - 5); g.lineTo(bx, ly + 5); g.moveTo(bx + bw, ly - 5); g.lineTo(bx + bw, ly + 5); g.stroke();
     g.fillStyle = '#111'; g.textAlign = 'center'; g.fillText(`${m}m`, bx + bw / 2, ly - 11);

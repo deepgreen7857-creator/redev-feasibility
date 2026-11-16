@@ -39,7 +39,7 @@
     return g2;
   }
   const bbs = m => m.__bbs || (m.__bbs = m.parts.map(q => [Math.min(...q.map(p => p[0])), Math.min(...q.map(p => p[1])), Math.max(...q.map(p => p[0])), Math.max(...q.map(p => p[1]))]));
-  const fits = (Gd, m, x, y) => Gd.free(x, y, x + m.L, y + m.D) || bbs(m).every(b => Gd.free(x + b[0], y + b[1], x + b[2], y + b[3]));
+  const fits = (Gd, m, x, y) => { const fr = Gd.free; if (fr(x, y, x + m.L, y + m.D)) return true; const bb = m.__bbs || bbs(m); for (let i = 0; i < bb.length; i++) { const b = bb[i]; if (!fr(x + b[0], y + b[1], x + b[2], y + b[3])) return false; } return true; };   // 반복문으로(2026-11-16 속도, 같은 결과)
 
   // 평형 비율이 목표에 가장 가까운 배열(같은 차이면 큰 평형 먼저)
   function seqFor(id, opt) {
@@ -121,6 +121,7 @@
             }
           }
           if (!bestY || !bestY.rows.length) continue;
+          if (best && Math.min(bestY.est, target) < best.val - 1 - 1e-6) continue;   // 줄 추정(층수 깎기 전 = 상한)으로도 못 이기면 동 만들기 건너뜀(2026-11-16 속도, 같은 결과)
           // 실제 동 만들기: 높이 상한(정북·채광창)에 걸리는 동만 낮추고, 최저 층수 밑이면 뺌
           const blds = [];
           bestY.rows.forEach((row, ri) => { row.items.forEach(({ x, m }) => { const walls0 = G.wallsOf(m);
@@ -132,14 +133,15 @@
           }); });
           if (!blds.length) continue;
           // 짝 배치는 날개 창끼리 마주 볼 수 있어(왼쪽 동 날개 동쪽 창 ↔ 오른쪽 동 날개) 벽면별 동 사이 검사를 통과한 것만
-          if (pair || stag) { let bad = false; for (let i = 0; i < blds.length && !bad; i++) for (let j = i + 1; j < blds.length && !bad; j++) if (Math.abs(blds[i].row - blds[j].row) <= (stag ? 2 : 1) && K.pairCheck(blds[i], blds[j], opt)) bad = true; if (bad) continue; }
+          //  (2026-11-16 속도: 지금 최고안을 이길 때만 검사 — 지는 안은 검사해도 버려지므로 결과 같음)
+          const pairBad = () => { for (let i = 0; i < blds.length; i++) for (let j = i + 1; j < blds.length; j++) if (Math.abs(blds[i].row - blds[j].row) <= (stag ? 2 : 1) && K.pairCheck(blds[i], blds[j], opt)) return true; return false; };
           // 목표 연면적을 넘으면 남쪽 줄·가장자리 동부터 뺌(남측 개방) — 같은 모양·같은 간격은 그대로
           const gfaOf = bs => bs.reduce((a, b) => a + Object.keys(b.mixT).reduce((c, t) => c + b.mixT[t] * b.floors * sup(t), 0), 0);
           let bl = blds.slice();
           if (gfaOf(bl) > target) { const cx = bl.reduce((a, b) => a + b.poly[0][0], 0) / bl.length; bl.sort((a, b) => a.row - b.row || Math.abs(b.poly[0][0] - cx) - Math.abs(a.poly[0][0] - cx)); while (bl.length > 1 && gfaOf(bl) > target) bl.shift(); }
           const v = Math.min(gfaOf(bl), target), spread = Fhi - Flo;
           // 연면적(목표까지) 큰 것 → 같으면 층수 차이 작은 것(더 일정) → 낮은 최고 층수
-          if (!best || v > best.val + 1 || (Math.abs(v - best.val) <= 1 && (spread < best.spread || (spread === best.spread && Fhi < best.Fhi))))
+          if ((!best || v > best.val + 1 || (Math.abs(v - best.val) <= 1 && (spread < best.spread || (spread === best.spread && Fhi < best.Fhi)))) && !((pair || stag) && pairBad()))
             best = { val: v, Flo, Fhi, spread, F: Fhi, th, seq, m: mLow, blds: bl, gapX: pair ? A.sideGap_m : gapXOf(Flo), gapY: Math.max(10, sp * H(Flo)), rows: bestY.rows, Gd, pair, stag };
         }
       }
