@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<script src="/shared/gate.js"></script>
+<script src="/shared/privdata.js?v=2340382e"></script>
+<meta name="robots" content="noindex, nofollow">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>청주권 물건별 검토</title>
+<style>
+:root{--bg:#f5f6f3;--panel:#fff;--fg:#1d2420;--muted:#66706a;--line:#dde2dc;--go:#1f6b4f;--go-bg:#e0f0e8;--wait:#9a6a12;--wait-bg:#fbf1dc;--no:#a33a2c;--no-bg:#f8e3df;--chk:#2a5d9f}
+@media (prefers-color-scheme:dark){:root{--bg:#141916;--panel:#1c231f;--fg:#e4ebe6;--muted:#98a39c;--line:#2d3631;--go:#6cc39b;--go-bg:#183326;--wait:#e2b45a;--wait-bg:#3a2f18;--no:#ee8b7c;--no-bg:#3c1f1a;--chk:#8db8ee;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 "Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+main{max-width:980px;margin:0 auto;padding:16px}h1{font-size:20px;margin:4px 0}.muted{color:var(--muted);font-size:13px}
+.bar{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.bar button{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;padding:5px 10px;cursor:pointer}.bar button.on{background:var(--fg);color:var(--bg)}
+.it{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin:6px 0;padding:10px 12px}
+.top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.st{font-size:12px;font-weight:700;border-radius:4px;padding:1px 6px}
+.s0{background:var(--go-bg);color:var(--go)}.s1,.s2{background:var(--wait-bg);color:var(--wait)}.s3,.s4{background:#e6ecf5;color:var(--chk)}.s5{background:var(--no-bg);color:var(--no)}
+.adr{font-weight:700}.num{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}.note{margin-top:4px}a{color:var(--chk)}
+ul{margin:6px 0 0 18px;padding:0}
+</style>
+</head>
+<body><main>
+<h1>청주권 경공매 물건별 검토</h1>
+<div class="muted" id="meta"></div>
+<details><summary class="muted">검토 기준·자료</summary><ul id="basis"></ul></details>
+<div class="bar" id="bar"></div>
+<div id="list">불러오는 중…</div>
+</main>
+<script>
+const ORDER=['후보','대기','서류','보류','관찰','탈락'];
+const cls=s=>'s'+Math.max(0,ORDER.findIndex(k=>s.startsWith(k)));
+const man=v=>v==null?'—':(v>=1e8?(Math.floor(v/1e8)+'억'+(Math.round(v%1e8/1e4)?' '+Math.round(v%1e8/1e4).toLocaleString()+'만':'')):Math.round(v/1e4).toLocaleString()+'만');
+const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+let D=null,F='후보';
+function draw(){
+  const items=D.items.filter(x=>F==='전체'||x.stage.startsWith(F));
+  document.getElementById('list').innerHTML=items.map(x=>`<div class="it"><div class="top"><span class="st ${cls(x.stage)}">${esc(x.stage)}</span><span class="adr">${esc(x.address)}</span><span class="num">${esc(x.kind)} · ${esc(x.use)}</span></div>
+  <div class="num">감정 ${man(x.appraisal)} → 최저 ${man(x.minBid)} · 유찰 ${x.yuchal??'—'} · 마감 ${esc(x.bidEnd)} · <a href="/auction/#/item/${encodeURIComponent(x.listingId)}" target="_blank">리포트</a> · <a href="https://map.kakao.com/link/search/${encodeURIComponent(x.address.replace(/\s+\S+호$/,''))}" target="_blank" rel="noopener">지도</a></div>
+  <div class="note">${esc(x.note)}</div></div>`).join('')||'<p class="muted">해당 없음</p>';
+  document.querySelectorAll('#bar button').forEach(b=>b.classList.toggle('on',b.dataset.k===F));
+}
+JbsPriv.json('cheongju.json').then(d=>{D=d;
+  document.getElementById('meta').textContent=`${d.scope} · 검토 ${d.reviewedAt} · ${d.items.length}건`;
+  document.getElementById('basis').innerHTML=d.basis.map(b=>`<li>${esc(b)}</li>`).join('');
+  const cnt=k=>d.items.filter(x=>k==='전체'||x.stage.startsWith(k)).length;
+  document.getElementById('bar').innerHTML=[...ORDER,'전체'].map(k=>`<button data-k="${k}">${k} ${cnt(k)}</button>`).join('');
+  document.getElementById('bar').onclick=e=>{if(e.target.dataset.k){F=e.target.dataset.k;draw()}};
+  draw();
+}).catch(e=>{document.getElementById('list').textContent='불러오기 실패: '+e.message});
+</script>
+</body></html>
