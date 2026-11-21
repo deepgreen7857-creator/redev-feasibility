@@ -1,0 +1,54 @@
+# 경매 서버 함수(auction-server/functions) 자동 배포
+# - main에 auction-server/ 변경이 올라오면, 또는 GitHub 앱 Actions 탭에서 [Run workflow]로 돌림(핸드폰 가능)
+# - 비밀값 FIREBASE_SA(jbslab-auction 서비스 계정 키 JSON 전체)가 없으면 배포하지 않고 끝냄
+name: functions-deploy
+
+on:
+  push:
+    branches: [main]
+    paths: ['auction-server/**']
+  workflow_dispatch:
+
+concurrency:
+  group: functions-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 비밀값 확인
+        id: chk
+        env:
+          SA: ${{ secrets.FIREBASE_SA }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "FIREBASE_SA 비밀값이 없어 배포를 건너뜁니다." >> "$GITHUB_STEP_SUMMARY"
+            echo "ok=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.chk.outputs.ok == '1'
+
+      - uses: actions/setup-node@v4
+        if: steps.chk.outputs.ok == '1'
+        with:
+          node-version: 22
+
+      - name: 함수 의존성 설치
+        if: steps.chk.outputs.ok == '1'
+        working-directory: auction-server/functions
+        run: npm ci
+
+      - name: 배포(함수 + Firestore 규칙)
+        if: steps.chk.outputs.ok == '1'
+        working-directory: auction-server
+        env:
+          SA: ${{ secrets.FIREBASE_SA }}
+        run: |
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx -y firebase-tools@latest deploy --only functions,firestore:rules --project jbslab-auction --non-interactive --force
+          rm -f "$RUNNER_TEMP/sa.json"
