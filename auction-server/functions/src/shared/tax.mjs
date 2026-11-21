@@ -1,7 +1,8 @@
 // 자동 복사본 — 원본: auction-web/src/lib/tax.js (직접 고치지 말 것)
 // 법인 단기매매(사서 바로 팔기) 세금 계산 — 일반 기준의 추정치. 세율은 관리자 설정에서 바꿀 수 있다.
 // 근거(요약)
-//  · 취득세: 법인 주택 12% 중과(지방세법 제13조의2). 수도권 시가표준액 1억원 이하 주택은 중과 제외(시행령 제28조의2 제1호)
+//  · 취득세: 법인 주택 12% 중과(지방세법 제13조의2). 시가표준액 1억원 이하 주택은 중과 제외(시행령 제28조의2 제1호)
+//    2025.1.2 이후 취득분부터 수도권 밖(광역시 포함)은 2억원 이하로 상향(같은 호 개정) — 청주권 등은 2억 기준
 //    단, 도시정비법 정비구역·소규모주택정비법 사업시행구역 안의 주택은 그 제외에서 빠진다(=12%).
 //  · 주택 외(토지·상가·오피스텔) 취득세 4.6%. 법인은 원칙적으로 농지를 취득할 수 없다(농지법, 농업법인 예외).
 //  · 부가세: 사업자(법인)가 파는 건물분 과세. 전용 85㎡ 이하 주택과 토지는 면세.
@@ -11,6 +12,7 @@ export const TAX_DEFAULTS = {
   owner: 'corp',               // corp | person
   holdMonths: 6,
   corpHouseLimit: 100000000,   // 수도권 시가표준액 기준
+  corpHouseLimitLocal: 200000000, // 수도권 밖(2025.1.2 이후 취득) 시가표준액 기준
   brokerRate: 0.005,           // 팔 때 중개수수료
   buildingRatio: 0.5,          // 매매가 중 건물분 비율(부가세 계산용)
   corpTaxRate: 0.11,           // 법인세+지방소득세(과세표준 2억 이하 구간 기준)
@@ -27,6 +29,14 @@ export function propertyKind(item, tradeType, farm) {
   if (tradeType === 'land') return 'land';
   return 'house';
 }
+
+const CAPITAL = /^(서울특별시|인천광역시|경기도)$/;
+// 이 물건의 중과 제외 기준 금액 — 시도를 모르면 수도권(1억)으로 봄(안전 쪽)
+export function houseLimitOf(item, settings) {
+  const s = { ...TAX_DEFAULTS, ...settings };
+  return !item?.sido || CAPITAL.test(item.sido) ? s.corpHouseLimit : (s.corpHouseLimitLocal || 200000000);
+}
+const eok = (v) => `${Math.round(v / 1e8)}억`;
 
 export function inRedevArea(item) {
   const listed = item.redevMatch?.status === 'listed' && item.redevMatch.stage !== '해제';
@@ -53,10 +63,11 @@ export function acquisitionTax(item, { price, kind, settings }) {
   if (kind !== 'house') return { rate: 0.046, label: kind === 'farm' ? '농지 4.6%(법인 취득 불가)' : '주택 외 4.6%', heavy: false };
   if (s.owner !== 'corp') return { rate: houseGeneralRate(price, area), label: '개인 1주택 기준 일반세율', heavy: false };
   if (inRedevArea(item)) return { rate: area > 85 ? 0.134 : 0.124, label: '법인 12% 중과 — 정비구역 안 주택은 1억 이하 예외 없음', heavy: true };
-  const std = houseStdPrice(item, s.corpHouseLimit);
+  const lim = houseLimitOf(item, s);
+  const std = houseStdPrice(item, lim);
   if (std === null) return { rate: area > 85 ? 0.134 : 0.124, label: '공시가격 확인 전 — 12% 중과로 가정', heavy: true, unknown: true };
-  if (std > s.corpHouseLimit) return { rate: area > 85 ? 0.134 : 0.124, label: `법인 12% 중과 — 공시가격 ${Math.round(std / 1e4).toLocaleString('ko-KR')}만 (1억 초과)`, heavy: true };
-  return { rate: houseGeneralRate(price, area), label: `일반세율 — 공시가격 ${Math.round(std / 1e4).toLocaleString('ko-KR')}만 (1억 이하, 정비구역 밖)`, heavy: false };
+  if (std > lim) return { rate: area > 85 ? 0.134 : 0.124, label: `법인 12% 중과 — 공시가격 ${Math.round(std / 1e4).toLocaleString('ko-KR')}만 (${eok(lim)} 초과)`, heavy: true };
+  return { rate: houseGeneralRate(price, area), label: `일반세율 — 공시가격 ${Math.round(std / 1e4).toLocaleString('ko-KR')}만 (${eok(lim)} 이하, 정비구역 밖)`, heavy: false };
 }
 
 // 법인 단타 적합도: A 적합 · B 조건부 · ? 확인 필요 · X 부적합
@@ -65,9 +76,10 @@ export function corpFit(item, kind) {
   if (kind === 'farm') return { grade: 'X', reason: '법인은 농지 취득 불가' };
   if (kind === 'house') {
     if (inRedevArea(item)) return { grade: 'X', reason: '정비구역 안 주택 → 취득세 12%' };
-    const std = houseStdPrice(item, TAX_DEFAULTS.corpHouseLimit);
+    const lim = houseLimitOf(item);
+    const std = houseStdPrice(item, lim);
     if (std === null) return { grade: '?', reason: '공시가격 확인 필요' };
-    if (std > TAX_DEFAULTS.corpHouseLimit) return { grade: 'X', reason: '공시가격 1억 초과 → 취득세 12%' };
+    if (std > lim) return { grade: 'X', reason: `공시가격 ${eok(lim)} 초과 → 취득세 12%` };
     return area > 85 ? { grade: 'B', reason: '취득세 일반, 85㎡ 초과라 부가세 있음' } : { grade: 'A', reason: '취득세 일반·부가세 면세' };
   }
   if (kind === 'land') return { grade: 'B', reason: '취득세 4.6%, 비사업용이면 추가 법인세' };

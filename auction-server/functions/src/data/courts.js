@@ -19,6 +19,8 @@ const COURTS = [
   { name: '의정부지방법원', sido: '경기도', rate: 0.3, verified: false },
   { name: '의정부지방법원 고양지원', sido: '경기도', rate: 0.3, verified: false },
   { name: '의정부지방법원 남양주지원', sido: '경기도', rate: 0.3, verified: false },
+  // 2026-11-21 청주권: 청주지방법원 30%(업계 조사값, 2025.5.1 이후 신건·재매각) — 사건 공고로 확인
+  { name: '청주지방법원', sido: '충청북도', rate: 0.3, verified: false },
 ];
 
 // 공매(온비드 압류재산 등)는 회차마다 최초 예정가의 10%씩 내려가고 50%가 하한(이후 재공고).

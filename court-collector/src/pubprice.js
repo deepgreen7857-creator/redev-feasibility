@@ -5,10 +5,14 @@
 //   (없음) = 아직 공시가 미확인 → 빼지 않고 ok 다음 순서로 받음(확인 전 추정으로 제외하지 않음)
 const FS_BASE = 'https://firestore.googleapis.com/v1/projects/jbslab-auction/databases/(default)/documents';
 export const PUB_CAP = 100000000;
+// 2026-11-21 청주권 추가: 수도권 밖 법원(청주 등) 물건은 2억(지방세법 시행령 제28조의2제1호 — 2025.1.2 이후 수도권 밖 2억 이하)
+export const PUB_CAP_LOCAL = 200000000;
+const capOf = (court) => (/서울|인천|수원|의정부/.test(String(court || '')) ? PUB_CAP : PUB_CAP_LOCAL);
 const kst = (plus = 0) => new Date(Date.now() + 9 * 3600e3 + plus * 86400e3).toISOString().slice(0, 10).replace(/-/g, '.');
 const val = (v) => { if (!v) return null; if ('stringValue' in v) return v.stringValue; if ('integerValue' in v) return Number(v.integerValue); if ('doubleValue' in v) return v.doubleValue; if ('booleanValue' in v) return v.booleanValue; if ('nullValue' in v) return null; if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, val(x)])); return null; };
-function verdictOf(hp) {
+function verdictOf(hp, court) {
   if (!hp || typeof hp !== 'object') return null;
+  const PUB_CAP = capOf(court);
   const p = Number(hp.price) || 0; const mn = Number(hp.min) || 0; const mx = Number(hp.max) || 0;
   if (hp.matched && p > 0) return p <= PUB_CAP ? 'ok' : 'over';
   if (mx > 0 && mx <= PUB_CAP) return 'ok';      // 같은 단지 최고가도 1억 이하
@@ -35,7 +39,7 @@ export async function loadPubPrice(log = () => {}) {
         const f = d.fields || {}; if (val(f.source) !== 'court') continue;
         const caseNo = String(val(f.caseNo) || '').match(/\d{4}타경\d+/)?.[0]; if (!caseNo) continue;
         const land = val(f.land) || {};
-        const v = verdictOf(val(f.housePrice)) || verdictOf(land.housePrice);
+        const v = verdictOf(val(f.housePrice), val(f.court)) || verdictOf(land.housePrice, val(f.court));
         n++; if (v === 'ok') ok++; if (v === 'over') over++;
         (out.get(caseNo) || out.set(caseNo, []).get(caseNo)).push({ court: String(val(f.court) || ''), v });
       }
@@ -43,7 +47,7 @@ export async function loadPubPrice(log = () => {}) {
       const last = docs[docs.length - 1]; after = [last.fields.bidEnd, { referenceValue: last.name }];
     }
   } catch (e) { log(`공시가 목록 오류 ${e.message} — 공시가 판정 없이 진행`); }
-  log(`공시가 판정 — 사이트 법원 물건 ${n}건 중 1억 이하 ${ok}건, 1억 초과(받지 않음) ${over}건, 미확인 ${n - ok - over}건`);
+  log(`공시가 판정 — 사이트 법원 물건 ${n}건 중 기준 이하(수도권 1억·지방 2억) ${ok}건, 초과(받지 않음) ${over}건, 미확인 ${n - ok - over}건`);
   cache = out; cacheAt = Date.now();
   return out;
 }

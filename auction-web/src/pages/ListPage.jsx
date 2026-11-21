@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listListings, listPastResults, getSettings, getDeals, listCards } from '../lib/store.js';
 import { analyze, tradeTypeOf, courtRate, eok, pct, SOURCE_LABEL, typeLabel, areaText, ANALYZER_VERSION } from '../lib/analyze.js';
-import { lawdOf, SIDO, inFocus, FOCUS_DEFAULT } from '../data/defaults.js';
-import { corpFit, propertyKind } from '../lib/tax.js';
+import { lawdOf, SIDO, inFocus, FOCUS_DEFAULT, REGION_GROUPS, regionMatch } from '../data/defaults.js';
+import { corpFit, propertyKind, houseLimitOf } from '../lib/tax.js';
 import { Badge, VerdictBadge, Empty } from '../components/ui.jsx';
 import { soldRateTable, roundPlan } from '../lib/roundPlan.js';
 import { dedupeRounds, withNextCourtRound } from '../lib/rounds.js';
@@ -42,14 +42,14 @@ export default function ListPage({ mode }) {
   useEffect(() => {
     setItems(null); setCardInfo(null);
     (async () => {
-      const [s, pastRows, cards] = await Promise.all([getSettings(), listPastResults({ sido: f.sido || undefined }).catch(() => []), mode === 'done' ? null : listCards().catch(() => null)]);
+      const [s, pastRows, cards] = await Promise.all([getSettings(), listPastResults({ sido: (!REGION_GROUPS[f.sido] && f.sido) || undefined }).catch(() => []), mode === 'done' ? null : listCards().catch(() => null)]);
       if (cards) {
-        const list = cards.cards.filter((c) => !f.sido || c.it.sido === f.sido);
+        const list = cards.cards.filter((c) => regionMatch(c.it, f.sido));
         setCardInfo({ byId: new Map(list.map((c) => [c.it.id, c])), builtAt: cards.builtAt });
         setItems(list.map((c) => c.it)); setPast(pastRows); setSettings(s);
         return;
       }
-      const list = await listListings({ sido: f.sido || undefined, scope: mode === 'done' ? 'recent' : 'open' });
+      const list = (await listListings({ sido: (!REGION_GROUPS[f.sido] && f.sido) || undefined, scope: mode === 'done' ? 'recent' : 'open' })).filter((it) => regionMatch(it, f.sido));
       const ids = new Set(list.map((x) => x.id)); setItems(mode === 'done' ? [...list, ...pastRows.filter((x) => !ids.has(x.id))] : list); setPast(pastRows); setSettings(s);
     })().catch((e) => setError(e.message));
   }, [f.sido, mode]);
@@ -173,8 +173,10 @@ export default function ListPage({ mode }) {
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
           <select className="input" value={f.sido} onChange={set('sido')}>
-            <option value="">수도권 전체</option>
+            <option value="">전체 지역(공매 전국 포함)</option>
+            {Object.entries(REGION_GROUPS).map(([k, g]) => <option key={k} value={k}>{g.label}</option>)}
             {SIDO.map((s) => <option key={s}>{s}</option>)}
+            <option value="충청북도">충청북도</option>
           </select>
           <input className="input" placeholder="시군구 (예: 부평)" value={f.sgg} onChange={set('sgg')} />
           <select className="input" value={f.verdict} onChange={set('verdict')}>
@@ -196,7 +198,7 @@ export default function ListPage({ mode }) {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink/70">
           <label className="flex items-center gap-1.5 rounded bg-brand2 px-2 py-0.5 font-bold text-brand"><input type="checkbox" checked={f.focus} onChange={set('focus')} /> 집중 지역만({focusCfg.label})</label>
           <label className="flex items-center gap-1.5 font-bold text-brand"><input type="checkbox" checked={f.corpOnly} onChange={set('corpOnly')} /> 매입 조건 적합만(A·B)</label>
-          <label className="flex items-center gap-1.5 font-bold text-brand" title="수도권 공시가격 1억 이하 주택은 법인도 취득세 중과(12%) 제외 — 정비구역 안은 예외 없음"><input type="checkbox" checked={f.under1} onChange={set('under1')} /> 취득세 1.1% 대상만(공시가격 1억 이하·정비구역 밖)</label>
+          <label className="flex items-center gap-1.5 font-bold text-brand" title="공시가격 수도권 1억·수도권 밖 2억(2025.1.2 이후) 이하 주택은 법인도 취득세 중과(12%) 제외 — 정비구역 안은 예외 없음"><input type="checkbox" checked={f.under1} onChange={set('under1')} /> 취득세 1.1% 대상만(공시가격 수도권 1억·지방 2억 이하·정비구역 밖)</label>
           {!done && <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.onlyOpen} onChange={set('onlyOpen')} /> 진행 중만</label>}
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={f.showExcluded} onChange={set('showExcluded')} /> 관심 제외 물건도 보기</label>
           {f.sort === 'near' && origin && <span className="text-xs text-ink/60">거리 기준: <b>{origin.label}</b> · 물건 위치는 법정동 중심(대략) — 위치가 아직 없는 물건은 맨 뒤</span>}
@@ -351,8 +353,9 @@ function under1(it, a) {
   // 정비구역 안이면 1억 이하라도 법인 중과(12%) — 브이월드 토지이용계획·정비구역 목록·감정평가서 문구 모두 확인
   if (a.redev?.length || it.manual?.zone || it.redevMatch?.status === 'listed' || it.redevMatch?.status === 'unlisted') return false;
   const hp = it.housePrice?.matched ? it.housePrice.price : null;
-  if (hp !== null && hp !== undefined) return hp <= 1e8;
-  return (it.minBid || Infinity) <= 1.5e8;
+  const lim = houseLimitOf(it); // 수도권 1억 · 수도권 밖 2억(지방세법 시행령 제28조의2제1호, 2025.1.2 이후 취득)
+  if (hp !== null && hp !== undefined) return hp <= lim;
+  return (it.minBid || Infinity) <= lim * 1.5;
 }
 
 // 판정이 '해결 안 됨'이어도 법인 적합도는 물건 성격으로 정해진다
